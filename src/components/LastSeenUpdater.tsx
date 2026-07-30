@@ -16,6 +16,14 @@ export function LastSeenUpdater() {
         // Throttle server IP logging to once per 6 hours per browser.
         if (Number.isFinite(last) && now - last < 6 * 60 * 60 * 1000) return;
 
+        // The endpoint is authenticated. Avoid generating an expected 401 for
+        // every anonymous visitor before attempting this best-effort request.
+        const supabase = supabaseBrowser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+
         const res = await fetch("/api/security/log-session", {
           method: "POST",
           headers: { "content-type": "application/json" },
