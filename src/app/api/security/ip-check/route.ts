@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
 export async function GET(req: Request) {
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    // Security checks fail open, but missing configuration must not make the
+    // route module throw while Next.js is collecting routes during a build.
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error("ip-check: Supabase environment is not configured");
+      return NextResponse.json({ banned: false, reason: null }, { status: 200 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
     // Try to get the client IP from common proxy headers
     const forwardedFor = req.headers.get("x-forwarded-for") ?? "";
     const realIp = req.headers.get("x-real-ip") ?? "";

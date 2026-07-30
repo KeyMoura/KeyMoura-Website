@@ -50,6 +50,12 @@ test("unavailable module schemas cannot be selected or finalized", async () => {
   assert.match(wizard, /disabled={!availability\.available}/);
 });
 
+test("installer browser globals are guarded during server rendering", async () => {
+  const wizard = await readFile(new URL("../src/app/install/wizard.tsx", import.meta.url), "utf8");
+  assert.match(wizard, /typeof window === "undefined" \? "" : window\.location\.origin/);
+  assert.doesNotMatch(wizard, /publicUrl: window\.location\.origin/);
+});
+
 test("owner recovery requires both the installation attempt and owner identity", async () => {
   const security = await readFile(new URL("../src/lib/installer/security.ts", import.meta.url), "utf8");
   const route = await readFile(new URL("../src/app/api/install/complete/route.ts", import.meta.url), "utf8");

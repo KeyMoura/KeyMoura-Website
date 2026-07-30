@@ -7,10 +7,14 @@ type Props = { initialState: { bootstrapReady: boolean; status: string; errorCod
 type Stage = "unlock" | "system" | "site" | "modules" | "auth" | "owner" | "review" | "installing" | "success";
 const stages: Stage[] = ["unlock","system","site","modules","auth","owner","review"];
 
+function browserOrigin(): string {
+  return typeof window === "undefined" ? "" : window.location.origin;
+}
+
 export default function InstallerWizard({ initialState }: Props) {
   const [stage, setStage] = useState<Stage>("unlock");
   const [token, setToken] = useState(""); const [error, setError] = useState("");
-  const [form, setForm] = useState({ siteName: "My Community", description: "", publicUrl: window.location.origin, logoUrl: "", primaryColor: "#dc2626", accentColor: "#f59e0b", forumTerm: "Community", knowledgeTerm: "Knowledge Base", vendorTerm: "Trusted Shop", modules: [] as string[], allowSignup: true, requireEmailConfirmation: true, email: "", password: "", username: "" });
+  const [form, setForm] = useState({ siteName: "My Community", description: "", publicUrl: browserOrigin(), logoUrl: "", primaryColor: "#dc2626", accentColor: "#f59e0b", forumTerm: "Community", knowledgeTerm: "Knowledge Base", vendorTerm: "Trusted Shop", modules: [] as string[], allowSignup: true, requireEmailConfirmation: true, email: "", password: "", username: "" });
   const selected = useMemo(() => resolveModuleDependencies(form.modules), [form.modules]);
   const step = stages.indexOf(stage); const progress = stage === "success" ? 100 : Math.max(5, ((step + 1) / stages.length) * 100);
   const update = (key: string, value: string | boolean | string[]) => setForm((old) => ({ ...old, [key]: value }));
