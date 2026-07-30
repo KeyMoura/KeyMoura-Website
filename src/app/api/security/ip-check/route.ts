@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sanitizeSupabaseError } from "@/lib/installer/readiness";
 
 export async function GET(req: Request) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
-    // Security checks fail open, but missing configuration must not make the
-    // route module throw while Next.js is collecting routes during a build.
+    // Missing configuration must not make the route module throw while Next.js
+    // is collecting routes, but it must never be reported as a successful check.
     if (!supabaseUrl || !serviceRoleKey) {
       console.error("ip-check: Supabase environment is not configured");
-      return NextResponse.json({ banned: false, reason: null }, { status: 200 });
+      return NextResponse.json({ error: "IP security check is unavailable." }, { status: 503 });
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -43,11 +44,8 @@ export async function GET(req: Request) {
     });
 
     if (error) {
-      console.error("ip-check: get_ip_ban_detail error", error);
-      return NextResponse.json(
-        { banned: false, reason: null },
-        { status: 200 }
-      );
+      console.error("ip-check: get_ip_ban_detail failed", sanitizeSupabaseError(error));
+      return NextResponse.json({ error: "IP security check is unavailable." }, { status: 503 });
     }
 
     // get_ip_ban_detail returns a table -> supabase-js gives us an array
@@ -68,11 +66,10 @@ export async function GET(req: Request) {
       { status: 200 }
     );
   } catch (e) {
-    console.error("ip-check: unexpected error", e);
-    // Fail open on error: don't lock legit users out because of a bug
-    return NextResponse.json(
-      { banned: false, reason: null },
-      { status: 200 }
+    console.error(
+      "ip-check: unexpected error",
+      sanitizeSupabaseError(e instanceof Error ? e : { message: String(e) })
     );
+    return NextResponse.json({ error: "IP security check is unavailable." }, { status: 503 });
   }
 }

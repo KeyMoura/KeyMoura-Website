@@ -20,7 +20,8 @@
 
    ```bash
    psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
-     -f supabase/installer/00000000000000_installer_core.sql
+     -f supabase/installer/00000000000000_installer_core.sql \
+     -f supabase/installer/00000000000001_security_bootstrap.sql
    ```
 
 4. Apply optional module schemas before selecting them in the wizard. For the
@@ -52,10 +53,11 @@ that email. Do not delete the Auth user as a recovery mechanism.
 
 ## Selected versus skipped objects
 
-Core always creates `installation_state`, `schema_versions`,
+Core plus the required security bootstrap always create `installation_state`, `schema_versions`,
 `installed_modules`, `site_settings`, `profiles`, `roles`, `permissions`,
 `role_permissions`, `user_roles`, `user_permissions`, the `avatars` bucket, and
-`complete_first_install`. Garage adds `garage_cars`, `garage_car_likes`, and the
+`complete_first_install`, along with `site_security_settings`, `ip_bans`,
+`user_bans`, and `get_ip_ban_detail`. Garage adds `garage_cars`, `garage_car_likes`, and the
 `garage-covers` bucket. Vendors adds `shops`.
 
 Skipped modules have no `installed_modules` row. Middleware returns 404 before

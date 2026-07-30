@@ -55,6 +55,27 @@ test("core migration uses transaction, advisory lock, RLS, and non-public finali
   assert.doesNotMatch(statements, /\b(drop|truncate|delete\s+from)\b/i);
 });
 
+test("security bootstrap supplies every middleware and IP-check dependency", async () => {
+  const sql = await readFile(new URL("../supabase/installer/00000000000001_security_bootstrap.sql", import.meta.url), "utf8");
+  for (const dependency of ["site_security_settings", "ip_bans", "user_bans", "get_ip_ban_detail"]) {
+    assert.match(sql, new RegExp(`\\b${dependency}\\b`));
+  }
+  assert.match(sql, /create or replace function public\.get_ip_ban_detail\(ip text\)/);
+  assert.match(sql, /security definer[\s\S]*set search_path = public, pg_temp/);
+  assert.match(sql, /revoke all on function public\.get_ip_ban_detail\(text\) from public/);
+  const statements = sql.split("\n").filter((line) => !line.trimStart().startsWith("--")).join("\n");
+  assert.doesNotMatch(statements, /\b(drop|truncate|delete\s+from|update\s+)\b/i);
+
+  const middleware = await readFile(new URL("../middleware.ts", import.meta.url), "utf8");
+  assert.match(middleware, /!installed && isInstallerPath\) return NextResponse\.next\(\)/);
+  assert.doesNotMatch(middleware, /pathname === "\/api\/security\/ip-check"\) return NextResponse\.next/);
+
+  const ipCheck = await readFile(new URL("../src/app/api/security/ip-check/route.ts", import.meta.url), "utf8");
+  assert.match(ipCheck, /get_ip_ban_detail failed/);
+  assert.match(ipCheck, /status: 503/g);
+  assert.doesNotMatch(ipCheck, /get_ip_ban_detail error[\s\S]*banned: false/);
+});
+
 test("unavailable module schemas cannot be selected or finalized", async () => {
   const { assertModulesAvailable, moduleAvailability } = await import("../src/lib/installer/model.ts");
   const availability = moduleAvailability(["core", "garage", "vendors"]);

@@ -5,7 +5,9 @@ from a trusted workstation, then apply only the optional module files selected
 for the deployment:
 
 ```bash
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/installer/00000000000000_installer_core.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
+  -f supabase/installer/00000000000000_installer_core.sql \
+  -f supabase/installer/00000000000001_security_bootstrap.sql
 # Examples, only when selected:
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/installer/modules/garage.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/installer/modules/vendors.sql
