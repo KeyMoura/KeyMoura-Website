@@ -32,11 +32,17 @@ export function serverSupabaseEnv() {
 }
 
 export function sanitizeSupabaseError(error: QueryError): SanitizedSupabaseError {
+  const redact = (value: string | undefined | null) => {
+    if (value == null) return null;
+    return value
+      .replace(/(apikey|api[_ -]?key|authorization|password|secret|token)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]")
+      .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, "postgresql://[REDACTED]@");
+  };
   return {
     code: error.code ?? null,
-    message: error.message ?? "Unknown Supabase error",
-    details: error.details ?? null,
-    hint: error.hint ?? null,
+    message: redact(error.message) ?? "Unknown Supabase error",
+    details: redact(error.details),
+    hint: redact(error.hint),
   };
 }
 

@@ -189,9 +189,10 @@ export async function middleware(req: NextRequest) {
   );
   if (!installState.ready) logReadinessFailure("middleware", installState);
   const installed = installState.ready && installState.status === "complete";
-  // This endpoint deliberately fails open and must remain reachable while the
-  // core is pending (and while readiness itself is temporarily unavailable).
-  if (pathname === "/api/security/ip-check") return NextResponse.next();
+  // Pending installs need to reach only the installer surface. Return before
+  // account/IP/maintenance gates: those gates may not be configured yet, and
+  // an authenticated but not-yet-admitted owner must still finish installation.
+  if (!installed && isInstallerPath) return NextResponse.next();
   if (!installed && !isInstallerPath) {
     if (pathname.startsWith("/api")) return NextResponse.json({ error: "Installation required." }, { status: 503 });
     return NextResponse.redirect(new URL("/install", req.url));
