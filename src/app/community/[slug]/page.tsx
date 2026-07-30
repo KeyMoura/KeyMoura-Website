@@ -1,0 +1,1317 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { VerifiedBadge } from "@/components/VerifiedBadge";
+import { DonationBadge } from "@/components/DonationBadge";
+import { useParams, useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabaseClient";
+import { MenuSelect } from "@/components/ui/MenuSelect";
+import { isArray, isRecord } from "@/lib/typeGuards";
+
+type LoadState = "idle" | "loading" | "loaded" | "error";
+
+type ForumCategoryRow = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  is_archived: boolean;
+  created_at: string;
+  parent_id: number | null;
+};
+
+type ForumThreadRow = {
+  id: number;
+  category_id: number;
+  title: string;
+  slug: string;
+  created_at: string;
+  updated_at: string | null;
+  created_by: string;
+  last_post_at: string | null;
+  last_post_by: string | null;
+  reply_count: number;
+  view_count: number;
+  is_locked: boolean;
+  is_pinned: boolean;
+  is_deleted: boolean;
+  tags: string[] | null;
+};
+
+type ProfileRow = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  is_verified?: boolean | null;
+  donation_rank?: string | null;
+};
+
+/** --- fuzzy helpers (ranking) --- */
+function isFuzzyMatch(a: string, b: string): boolean {
+  const s = a.toLowerCase();
+  const t = b.toLowerCase();
+  if (s === t) return true;
+
+  const lenDiff = Math.abs(s.length - t.length);
+  if (lenDiff > 1) return false;
+
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+
+  while (i < s.length && j < t.length) {
+    if (s[i] === t[j]) {
+      i++;
+      j++;
+    } else {
+      edits++;
+      if (edits > 1) return false;
+
+      if (s.length > t.length) i++;
+      else if (t.length > s.length) j++;
+      else {
+        i++;
+        j++;
+      }
+    }
+  }
+
+  if (i < s.length || j < t.length) edits++;
+  return edits <= 1;
+}
+
+function fieldMatchesToken(field: string, token: string): boolean {
+  const f = (field || "").toLowerCase();
+  const t = (token || "").toLowerCase();
+  if (!f || !t) return false;
+
+  if (f.includes(t)) return true;
+
+  const parts = f.split(/\s+/);
+  for (const part of parts) {
+    if (!part) continue;
+    if (isFuzzyMatch(part, t)) return true;
+  }
+  return false;
+}
+
+/** --- highlight helpers (exact substring hits only) --- */
+type Range = { start: number; end: number };
+
+function mergeRanges(ranges: Range[]): Range[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const out: Range[] = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = out[out.length - 1];
+    const cur = sorted[i];
+    if (cur.start <= prev.end) prev.end = Math.max(prev.end, cur.end);
+    else out.push(cur);
+  }
+  return out;
+}
+
+function findTokenRanges(text: string, token: string): Range[] {
+  const t = token.trim().toLowerCase();
+  if (!t) return [];
+  const lower = text.toLowerCase();
+
+  const ranges: Range[] = [];
+  let idx = 0;
+  while (idx < lower.length) {
+    const hit = lower.indexOf(t, idx);
+    if (hit === -1) break;
+    ranges.push({ start: hit, end: hit + t.length });
+    idx = hit + t.length;
+  }
+  return ranges;
+}
+
+function highlightText(text: string, tokens: string[]): React.ReactNode {
+  if (!text) return text;
+  const cleanTokens = Array.from(
+    new Set(tokens.map((t) => t.trim()).filter((t) => t.length >= 2))
+  );
+  if (cleanTokens.length === 0) return text;
+
+  const rawRanges: Range[] = [];
+  for (const tok of cleanTokens) rawRanges.push(...findTokenRanges(text, tok));
+  const ranges = mergeRanges(rawRanges);
+  if (ranges.length === 0) return text;
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  for (const r of ranges) {
+    if (cursor < r.start) parts.push(text.slice(cursor, r.start));
+    parts.push(
+      <mark
+        key={`${r.start}-${r.end}`}
+        className="rounded-sm bg-amber-400/20 px-0.5 text-amber-200"
+      >
+        {text.slice(r.start, r.end)}
+      </mark>
+    );
+    cursor = r.end;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
+function levenshtein(a: string, b: string): number {
+  const s = a.toLowerCase();
+  const t = b.toLowerCase();
+  const m = s.length;
+  const n = t.length;
+
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    const si = s[i - 1];
+    for (let j = 1; j <= n; j++) {
+      const tj = t[j - 1];
+      const cost = si === tj ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+
+  return dp[m][n];
+}
+
+function normalizedSimilarity(a: string, b: string): number {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  const dist = levenshtein(a, b);
+  return 1 - dist / maxLen;
+}
+
+export default function CommunityCategoryPage() {
+  const params = useParams();
+  const router = useRouter();
+  const slug = String(params?.slug ?? "");
+
+  const [state, setState] = useState<LoadState>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [category, setCategory] = useState<ForumCategoryRow | null>(null);
+  const [parentCategory, setParentCategory] = useState<ForumCategoryRow | null>(null);
+  const [childCategories, setChildCategories] = useState<ForumCategoryRow[]>([]);
+  const [threads, setThreads] = useState<ForumThreadRow[]>([]);
+  const [profilesById, setProfilesById] = useState<Map<string, ProfileRow>>(() => new Map());
+
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [isBanned, setIsBanned] = useState<boolean>(false);
+
+  /** chip search state */
+  const [committedTerms, setCommittedTerms] = useState<string[]>([]);
+  const [fragment, setFragment] = useState("");
+  const chipContainerRef = useRef<HTMLDivElement | null>(null);
+
+  /** show more paging */
+  const [visibleCount, setVisibleCount] = useState<number>(6);
+
+  type ThreadSort = "hot" | "newest" | "top" | "active";
+  const [threadSort, setThreadSort] = useState<ThreadSort>("hot");
+
+  /** ✅ help popup (EXACTLY like /community) */
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  /** When searching, also boost threads that match inside replies/comments. */
+  /** (Lower weight than titles/original fields.) */
+  const [replyMatchCountByThreadId, setReplyMatchCountByThreadId] = useState<
+    Record<number, number>
+  >({});
+
+  const [replyMatchPreviewByThreadId, setReplyMatchPreviewByThreadId] = useState<
+    Record<number, { postId: number; snippet: string }>
+  >({});
+
+  const [leadScoreByThreadId, setLeadScoreByThreadId] = useState<Map<number, number>>(
+    () => new Map()
+  );
+
+  useEffect(() => {
+    /** Keep "Hot (7d)" fresh without re-render noise */
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  /** Help popup: ESC to close (EXACTLY like /community) */
+  useEffect(() => {
+    if (!helpOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHelpOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [helpOpen]);
+
+  /** Auth + ban state */
+  useEffect(() => {
+    const loadAuth = async () => {
+      try {
+        const supabase = supabaseBrowser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          setIsLoggedIn(false);
+          setIsBanned(false);
+          return;
+        }
+
+        setIsLoggedIn(true);
+
+        const { data: banRow, error: banErr } = await supabase
+          .from("user_bans")
+          .select("id, active")
+          .eq("user_id", user.id)
+          .eq("active", true)
+          .maybeSingle<{ id: number; active: boolean }>();
+
+        if (banErr) {
+          console.error("Failed to check ban status on client", banErr);
+          setIsBanned(false);
+        } else {
+          setIsBanned(!!banRow && banRow.active !== false);
+        }
+      } catch (e) {
+        console.error("Unexpected error checking auth/ban state", e);
+        setIsLoggedIn(null);
+        setIsBanned(false);
+      }
+    };
+
+    void loadAuth();
+  }, []);
+
+  /** Load category + threads */
+  useEffect(() => {
+    if (!slug) return;
+
+    const load = async () => {
+      setState("loading");
+      setErrorMessage(null);
+
+      try {
+        const supabase = supabaseBrowser();
+
+        const { data: categoryRow, error: categoryError } = await supabase
+          .from("forum_categories")
+          .select("id, slug, name, description, is_archived, created_at, parent_id")
+          .eq("slug", slug)
+          .maybeSingle<ForumCategoryRow>();
+
+        if (categoryError) {
+          console.error("Failed to load forum category", categoryError);
+          setErrorMessage("Failed to load category.");
+          setState("error");
+          return;
+        }
+
+        if (!categoryRow) {
+          setErrorMessage("Category not found.");
+          setState("error");
+          return;
+        }
+
+        setCategory(categoryRow);
+        setParentCategory(null);
+        setChildCategories([]);
+
+        if (categoryRow.parent_id) {
+          const { data: parentRow } = await supabase
+            .from("forum_categories")
+            .select("id, slug, name, description, is_archived, created_at, parent_id")
+            .eq("id", categoryRow.parent_id)
+            .maybeSingle<ForumCategoryRow>();
+          setParentCategory(parentRow ?? null);
+        }
+
+        const { data: childRows } = await supabase
+          .from("forum_categories")
+          .select("id, slug, name, description, is_archived, created_at, parent_id")
+          .eq("parent_id", categoryRow.id)
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true });
+        setChildCategories((childRows ?? []) as ForumCategoryRow[]);
+
+        /** Prefer server route so staff can't be hidden by member blocks. */
+        /** (The server applies block rules for non-staff.) */
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+
+        let threadRows: ForumThreadRow[] = [];
+        let profilesLoadedFromServer = false;
+
+        if (token) {
+          const res = await fetch("/api/forum/category-threads", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ categorySlug: slug }),
+          });
+
+          type ApiResp =
+            | {
+                ok: true;
+                threads: ForumThreadRow[];
+                profiles: ProfileRow[];
+                roles: Array<{ user_id: string; role: string }>;
+                parent: ForumCategoryRow | null;
+                children: ForumCategoryRow[];
+              }
+            | { ok: false; error: string };
+
+          const parsed = (await res.json().catch(() => null)) as unknown;
+          if (res.ok && isRecord(parsed) && parsed.ok === true) {
+            const threadsValue = (parsed as Record<string, unknown>).threads;
+            threadRows = (isArray(threadsValue) ? threadsValue : []) as ForumThreadRow[];
+            setThreads(threadRows);
+
+            const parentValue = (parsed as Record<string, unknown>).parent;
+            setParentCategory(isRecord(parentValue) ? (parentValue as ForumCategoryRow) : null);
+
+            const childrenValue = (parsed as Record<string, unknown>).children;
+            setChildCategories(isArray(childrenValue) ? (childrenValue as ForumCategoryRow[]) : []);
+
+            const profilesValue = (parsed as Record<string, unknown>).profiles;
+            const map = new Map<string, ProfileRow>();
+            for (const p of (isArray(profilesValue) ? profilesValue : [])) {
+              const rec = p && typeof p === "object" ? (p as Record<string, unknown>) : null;
+              const id = rec && typeof rec.id === "string" ? rec.id : null;
+              if (!id) continue;
+              map.set(id, rec as unknown as ProfileRow);
+            }
+            setProfilesById(map);
+            profilesLoadedFromServer = true;
+          } else {
+            /** fallback to client query */
+            const { data: threadsData, error: threadsError } = await supabase
+              .from("forum_threads")
+              .select(
+                "id, category_id, title, slug, created_at, updated_at, created_by, last_post_at, last_post_by, reply_count, view_count, is_locked, is_pinned, is_deleted, tags"
+              )
+              .eq("category_id", categoryRow.id)
+              .eq("is_deleted", false)
+              .order("is_pinned", { ascending: false })
+              .order("last_post_at", { ascending: false, nullsFirst: false });
+
+            if (threadsError) {
+              console.error("Failed to load threads", threadsError);
+              setErrorMessage("Failed to load threads.");
+              setState("error");
+              return;
+            }
+
+            threadRows = (threadsData ?? []) as ForumThreadRow[];
+            setThreads(threadRows);
+          }
+        } else {
+          /** logged out */
+          const { data: threadsData, error: threadsError } = await supabase
+            .from("forum_threads")
+            .select(
+              "id, category_id, title, slug, created_at, updated_at, created_by, last_post_at, last_post_by, reply_count, view_count, is_locked, is_pinned, is_deleted, tags"
+            )
+            .eq("category_id", categoryRow.id)
+            .eq("is_deleted", false)
+            .order("is_pinned", { ascending: false })
+            .order("last_post_at", { ascending: false, nullsFirst: false });
+
+          if (threadsError) {
+            console.error("Failed to load threads", threadsError);
+            setErrorMessage("Failed to load threads.");
+            setState("error");
+            return;
+          }
+
+          threadRows = (threadsData ?? []) as ForumThreadRow[];
+          setThreads(threadRows);
+        }
+
+        const threadIds = threadRows.map((t) => t.id);
+
+        if (threadIds.length > 0) {
+          const { data: scoreRows, error: scoreErr } = await supabase
+            .from("forum_thread_lead_scores")
+            .select("thread_id, lead_vote_score")
+            .in("thread_id", threadIds);
+
+          if (!scoreErr && scoreRows?.length) {
+            setLeadScoreByThreadId(
+              new Map<number, number>(
+                scoreRows.map((r) => [
+                  Number(r.thread_id),
+                  Number(r.lead_vote_score ?? 0),
+                ])
+              )
+            );
+          } else {
+            setLeadScoreByThreadId(new Map());
+          }
+        }
+
+        /** If we fell back to client queries above, profiles may not be loaded yet. */
+        /** (The server route already returns profiles.) */
+        if (!profilesLoadedFromServer) {
+          const userIds = new Set<string>();
+          for (const t of threadRows) {
+            if (t.created_by) userIds.add(t.created_by);
+            if (t.last_post_by) userIds.add(t.last_post_by);
+          }
+
+          if (userIds.size > 0) {
+            const { data: profilesData, error: profilesError } = await supabase
+              .from("profiles")
+              .select("id, username, display_name, is_verified, donation_rank")
+              .in("id", Array.from(userIds));
+
+            if (profilesError) {
+              console.error("Failed to load profiles for threads", profilesError);
+            } else if (profilesData) {
+              const map = new Map<string, ProfileRow>();
+              for (const p of profilesData as ProfileRow[]) map.set(p.id, p);
+              setProfilesById(map);
+            }
+          }
+        }
+
+        setState("loaded");
+      } catch (err) {
+        console.error("Unexpected error loading community category", err);
+        setErrorMessage("Unexpected error loading category.");
+        setState("error");
+      }
+    };
+
+    void load();
+  }, [slug]);
+
+  const getDisplayName = useCallback(
+    (userId: string | null): string => {
+      if (!userId) return "Unknown user";
+      const profile = profilesById.get(userId);
+      if (!profile) return userId;
+      return profile.display_name || profile.username || userId;
+    },
+    [profilesById]
+  );
+
+  const getProfile = useCallback(
+    (userId: string | null): ProfileRow | null => {
+      if (!userId) return null;
+      return profilesById.get(userId) ?? null;
+    },
+    [profilesById]
+  );
+
+  const formatDateTime = (value: string | null): string => {
+    if (!value) return "—";
+    const d = new Date(value);
+    return d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  };
+
+  const scrollChipsToBottom = () => {
+    const el = chipContainerRef.current;
+    if (!el) return;
+    setTimeout(() => {
+      el.scrollTop = el.scrollHeight;
+    }, 0);
+  };
+
+  const commitFragmentAsChip = () => {
+    const raw = fragment.trim();
+    if (!raw) return;
+    setCommittedTerms((prev) => (prev.includes(raw) ? prev : [...prev, raw]));
+    setFragment("");
+    setVisibleCount(6);
+    scrollChipsToBottom();
+  };
+
+  const handleRemoveTerm = (term: string) => {
+    setCommittedTerms((prev) => prev.filter((t) => t !== term));
+    setVisibleCount(6);
+  };
+
+  const hasActiveQuery = committedTerms.length > 0 || fragment.trim().length > 0;
+
+  const searchTokens = useMemo(() => {
+    const tokens: string[] = [];
+    const addTokensFrom = (text: string) => {
+      const trimmed = text.trim().toLowerCase();
+      if (!trimmed) return;
+      for (const part of trimmed.split(/\s+/)) {
+        const p = part.trim();
+        if (!p) continue;
+        tokens.push(p);
+      }
+    };
+
+    committedTerms.forEach(addTokensFrom);
+    addTokensFrom(fragment);
+    return Array.from(new Set(tokens));
+  }, [committedTerms, fragment]);
+
+  /** When searching, fetch a lightweight set of matching replies to improve ranking. */
+  /** This does NOT change what we display, it only influences ordering. */
+  useEffect(() => {
+    const run = async () => {
+      if (searchTokens.length === 0) {
+        setReplyMatchCountByThreadId({});
+        setReplyMatchPreviewByThreadId({});
+        return;
+      }
+
+      try {
+        const supabase = supabaseBrowser();
+        const or = searchTokens
+          .slice(0, 6)
+          .map((t) => `body_markdown.ilike.%${t}%`)
+          .join(",");
+
+        const { data, error } = await supabase
+          .from("forum_posts")
+          .select("id, thread_id, body_markdown, created_at")
+          .or(or)
+          .order("created_at", { ascending: false })
+          .limit(500);
+
+        if (error) {
+          console.error("[community/category] reply search failed", error);
+          setReplyMatchCountByThreadId({});
+          setReplyMatchPreviewByThreadId({});
+          return;
+        }
+
+        const counts: Record<number, number> = {};
+        const previews: Record<number, { postId: number; snippet: string }> = {};
+        for (const row of data ?? []) {
+          const r = row as { id?: unknown; thread_id?: unknown; body_markdown?: unknown };
+          const tid = Number(r.thread_id);
+          if (!Number.isFinite(tid)) continue;
+          counts[tid] = (counts[tid] ?? 0) + 1;
+          if (!previews[tid]) {
+            const postId = Number(r.id);
+            const body = typeof r.body_markdown === "string" ? r.body_markdown : "";
+            const oneLine = body.replace(/\s+/g, " ").trim();
+            const snippet = oneLine.length > 160 ? `${oneLine.slice(0, 160)}…` : oneLine;
+            previews[tid] = { postId: Number.isFinite(postId) ? postId : 0, snippet };
+          }
+        }
+
+        setReplyMatchCountByThreadId(counts);
+        setReplyMatchPreviewByThreadId(previews);
+      } catch (e) {
+        console.error("[community/category] reply search error", e);
+        setReplyMatchCountByThreadId({});
+        setReplyMatchPreviewByThreadId({});
+      }
+    };
+
+    void run();
+  }, [searchTokens]);
+
+  /** highlight EXACT strings the user typed (chips + fragment words) */
+  const highlightTokens = useMemo(() => {
+    const toks: string[] = [];
+
+    const add = (t: string) => {
+      const s = t.trim();
+      if (!s) return;
+      toks.push(s);
+      for (const part of s.split(/\s+/)) {
+        const p = part.trim();
+        if (p) toks.push(p);
+      }
+    };
+
+    committedTerms.forEach(add);
+    add(fragment);
+
+    return Array.from(new Set(toks));
+  }, [committedTerms, fragment]);
+
+  const suggestion = useMemo(() => {
+    const pieces = [...committedTerms, fragment].map((s) => s.trim()).filter(Boolean);
+    if (pieces.length === 0 || threads.length === 0) return null;
+
+    const lastToken =
+      pieces[pieces.length - 1].split(/\s+/).filter(Boolean).slice(-1)[0]?.toLowerCase() ?? "";
+    if (!lastToken) return null;
+
+    const candidateSet = new Set<string>();
+    for (const t of threads) {
+      if (t.title) candidateSet.add(t.title);
+      if (t.slug) candidateSet.add(t.slug);
+    }
+
+    const candidates = Array.from(candidateSet);
+    const candidatesLower = candidates.map((c) => c.toLowerCase());
+
+    if (candidatesLower.includes(lastToken)) return null;
+
+    let bestTerm: string | null = null;
+    let bestSim = 0;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const term = candidates[i];
+      const sim = normalizedSimilarity(lastToken, candidatesLower[i]);
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestTerm = term;
+      }
+    }
+
+    if (bestTerm && bestSim >= 0.2) return bestTerm;
+    return null;
+  }, [committedTerms, fragment, threads]);
+
+  const handleApplyDidYouMean = () => {
+    if (!suggestion) return;
+    setCommittedTerms([]);
+    setFragment(suggestion);
+    setVisibleCount(6);
+  };
+
+  const newThreadHref = `/community/${slug}/new`;
+  const loginHref = `/auth/login?next=${encodeURIComponent(newThreadHref)}`;
+
+  /** ✅ Always show ALL threads; rank when searching */
+  const rankedThreads = useMemo(() => {
+    if (threads.length === 0) return [];
+
+    if (searchTokens.length === 0) {
+      const weekAgo = nowMs - 7 * 24 * 60 * 60 * 1000;
+
+      const pinned = threads.filter((t) => t.is_pinned);
+      const rest = threads.filter((t) => !t.is_pinned);
+
+      const getLastTime = (t: ForumThreadRow) =>
+        new Date(t.last_post_at || t.updated_at || t.created_at).getTime();
+
+      const byActive = [...rest].sort((a, b) => getLastTime(b) - getLastTime(a));
+
+      const byNewest = [...rest].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      const byTop = [...rest].sort((a, b) => {
+        if (b.reply_count !== a.reply_count) return b.reply_count - a.reply_count;
+        return b.view_count - a.view_count;
+      });
+
+      const byHot = [...rest].sort((a, b) => {
+        const aLast = getLastTime(a);
+        const bLast = getLastTime(b);
+
+        const aInWeek = aLast >= weekAgo ? 1 : 0;
+        const bInWeek = bLast >= weekAgo ? 1 : 0;
+        if (bInWeek !== aInWeek) return bInWeek - aInWeek;
+
+        if (b.reply_count !== a.reply_count) return b.reply_count - a.reply_count;
+        return bLast - aLast;
+      });
+
+      const sorted =
+        threadSort === "newest"
+          ? byNewest
+          : threadSort === "top"
+            ? byTop
+            : threadSort === "active"
+              ? byActive
+              : byHot;
+
+      return [...pinned, ...sorted];
+    }
+
+    type Scored = { t: ForumThreadRow; score: number; lastTime: number };
+
+    const scored: Scored[] = threads.map((t) => {
+      let score = 0;
+
+      const author = getDisplayName(t.created_by);
+      const lastBy = getDisplayName(t.last_post_by);
+      const tags = (t.tags ?? []).map((tag) => tag.toLowerCase());
+
+      for (const tok of searchTokens) {
+        if (fieldMatchesToken(t.title || "", tok)) score += 40;
+        if (fieldMatchesToken(t.slug || "", tok)) score += 18;
+        if (fieldMatchesToken(author, tok)) score += 10;
+        if (fieldMatchesToken(lastBy, tok)) score += 8;
+        if (tags.some((tag) => fieldMatchesToken(tag, tok))) score += 6;
+      }
+
+      /** Replies/comments match (lower weight than title/slug/author) */
+      const replyHits = replyMatchCountByThreadId[t.id] ?? 0;
+      if (replyHits > 0) score += Math.min(10, replyHits);
+
+      if (t.is_pinned) score += 25;
+
+      const last = new Date(t.last_post_at || t.updated_at || t.created_at).getTime();
+      return { t, score, lastTime: last };
+    });
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.lastTime - a.lastTime;
+    });
+
+    return scored.map((s) => s.t);
+  }, [threads, searchTokens, threadSort, getDisplayName, nowMs, replyMatchCountByThreadId]);
+
+  const totalCount = rankedThreads.length;
+  const visibleThreads = useMemo(
+    () => rankedThreads.slice(0, visibleCount),
+    [rankedThreads, visibleCount]
+  );
+  const canShowMore = totalCount > visibleCount;
+
+  return (
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 text-sm text-brand-text">
+      {/* Header */}
+      <section className="space-y-2">
+        {/* ✅ keep your existing top row (back + new thread) */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-[11px] text-brand-textMuted">
+            <button
+              type="button"
+              onClick={() => router.push("/community")}
+              className="text-amber-300 underline underline-offset-2 hover:text-amber-200"
+            >
+              Community
+            </button>
+            {parentCategory ? (
+              <>
+                <span>›</span>
+                <Link
+                  href={`/community/${parentCategory.slug}`}
+                  className="text-amber-300 underline underline-offset-2 hover:text-amber-200"
+                >
+                  {parentCategory.name}
+                </Link>
+              </>
+            ) : null}
+            <span>›</span>
+            <span>{category?.name}</span>
+          </div>
+
+          {state === "loaded" && category && !category.is_archived && (
+            <div className="flex items-center gap-2">
+              {isBanned && <span className="text-[11px] text-rose-300">You are banned.</span>}
+              {!isBanned && (
+                <>
+                  {isLoggedIn ? (
+                    <Link
+                      href={newThreadHref}
+                      className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-3 py-1 text-[11px] font-medium text-amber-300 hover:bg-amber-500/25"
+                    >
+                      New thread
+                    </Link>
+                  ) : (
+                    <Link
+                      href={loginHref}
+                      className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-brand-primary/60 hover:text-brand-text"
+                    >
+                      Log in to post
+                    </Link>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ✅ Title row with EXACT same ? button placement/style as /community */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
+              Community
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              {category ? category.name : "Category"}
+            </h1>
+
+            {category?.description && (
+              <p className="text-[12px] text-brand-textMuted sm:text-sm">
+                {category.description}
+              </p>
+            )}
+
+            {category?.is_archived && (
+              <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-black/50 px-2 py-0.5 text-[11px] text-brand-textMuted">
+                <span>⚠</span>
+                <span>This category is archived and may be read-only.</span>
+              </p>
+            )}
+
+            {childCategories.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-brand-textMuted">
+                {childCategories.map((child) => (
+                  <Link
+                    key={child.id}
+                    href={`/community/${child.slug}`}
+                    className="rounded-full border border-zinc-700/80 bg-black/30 px-2 py-0.5 text-brand-textMuted transition hover:border-brand-primary/60 hover:text-brand-text"
+                  >
+                    {child.name}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ? Help button (COPIED 1:1 from /community) */}
+          <button
+            type="button"
+            onClick={() => setHelpOpen((v) => !v)}
+            className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-black/40 text-sm text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+            aria-label="Search help"
+            title="Search help"
+          >
+            ?
+          </button>
+        </div>
+
+        {/* Thread search */}
+        {state === "loaded" && category && threads.length > 0 && (
+          <div className="pt-2">
+            <div
+              ref={chipContainerRef}
+              className="flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5"
+              onClick={() => {
+                const el = document.getElementById("communitythreadsearch-input") as
+                  | HTMLInputElement
+                  | null;
+                el?.focus();
+              }}
+            >
+              <span className="mr-1 text-[13px] text-brand-textMuted">🔍</span>
+
+              {committedTerms.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveTerm(term);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200 transition-transform hover:-translate-y-px hover:bg-amber-500/20"
+                >
+                  <span>{term}</span>
+                  <span className="text-[10px]">×</span>
+                </button>
+              ))}
+
+              <input
+                id="communitythreadsearch-input"
+                type="text"
+                value={fragment}
+                onChange={(e) => {
+                  const value = e.target.value;
+
+                  if (value.endsWith(",")) {
+                    const trimmed = value.slice(0, -1).trim();
+                    if (trimmed.length > 0) {
+                      setCommittedTerms((prev) =>
+                        prev.includes(trimmed) ? prev : [...prev, trimmed]
+                      );
+                      setFragment("");
+                      setVisibleCount(6);
+                      scrollChipsToBottom();
+                      return;
+                    }
+                    setFragment("");
+                    setVisibleCount(6);
+                    return;
+                  }
+
+                  setFragment(value);
+                  setVisibleCount(6);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitFragmentAsChip();
+                    return;
+                  }
+
+                  if (e.key === "Backspace" && fragment.length === 0 && committedTerms.length > 0) {
+                    e.preventDefault();
+                    setCommittedTerms((prev) => prev.slice(0, -1));
+                    setVisibleCount(6);
+                    scrollChipsToBottom();
+                  }
+                }}
+                placeholder="search threads… (ex: sr20, wiring, alignment)"
+                className="no-zoom-input min-w-[120px] flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-zinc-500"
+              />
+            </div>
+
+            {suggestion && (
+              <button
+                type="button"
+                onClick={handleApplyDidYouMean}
+                className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-400/80 bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-200 hover:bg-amber-500/30 hover:border-amber-300/90"
+              >
+                <span className="text-[11px]">Did you mean:</span>
+                <span className="font-medium">{suggestion}</span>
+                <span className="text-[10px]">↵</span>
+              </button>
+            )}
+
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-brand-textMuted">
+              <div>
+                {hasActiveQuery ? (
+                  <>Showing {Math.min(visibleCount, totalCount)} of {totalCount} (ranked)</>
+                ) : (
+                  <>Tip: use commas to add chips (ex: “sr20, idle, iacv”)</>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-brand-textMuted">Sort</span>
+                <MenuSelect
+                  value={threadSort}
+                  onChange={(next) => {
+                    setThreadSort(next as ThreadSort);
+                    setVisibleCount(6);
+                  }}
+                  disabled={hasActiveQuery}
+                  ariaLabel="Sort threads"
+                  className="flex h-8 items-center gap-2 rounded-full border border-zinc-700 bg-black/40 px-3 text-[11px] text-brand-textMuted outline-none transition hover:border-amber-400/70 disabled:opacity-50"
+                  options={[
+                    { value: "hot", label: "Hot (7d)" },
+                    { value: "active", label: "Active" },
+                    { value: "top", label: "Top" },
+                    { value: "newest", label: "Newest" },
+                  ]}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Help popup (COPIED 1:1 from /community) */}
+      {helpOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          onMouseDown={() => setHelpOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
+          <div
+            className="relative w-full max-w-lg rounded-2xl border border-zinc-700 bg-black/90 p-4 text-sm text-brand-text shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
+                  Community search help
+                </div>
+                <div className="mt-1 text-base font-semibold">Search posts like a pro</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHelpOpen(false)}
+                className="inline-flex h-9 items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+              >
+                Got it
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-3 text-[12px] text-brand-textMuted">
+              <p>
+                <span className="mr-2 inline-flex items-center rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[11px] text-brand-text">
+                  🔍 Type
+                </span>
+                to rank results by relevance. Posts never disappear—typing just brings the best
+                matches to the top.
+              </p>
+
+              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
+                <div className="text-[11px] font-semibold text-brand-text">
+                  Chips (comma-separated terms)
+                </div>
+                <p className="mt-1">
+                  Add multiple ideas quickly by typing a comma. Each chip acts like a “topic bucket”
+                  so the search can score posts across multiple angles.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                    sr20
+                  </span>
+                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                    idle
+                  </span>
+                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                    wiring
+                  </span>
+                </div>
+                <div className="mt-2 text-[11px]">
+                  Example:{" "}
+                  <span className="rounded-md border border-zinc-700 bg-black/50 px-1.5 py-0.5 text-brand-text">
+                    sr20, idle, tps
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
+                <div className="text-[11px] font-semibold text-brand-text">
+                  What gets highlighted
+                </div>
+                <p className="mt-1">
+                  Highlights show exact text hits across{" "}
+                  <span className="text-brand-text">title</span>,{" "}
+                  <span className="text-brand-text">category</span>,{" "}
+                  <span className="text-brand-text">slug</span>, and author fields (who posted /
+                  last replied).
+                </p>
+              </div>
+
+              <p className="text-[11px]">
+                Tip: press <span className="text-brand-text">Enter</span> to turn your current text
+                into a chip.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error / loading */}
+      {state === "error" && (
+        <section>
+          <p className="rounded-md border border-rose-500/60 bg-rose-950/40 px-3 py-2 text-[12px] text-rose-200">
+            {errorMessage ?? "Failed to load category."}
+          </p>
+        </section>
+      )}
+
+      {state === "loading" && (
+        <section>
+          <p className="text-[12px] text-brand-textMuted">Loading threads…</p>
+        </section>
+      )}
+
+      {state === "loaded" && category && threads.length === 0 && (
+        <section className="rounded-xl border border-zinc-800/80 bg-black/40 p-4 text-[12px] text-brand-textMuted">
+          <p>No threads have been created in this category yet.</p>
+        </section>
+      )}
+
+      {/* Threads list (always shown; ranked + highlighted if searching) */}
+      {state === "loaded" && category && threads.length > 0 && (
+        <section className="space-y-4">
+          <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-black/40">
+            <div className="divide-y divide-zinc-800/80">
+              {visibleThreads.map((thread) => (
+                <ThreadRow
+                  key={thread.id}
+                  categorySlug={category.slug}
+                  categoryName={category.name}
+                  thread={thread}
+                  leadScore={leadScoreByThreadId.get(thread.id) ?? 0}
+                  getDisplayName={getDisplayName}
+                  getProfile={getProfile}
+                  formatDateTime={formatDateTime}
+                  highlightTokens={highlightTokens}
+                  replyMatchPreview={replyMatchPreviewByThreadId[thread.id] ?? null}
+                />
+              ))}
+            </div>
+          </div>
+
+          {canShowMore && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((c) => c + 6)}
+                className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/50 px-4 py-2 text-[12px] text-brand-textMuted hover:border-brand-primary/60 hover:text-brand-text"
+              >
+                Show more
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ThreadRow({
+  categorySlug,
+  categoryName,
+  thread,
+  leadScore,
+  getDisplayName,
+  getProfile,
+  formatDateTime,
+  highlightTokens,
+  replyMatchPreview,
+}: {
+  categorySlug: string;
+  categoryName: string;
+  thread: ForumThreadRow;
+  leadScore: number;
+  getDisplayName: (userId: string | null) => string;
+  getProfile: (userId: string | null) => ProfileRow | null;
+  formatDateTime: (value: string | null) => string;
+  highlightTokens: string[];
+  replyMatchPreview: { postId: number; snippet: string } | null;
+}) {
+  const createdLabel = formatDateTime(thread.created_at);
+  const lastReplyLabel = formatDateTime(thread.last_post_at);
+  const authorName = getDisplayName(thread.created_by);
+  const lastReplyUserName = getDisplayName(thread.last_post_by);
+  const authorHref = thread.created_by ? `/user/${thread.created_by}` : null;
+  const lastByHref = thread.last_post_by ? `/user/${thread.last_post_by}` : null;
+
+  const authorProfile = getProfile(thread.created_by);
+  const lastReplyProfile = getProfile(thread.last_post_by);
+  const tags = (thread.tags ?? []).filter((tag) => tag && tag.trim().length > 0).slice(0, 4);
+
+  const karmaCls =
+    leadScore > 0
+      ? "border-emerald-500/70 bg-emerald-500/10 text-emerald-200"
+      : leadScore < 0
+        ? "border-rose-500/70 bg-rose-500/10 text-rose-200"
+        : "border-zinc-700 bg-black/40 text-brand-textMuted";
+
+  const lockedBadge = thread.is_locked ? (
+    <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/60 bg-rose-500/15 px-1.5 py-0.5 text-[10px] text-rose-200">
+      🔒 Locked
+    </span>
+  ) : null;
+
+  const pinnedBadge = thread.is_pinned ? (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/80 bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200">
+      📌 Pinned
+    </span>
+  ) : null;
+
+  return (
+    <div className="grid gap-3 px-3 py-3 text-[11px] text-brand-text md:grid-cols-[minmax(0,2.6fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.6fr)]">
+      <div className="space-y-1">
+        <Link
+          href={`/community/${categorySlug}/${thread.slug}`}
+          className="line-clamp-2 text-[13px] font-semibold text-brand-text hover:text-brand-primary"
+        >
+          {highlightText(thread.title, highlightTokens)}
+        </Link>
+
+        {replyMatchPreview && replyMatchPreview.snippet ? (
+          <Link
+            href={`/community/${categorySlug}/${thread.slug}#post-${replyMatchPreview.postId}`}
+            className="block rounded-md border border-zinc-800/80 bg-black/25 px-2 py-1 text-[10px] text-brand-textMuted hover:border-brand-primary/50"
+          >
+            <span className="mr-1 text-amber-200">Match:</span>
+            <span className="line-clamp-2 text-brand-textMuted">
+              {highlightText(replyMatchPreview.snippet, highlightTokens)}
+            </span>
+          </Link>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-brand-textMuted">
+          <Link
+            href={`/community/${categorySlug}`}
+            className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 hover:border-brand-primary/60 hover:text-brand-text"
+          >
+            {highlightText(categoryName, highlightTokens)}
+          </Link>
+
+          {tags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-zinc-700/80 bg-black/30 px-2 py-0.5 text-[10px] text-brand-textMuted"
+                >
+                  {highlightText(tag, highlightTokens)}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <span>•</span>
+          <span className="inline-flex items-center gap-1">
+            <span>
+              Started by{" "}
+              {authorHref ? (
+                <Link href={authorHref} className="text-brand-text hover:text-brand-primary">
+                  {highlightText(authorName, highlightTokens)}
+                </Link>
+              ) : (
+                <span>{highlightText(authorName, highlightTokens)}</span>
+              )}
+            </span>
+            {authorProfile?.is_verified ? <VerifiedBadge className="ml-0.5 h-3 w-3" /> : null}
+            {authorProfile?.donation_rank ? <DonationBadge rank={authorProfile.donation_rank} className="ml-0.5 h-3 w-3" /> : null}
+          </span>
+
+          {highlightTokens.length > 0 && (
+            <>
+              <span>•</span>
+              <span className="truncate">/{highlightText(thread.slug, highlightTokens)}</span>
+            </>
+          )}
+
+          <span>•</span>
+          <span>{createdLabel}</span>
+          {pinnedBadge}
+          {lockedBadge}
+        </div>
+      </div>
+
+      <div className="flex flex-col justify-center text-[11px] text-brand-text">
+        <div className="text-[13px] font-semibold">{thread.reply_count}</div>
+        <div className="text-[10px] text-brand-textMuted">Replies</div>
+      </div>
+
+      <div className="flex flex-col justify-center text-[11px] text-brand-text">
+        <div className="text-[13px] font-semibold">{thread.view_count}</div>
+        <div className="text-[10px] text-brand-textMuted">Views</div>
+      </div>
+
+      <div className="flex flex-col justify-center text-right text-[10px] text-brand-textMuted">
+        <div className="mb-1 inline-flex items-center justify-end">
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] ${karmaCls}`}>
+            <span className="opacity-80">Karma </span>
+            <span className="ml-1 font-semibold">{leadScore}</span>
+          </span>
+        </div>
+        {thread.last_post_at ? (
+          <>
+            <span>{lastReplyLabel}</span>
+            <span className="mt-0.5">
+              by{" "}
+              <span className="inline-flex items-center gap-1">
+                {lastByHref ? (
+                  <Link href={lastByHref} className="text-brand-text hover:text-brand-primary">
+                    {highlightText(lastReplyUserName, highlightTokens)}
+                  </Link>
+                ) : (
+                  <span className="text-brand-text">{highlightText(lastReplyUserName, highlightTokens)}</span>
+                )}
+                {lastReplyProfile?.is_verified ? <VerifiedBadge className="ml-0.5 h-3 w-3" /> : null}
+                {lastReplyProfile?.donation_rank ? <DonationBadge rank={lastReplyProfile.donation_rank} className="ml-0.5 h-3 w-3" /> : null}
+              </span>
+            </span>
+          </>
+        ) : (
+          <span>No replies yet</span>
+        )}
+      </div>
+    </div>
+  );
+}
