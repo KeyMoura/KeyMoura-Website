@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
+import { checkInstallationReadiness, logReadinessFailure, serverSupabaseEnv } from "./src/lib/installer/readiness";
 
 /**
  * Site middleware.
@@ -13,9 +14,7 @@ import { createServerClient } from "@supabase/ssr";
  * - Client-side access always respects RLS. Any bypass happens only in server routes.
  */
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const { url: supabaseUrl, anonKey, serviceRoleKey } = serverSupabaseEnv();
 
 type SecurityRow = { maintenance_mode: boolean | null };
 type IpBanRow = { id: number };
@@ -184,11 +183,15 @@ export async function middleware(req: NextRequest) {
   // installer. Once complete, the page itself returns 404 and mutations reject.
   const isInstallerPath = pathname === "/install" || pathname.startsWith("/api/install/");
   const installState = await withTimeout(
-    Promise.resolve(adminDb.from("installation_state").select("status").eq("singleton", true).maybeSingle()),
+    checkInstallationReadiness(adminDb, "status"),
     900,
-    { data: null, error: { message: "timeout", details: "", hint: "", code: "TIMEOUT", name: "PostgrestError" }, count: null, status: 504, statusText: "Timeout" }
+    { ready: false as const, errorCode: "SUPABASE_NETWORK_ERROR" as const, error: { message: "Request timed out", code: "TIMEOUT", details: null, hint: null } }
   );
-  const installed = !installState.error && installState.data?.status === "complete";
+  if (!installState.ready) logReadinessFailure("middleware", installState);
+  const installed = installState.ready && installState.status === "complete";
+  // This endpoint deliberately fails open and must remain reachable while the
+  // core is pending (and while readiness itself is temporarily unavailable).
+  if (pathname === "/api/security/ip-check") return NextResponse.next();
   if (!installed && !isInstallerPath) {
     if (pathname.startsWith("/api")) return NextResponse.json({ error: "Installation required." }, { status: 503 });
     return NextResponse.redirect(new URL("/install", req.url));

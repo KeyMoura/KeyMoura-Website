@@ -23,6 +23,25 @@ test("completed installation can only resume for the same owner", () => {
   assert.equal(canFinalizeInstallation("complete", "owner-a", "owner-b"), "locked");
 });
 
+test("installer readiness distinguishes a pending core from missing data and failures", async () => {
+  const { checkInstallationReadiness, sanitizeSupabaseError } = await import("../src/lib/installer/readiness.ts");
+  const db = (data: unknown, error: unknown = null) => ({
+    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data, error }) }) }) }),
+  });
+  const errorCode = async (data: unknown, error: unknown = null) => {
+    const result = await checkInstallationReadiness(db(data, error) as never);
+    assert.equal(result.ready, false);
+    return result.ready ? null : result.errorCode;
+  };
+  const pending = await checkInstallationReadiness(db({ status: "pending" }) as never);
+  assert.deepEqual(pending.ready && pending.status, "pending");
+  assert.deepEqual(await errorCode(null), "CORE_ROW_MISSING");
+  assert.deepEqual(await errorCode(null, { code: "42P01", message: "missing relation" }), "CORE_TABLE_MISSING");
+  assert.deepEqual(await errorCode(null, { code: "PGRST301", message: "invalid JWT" }), "SUPABASE_AUTH_FAILED");
+  assert.deepEqual(await errorCode(null, { message: "fetch failed" }), "SUPABASE_NETWORK_ERROR");
+  assert.deepEqual(sanitizeSupabaseError({ code: "X", message: "safe" }), { code: "X", message: "safe", details: null, hint: null });
+});
+
 test("core migration uses transaction, advisory lock, RLS, and non-public finalizer", async () => {
   const sql = await readFile(new URL("../supabase/installer/00000000000000_installer_core.sql", import.meta.url), "utf8");
   assert.match(sql, /begin;/i); assert.match(sql, /commit;/i);
