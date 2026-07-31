@@ -226,20 +226,6 @@ test("Shops installer schema enforces public visibility and staff management", a
   assert.match(ddl, /grant insert,update,delete on public\.shops to authenticated/);
 });
 
-test("order workflow emits built-in notifications and baseline supports read timestamps", async () => {
-  const baseline = await readFile(new URL("../supabase/installer/00000000000002_application_baseline.sql", import.meta.url), "utf8");
-  const requestRoute = await readFile(new URL("../src/app/api/orders/route.ts", import.meta.url), "utf8");
-  const staffRoute = await readFile(new URL("../src/app/api/staff/orders/[id]/route.ts", import.meta.url), "utf8");
-  const messagesRoute = await readFile(new URL("../src/app/api/orders/[id]/messages/route.ts", import.meta.url), "utf8");
-  const webhookRoute = await readFile(new URL("../src/app/api/webhooks/stripe/route.ts", import.meta.url), "utf8");
-
-  assert.match(baseline, /read_at timestamptz/);
-  assert.match(requestRoute, /notifyOrderStaff/);
-  assert.match(staffRoute, /notifyOrderUser/);
-  assert.match(messagesRoute, /notifyOrder(?:Staff|User)/);
-  assert.match(webhookRoute, /notifyOrderUser/);
-});
-
 test("registration policy fails closed when unavailable, missing, or malformed", async () => {
   const { readRegistrationPolicy, registrationPolicyResponse } = await import("../src/lib/authRegistration.ts");
   assert.deepEqual(readRegistrationPolicy({ auth_config: { allowSignup: false } }), { available: true, policy: { allowSignup: false } });

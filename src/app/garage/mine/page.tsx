@@ -129,12 +129,12 @@ export default function MyGaragePage() {
       {/* Header */}
       <section className="space-y-2">
         <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-          Garage
+          Workshop
         </p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              My garage
+              My projects
             </h1>
             <p className="text-[12px] text-brand-textMuted sm:text-sm">
               Manage the cars attached to your profile. Set a primary build and
@@ -142,7 +142,7 @@ export default function MyGaragePage() {
             </p>
             <div className="mt-1 text-[11px] text-brand-textMuted">
               <Link
-                href="/garage"
+                href="/workshop"
                 className="underline underline-offset-2 text-amber-300 hover:text-amber-200"
               >
                 ← Back to public garage
@@ -151,10 +151,10 @@ export default function MyGaragePage() {
           </div>
           <div className="flex items-center gap-2">
             <Link
-              href="/garage/new"
+              href="/workshop/new"
               className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-3 py-1.5 text-[11px] font-medium text-amber-300 hover:bg-amber-500/30"
             >
-              + Add car
+              + Post project
             </Link>
           </div>
         </div>
@@ -292,7 +292,7 @@ function GarageCarCard({
       : "border-zinc-600/80 bg-black/50 text-brand-textMuted";
 
   const handleCardClick = () => {
-    router.push(`/garage/${car.id}`);
+    router.push(`/workshop/${car.id}`);
   };
 
   const handleDeleteClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -302,7 +302,7 @@ function GarageCarCard({
 
   const handleEditClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    router.push(`/garage/${car.id}/edit`);
+    router.push(`/workshop/${car.id}/edit`);
   };
 
   return (
@@ -319,7 +319,7 @@ function GarageCarCard({
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-brand-text">
-              {title || "Untitled car"}
+              {title || "Untitled project"}
             </h3>
             {highlightPrimary && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/80 bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-200">

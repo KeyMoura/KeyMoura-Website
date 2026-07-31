@@ -87,20 +87,11 @@ export default function ProductRequestPage() {
     snapshot.budget = budget.trim() || null;
     snapshot.estimated_total_cents = estimated;
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const response = await fetch("/api/orders", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(sessionData.session?.access_token ? { Authorization: `Bearer ${sessionData.session.access_token}` } : {}),
-      },
-      body: JSON.stringify({
-        product_id: product.id, quantity, specifications: snapshot,
-        customer_notes: notes.trim() || null, target_date: targetDate || null,
-      }),
-    });
-    const data = await response.json() as { id?: string; error?: string };
-    if (!response.ok || !data.id) { setError(data.error || "Could not create order request"); setBusy(false); return; }
+    const { data, error: insertError } = await supabase.from("orders").insert({
+      customer_id: auth.user.id, product_id: product.id, product_name: product.name, quantity,
+      specifications: snapshot, customer_notes: notes.trim() || null, target_date: targetDate || null,
+    }).select("id").single();
+    if (insertError) { setError(insertError.message); setBusy(false); return; }
     router.push(`/orders/${data.id}`);
   }
 

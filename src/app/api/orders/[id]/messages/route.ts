@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActorAccessFromRequest, routeServiceClient } from "@/lib/api/routeAuth";
 import { sendOrderEmail } from "@/lib/commerceEmail";
-import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const actor = await getActorAccessFromRequest(req);
@@ -21,22 +20,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const { data: customer } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
     const to = isStaff ? customer.user?.email : process.env.ORDER_NOTIFICATION_EMAIL;
     await sendOrderEmail({ to, orderId: id, orderNumber: order.order_number, productName: order.product_name, subject: `New message about ${order.order_number || "a KeyMoura request"}`, message: isStaff ? "KeyMoura sent you a new message." : "A customer sent a new order message.", eventKey: `order-message-${inserted.id}` });
-    if (isStaff) {
-      await notifyOrderUser({
-        orderId: id,
-        actorUserId: actor.userId,
-        recipientUserId: order.customer_id,
-        title: "New order message",
-        message: `KeyMoura sent a message about ${order.product_name}.`,
-      });
-    } else {
-      await notifyOrderStaff({
-        orderId: id,
-        actorUserId: actor.userId,
-        title: "New customer message",
-        message: `A customer sent a message about ${order.product_name}.`,
-      });
-    }
   }
   return NextResponse.json({ ok: true });
 }

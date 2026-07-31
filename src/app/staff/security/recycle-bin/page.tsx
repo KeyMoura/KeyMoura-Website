@@ -10,8 +10,7 @@ import { DonationBadge } from "@/components/DonationBadge";
 import { RolePill } from "@/components/RolePill";
 
 import { supabaseBrowser } from "@/lib/supabaseClient";
-
-type RoleRow = { role: string };
+import { useMeAccess } from "@/lib/hooks/useMeAccess";
 
 type ProfileLite = {
   id: string;
@@ -41,6 +40,7 @@ function formatWhen(iso: string) {
 }
 
 export default function StaffRecycleBinPage() {
+  const { data: access } = useMeAccess();
   const PAGE_SIZE = 50;
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -173,23 +173,15 @@ export default function StaffRecycleBinPage() {
 
   const fetchPage = async (offset: number) => {
     const supabase = supabaseBrowser();
-
-    // Best-effort: table might not exist yet.
-    const { data, error, count } = await supabase
-      .from("moderation_recycle_bin")
-      .select("id, item_type, original_table, original_id, deleted_by, deleted_at, expires_at, payload", {
-        count: "exact",
-      })
-      .order("deleted_at", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-
-    if (error) {
-      console.error("recycle bin load error", error);
-      throw error;
-    }
-
-    setTotalCount(typeof count === "number" ? count : 0);
-    return (data ?? []) as RecycleBinRow[];
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const res = await fetch(`/api/staff/moderation/recycle-bin?offset=${offset}&limit=${PAGE_SIZE}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const json = (await res.json().catch(() => null)) as { items?: RecycleBinRow[]; count?: number; error?: string } | null;
+    if (!res.ok) throw new Error(json?.error ?? "Failed to load recycle bin");
+    setTotalCount(json?.count ?? 0);
+    return json?.items ?? [];
   };
 
   useEffect(() => {
@@ -207,21 +199,13 @@ export default function StaffRecycleBinPage() {
           return;
         }
 
-        const { data: roleRow, error: roleErr } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id)
-          .maybeSingle<RoleRow>();
-
-        if (roleErr || !roleRow) {
+        if (!access) {
           setActorRole("member");
           setErrorMessage("Forbidden.");
           return;
         }
-
-        setActorRole(roleRow.role);
-
-        if (!["admin", "moderator", "support"].includes(roleRow.role)) {
+        setActorRole(access.role);
+        if (!access.permissions.includes("recycle_bin.view")) {
           setErrorMessage("Forbidden.");
           return;
         }
@@ -241,7 +225,7 @@ export default function StaffRecycleBinPage() {
 
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [access]);
 
   const loadMore = async () => {
     if (!canLoadMore || loadingMore) return;

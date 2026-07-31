@@ -22,10 +22,6 @@ type FlagsRow = {
   emergency_banner_level?: string | null;
 };
 
-type RoleRow = {
-  role: string;
-};
-
 type IpBanRow = {
   id: number;
   ip_address: string;
@@ -39,10 +35,6 @@ type BannerLevel = "info" | "warning" | "critical";
 export default function AdminSecurityPage() {
   const { data: access, isLoading: accessLoading } = useMeAccess();
   const perms = useMemo(() => new Set(access?.permissions ?? []), [access?.permissions]);
-  if (!accessLoading && !perms.has("security.view")) {
-    return <AccessDeniedCard />;
-  }
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -248,14 +240,9 @@ export default function AdminSecurityPage() {
 
         setCurrentUserId(user.id);
 
-        // 2) Check role
-        const { data: roleRow, error: roleError } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id)
-          .maybeSingle<RoleRow>();
-
-        if (roleError || !roleRow || roleRow.role !== "admin") {
+        // Use the shared server-validated access model. Browser reads of
+        // user_roles can be denied by RLS even for a valid administrator.
+        if (!access || access.role !== "admin") {
           setIsAdmin(false);
           setErrorMessage("Access denied. Admins only.");
           return;
@@ -354,7 +341,7 @@ export default function AdminSecurityPage() {
     };
 
     void load();
-  }, []);
+  }, [access]);
 
   const handleSaveSettings = async () => {
     if (!isAdmin) return;
@@ -615,6 +602,10 @@ export default function AdminSecurityPage() {
       setIpSaving(false);
     }
   };
+
+  if (!accessLoading && !perms.has("security.view")) {
+    return <AccessDeniedCard />;
+  }
 
   if (loading && isAdmin === null) {
     return (

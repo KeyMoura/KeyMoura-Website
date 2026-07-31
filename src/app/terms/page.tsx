@@ -14,7 +14,7 @@ export default async function TermsPage() {
         <header className="space-y-2">
           <h1 className="text-3xl font-bold">Terms and Conditions</h1>
           <p className="text-sm text-muted-foreground">
-            Last updated: July 31, 2026
+            Last updated: December 7, 2025
           </p>
         </header>
 
@@ -25,8 +25,8 @@ export default async function TermsPage() {
           <p>
             We are <strong>{siteSettings.name}</strong> (&quot;Company&quot;,
             &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;). We operate a
-            custom-product storefront, order workspace, community, and related
-            services (collectively, the
+            community-driven automotive information platform including a forum,
+            database, and related services (collectively, the
             &ldquo;Services&rdquo;).
           </p>
           <p>
@@ -46,12 +46,13 @@ export default async function TermsPage() {
         <section className="space-y-4">
           <h2 className="text-xl font-semibold">1. Our Services</h2>
           <p>
-            {siteSettings.name} provides custom-product requests, order messaging,
-            secure payment, technical information, and community features.
+            {siteSettings.name} provides community-submitted automotive
+            information, technical discussions, documentation, and media related
+            to vehicles and related platforms.
           </p>
           <p>
             All information is provided for informational purposes only and
-            should not be considered professional engineering, legal, or safety
+            should not be considered professional mechanical, legal, or safety
             advice.
           </p>
         </section>
@@ -145,10 +146,10 @@ export default async function TermsPage() {
           <p>
             For copyright or legal concerns, contact us at{" "}
             <a
-              href="mailto:support@keymoura.com"
+              href="mailto:schassisresourcearchive@gmail.com"
               className="underline"
             >
-              support@keymoura.com
+              schassisresourcearchive@gmail.com
             </a>
           </p>
         </section>

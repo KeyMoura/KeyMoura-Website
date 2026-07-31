@@ -1245,8 +1245,7 @@ export default function SiteHeader() {
   const rightLinks = useMemo(
     () => [
       { href: "/catalog", label: "Catalog" },
-      { href: "/garage", label: "Garage" },
-      { href: "/shops", label: "Shops" },
+      { href: "/workshop", label: "Workshop" },
     ],
     []
   );
@@ -1519,14 +1518,11 @@ export default function SiteHeader() {
           <Link href="/info" className={navLinkClasses("/info")} onClick={() => setIsMobileOpen(false)}>
             Info
           </Link>
-          <Link href="/garage" className={navLinkClasses("/garage")} onClick={() => setIsMobileOpen(false)}>
-            Garage
+          <Link href="/workshop" className={navLinkClasses("/workshop")} onClick={() => setIsMobileOpen(false)}>
+            Workshop
           </Link>
           <Link href="/community" className={navLinkClasses("/community")} onClick={() => setIsMobileOpen(false)}>
             Community
-          </Link>
-          <Link href="/shops" className={navLinkClasses("/shops")} onClick={() => setIsMobileOpen(false)}>
-            Shops
           </Link>
           <Link href="/catalog" className={navLinkClasses("/catalog")} onClick={() => setIsMobileOpen(false)}>
             Catalog

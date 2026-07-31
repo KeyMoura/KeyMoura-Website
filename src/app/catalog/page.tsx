@@ -36,7 +36,10 @@ export default function CatalogPage() {
           <h1 className="mt-2 text-4xl font-semibold">Catalog</h1>
           <p className="mt-3 max-w-2xl text-brand-textMuted">Browse what I can make, then send a request with the exact details you want. Nothing is charged until we agree on the job.</p>
         </div>
-        <Link href="/orders" className="rounded-full border border-zinc-700 px-4 py-2 text-sm hover:border-brand-primary">My requests & orders</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/shops" className="rounded-full border border-brand-primary/50 bg-brand-primary/10 px-4 py-2 text-sm text-brand-primary hover:bg-brand-primary/20">Trusted shops</Link>
+          <Link href="/orders" className="rounded-full border border-brand-primary/60 bg-brand-primary/15 px-4 py-2 text-sm text-brand-primary hover:bg-brand-primary/25">My requests & orders</Link>
+        </div>
       </div>
       {loading ? <p className="text-brand-textMuted">Loading catalog…</p> : null}
       {error ? <p className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-rose-200">{error}</p> : null}

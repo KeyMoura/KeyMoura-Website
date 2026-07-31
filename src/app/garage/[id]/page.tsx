@@ -339,12 +339,12 @@ export default function GarageCarPage({ params }: Props) {
       {/* Header */}
       <section className="space-y-2">
         <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-          Garage
+          Workshop
         </p>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              {title || (missingId ? "Garage car" : "Loading car…")}
+              {title || (missingId ? "Workshop project" : "Loading project…")}
             </h1>
             {subtitle && (
               <p className="text-[12px] text-brand-textMuted sm:text-sm">
@@ -353,10 +353,10 @@ export default function GarageCarPage({ params }: Props) {
             )}
             <div className="mt-1 text-[11px] text-brand-textMuted">
               <Link
-                href="/garage"
+                href="/workshop"
                 className="underline underline-offset-2 text-amber-300 hover:text-amber-200"
               >
-                ← Back to public garage
+                ← Back to workshop
               </Link>
             </div>
           </div>
@@ -397,7 +397,7 @@ export default function GarageCarPage({ params }: Props) {
                   // eslint-disable-next-line @next/next/no-img-element
                   (<img
                     src={car.cover_image_url}
-                    alt={title || "Car image"}
+                    alt={title || "Project image"}
                     className="h-full w-full origin-center object-cover transform-gpu scale-100 transition-transform duration-500 will-change-transform hover:scale-[1.03]"
                   />)
                 ) : (
@@ -415,7 +415,7 @@ export default function GarageCarPage({ params }: Props) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="text-2xl font-semibold tracking-tight">
-                        {title || "Untitled car"}
+                        {title || "Untitled project"}
                       </h2>
 
                       {subtitle && (
@@ -428,7 +428,7 @@ export default function GarageCarPage({ params }: Props) {
                     <div className="flex items-center gap-2 self-start whitespace-nowrap">
                       {viewerId && car?.owner_id && viewerId === car.owner_id && !maintenanceMode && (
                         <Link
-                          href={`/garage/${car.id}/edit`}
+                          href={`/workshop/${car.id}/edit`}
                           className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
                         >
                           Edit

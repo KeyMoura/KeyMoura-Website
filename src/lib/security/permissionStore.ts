@@ -67,6 +67,12 @@ export async function loadPermissionsForUser(params: {
    */
   const fallbackBase = permissionsForRole(role);
 
+  // A partially seeded permission table must not strip newly added permissions
+  // from the site administrator. Other roles remain DB-first below.
+  if (role === "admin") {
+    return { role, permissions: new Set(PERMISSIONS), source: "fallback" };
+  }
+
   try {
     const [rolePerms, userPerms, profileRes, perksRes] = await Promise.all([
       serviceClient

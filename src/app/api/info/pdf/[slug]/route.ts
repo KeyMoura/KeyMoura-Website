@@ -22,7 +22,7 @@ function resolveImageUrl(input: string): string {
   if (trimmed.startsWith("//")) return `https:${trimmed}`;
 
   // root-relative: point to your own site (so /public files can be fetched)
-  if (trimmed.startsWith("/")) return `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://keymoura.com"}${trimmed}`;
+  if (trimmed.startsWith("/")) return `https://www.schassis.info${trimmed}`;
 
   // fallback
   return trimmed;
@@ -87,7 +87,7 @@ export async function GET(
       .fontSize(9)
       .fillColor("gray")
       .text(
-        `keymoura.com/info/${encodeURIComponent(page.slug)} • ${new Date(
+        `schassis.info/info/${encodeURIComponent(page.slug)} • ${new Date(
           page.updated_at || page.created_at
         ).toLocaleString()}`
       );
@@ -126,7 +126,7 @@ export async function GET(
           doc.moveDown(0.2);
           doc.image(buf, { fit: [maxWidth, maxHeight] });
           doc.moveDown(0.8);
-        } catch {
+        } catch (e) {
           doc
             .moveDown(0.3)
             .fontSize(9)

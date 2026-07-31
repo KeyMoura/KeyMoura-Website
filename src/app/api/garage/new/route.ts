@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/api/routeAuth";
 
 type GarageNewRequest = {
   owner_id: string;
+  name?: string | null;
   year: number | null;
   make: string;
   model: string;
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
 
     const {
       owner_id,
+      name,
       year,
       make,
       model,
@@ -70,15 +72,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!make || !model) {
+    if (!name?.trim() && (!make || !model)) {
       return NextResponse.json<GarageNewResponse>(
-        { error: "Please enter at least make and model." },
+        { error: "Please enter a project title." },
         { status: 400 }
       );
     }
 
     // Universal profanity hard-block (fail closed)
-    for (const field of [make, model, chassis ?? "", trim ?? "", color ?? "", engine ?? "", summary ?? "", mods ?? ""]) {
+    for (const field of [name ?? "", make, model, chassis ?? "", trim ?? "", color ?? "", engine ?? "", summary ?? "", mods ?? ""]) {
       const prof = await hardBlockIfProfane(field);
       if ("error" in prof) {
         return NextResponse.json<GarageNewResponse>({ error: prof.error }, { status: 400 });
@@ -129,6 +131,7 @@ export async function POST(req: NextRequest) {
       .from("garage_cars")
       .insert({
         owner_id,
+        name: name?.trim() || null,
         year,
         make,
         model,

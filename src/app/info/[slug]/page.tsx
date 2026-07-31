@@ -572,7 +572,7 @@ export default function InfoSlugPage() {
               {moreForChassis.length > 0 && (
                 <div>
                   <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-brand-textMuted">
-                    More related information
+                    More for this chassis
                   </h3>
                   <div className="grid gap-3 md:grid-cols-2">
                     {moreForChassis.map((item) => (
