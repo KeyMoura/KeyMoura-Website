@@ -1785,14 +1785,14 @@ export default function UserProfilePage() {
               </section>
             )}
 
-            {/* Garage section */}
+            {/* Workshop section */}
             {canViewContent && garageLoaded && garageCars.length > 0 && (
               <section className="space-y-3 rounded-xl border border-zinc-800/80 bg-black/30 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-textMuted">Garage</h2>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-textMuted">Workshop</h2>
                     <p className="text-[11px] text-brand-textMuted">
-                      {garageCars.length} car{garageCars.length === 1 ? "" : "s"} linked to this user.
+                      {garageCars.length} project{garageCars.length === 1 ? "" : "s"} shared by this user.
                     </p>
                   </div>
                 </div>
@@ -2354,7 +2354,7 @@ function ProfileGarageCarCard({ car, highlightPrimary }: { car: GarageCarRow; hi
   const useLabel = car.use_type ? `${car.use_type.charAt(0).toUpperCase()}${car.use_type.slice(1)}` : null;
 
   const meta = [hpLabel, tqLabel, wtLabel, useLabel].filter(Boolean).join(" • ");
-  const href = `/garage/${car.id}`;
+  const href = `/workshop/${car.id}`;
 
   return (
     <Link

@@ -25,14 +25,16 @@ type GarageNewRequest = {
   cover_image_url: string | null;
 };
 
-type GarageNewResponse =
-  | { id: string }
-  | { error: string };
+type GarageNewResponse = { id: string } | { error: string };
 
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser(req);
-    if (!user) return NextResponse.json<GarageNewResponse>({ error: "You must be logged in to add a car." }, { status: 401 });
+    if (!user)
+      return NextResponse.json<GarageNewResponse>(
+        { error: "You must be logged in to post a project." },
+        { status: 401 },
+      );
     let body: GarageNewRequest;
     try {
       body = (await req.json()) as GarageNewRequest;
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
       console.error("garage/new: failed to parse body", e);
       return NextResponse.json<GarageNewResponse>(
         { error: "Invalid request body." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -67,36 +69,50 @@ export async function POST(req: NextRequest) {
 
     if (!owner_id || owner_id !== user.id) {
       return NextResponse.json<GarageNewResponse>(
-        { error: "You cannot create a garage entry for another user." },
-        { status: 403 }
+        { error: "You cannot create a project for another user." },
+        { status: 403 },
       );
     }
 
     if (!name?.trim() && (!make || !model)) {
       return NextResponse.json<GarageNewResponse>(
         { error: "Please enter a project title." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // Universal profanity hard-block (fail closed)
-    for (const field of [name ?? "", make, model, chassis ?? "", trim ?? "", color ?? "", engine ?? "", summary ?? "", mods ?? ""]) {
+    for (const field of [
+      name ?? "",
+      make,
+      model,
+      chassis ?? "",
+      trim ?? "",
+      color ?? "",
+      engine ?? "",
+      summary ?? "",
+      mods ?? "",
+    ]) {
       const prof = await hardBlockIfProfane(field);
       if ("error" in prof) {
-        return NextResponse.json<GarageNewResponse>({ error: prof.error }, { status: 400 });
+        return NextResponse.json<GarageNewResponse>(
+          { error: prof.error },
+          { status: 400 },
+        );
       }
     }
 
     if (year && (year < 1900 || year > 2100)) {
       return NextResponse.json<GarageNewResponse>(
         { error: "Please enter a valid year." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // Maintenance mode via flags
-    const { data: flagsData, error: flagsError } =
-      await supabaseAdmin.rpc("get_site_lockdown_flags");
+    const { data: flagsData, error: flagsError } = await supabaseAdmin.rpc(
+      "get_site_lockdown_flags",
+    );
 
     if (!flagsError && flagsData && flagsData.length > 0) {
       const row = flagsData[0] as { maintenance_mode?: boolean };
@@ -104,9 +120,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json<GarageNewResponse>(
           {
             error:
-              "Garage is temporarily read-only while the site is in maintenance mode.",
+              "Workshop is temporarily read-only while the site is in maintenance mode.",
           },
-          { status: 503 }
+          { status: 503 },
         );
       }
     }
@@ -121,7 +137,7 @@ export async function POST(req: NextRequest) {
       if (clearError) {
         console.error(
           "garage/new: failed to clear existing primary",
-          clearError
+          clearError,
         );
         // Not fatal, we keep going
       }
@@ -155,28 +171,28 @@ export async function POST(req: NextRequest) {
     if (insertError) {
       console.error("garage/new: insert error", insertError);
       return NextResponse.json<GarageNewResponse>(
-        { error: "Failed to create car. Please try again." },
-        { status: 500 }
+        { error: "Failed to create project. Please try again." },
+        { status: 500 },
       );
     }
 
     if (!insertData?.id) {
       console.error("garage/new: insert returned no id", insertData);
       return NextResponse.json<GarageNewResponse>(
-        { error: "Car created but missing id from response." },
-        { status: 500 }
+        { error: "Project created but missing id from response." },
+        { status: 500 },
       );
     }
 
     return NextResponse.json<GarageNewResponse>(
       { id: insertData.id },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (e) {
     console.error("garage/new: unexpected error", e);
     return NextResponse.json<GarageNewResponse>(
-      { error: "Unexpected error creating car." },
-      { status: 500 }
+      { error: "Unexpected error creating project." },
+      { status: 500 },
     );
   }
 }

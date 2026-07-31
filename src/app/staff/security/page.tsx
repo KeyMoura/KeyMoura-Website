@@ -739,7 +739,7 @@ export default function AdminSecurityPage() {
           </h2>
           <p className="mb-2 text-[12px] text-brand-textMuted">
             Simple read-only toggle you can hook into write routes (info,
-            garage, forums, etc).
+            Workshop, forums, etc).
           </p>
           <label className="flex items-center gap-2">
             <input

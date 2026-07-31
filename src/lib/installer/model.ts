@@ -1,7 +1,7 @@
 export const OPTIONAL_MODULES = {
   forum: { label: "Forum", requires: ["moderation"], schemaKey: "forum" },
   knowledge_base: { label: "Knowledge Base", requires: [], schemaKey: "knowledge_base" },
-  garage: { label: "Garage", requires: [], schemaKey: "garage" },
+  garage: { label: "Workshop", requires: [], schemaKey: "garage" },
   vendors: { label: "Shops / Vendors", requires: [], schemaKey: "vendors" },
   messaging: { label: "Messaging", requires: ["moderation"], schemaKey: "messaging" },
   notifications: { label: "Notifications", requires: [], schemaKey: "notifications" },

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     if (!authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
         { error: "Missing or invalid Authorization header." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     if (!accessToken) {
       return NextResponse.json(
         { error: "Missing access token." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       console.error("garage/update: failed to get user from token", userError);
       return NextResponse.json(
         { error: "Invalid or expired session." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -57,9 +57,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Garage is temporarily read-only while the site is in maintenance mode.",
+            "Workshop is temporarily read-only while the site is in maintenance mode.",
         },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
@@ -106,13 +106,23 @@ export async function POST(req: NextRequest) {
 
     if (!id || typeof id !== "string") {
       return NextResponse.json(
-        { error: "Missing or invalid car id." },
-        { status: 400 }
+        { error: "Missing or invalid project id." },
+        { status: 400 },
       );
     }
 
     // Universal profanity hard-block (fail closed)
-    for (const field of [name ?? "", make ?? "", model ?? "", chassis ?? "", trim ?? "", color ?? "", engine ?? "", summary ?? "", mods ?? ""]) {
+    for (const field of [
+      name ?? "",
+      make ?? "",
+      model ?? "",
+      chassis ?? "",
+      trim ?? "",
+      color ?? "",
+      engine ?? "",
+      summary ?? "",
+      mods ?? "",
+    ]) {
       const prof = await hardBlockIfProfane(field);
       if ("error" in prof) {
         return NextResponse.json({ error: prof.error }, { status: 400 });
@@ -129,19 +139,22 @@ export async function POST(req: NextRequest) {
     if (carError) {
       console.error("garage/update: failed to load car", carError);
       return NextResponse.json(
-        { error: "Failed to load car." },
-        { status: 500 }
+        { error: "Failed to load project." },
+        { status: 500 },
       );
     }
 
     if (!carRow) {
-      return NextResponse.json({ error: "Car not found." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Project not found." },
+        { status: 404 },
+      );
     }
 
     if (carRow.owner_id !== userId) {
       return NextResponse.json(
-        { error: "You don’t have permission to edit this car." },
-        { status: 403 }
+        { error: "You don’t have permission to edit this project." },
+        { status: 403 },
       );
     }
 
@@ -175,7 +188,7 @@ export async function POST(req: NextRequest) {
       console.error("garage/update: failed to update car", updateError);
       return NextResponse.json(
         { error: "Failed to save changes." },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -184,7 +197,7 @@ export async function POST(req: NextRequest) {
     console.error("garage/update: unexpected error", err);
     return NextResponse.json(
       { error: "Unexpected error while saving changes." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

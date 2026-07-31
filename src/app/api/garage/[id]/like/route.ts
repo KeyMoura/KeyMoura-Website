@@ -18,7 +18,7 @@ const serviceClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
 
 function isUuid(v: string): boolean {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
-    v
+    v,
   );
 }
 
@@ -26,7 +26,10 @@ const LIKE_MILESTONES = new Set<number>([
   1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 25000, 50000, 100000,
 ]);
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
   try {
     const { id } = await ctx.params;
     if (!isUuid(id)) {
@@ -72,7 +75,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     if (existingErr && existingErr.code !== "PGRST116") {
       console.error("garage like lookup error", existingErr);
-      return NextResponse.json({ error: "Failed to toggle like." }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to toggle like." },
+        { status: 500 },
+      );
     }
 
     let didLike = false;
@@ -86,19 +92,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
       if (delErr) {
         console.error("garage unlike error", delErr);
-        return NextResponse.json({ error: "Failed to toggle like." }, { status: 500 });
+        return NextResponse.json(
+          { error: "Failed to toggle like." },
+          { status: 500 },
+        );
       }
 
       didLike = false;
     } else {
-      const { error: insErr } = await serviceClient.from("garage_car_likes").insert({
-        car_id: id,
-        user_id: user.id,
-      });
+      const { error: insErr } = await serviceClient
+        .from("garage_car_likes")
+        .insert({
+          car_id: id,
+          user_id: user.id,
+        });
 
       if (insErr) {
         console.error("garage like insert error", insErr);
-        return NextResponse.json({ error: "Failed to toggle like." }, { status: 500 });
+        return NextResponse.json(
+          { error: "Failed to toggle like." },
+          { status: 500 },
+        );
       }
 
       didLike = true;
@@ -118,7 +132,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const likeCount = count ?? 0;
 
     // Milestone notification (only on like, and not to self)
-    if (didLike && carRow.owner_id !== user.id && LIKE_MILESTONES.has(likeCount)) {
+    if (
+      didLike &&
+      carRow.owner_id !== user.id &&
+      LIKE_MILESTONES.has(likeCount)
+    ) {
       void createNotification({
         recipientUserId: carRow.owner_id,
         actorUserId: user.id,
@@ -126,7 +144,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         payload: {
           milestone: likeCount,
           car_id: id,
-          href: `/garage/${id}`,
+          href: `/workshop/${id}`,
         },
       });
     }
@@ -134,6 +152,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: true, liked: didLike, count: likeCount });
   } catch (e) {
     console.error("garage like POST error", e);
-    return NextResponse.json({ error: "Failed to toggle like." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to toggle like." },
+      { status: 500 },
+    );
   }
 }
