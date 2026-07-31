@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, routeServiceClient } from "@/lib/api/routeAuth";
 import { notifyOrderStaff } from "@/lib/orderNotifications";
+import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 
 export async function POST(req: NextRequest) {
   const user = await requireUser(req);
@@ -74,5 +75,15 @@ export async function POST(req: NextRequest) {
     title: "New order request",
     message: `${product.name} was requested and is ready for review.`,
   });
+  const [{ data: profile }, config] = await Promise.all([
+    routeServiceClient.from("profiles").select("display_name,username").eq("id",user.id).maybeSingle(),
+    getCommerceEmailConfig(),
+  ]);
+  const customerName = profile?.display_name || profile?.username || user.email?.split("@")[0] || "Customer";
+  const variables = { customer_name:customerName, product_name:product.name, order_label:"your request", status:"requested", price:estimate === null ? "Price pending" : `$${((estimate * quantity)/100).toFixed(2)}` };
+  await Promise.all([
+    sendCommerceEmail({ to:user.email, orderId:order.id, templateKey:"request_received", eventKey:`request-customer-${order.id}`, variables }),
+    sendCommerceEmail({ to:config.staffNotificationEmail, orderId:order.id, templateKey:"staff_new_request", eventKey:`request-staff-${order.id}`, variables, href:`/staff/orders/${order.id}` }),
+  ]);
   return NextResponse.json({ id: order.id }, { status: 201 });
 }

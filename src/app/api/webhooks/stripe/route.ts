@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
-import { sendOrderEmail } from "@/lib/commerceEmail";
+import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
+import { notifyOrderUser } from "@/lib/orderNotifications";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not fulfill payment" }, { status: 500 });
   }
   const { data: authUser } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
-  await sendOrderEmail({ to: authUser.user?.email, orderId, orderNumber: order.order_number, productName: order.product_name, subject: `Payment received for ${order.order_number || "your KeyMoura order"}`, message: `We received your $${(session.amount_total / 100).toFixed(2)} payment. Your order is now in progress.`, eventKey: `stripe-paid-${event.id}` });
+  const config = await getCommerceEmailConfig();
+  if (config.sendPaymentUpdates) await sendCommerceEmail({ to:authUser.user?.email, orderId, templateKey:"payment_received", eventKey:`stripe-paid-${event.id}`, variables:{ customer_name:authUser.user?.user_metadata?.display_name || authUser.user?.email?.split("@")[0] || "Customer", product_name:order.product_name, order_label:order.order_number || "your KeyMoura order", status:"in progress", price:`$${(session.amount_total/100).toFixed(2)}` } });
+  await notifyOrderUser({
+    orderId,
+    actorUserId: null,
+    recipientUserId: order.customer_id,
+    title: "Payment received",
+    message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received. Your order is now in progress.`,
+  });
   await routeServiceClient.from("stripe_webhook_events").update({ processed_at: new Date().toISOString() }).eq("stripe_event_id", event.id);
   return NextResponse.json({ received: true });
 }

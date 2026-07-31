@@ -14,6 +14,7 @@ export const PERMISSIONS = [
   "orders.view",
   "orders.manage",
   "appearance.manage",
+  "emails.manage",
   // Reports
   "moderation.reports.view",
   "moderation.reports.moderate",
@@ -147,6 +148,11 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       category: "Site",
       label: "Manage appearance",
       description: "Allows changing the shared KeyMoura colors, typography, spacing, and control styles.",
+    },
+    "emails.manage": {
+      category: "Commerce",
+      label: "Manage email",
+      description: "Allows configuring transactional email, editing templates, and reviewing delivery history.",
     },
 
     "security.view": {

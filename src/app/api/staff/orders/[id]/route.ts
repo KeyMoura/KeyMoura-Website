@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
-import { sendOrderEmail } from "@/lib/commerceEmail";
+import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKey } from "@/lib/commerceEmail";
+import { notifyOrderUser } from "@/lib/orderNotifications";
 
 const allowedStatuses = new Set(["requested","needs_information","accepted","awaiting_payment","in_progress","customer_review","ready","completed","declined","cancelled"]);
 
@@ -31,7 +32,11 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   }
   const { error } = await routeServiceClient.from("orders").update(update).eq("id", id);
   if (error) return NextResponse.json({ error: "Could not update order" }, { status: 500 });
-  if (update.status && update.status !== existing.status) await routeServiceClient.from("order_status_history").insert({ order_id: id, from_status: existing.status, to_status: update.status, changed_by: actor.userId });
+  let historyId: number|string = Date.now();
+  if (update.status && update.status !== existing.status) {
+    const { data: history } = await routeServiceClient.from("order_status_history").insert({ order_id: id, from_status: existing.status, to_status: update.status, changed_by: actor.userId }).select("id").single();
+    historyId = history?.id ?? historyId;
+  }
 
   const { data: customer } = await routeServiceClient.auth.admin.getUserById(existing.customer_id);
   const priceBecamePayable = typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && update.agreed_price_cents !== existing.agreed_price_cents;
@@ -39,7 +44,16 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   if (priceBecamePayable || statusChanged) {
     const finalStatus = String(update.status || existing.status).replaceAll("_", " ");
     const message = priceBecamePayable ? `Your final price is $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. You can now pay securely from your order page.` : `Your order status changed to ${finalStatus}.`;
-    await sendOrderEmail({ to: customer.user?.email, orderId: id, orderNumber: existing.order_number, productName: existing.product_name, subject: priceBecamePayable ? `Your ${existing.order_number || "KeyMoura order"} is ready for payment` : `${existing.order_number || "KeyMoura order"}: ${finalStatus}`, message, eventKey: `order-update-${id}-${Date.now()}` });
+    const config = await getCommerceEmailConfig();
+    const templateKey: CommerceEmailTemplateKey = priceBecamePayable ? "quote_ready" : update.status === "needs_information" ? "needs_information" : "status_update";
+    if ((priceBecamePayable || update.status === "awaiting_payment") ? config.sendPaymentUpdates : config.sendStatusUpdates) await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-update-${id}-${historyId}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your request", status:finalStatus, price:typeof update.agreed_price_cents === "number" ? `$${(update.agreed_price_cents/100).toFixed(2)}` : "Price pending" } });
+    await notifyOrderUser({
+      orderId: id,
+      actorUserId: actor.userId,
+      recipientUserId: existing.customer_id,
+      title: priceBecamePayable ? "Order ready for payment" : "Order status updated",
+      message,
+    });
   }
   return NextResponse.json({ ok: true });
 }

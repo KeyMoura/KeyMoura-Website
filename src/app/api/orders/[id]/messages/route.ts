@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActorAccessFromRequest, routeServiceClient } from "@/lib/api/routeAuth";
-import { sendOrderEmail } from "@/lib/commerceEmail";
+import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
+import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const actor = await getActorAccessFromRequest(req);
@@ -18,8 +19,25 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   if (error) return NextResponse.json({ error: "Could not send message" }, { status: 500 });
   if (!internal) {
     const { data: customer } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
-    const to = isStaff ? customer.user?.email : process.env.ORDER_NOTIFICATION_EMAIL;
-    await sendOrderEmail({ to, orderId: id, orderNumber: order.order_number, productName: order.product_name, subject: `New message about ${order.order_number || "a KeyMoura request"}`, message: isStaff ? "KeyMoura sent you a new message." : "A customer sent a new order message.", eventKey: `order-message-${inserted.id}` });
+    const config = await getCommerceEmailConfig();
+    const to = isStaff ? customer.user?.email : config.staffNotificationEmail;
+    if (config.sendCustomerMessages) await sendCommerceEmail({ to, orderId:id, templateKey:isStaff ? "customer_message" : "staff_message", eventKey:`order-message-${inserted.id}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:order.product_name, order_label:order.order_number || "a KeyMoura request", status:"", price:"" }, href:isStaff ? `/orders/${id}` : `/staff/orders/${id}` });
+    if (isStaff) {
+      await notifyOrderUser({
+        orderId: id,
+        actorUserId: actor.userId,
+        recipientUserId: order.customer_id,
+        title: "New order message",
+        message: `KeyMoura sent a message about ${order.product_name}.`,
+      });
+    } else {
+      await notifyOrderStaff({
+        orderId: id,
+        actorUserId: actor.userId,
+        title: "New customer message",
+        message: `A customer sent a message about ${order.product_name}.`,
+      });
+    }
   }
   return NextResponse.json({ ok: true });
 }

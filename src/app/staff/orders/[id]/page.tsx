@@ -29,6 +29,7 @@ type Message = {
   is_internal: boolean;
   created_at: string;
 };
+type EmailDelivery = { id:string; recipient:string; subject:string; status:"sent"|"failed"|"skipped"; error_message:string|null; created_at:string };
 const statuses = [
   "requested",
   "needs_information",
@@ -52,6 +53,7 @@ export default function StaffOrderDetail() {
   const canManage = perms.has("orders.manage");
   const [order, setOrder] = useState<Order | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [emails, setEmails] = useState<EmailDelivery[]>([]);
   const [body, setBody] = useState("");
   const [internal, setInternal] = useState(false);
   const [price, setPrice] = useState("");
@@ -60,17 +62,19 @@ export default function StaffOrderDetail() {
   const [staffNotes, setStaffNotes] = useState("");
   const [error, setError] = useState("");
   const load = useCallback(async () => {
-    const [o, m] = await Promise.all([
+    const [o, m, e] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
         .select("*")
         .eq("order_id", id)
         .order("created_at"),
+      supabase.from("email_deliveries").select("id,recipient,subject,status,error_message,created_at").eq("order_id",id).order("created_at",{ascending:false}),
     ]);
     const row = o.data as Order | null;
     setOrder(row);
     setMessages((m.data ?? []) as Message[]);
+    setEmails((e.data ?? []) as EmailDelivery[]);
     if (row) {
       setPrice(
         row.agreed_price_cents == null
@@ -280,6 +284,13 @@ export default function StaffOrderDetail() {
               </button>
             </form>
           ) : null}
+        </section>
+        <section className="md:col-span-2">
+          <h2 className="font-semibold">Email history</h2>
+          <div className="mt-3 overflow-hidden rounded-xl border border-zinc-800">
+            {emails.map(email=><div key={email.id} className="grid gap-1 border-b border-zinc-800 bg-black/20 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[1fr_1.4fr_auto]"><div><span className="text-brand-textMuted">To </span>{email.recipient}</div><div>{email.subject}</div><div className={email.status==="sent"?"text-emerald-300":email.status==="failed"?"text-rose-300":"text-amber-200"}>{pretty(email.status)} · {new Date(email.created_at).toLocaleString()}</div>{email.error_message?<div className="text-xs text-rose-200 md:col-span-3">{email.error_message}</div>:null}</div>)}
+            {emails.length===0?<div className="px-4 py-6 text-center text-sm text-brand-textMuted">No email attempts for this order yet.</div>:null}
+          </div>
         </section>
       </div>
       {error ? <p className="mt-4 text-rose-200">{error}</p> : null}
