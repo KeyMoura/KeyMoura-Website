@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 
 export type WorkshopDraft = {
   id?: string;
@@ -202,20 +203,17 @@ export function WorkshopProjectForm({ initial }: { initial?: WorkshopDraft }) {
       )}
       <label className="block text-sm">
         Visibility
-        <select
-          className={input}
+        <MenuSelect
+          className="ui-select-trigger mt-1"
           value={form.visibility}
-          onChange={(e) =>
+          onChange={(visibility) =>
             setForm({
               ...form,
-              visibility: e.target.value as WorkshopDraft["visibility"],
+              visibility: visibility as WorkshopDraft["visibility"],
             })
           }
-        >
-          <option value="public">Public</option>
-          <option value="unlisted">Unlisted</option>
-          <option value="private">Private</option>
-        </select>
+          options={[{value:"public",label:"Public"},{value:"unlisted",label:"Unlisted"},{value:"private",label:"Private"}]}
+        />
       </label>
       <div className="flex gap-3">
         <button
