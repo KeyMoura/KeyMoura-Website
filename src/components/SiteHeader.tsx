@@ -1362,6 +1362,11 @@ export default function SiteHeader() {
                 height={44}
                 className="object-contain drop-shadow-[0_8px_14px_rgba(0,0,0,0.55)]"
               />
+              {siteSettings.wordmarkUrl ? (
+                <img src={siteSettings.wordmarkUrl} alt="" className="ml-2 hidden h-7 max-w-36 object-contain 2xl:block" />
+              ) : (
+                <span className="ml-2 hidden text-sm font-semibold tracking-wide text-brand-text 2xl:inline">{siteSettings.shortName}</span>
+              )}
             </Link>
 
             <nav className="flex items-center gap-1" aria-label="Primary navigation continued">
