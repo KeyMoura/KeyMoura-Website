@@ -173,7 +173,7 @@ export default function ProductRequestPage() {
           <div className="mt-5 flex items-end justify-between gap-4 border-t border-zinc-800 pt-4"><div><div className="text-xs text-brand-textMuted">Estimated starting total</div><div className="text-xl font-semibold text-brand-primary">{estimated == null ? "Quoted after review" : `$${(estimated / 100).toFixed(2)}`}</div></div><span className="text-xs text-brand-textMuted">No charge now</span></div>
           {error ? <p className="mt-3 text-sm text-rose-200">{error}</p> : null}
           {!canRequest ? <p className="mt-5 rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 text-sm text-rose-100">This item is not accepting requests right now. Check back soon.</p> : null}
-          <button disabled={busy || !canRequest} className="mt-5 w-full rounded-xl border border-brand-primary bg-brand-primary px-4 py-3 font-semibold text-zinc-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-400">{busy ? "Sending…" : canRequest ? "Send request — no charge" : "Requests paused"}</button>
+          <button disabled={busy || !canRequest} className="catalog-action-primary mt-5 w-full rounded-xl px-4 py-3 transition disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-400 disabled:filter-none">{busy ? "Sending…" : canRequest ? "Send request — no charge" : "Requests paused"}</button>
         </form>
       </div>
     </main>
