@@ -21,7 +21,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const otpType = url.searchParams.get("type");
-  if (!code && !(tokenHash && otpType === "email")) {
+  const supportedOtpType = otpType === "email" || otpType === "recovery";
+  if (!code && !(tokenHash && supportedOtpType)) {
     return NextResponse.redirect(new URL("/auth/login", url.origin));
   }
 
@@ -39,7 +40,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   });
   const { data: exchange, error } = code
     ? await supabase.auth.exchangeCodeForSession(code)
-    : await supabase.auth.verifyOtp({ token_hash: tokenHash!, type: "email" });
+    : await supabase.auth.verifyOtp({
+        token_hash: tokenHash!,
+        type: otpType as "email" | "recovery",
+      });
   if (error || !exchange.user) return loginError(url.origin, "oauth_exchange_failed");
 
   const admin = installerAdmin();

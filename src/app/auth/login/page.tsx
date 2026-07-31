@@ -1,13 +1,15 @@
 "use client";
 
 import { supabaseBrowser } from "@/lib/supabaseClient";
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import Link from "next/link";
 
 export default function LoginPage() {
   const supabase = supabaseBrowser();
 
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailMode, setEmailMode] = useState<"password" | "magic-link">("password");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +69,26 @@ export default function LoginPage() {
     }
 
     setSent(true);
+  };
+
+  const handlePasswordLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+    const response = await fetch("/api/auth/password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    setLoading(false);
+    if (!response.ok) {
+      setError(body?.error ?? "Login failed. Please try again.");
+      return;
+    }
+    const requested = new URLSearchParams(window.location.search).get("next");
+    const next = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/account";
+    window.location.assign(next);
   };
 
   const handleOAuth = async (provider: "google" | "discord") => {
@@ -144,39 +166,28 @@ export default function LoginPage() {
               <div className="h-px flex-1 bg-zinc-800" />
             </div>
 
-            <h1 className="mb-2 text-xl font-semibold text-brand-text">
-              Log in with email
-            </h1>
+            <h1 className="mb-2 text-xl font-semibold text-brand-text">Log in with email</h1>
+            <div className="ui-tabs mb-4" role="tablist" aria-label="Email login method">
+              <button type="button" className={`ui-tab ${emailMode === "password" ? "is-active" : ""}`} onClick={() => { setEmailMode("password"); setError(null); }}>Password</button>
+              <button type="button" className={`ui-tab ${emailMode === "magic-link" ? "is-active" : ""}`} onClick={() => { setEmailMode("magic-link"); setError(null); }}>Email link</button>
+            </div>
 
-            <p className="mb-4 text-[12px] text-brand-textMuted">
-              We&apos;ll email you a secure one-time login link.
-            </p>
-
-            <label
-              htmlFor="email"
-              className="mb-1 block text-[11px] font-medium text-brand-textMuted"
-            >
-              Email
-            </label>
-
-            <input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              className="mb-3 no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-            />
-
-            <button
-              type="button"
-              onClick={handleEmailLogin}
-              disabled={loading || email.trim().length < 4}
-              className="inline-flex w-full items-center justify-center rounded-full border border-white bg-white px-4 py-2 text-sm font-medium text-black shadow-sm shadow-black/60 transition hover:bg-zinc-200 active:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? "Sending…" : "Send login link"}
-            </button>
+            {emailMode === "password" ? (
+              <form onSubmit={handlePasswordLogin} className="space-y-3">
+                <label className="block"><span className="ui-label">Email</span><input className="ui-input no-zoom-input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} /></label>
+                <label className="block"><span className="ui-label">Password</span><input className="ui-input no-zoom-input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={loading} /></label>
+                <div className="flex items-center justify-between gap-3">
+                  <Link href="/auth/forgot-password" className="text-xs font-medium text-brand-primary hover:underline">Forgot password?</Link>
+                </div>
+                <button className="ui-btn ui-btn-primary w-full" disabled={loading}>{loading ? "Logging in…" : "Log in"}</button>
+              </form>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[12px] text-brand-textMuted">We&apos;ll email you a secure one-time login link. No password needed.</p>
+                <label className="block"><span className="ui-label">Email</span><input className="ui-input no-zoom-input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} /></label>
+                <button type="button" onClick={handleEmailLogin} disabled={loading || email.trim().length < 4} className="ui-btn ui-btn-primary w-full">{loading ? "Sending…" : "Send login link"}</button>
+              </div>
+            )}
 
             {error && (
               <p className="mt-3 text-[11px] text-red-400">{error}</p>

@@ -139,6 +139,12 @@ const [myReports, setMyReports] = useState<MyReportRow[]>([]);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
 
+  // Password UX (also lets Google or magic-link accounts add their first password)
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -328,6 +334,28 @@ useEffect(() => {
     profile?.last_seen_at != null
       ? new Date(profile.last_seen_at).toLocaleString()
       : null;
+
+  const handlePasswordSave = async () => {
+    setPasswordMessage(null);
+    if (newPassword.length < 12) {
+      setPasswordMessage("Use at least 12 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage("The passwords do not match.");
+      return;
+    }
+    setPasswordBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setPasswordBusy(false);
+    if (error) {
+      setPasswordMessage("Password could not be updated. Log in again and retry, or use Forgot password.");
+      return;
+    }
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordMessage("Password saved. You can now use email + password to log in.");
+  };
 
   const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1139,11 +1167,36 @@ const loadMyReports = async (viewerId: string) => {
 
             <div>
               <h2 className="mb-1 text-[13px] font-semibold text-brand-text">
+                Password
+              </h2>
+              <p className="mb-3 text-[11px] text-brand-textMuted">
+                Add a password to a Google or email-link account, or replace your existing password. You can still use Google or a one-time email link afterward.
+              </p>
+              <div className="grid gap-3 sm:max-w-xl sm:grid-cols-2">
+                <label className="block">
+                  <span className="ui-label">New password</span>
+                  <input className="ui-input no-zoom-input" type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                </label>
+                <label className="block">
+                  <span className="ui-label">Confirm password</span>
+                  <input className="ui-input no-zoom-input" type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+                </label>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button type="button" onClick={handlePasswordSave} disabled={passwordBusy || !newPassword || !confirmPassword} className="ui-btn ui-btn-primary text-xs">
+                  {passwordBusy ? "Saving…" : "Set or change password"}
+                </button>
+                {passwordMessage ? <span className="text-[11px] text-brand-textMuted">{passwordMessage}</span> : null}
+              </div>
+            </div>
+
+            <div>
+              <h2 className="mb-1 text-[13px] font-semibold text-brand-text">
                 Session
               </h2>
               <p className="mb-3 text-[11px] text-brand-textMuted">
-                Sign out on this browser. You can log back in anytime with your
-                email link.
+                Sign out on this browser. You can log back in with Google, your
+                password, or a one-time email link.
               </p>
               <Link
                 href="/auth/logout"
