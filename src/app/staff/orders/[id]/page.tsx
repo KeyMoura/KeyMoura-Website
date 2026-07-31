@@ -21,6 +21,15 @@ type Order = {
   payment_status: string;
   amount_paid_cents: number;
   target_date: string | null;
+  fulfillment_method: "shipping" | "pickup";
+  shipping_address: Record<string, string> | null;
+  shipping_carrier: string | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  shipped_at: string | null;
+  delivered_at: string | null;
+  created_at: string;
+  paid_at: string | null;
 };
 type Message = {
   id: number;
@@ -30,6 +39,7 @@ type Message = {
   created_at: string;
 };
 type EmailDelivery = { id:string; recipient:string; subject:string; status:"sent"|"failed"|"skipped"; error_message:string|null; created_at:string };
+type History = { id:number; from_status:string|null; to_status:string; note:string|null; created_at:string };
 const statuses = [
   "requested",
   "needs_information",
@@ -54,15 +64,21 @@ export default function StaffOrderDetail() {
   const [order, setOrder] = useState<Order | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [emails, setEmails] = useState<EmailDelivery[]>([]);
+  const [history, setHistory] = useState<History[]>([]);
   const [body, setBody] = useState("");
   const [internal, setInternal] = useState(false);
   const [price, setPrice] = useState("");
   const [paid, setPaid] = useState("");
   const [target, setTarget] = useState("");
   const [staffNotes, setStaffNotes] = useState("");
+  const [method, setMethod] = useState<"shipping"|"pickup">("shipping");
+  const [address, setAddress] = useState({ name:"", line1:"", line2:"", city:"", state:"", postal_code:"", country:"US" });
+  const [carrier, setCarrier] = useState("");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [trackingUrl, setTrackingUrl] = useState("");
   const [error, setError] = useState("");
   const load = useCallback(async () => {
-    const [o, m, e] = await Promise.all([
+    const [o, m, e, h] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
@@ -70,11 +86,13 @@ export default function StaffOrderDetail() {
         .eq("order_id", id)
         .order("created_at"),
       supabase.from("email_deliveries").select("id,recipient,subject,status,error_message,created_at").eq("order_id",id).order("created_at",{ascending:false}),
+      supabase.from("order_status_history").select("id,from_status,to_status,note,created_at").eq("order_id",id).order("created_at",{ascending:false}),
     ]);
     const row = o.data as Order | null;
     setOrder(row);
     setMessages((m.data ?? []) as Message[]);
     setEmails((e.data ?? []) as EmailDelivery[]);
+    setHistory((h.data ?? []) as History[]);
     if (row) {
       setPrice(
         row.agreed_price_cents == null
@@ -84,6 +102,11 @@ export default function StaffOrderDetail() {
       setPaid(String(row.amount_paid_cents / 100));
       setTarget(row.target_date ?? "");
       setStaffNotes(row.staff_notes ?? "");
+      setMethod(row.fulfillment_method ?? "shipping");
+      setAddress({ name:"", line1:"", line2:"", city:"", state:"", postal_code:"", country:"US", ...(row.shipping_address ?? {}) });
+      setCarrier(row.shipping_carrier ?? "");
+      setTrackingNumber(row.tracking_number ?? "");
+      setTrackingUrl(row.tracking_url ?? "");
     }
     setError(o.error?.message ?? m.error?.message ?? "");
   }, [id, supabase]);
@@ -123,11 +146,21 @@ export default function StaffOrderDetail() {
         agreed_price_cents: priceCents,
         target_date: target || null,
         staff_notes: staffNotes || null,
+        fulfillment_method: method,
+        shipping_address: method === "shipping" ? address : null,
+        shipping_carrier: carrier || null,
+        tracking_number: trackingNumber || null,
+        tracking_url: trackingUrl || null,
       }),
     });
     const result = await r.json();
     if (!r.ok) setError(result.error || "Could not save details");
     else await load();
+  }
+  async function fulfillmentAction(shipment_action: "mark_shipped"|"mark_delivered") {
+    const r = await fetch(`/api/staff/orders/${id}`, { method:"PATCH", headers:await authHeaders(), body:JSON.stringify({ shipment_action, fulfillment_method:method, shipping_address:method === "shipping" ? address : null, shipping_carrier:carrier || null, tracking_number:trackingNumber || null, tracking_url:trackingUrl || null }) });
+    const result = await r.json();
+    if (!r.ok) setError(result.error || "Could not update fulfillment"); else { setError(""); await load(); }
   }
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -218,6 +251,17 @@ export default function StaffOrderDetail() {
               />
             </label>
           </div>
+          <div className="mt-5 border-t border-zinc-800 pt-5">
+            <h2 className="font-semibold">Fulfillment</h2>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">Delivery method<select disabled={!canManage} className={`${input} mt-1 w-full`} value={method} onChange={e=>setMethod(e.target.value as "shipping"|"pickup")}><option value="shipping">Ship to customer</option><option value="pickup">Customer pickup</option></select></label>
+              <label className="text-sm">Carrier<input disabled={!canManage || method === "pickup"} className={`${input} mt-1 w-full`} value={carrier} onChange={e=>setCarrier(e.target.value)} placeholder="USPS, UPS, FedEx…" /></label>
+              {method === "shipping" ? <><label className="text-sm sm:col-span-2">Recipient<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.name} onChange={e=>setAddress({...address,name:e.target.value})} /></label><label className="text-sm sm:col-span-2">Address<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.line1} onChange={e=>setAddress({...address,line1:e.target.value})} /></label><label className="text-sm">City<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.city} onChange={e=>setAddress({...address,city:e.target.value})} /></label><label className="text-sm">State / region<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.state} onChange={e=>setAddress({...address,state:e.target.value})} /></label><label className="text-sm">Postal code<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.postal_code} onChange={e=>setAddress({...address,postal_code:e.target.value})} /></label></> : null}
+              <label className="text-sm">Tracking number<input disabled={!canManage || method === "pickup"} className={`${input} mt-1 w-full`} value={trackingNumber} onChange={e=>setTrackingNumber(e.target.value)} /></label>
+              <label className="text-sm sm:col-span-2">Tracking link<input disabled={!canManage || method === "pickup"} type="url" className={`${input} mt-1 w-full`} value={trackingUrl} onChange={e=>setTrackingUrl(e.target.value)} placeholder="https://…" /></label>
+            </div>
+            {canManage ? <div className="mt-4 flex flex-wrap gap-2"><button onClick={()=>void save()} className="rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-2 font-semibold text-brand-primary">Save fulfillment</button><button disabled={Boolean(order.shipped_at)} onClick={()=>void fulfillmentAction("mark_shipped")} className="rounded-xl border border-brand-accent/70 px-4 py-2 font-semibold text-brand-accent disabled:opacity-40">{order.shipped_at ? "Shipped" : method === "pickup" ? "Mark ready for pickup" : "Mark shipped + email"}</button><button disabled={!order.shipped_at || Boolean(order.delivered_at)} onClick={()=>void fulfillmentAction("mark_delivered")} className="rounded-xl border border-emerald-500/60 px-4 py-2 font-semibold text-emerald-300 disabled:opacity-40">{order.delivered_at ? "Completed" : "Mark delivered + email"}</button></div> : null}
+          </div>
           {canManage ? (
             <button
               onClick={() => void save()}
@@ -284,6 +328,12 @@ export default function StaffOrderDetail() {
               </button>
             </form>
           ) : null}
+        </section>
+        <section className="md:col-span-2">
+          <h2 className="font-semibold">Activity timeline</h2>
+          <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 p-4">
+            {[...history.map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...messages.map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...(order.paid_at?[{id:"paid",at:order.paid_at,label:"Payment received",detail:`$${(order.amount_paid_cents/100).toFixed(2)}`}]:[]),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:method==="pickup"?"Ready for pickup":"Order shipped",detail:trackingNumber || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className="border-l-2 border-brand-accent/60 pl-4"><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
+          </div>
         </section>
         <section className="md:col-span-2">
           <h2 className="font-semibold">Email history</h2>

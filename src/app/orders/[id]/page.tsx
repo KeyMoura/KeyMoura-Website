@@ -18,6 +18,13 @@ type Order = {
   amount_paid_cents: number;
   target_date: string | null;
   created_at: string;
+  fulfillment_method: "shipping" | "pickup";
+  shipping_address: Record<string,string> | null;
+  shipping_carrier: string | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  shipped_at: string | null;
+  delivered_at: string | null;
 };
 type Message = {
   id: number;
@@ -172,6 +179,7 @@ export default function OrderDetailPage() {
           </p>
         ) : null}
       </section>
+      {(order.fulfillment_method === "pickup" || order.tracking_number || order.shipped_at) ? <section className="mt-6 rounded-2xl border border-zinc-800 bg-black/30 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">Fulfillment</h2><p className="mt-1 text-sm text-brand-textMuted">{order.delivered_at ? order.fulfillment_method === "pickup" ? "Pickup complete" : "Delivered" : order.shipped_at ? order.fulfillment_method === "pickup" ? "Ready for pickup" : "Shipped" : order.fulfillment_method === "pickup" ? "Customer pickup" : "Shipping details"}</p></div>{order.tracking_url ? <a className="ui-btn ui-btn-primary" href={order.tracking_url} target="_blank" rel="noreferrer">Track shipment</a> : null}</div>{order.tracking_number ? <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-brand-textMuted">Carrier</dt><dd>{order.shipping_carrier || "Carrier"}</dd></div><div><dt className="text-brand-textMuted">Tracking number</dt><dd className="break-all">{order.tracking_number}</dd></div></dl> : null}</section> : null}
       <section className="mt-6">
         <h2 className="text-xl font-semibold">Order chat</h2>
         <div className="mt-3 space-y-3">

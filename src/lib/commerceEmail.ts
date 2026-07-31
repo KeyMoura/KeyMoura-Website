@@ -2,7 +2,7 @@ import "server-only";
 import { Resend } from "resend";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 
-export type CommerceEmailTemplateKey = "request_received" | "staff_new_request" | "needs_information" | "quote_ready" | "status_update" | "customer_message" | "staff_message" | "payment_received";
+export type CommerceEmailTemplateKey = "request_received" | "staff_new_request" | "needs_information" | "quote_ready" | "status_update" | "customer_message" | "staff_message" | "payment_received" | "order_shipped" | "order_delivered";
 
 const defaults = {
   enabled: true, fromName: "KeyMoura", fromEmail: "orders@keymoura.com", replyTo: "support@keymoura.com",

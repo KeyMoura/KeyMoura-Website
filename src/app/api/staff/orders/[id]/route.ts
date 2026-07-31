@@ -4,6 +4,8 @@ import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKe
 import { notifyOrderUser } from "@/lib/orderNotifications";
 
 const allowedStatuses = new Set(["requested","needs_information","accepted","awaiting_payment","in_progress","customer_review","ready","completed","declined","cancelled"]);
+const allowedFulfillmentMethods = new Set(["shipping", "pickup"]);
+const optionalText = (value: unknown, max: number) => value === null ? null : typeof value === "string" ? value.trim().slice(0, max) || null : undefined;
 
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const actor = await requirePermission(req, "orders.manage");
@@ -26,6 +28,26 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   }
   if (typeof body.target_date === "string" || body.target_date === null) update.target_date = body.target_date;
   if (typeof body.staff_notes === "string" || body.staff_notes === null) update.staff_notes = body.staff_notes;
+  if (typeof body.fulfillment_method === "string") {
+    if (!allowedFulfillmentMethods.has(body.fulfillment_method)) return NextResponse.json({ error: "Invalid fulfillment method" }, { status: 400 });
+    update.fulfillment_method = body.fulfillment_method;
+  }
+  if (body.shipping_address === null || (typeof body.shipping_address === "object" && !Array.isArray(body.shipping_address))) update.shipping_address = body.shipping_address;
+  for (const [key, max] of [["shipping_carrier",80],["tracking_number",160],["tracking_url",1000]] as const) {
+    const value = optionalText(body[key], max);
+    if (value !== undefined) update[key] = value;
+  }
+  if (update.tracking_url && !/^https:\/\//i.test(String(update.tracking_url))) return NextResponse.json({ error: "Tracking link must use https://" }, { status: 400 });
+  const shipmentAction = body.shipment_action;
+  if (shipmentAction === "mark_shipped") {
+    if ((update.fulfillment_method || existing.fulfillment_method) === "shipping" && !(update.tracking_number || existing.tracking_number)) return NextResponse.json({ error: "Add a tracking number before marking this order shipped." }, { status: 400 });
+    update.shipped_at = existing.shipped_at || new Date().toISOString();
+    update.status = "ready";
+  } else if (shipmentAction === "mark_delivered") {
+    update.shipped_at = existing.shipped_at || new Date().toISOString();
+    update.delivered_at = existing.delivered_at || new Date().toISOString();
+    update.status = "completed";
+  }
   if (typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && existing.payment_status !== "paid") {
     update.payment_status = "unpaid";
     if (!body.status && ["accepted", "requested"].includes(existing.status)) update.status = "awaiting_payment";
@@ -54,6 +76,14 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       title: priceBecamePayable ? "Order ready for payment" : "Order status updated",
       message,
     });
+  }
+  if ((shipmentAction === "mark_shipped" && !existing.shipped_at) || (shipmentAction === "mark_delivered" && !existing.delivered_at)) {
+    const delivered = shipmentAction === "mark_delivered";
+    const templateKey: CommerceEmailTemplateKey = delivered ? "order_delivered" : "order_shipped";
+    const carrier = String(update.shipping_carrier || existing.shipping_carrier || (update.fulfillment_method === "pickup" || existing.fulfillment_method === "pickup" ? "KeyMoura pickup" : "Carrier"));
+    const trackingNumber = String(update.tracking_number || existing.tracking_number || "Not applicable");
+    await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-fulfillment-${id}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your order", status:delivered ? "delivered" : "shipped", price:"", carrier, tracking_number:trackingNumber }, href:!delivered && String(update.tracking_url || existing.tracking_url || "").startsWith("https://") ? String(update.tracking_url || existing.tracking_url) : `/orders/${id}` });
+    await notifyOrderUser({ orderId:id, actorUserId:actor.userId, recipientUserId:existing.customer_id, title:delivered ? "Order delivered" : "Order shipped", message:delivered ? `${existing.product_name} was marked delivered.` : `${existing.product_name} has shipped. Tracking: ${trackingNumber}` });
   }
   return NextResponse.json({ ok: true });
 }

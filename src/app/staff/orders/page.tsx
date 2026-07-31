@@ -18,6 +18,8 @@ type Order = {
   target_date: string | null;
   created_at: string;
   updated_at: string;
+  shipped_at: string | null;
+  delivered_at: string | null;
 };
 
 type Profile = { id: string; username: string | null; display_name: string | null };
@@ -43,7 +45,8 @@ function nextAction(order: Order) {
   if (order.status === "awaiting_payment") return "Waiting for payment";
   if (order.status === "in_progress") return "Continue production";
   if (order.status === "customer_review") return "Review customer reply";
-  if (order.status === "ready") return "Arrange delivery";
+  if (order.status === "ready" && !order.shipped_at) return "Arrange delivery";
+  if (order.shipped_at && !order.delivered_at) return "Confirm delivery";
   return "View order";
 }
 
@@ -65,7 +68,7 @@ export default function StaffOrdersPage() {
       setLoading(true);
       const orderResult = await supabase
         .from("orders")
-        .select("id,order_number,customer_id,product_name,status,quantity,agreed_price_cents,payment_status,target_date,created_at,updated_at")
+        .select("id,order_number,customer_id,product_name,status,quantity,agreed_price_cents,payment_status,target_date,created_at,updated_at,shipped_at,delivered_at")
         .order("updated_at", { ascending: false });
       const rows = (orderResult.data ?? []) as Order[];
       setOrders(rows);

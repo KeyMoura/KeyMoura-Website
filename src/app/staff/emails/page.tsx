@@ -66,6 +66,16 @@ const templateExplanations: Record<string, { trigger: string; recipient: string;
     recipient: "The customer who paid",
     group: "Payment updates",
   },
+  order_shipped: {
+    trigger: "Staff marks a shipped order as shipped and supplies its tracking details.",
+    recipient: "The customer for that order",
+    group: "Status updates",
+  },
+  order_delivered: {
+    trigger: "Staff marks an order delivered or a pickup complete.",
+    recipient: "The customer for that order",
+    group: "Status updates",
+  },
 };
 
 const input = "ui-input w-full";
@@ -283,7 +293,7 @@ export default function StaffEmailPage() {
                     <textarea className={`${input} min-h-28`} value={template.body} onChange={(event) => setTemplates((current) => current.map((item) => item.key === template.key ? { ...item, body: event.target.value } : item))} />
                   </label>
                   <p className="text-xs leading-5 text-brand-textMuted">
-                    Variables you can use: {"{{customer_name}}, {{product_name}}, {{order_label}}, {{status}}, {{price}}"}
+                    Variables you can use: {"{{customer_name}}, {{product_name}}, {{order_label}}, {{status}}, {{price}}, {{carrier}}, {{tracking_number}}"}
                   </p>
                 </div>
               </details>
