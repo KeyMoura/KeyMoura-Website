@@ -3069,8 +3069,8 @@ function PostTreeNode({
   const isDepthCapped = rawDepth > MAX_INDEX_DEPTH;
   const isRailHot = canHover && hoverRailId === node.id;
   // Connector highlight only on desktop (hover-capable pointers)
-  const railColor = isRailHot ? "rgba(245,245,245,1)" : "rgba(60,60,60,1)";
-  const textColor = isRailHot ? "rgba(245,245,245,0.92)" : "rgba(120,120,120,1)";
+  const railColor = isRailHot ? "var(--brand-accent)" : "var(--km-border)";
+  const textColor = isRailHot ? "var(--km-heading)" : "var(--km-muted)";
   // Child list for this node.
   // For *auto-collapsed* groups we do NOT flatten the entire subtree.
   // Instead, we reveal direct children in batches (2 at a time), and each child
@@ -3669,7 +3669,7 @@ function OriginalPostCard({
       className={
         "rounded-2xl border p-4 sm:p-5 " +
         (highlightedPostId != null && post.id === highlightedPostId
-          ? "border-amber-400/70 bg-amber-500/5 shadow-[0_0_0_4px_rgba(251,191,36,0.12)]"
+          ? "theme-accent-focus border-amber-400/70 bg-amber-500/5"
           : "border-zinc-800/80 bg-black/20")
       }
     >
@@ -4269,7 +4269,7 @@ function PostCard({
         className={
           "rounded-2xl border p-4 " +
           (isAnchorHighlighted
-            ? "border-amber-400/70 bg-amber-500/5 shadow-[0_0_0_4px_rgba(251,191,36,0.12)]"
+            ? "theme-accent-focus border-amber-400/70 bg-amber-500/5"
             : highlightAuthor
               ? "border-emerald-500/70 bg-emerald-500/5"
               : "border-zinc-800/80 bg-black/20")

@@ -87,9 +87,9 @@ export function StaffNav() {
   const pillBase =
     "inline-flex items-center justify-between gap-2 rounded-full border px-3 py-2 text-[13px] font-medium tracking-wide transition-all";
   const pillActive =
-    "border-brand-primary/70 bg-black/60 text-brand-primary shadow-[0_0_10px_rgba(126,230,255,0.22)]";
+    "border-brand-accent/70 bg-black/60 text-brand-accent";
   const pillIdle =
-    "border-transparent text-brand-textMuted hover:border-brand-primary/50 hover:bg-black/50 hover:text-brand-primary hover:shadow-[0_0_8px_rgba(126,230,255,0.16)] hover:-translate-y-[1px]";
+    "border-transparent text-brand-textMuted hover:border-brand-accent/50 hover:bg-black/50 hover:text-brand-accent hover:-translate-y-[1px]";
 
   const renderLink = (l: NavLink) => {
     if (l.anyOf && !hasAny(perms, l.anyOf)) return null;

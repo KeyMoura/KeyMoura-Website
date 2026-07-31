@@ -310,7 +310,7 @@ function GarageCarCard({
       className={
         "rounded-xl border bg-black/40 p-4 text-xs transition hover:border-amber-400/70 hover:bg-black/60 cursor-pointer " +
         (highlightPrimary
-          ? "border-amber-400/80 shadow-[0_0_30px_rgba(255,193,7,0.25)]"
+          ? "theme-accent-glow border-amber-400/80"
           : "border-zinc-800/80")
       }
       onClick={handleCardClick}

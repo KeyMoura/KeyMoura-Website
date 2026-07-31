@@ -42,12 +42,16 @@ export default async function RootLayout({
     "--km-surface-strong": settings.theme.surfaceStrong,
     "--km-text": settings.theme.text,
     "--km-muted": settings.theme.mutedText,
+    "--km-heading": settings.theme.headingText,
+    "--km-link": settings.theme.linkText,
     "--km-border": settings.theme.border,
+    "--km-primary-button-text": settings.theme.primaryButtonText,
+    "--km-secondary-button-text": settings.theme.secondaryButtonText,
   } as CSSProperties;
 
   return (
     <html lang="en">
-      <body style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-button-style={settings.theme.buttonStyle} className="min-h-screen text-brand-text antialiased">
+      <body style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-primary-button-style={settings.theme.primaryButtonStyle} data-secondary-button-style={settings.theme.secondaryButtonStyle} className="min-h-screen text-brand-text antialiased">
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>

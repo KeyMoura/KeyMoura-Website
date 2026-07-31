@@ -273,7 +273,7 @@ function NotificationBell({
     isNotificationsRoute
       ? "border-white/70 bg-white/10 text-white ring-1 ring-white/30"
       : unreadCount > 0
-        ? "border-amber-400/80 bg-black/55 text-amber-200 shadow-[0_0_14px_rgba(251,191,36,0.20)]"
+        ? "theme-accent-glow border-amber-400/80 bg-black/55 text-amber-200"
         : "border-zinc-700 bg-black/40 text-white hover:border-zinc-500"
   }`;
 
@@ -727,7 +727,7 @@ function MessageBell({
     isMessagesRoute
       ? "border-white/70 bg-white/10 text-white ring-1 ring-white/30"
       : unreadCount > 0
-        ? "border-amber-400/80 bg-black/55 text-amber-200 shadow-[0_0_14px_rgba(251,191,36,0.20)]"
+        ? "theme-accent-glow border-amber-400/80 bg-black/55 text-amber-200"
         : "border-zinc-700 bg-black/40 text-white hover:border-zinc-500"
   }`;
 
@@ -1203,9 +1203,7 @@ export default function SiteHeader() {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   const isHome = pathname === "/";
-  const homeLogoSrc = isHome
-    ? "/brand/keymoura-colored.png"
-    : "/brand/keymoura-white.png";
+  const homeLogoSrc = siteSettings.logoUrl;
   const isStaffRoute = pathname.startsWith("/staff");
   const isAccountRoute = pathname.startsWith("/account");
 
@@ -1217,9 +1215,9 @@ export default function SiteHeader() {
   const pillBase =
     "rounded-full px-3 py-1 text-[14px] font-medium tracking-wide transition-colors";
   const pillActive =
-    "border border-brand-primary/70 bg-black/60 text-brand-primary shadow-[0_0_10px_rgba(126,230,255,0.25)]";
+    "border border-brand-accent/70 bg-black/60 text-brand-accent";
   const pillIdle =
-    "border border-transparent text-brand-textMuted transition-all duration-150 ease-out hover:border-brand-primary/50 hover:bg-black/50 hover:text-brand-primary hover:shadow-[0_0_8px_rgba(126,230,255,0.18)] hover:-translate-y-[1px]";
+    "border border-transparent text-brand-textMuted transition-all duration-150 ease-out hover:border-brand-accent/50 hover:bg-black/50 hover:text-brand-accent hover:-translate-y-[1px]";
 
   const navLinkClasses = (href: string) =>
     `${pillBase} ${isActive(href) ? pillActive : pillIdle}`;
@@ -1255,8 +1253,8 @@ export default function SiteHeader() {
 
   const accountPillClass = `${desktopPillBase} ${
     isAccountRoute
-      ? "border-brand-primary/80 bg-black/70 text-brand-primary shadow-[0_0_14px_rgba(126,230,255,0.35)]"
-      : "border-zinc-700 bg-black/40 text-brand-text hover:border-brand-primary/70 hover:bg-black/70 hover:text-brand-primary hover:ring-1 hover:ring-brand-primary/30"
+      ? "border-brand-accent/80 bg-black/70 text-brand-accent"
+      : "border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/70 hover:bg-black/70 hover:text-brand-accent hover:ring-1 hover:ring-brand-accent/30"
   }`;
 
   const hexToRgba = (hex: string, alpha: number) => {
@@ -1295,7 +1293,7 @@ export default function SiteHeader() {
   const mobilePillBase =
     "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[13px] font-medium transition-all duration-150 ease-out";
 
-  const mobileAccountPillClass = `${mobilePillBase} border-zinc-700 bg-black/40 text-brand-text hover:border-brand-primary/70 hover:bg-black/70 hover:text-brand-primary`;
+  const mobileAccountPillClass = `${mobilePillBase} border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/70 hover:bg-black/70 hover:text-brand-accent`;
   const mobileStaffPillClass = `${mobilePillBase} hover:brightness-110`;
 
   const headerTheme = "border-b bg-black/55";
@@ -1306,8 +1304,8 @@ export default function SiteHeader() {
         boxShadow: `0 10px 30px ${hexToRgba(staffPalette.border, 0.12) ?? "rgba(0,0,0,0.12)"}`,
       }
     : {
-        borderColor: "rgba(251,191,36,0.25)",
-        boxShadow: "0 10px 30px rgba(251,191,36,0.12)",
+        borderColor: "color-mix(in srgb, var(--brand-accent) 25%, transparent)",
+        boxShadow: "0 10px 30px color-mix(in srgb, var(--brand-accent) 12%, transparent)",
       };
 
   return (
@@ -1327,7 +1325,7 @@ export default function SiteHeader() {
             <button
               type="button"
               onClick={handleOpenCommandPalette}
-              className={`${desktopPillBase} max-w-full justify-center border-zinc-700 bg-black/40 text-brand-text hover:border-brand-primary/60 hover:bg-black/55`}
+              className={`${desktopPillBase} max-w-full justify-center border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/60 hover:bg-black/55`}
               aria-label="Search site (Ctrl+K)"
             >
               <FontAwesomeIcon icon={faMagnifyingGlass} className="h-3.5 w-3.5 shrink-0" />
@@ -1364,9 +1362,7 @@ export default function SiteHeader() {
               />
               {siteSettings.wordmarkUrl ? (
                 <img src={siteSettings.wordmarkUrl} alt="" className="ml-2 hidden h-7 max-w-36 object-contain 2xl:block" />
-              ) : (
-                <span className="ml-2 hidden text-sm font-semibold tracking-wide text-brand-text 2xl:inline">{siteSettings.shortName}</span>
-              )}
+              ) : null}
             </Link>
 
             <nav className="flex items-center gap-1" aria-label="Primary navigation continued">
@@ -1436,7 +1432,7 @@ export default function SiteHeader() {
             ) : (
               <Link
                 href="/auth/login"
-                className="rounded-full border border-amber-300 bg-amber-400 px-3 py-1 text-[11px] font-semibold text-black shadow-[0_0_14px_rgba(251,191,36,0.45)] transition-all duration-150 ease-out hover:bg-amber-300 hover:border-amber-200"
+                className="theme-primary-glow rounded-full border border-amber-300 bg-amber-400 px-3 py-1 text-[11px] font-semibold text-black transition-all duration-150 ease-out hover:bg-amber-300 hover:border-amber-200"
               >
                 Log in
               </Link>
@@ -1467,7 +1463,7 @@ export default function SiteHeader() {
             <button
               type="button"
               onClick={handleOpenCommandPalette}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-zinc-700 bg-black/40 px-2 text-[11px] text-brand-text transition-all duration-150 ease-out hover:border-brand-primary/60"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-zinc-700 bg-black/40 px-2 text-[11px] text-brand-text transition-all duration-150 ease-out hover:border-brand-accent/60"
               aria-label="Search site (Ctrl+K)"
             >
               🔍
@@ -1504,7 +1500,7 @@ export default function SiteHeader() {
             <button
               type="button"
               onClick={handleToggleMobile}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 bg-black/40 text-xs text-brand-text transition-all duration-150 ease-out hover:border-brand-primary/60"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 bg-black/40 text-xs text-brand-text transition-all duration-150 ease-out hover:border-brand-accent/60"
               aria-label="Toggle menu"
             >
               {isMobileOpen ? "✕" : "☰"}
@@ -1582,7 +1578,7 @@ export default function SiteHeader() {
           ) : (
             <Link
               href="/auth/login"
-              className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-400 px-3 py-2 text-[11px] font-medium text-black shadow-[0_0_14px_rgba(251,191,36,0.45)] transition-all duration-150 ease-out hover:bg-amber-300 hover:border-amber-200"
+              className="theme-primary-glow inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-400 px-3 py-2 text-[11px] font-medium text-black transition-all duration-150 ease-out hover:bg-amber-300 hover:border-amber-200"
               onClick={() => setIsMobileOpen(false)}
             >
               Log in

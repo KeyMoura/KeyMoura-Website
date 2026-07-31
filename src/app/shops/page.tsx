@@ -290,13 +290,13 @@ export default function ShopsPage() {
                 }
                 ${
                     s.featured
-                    ? "ring-1 ring-amber-400/30 shadow-[0_0_18px_rgba(251,191,36,0.25)] hover:shadow-[0_0_26px_rgba(251,191,36,0.45)]"
+                    ? "theme-accent-glow ring-1 ring-amber-400/30"
                     : ""
                 }`}
                 >
                 <div className="relative min-w-0">
                     {s.featured && (
-                        <div className="pointer-events-none absolute right-2 top-0 text-amber-300/80 transition group-hover:text-amber-300 group-hover:drop-shadow-[0_0_6px_rgba(251,191,36,0.6)]">
+                        <div className="theme-accent-drop-glow pointer-events-none absolute right-2 top-0 text-amber-300/80 transition group-hover:text-amber-300">
                         ★
                         </div>
                     )}
