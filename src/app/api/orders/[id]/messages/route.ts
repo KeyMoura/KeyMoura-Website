@@ -1,0 +1,25 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getActorAccessFromRequest, routeServiceClient } from "@/lib/api/routeAuth";
+import { sendOrderEmail } from "@/lib/commerceEmail";
+
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const actor = await getActorAccessFromRequest(req);
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await context.params;
+  const body = await req.json().catch(() => null) as { body?: unknown; internal?: unknown } | null;
+  const message = typeof body?.body === "string" ? body.body.trim() : "";
+  if (!message || message.length > 4000) return NextResponse.json({ error: "Message must be 1–4000 characters." }, { status: 400 });
+  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id").eq("id", id).maybeSingle();
+  if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  const isStaff = actor.permissions.has("orders.manage");
+  if (!isStaff && order.customer_id !== actor.userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const internal = isStaff && body?.internal === true;
+  const { data: inserted, error } = await routeServiceClient.from("order_messages").insert({ order_id: id, sender_id: actor.userId, body: message, is_internal: internal }).select("id").single();
+  if (error) return NextResponse.json({ error: "Could not send message" }, { status: 500 });
+  if (!internal) {
+    const { data: customer } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
+    const to = isStaff ? customer.user?.email : process.env.ORDER_NOTIFICATION_EMAIL;
+    await sendOrderEmail({ to, orderId: id, orderNumber: order.order_number, productName: order.product_name, subject: `New message about ${order.order_number || "a KeyMoura request"}`, message: isStaff ? "KeyMoura sent you a new message." : "A customer sent a new order message.", eventKey: `order-message-${inserted.id}` });
+  }
+  return NextResponse.json({ ok: true });
+}
