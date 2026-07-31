@@ -19,7 +19,11 @@ function loginError(origin: string, error: string): NextResponse {
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  if (!code) return NextResponse.redirect(new URL("/auth/login", url.origin));
+  const tokenHash = url.searchParams.get("token_hash");
+  const otpType = url.searchParams.get("type");
+  if (!code && !(tokenHash && otpType === "email")) {
+    return NextResponse.redirect(new URL("/auth/login", url.origin));
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -33,7 +37,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       setAll: (cookies) => cookies.forEach((cookie) => success.cookies.set(cookie.name, cookie.value, cookie.options)),
     },
   });
-  const { data: exchange, error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data: exchange, error } = code
+    ? await supabase.auth.exchangeCodeForSession(code)
+    : await supabase.auth.verifyOtp({ token_hash: tokenHash!, type: "email" });
   if (error || !exchange.user) return loginError(url.origin, "oauth_exchange_failed");
 
   const admin = installerAdmin();
