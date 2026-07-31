@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ProductModelViewer } from "@/components/ProductModelViewer";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 import { availabilityLabel, CatalogProduct, money, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 
@@ -121,8 +122,8 @@ export default function ProductRequestPage() {
                 <div className="flex h-full items-center justify-center text-6xl text-brand-primary">KM</div>}
           </div>
           <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
-            {images.map(asset => <button key={asset.id} onClick={() => { setShowModel(false); setActiveImage(asset.url); }} className={`shrink-0 overflow-hidden rounded-xl border ${!showModel && activeImage === asset.url ? "border-brand-primary" : "border-zinc-800"}`}><Image src={asset.url} alt={asset.alt_text || product.name} width={88} height={88} className="h-20 w-20 object-cover" unoptimized /></button>)}
-            {modelUrl ? <button onClick={() => setShowModel(true)} className={`h-20 w-24 shrink-0 rounded-xl border text-sm ${showModel ? "border-brand-primary bg-brand-primary/10 text-brand-primary" : "border-zinc-800"}`}>3D view</button> : null}
+            {images.map(asset => <button type="button" key={asset.id} onClick={() => { setShowModel(false); setActiveImage(asset.url); }} className={`shrink-0 overflow-hidden rounded-xl border bg-zinc-950 text-brand-text transition hover:border-brand-primary/70 ${!showModel && activeImage === asset.url ? "border-brand-primary ring-1 ring-brand-primary/40" : "border-zinc-700"}`}><Image src={asset.url} alt={asset.alt_text || product.name} width={88} height={88} className="h-20 w-20 object-cover" unoptimized /></button>)}
+            {modelUrl ? <button type="button" onClick={() => setShowModel(true)} className={`h-20 w-24 shrink-0 rounded-xl border text-sm font-medium transition hover:border-brand-primary/70 hover:text-brand-primary ${showModel ? "border-brand-primary bg-brand-primary/10 text-brand-primary" : "border-zinc-700 bg-zinc-950 text-brand-text"}`}>3D view</button> : null}
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-3 py-1 text-xs ${canRequest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
           <h1 className="mt-3 text-3xl font-semibold">{product.name}</h1>
@@ -138,15 +139,28 @@ export default function ProductRequestPage() {
             {groups.map(group => <fieldset key={group.id}>
               <legend className="text-sm font-medium">{group.name}{group.is_required ? <span className="text-brand-primary"> *</span> : null}</legend>
               {group.description ? <p className="mt-1 text-xs text-brand-textMuted">{group.description}</p> : null}
-              {group.input_type === "select" ? <select required={group.is_required} className={`${input} mt-1`} value={String(selections[group.option_key] ?? "")} onChange={e => setSelections(current => ({ ...current, [group.option_key]: e.target.value }))}>
-                {!group.is_required ? <option value="">No preference</option> : null}
-                {(group.product_option_values ?? []).map(value => <option key={value.id} value={value.value}>{value.label}{value.price_adjustment_cents ? ` (${money(value.price_adjustment_cents)})` : ""}</option>)}
-              </select> : null}
-              {group.input_type === "radio" ? <div className="mt-2 grid gap-2 sm:grid-cols-2">{(group.product_option_values ?? []).map(value => <label key={value.id} className={`cursor-pointer rounded-xl border p-3 text-sm ${selections[group.option_key] === value.value ? "border-brand-primary bg-brand-primary/10" : "border-zinc-700"}`}><input className="mr-2" type="radio" required={group.is_required} name={group.option_key} checked={selections[group.option_key] === value.value} onChange={() => setSelections(current => ({ ...current, [group.option_key]: value.value }))} />{value.label}{value.price_adjustment_cents ? <span className="ml-1 text-brand-primary">{money(value.price_adjustment_cents)}</span> : null}</label>)}</div> : null}
+              {group.input_type === "select" ? <div className="mt-1">
+                <MenuSelect
+                  value={String(selections[group.option_key] ?? "")}
+                  onChange={value => setSelections(current => ({ ...current, [group.option_key]: value }))}
+                  ariaLabel={group.name}
+                  align="left"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-zinc-700 bg-black/40 px-3 py-2.5 text-left text-sm text-brand-text outline-none transition hover:border-brand-primary/70 focus-visible:border-brand-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  menuClassName="overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-950 text-brand-text shadow-2xl shadow-black/60"
+                  options={[
+                    ...(!group.is_required ? [{ value: "", label: "No preference" }] : []),
+                    ...(group.product_option_values ?? []).map(value => ({
+                      value: value.value,
+                      label: `${value.label}${value.price_adjustment_cents ? ` (${money(value.price_adjustment_cents)})` : ""}`,
+                    })),
+                  ]}
+                />
+              </div> : null}
+              {group.input_type === "radio" ? <div className="mt-2 grid gap-2 sm:grid-cols-2">{(group.product_option_values ?? []).map(value => <label key={value.id} className={`cursor-pointer rounded-xl border p-3 text-sm text-brand-text transition hover:border-brand-primary/70 ${selections[group.option_key] === value.value ? "border-brand-primary bg-brand-primary/10" : "border-zinc-700 bg-black/30"}`}><input className="mr-2" type="radio" required={group.is_required} name={group.option_key} checked={selections[group.option_key] === value.value} onChange={() => setSelections(current => ({ ...current, [group.option_key]: value.value }))} />{value.label}{value.price_adjustment_cents ? <span className="ml-1 text-brand-primary">{money(value.price_adjustment_cents)}</span> : null}</label>)}</div> : null}
               {group.input_type === "text" ? <input required={group.is_required} className={`${input} mt-1`} placeholder={group.placeholder || ""} value={String(selections[group.option_key] ?? "")} onChange={e => setSelections(current => ({ ...current, [group.option_key]: e.target.value }))} /> : null}
               {group.input_type === "textarea" ? <textarea required={group.is_required} className={`${input} mt-1 min-h-24`} placeholder={group.placeholder || ""} value={String(selections[group.option_key] ?? "")} onChange={e => setSelections(current => ({ ...current, [group.option_key]: e.target.value }))} /> : null}
               {group.input_type === "number" ? <input required={group.is_required} type="number" className={`${input} mt-1`} placeholder={group.placeholder || ""} value={String(selections[group.option_key] ?? "")} onChange={e => setSelections(current => ({ ...current, [group.option_key]: e.target.value ? Number(e.target.value) : null }))} /> : null}
-              {group.input_type === "checkbox" ? <label className="mt-2 flex items-center gap-2 rounded-xl border border-zinc-700 p-3 text-sm"><input type="checkbox" checked={Boolean(selections[group.option_key])} onChange={e => setSelections(current => ({ ...current, [group.option_key]: e.target.checked }))} />{group.placeholder || `Yes, include ${group.name.toLowerCase()}`}</label> : null}
+              {group.input_type === "checkbox" ? <label className="mt-2 flex items-center gap-2 rounded-xl border border-zinc-700 bg-black/30 p-3 text-sm text-brand-text transition hover:border-brand-primary/70"><input type="checkbox" checked={Boolean(selections[group.option_key])} onChange={e => setSelections(current => ({ ...current, [group.option_key]: e.target.checked }))} />{group.placeholder || `Yes, include ${group.name.toLowerCase()}`}</label> : null}
               {group.input_type === "file" ? <input required={group.is_required} type="file" className={`${input} mt-1`} onChange={e => setFiles(current => ({ ...current, [group.option_key]: e.target.files?.[0] ?? null }))} /> : null}
             </fieldset>)}
           </div> : null}
