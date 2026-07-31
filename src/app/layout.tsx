@@ -20,9 +20,9 @@ export async function generateMetadata(): Promise<Metadata> {
     description: settings.description,
     metadataBase: new URL(settings.url),
     icons: {
-      icon: "/favicon.ico",
-      shortcut: "/favicon.ico",
-      apple: "/apple-icon.png",
+      icon: settings.faviconUrl,
+      shortcut: settings.faviconUrl,
+      apple: settings.appleIconUrl,
     },
   };
 }
