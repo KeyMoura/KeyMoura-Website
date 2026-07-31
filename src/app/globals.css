@@ -8,7 +8,8 @@
  */
 
 @layer base {
-  :root {
+  :root,
+  [data-theme-scope="true"] {
     color-scheme: dark;
 
     /* System stacks keep production builds deterministic and network-independent. */
@@ -54,12 +55,12 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  body[data-radius="soft"] { --control-radius: 0.375rem; }
-  body[data-radius="pill"] { --control-radius: 9999px; }
-  body[data-density="compact"] { --control-pad-y: 0.4rem; }
-  body[data-font="system"] { font-family: Arial, Helvetica, sans-serif; }
-  body[data-font="modern"] { font-family: var(--font-geist-sans); }
-  body[data-font="technical"] { font-family: var(--font-geist-mono); }
+  [data-radius="soft"] { --control-radius: 0.375rem; }
+  [data-radius="pill"] { --control-radius: 9999px; }
+  [data-density="compact"] { --control-pad-y: 0.4rem; }
+  [data-font="system"] { font-family: Arial, Helvetica, sans-serif; }
+  [data-font="modern"] { font-family: var(--font-geist-sans); }
+  [data-font="technical"] { font-family: var(--font-geist-mono); }
 
   h1, h2, h3, h4, h5, h6 { color: var(--heading); }
   main :where(a:not([class])) { color: var(--link); }
@@ -435,6 +436,7 @@
   .ui-select-option:hover { border-color: var(--border); background: var(--panel); }
   .ui-select-option.is-active { border-color: color-mix(in srgb, var(--brand-accent) 50%, transparent); background: color-mix(in srgb, var(--brand-accent) 14%, transparent); color: var(--brand-accent); }
   .ui-preview { background: var(--km-bg); color: var(--km-text); border-color: var(--km-border); }
+  .ui-preview a { color: var(--km-link); }
   .ui-notice { border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: .75rem 1rem; font-size: .875rem; }
   .ui-notice-warning { border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border)); background: color-mix(in srgb, var(--brand-primary) 10%, var(--panel)); color: var(--text); }
   .ui-tabs { display: flex; width: fit-content; max-width: 100%; gap: .25rem; overflow-x: auto; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel-strong); padding: .25rem; }

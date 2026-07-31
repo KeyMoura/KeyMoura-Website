@@ -35,7 +35,7 @@ export default function AppearancePage(){
   const setTheme=<K extends keyof SiteTheme>(key:K,value:SiteTheme[K])=>setForm(v=>({...v,theme:{...v.theme,[key]:value}}));
   const setIdentity=(key:keyof Identity,value:string)=>setForm(v=>({...v,identity:{...v.identity,[key]:value}}));
   async function save(){setState("Saving…");const r=await fetch("/api/staff/appearance",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(form)});const body=await r.json();setState(r.ok?"Saved. Refreshing the site…":body.error||"Could not save.");if(r.ok)setTimeout(()=>location.reload(),500);}
-  return <main className="page-stack" style={vars} data-radius={form.theme.radius} data-density={form.theme.density} data-font={form.theme.font} data-primary-button-style={form.theme.primaryButtonStyle} data-secondary-button-style={form.theme.secondaryButtonStyle}>
+  return <main className="page-stack" style={vars} data-theme-scope="true" data-radius={form.theme.radius} data-density={form.theme.density} data-font={form.theme.font} data-primary-button-style={form.theme.primaryButtonStyle} data-secondary-button-style={form.theme.secondaryButtonStyle}>
     <header><p className="ui-eyebrow">Site design & identity</p><h1 className="mt-1 text-3xl font-semibold">Appearance</h1><p className="mt-2 text-sm text-brand-textMuted">Control the KeyMoura brand, assets, wording, and shared interface without editing code.</p></header>
     {state?<div className="ui-card text-sm">{state}</div>:null}{warning?<div className="ui-notice ui-notice-warning">{warning}</div>:null}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,.72fr)]"><div className="space-y-5">
