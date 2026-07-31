@@ -682,10 +682,9 @@ export default function AdminCommunityPage() {
             <MenuSelect
               ariaLabel="Filter flags by status"
               value={flagStatus}
-              onChange={(v) => setFlagStatus(v as any)}
-              options={flagStatusOptions as any}
-              className="flex h-9 items-center gap-2 rounded-lg border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-text outline-none transition hover:border-amber-400/80"
-              menuClassName="mt-2 w-44 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+              onChange={setFlagStatus}
+              options={[...flagStatusOptions]}
+              className="ui-select-trigger max-w-44"
               align="left"
             />
           </div>
@@ -832,18 +831,13 @@ export default function AdminCommunityPage() {
             <label className="block text-[11px] text-brand-textMuted">
               Parent category (optional)
             </label>
-            <select
+            <MenuSelect
               value={newParentId ? String(newParentId) : ""}
-              onChange={(e) => setNewParentId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-[12px] text-brand-text outline-none focus:border-amber-400"
+              onChange={(value) => setNewParentId(value ? Number(value) : null)}
+              options={buildParentOptions(null)}
+              className="ui-select-trigger"
               disabled={busyKey === "create-category"}
-            >
-              {buildParentOptions(null).map((opt) => (
-                <option key={opt.value || "none"} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         </div>
 
@@ -939,18 +933,13 @@ export default function AdminCommunityPage() {
 
                         <div className="space-y-2">
                           <label className="block text-[11px] text-brand-textMuted">Parent</label>
-                          <select
+                          <MenuSelect
                             value={editParentId ? String(editParentId) : ""}
-                            onChange={(e) => setEditParentId(e.target.value ? Number(e.target.value) : null)}
-                            className="w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                            onChange={(value) => setEditParentId(value ? Number(value) : null)}
+                            options={buildParentOptions(c.id)}
+                            className="ui-select-trigger"
                             disabled={busyKey === `edit-${c.id}` || !canEditCategories}
-                          >
-                            {buildParentOptions(c.id).map((opt) => (
-                              <option key={opt.value || "none"} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </div>
 
                       </div>
