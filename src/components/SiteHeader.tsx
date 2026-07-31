@@ -1203,6 +1203,9 @@ export default function SiteHeader() {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   const isHome = pathname === "/";
+  const homeLogoSrc = isHome
+    ? "/brand/keymoura-colored.png"
+    : "/brand/keymoura-white.png";
   const isStaffRoute = pathname.startsWith("/staff");
   const isAccountRoute = pathname.startsWith("/account");
 
@@ -1353,7 +1356,7 @@ export default function SiteHeader() {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={siteSettings.logoUrl}
+                src={homeLogoSrc}
                 alt={siteSettings.name}
                 width={44}
                 height={44}
@@ -1447,7 +1450,7 @@ export default function SiteHeader() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={siteSettings.logoUrl}
+              src={homeLogoSrc}
               alt={siteSettings.name}
               width={36}
               height={36}
