@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ProductModelViewer } from "@/components/ProductModelViewer";
-import { CatalogProduct, money, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
+import { availabilityLabel, CatalogProduct, money, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 
 type Selection = string | number | boolean | null;
@@ -87,11 +87,20 @@ export default function ProductRequestPage() {
     snapshot.budget = budget.trim() || null;
     snapshot.estimated_total_cents = estimated;
 
-    const { data, error: insertError } = await supabase.from("orders").insert({
-      customer_id: auth.user.id, product_id: product.id, product_name: product.name, quantity,
-      specifications: snapshot, customer_notes: notes.trim() || null, target_date: targetDate || null,
-    }).select("id").single();
-    if (insertError) { setError(insertError.message); setBusy(false); return; }
+    const { data: sessionData } = await supabase.auth.getSession();
+    const response = await fetch("/api/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionData.session?.access_token ? { Authorization: `Bearer ${sessionData.session.access_token}` } : {}),
+      },
+      body: JSON.stringify({
+        product_id: product.id, quantity, specifications: snapshot,
+        customer_notes: notes.trim() || null, target_date: targetDate || null,
+      }),
+    });
+    const data = await response.json() as { id?: string; error?: string };
+    if (!response.ok || !data.id) { setError(data.error || "Could not create order request"); setBusy(false); return; }
     router.push(`/orders/${data.id}`);
   }
 
@@ -100,6 +109,7 @@ export default function ProductRequestPage() {
   const input = "w-full rounded-xl border border-zinc-700 bg-black/40 px-3 py-2.5 outline-none focus:border-brand-primary";
   const images = media.filter(asset => asset.kind === "image");
   const modelUrl = media.find(asset => asset.kind === "model")?.url ?? product.model_url;
+  const canRequest = product.availability_status !== "unavailable";
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
@@ -114,11 +124,12 @@ export default function ProductRequestPage() {
             {images.map(asset => <button key={asset.id} onClick={() => { setShowModel(false); setActiveImage(asset.url); }} className={`shrink-0 overflow-hidden rounded-xl border ${!showModel && activeImage === asset.url ? "border-brand-primary" : "border-zinc-800"}`}><Image src={asset.url} alt={asset.alt_text || product.name} width={88} height={88} className="h-20 w-20 object-cover" unoptimized /></button>)}
             {modelUrl ? <button onClick={() => setShowModel(true)} className={`h-20 w-24 shrink-0 rounded-xl border text-sm ${showModel ? "border-brand-primary bg-brand-primary/10 text-brand-primary" : "border-zinc-800"}`}>3D view</button> : null}
           </div>
-          <h1 className="mt-5 text-3xl font-semibold">{product.name}</h1>
+          <div className="mt-5 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-3 py-1 text-xs ${canRequest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
+          <h1 className="mt-3 text-3xl font-semibold">{product.name}</h1>
           <p className="mt-3 whitespace-pre-wrap text-brand-textMuted">{product.description}</p>
         </section>
 
-        <form onSubmit={submit} className="h-fit rounded-2xl border border-zinc-800 bg-black/30 p-6">
+        <form onSubmit={submit} className="h-fit rounded-2xl border border-zinc-700 bg-zinc-950/70 p-5 shadow-xl sm:p-6 lg:sticky lg:top-24">
           <h2 className="text-xl font-semibold">Request this item</h2>
           <p className="mt-1 text-sm text-brand-textMuted">{product.is_custom ? "Choose what you want. We can refine it together in the order chat." : "Send a request for this product. We’ll confirm availability and details in chat."}</p>
           <label className="mt-5 block text-sm">Quantity<input required className={`${input} mt-1`} type="number" min={1} max={1000} value={quantity} onChange={e => setQuantity(Number(e.target.value))} /></label>
@@ -147,7 +158,8 @@ export default function ProductRequestPage() {
           <label className="mt-4 block text-sm">Notes<textarea className={`${input} mt-1 min-h-28`} required value={notes} onChange={e => setNotes(e.target.value)} placeholder="Describe anything else I should know." /></label>
           <div className="mt-5 flex items-end justify-between gap-4 border-t border-zinc-800 pt-4"><div><div className="text-xs text-brand-textMuted">Estimated starting total</div><div className="text-xl font-semibold text-brand-primary">{estimated == null ? "Quoted after review" : `$${(estimated / 100).toFixed(2)}`}</div></div><span className="text-xs text-brand-textMuted">No charge now</span></div>
           {error ? <p className="mt-3 text-sm text-rose-200">{error}</p> : null}
-          <button disabled={busy} className="mt-5 w-full rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-3 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50">{busy ? "Sending…" : "Send request"}</button>
+          {!canRequest ? <p className="mt-5 rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 text-sm text-rose-100">This item is not accepting requests right now. Check back soon.</p> : null}
+          <button disabled={busy || !canRequest} className="mt-5 w-full rounded-xl border border-brand-primary bg-brand-primary px-4 py-3 font-semibold text-zinc-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-400">{busy ? "Sending…" : canRequest ? "Send request — no charge" : "Requests paused"}</button>
         </form>
       </div>
     </main>

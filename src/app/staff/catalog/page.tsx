@@ -81,6 +81,7 @@ export default function StaffCatalogPage() {
       description: draft.description?.trim() || null,
       starting_price_cents: draft.starting_price_cents ?? null, is_custom: Boolean(draft.is_custom),
       is_published: Boolean(draft.is_published), sort_order: Number(draft.sort_order || 0),
+      availability_status: draft.availability_status || "made_to_order", lead_time_text: draft.lead_time_text?.trim() || null,
       image_url: draft.image_url || null, model_url: draft.model_url || null, model_poster_url: draft.model_poster_url || null,
     };
     const { data, error: updateError } = await supabase.from("products").update(payload).eq("id", selectedId).select("*").single();
@@ -252,6 +253,8 @@ export default function StaffCatalogPage() {
               <label className="text-sm">Slug<input className={`${input} mt-1`} value={draft.slug ?? ""} onChange={e => setDraft(current => ({ ...current, slug: e.target.value }))} /></label>
               <label className="text-sm">Category<input className={`${input} mt-1`} value={draft.category ?? ""} onChange={e => setDraft(current => ({ ...current, category: e.target.value }))} /></label>
               <label className="text-sm">Starting price ($)<input className={`${input} mt-1`} type="number" min="0" step=".01" value={draft.starting_price_cents == null ? "" : draft.starting_price_cents / 100} onChange={e => setDraft(current => ({ ...current, starting_price_cents: e.target.value ? Math.round(Number(e.target.value) * 100) : null }))} /></label>
+              <label className="text-sm">Availability<select className={`${input} mt-1`} value={draft.availability_status ?? "made_to_order"} onChange={e => setDraft(current => ({ ...current, availability_status: e.target.value as CatalogProduct["availability_status"] }))}><option value="available">Available</option><option value="limited">Limited availability</option><option value="made_to_order">Made to order</option><option value="unavailable">Currently unavailable</option></select></label>
+              <label className="text-sm">Lead time<input className={`${input} mt-1`} value={draft.lead_time_text ?? ""} onChange={e => setDraft(current => ({ ...current, lead_time_text: e.target.value }))} placeholder="Example: Usually 1–2 weeks" /></label>
               <label className="text-sm sm:col-span-2">Short description<input className={`${input} mt-1`} value={draft.short_description ?? ""} onChange={e => setDraft(current => ({ ...current, short_description: e.target.value }))} /></label>
               <label className="text-sm sm:col-span-2">Full description<textarea className={`${input} mt-1 min-h-32`} value={draft.description ?? ""} onChange={e => setDraft(current => ({ ...current, description: e.target.value }))} /></label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(draft.is_custom)} onChange={e => setDraft(current => ({ ...current, is_custom: e.target.checked }))} /> Customer can customize this product</label>

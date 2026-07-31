@@ -45,7 +45,16 @@ export type CatalogProduct = {
   is_custom: boolean;
   is_published: boolean;
   sort_order: number;
+  availability_status: "available" | "limited" | "made_to_order" | "unavailable";
+  lead_time_text: string | null;
 };
+
+export const availabilityLabel = (status: CatalogProduct["availability_status"]) => ({
+  available: "Available",
+  limited: "Limited availability",
+  made_to_order: "Made to order",
+  unavailable: "Currently unavailable",
+}[status]);
 
 export const optionKey = (value: string) =>
   value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");

@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabaseClient";
+import { availabilityLabel, CatalogProduct } from "@/lib/commerceTypes";
 
-type Product = {
-  id: string; name: string; slug: string; short_description: string | null;
-  image_url: string | null; category: string | null; starting_price_cents: number | null; is_custom: boolean;
-};
+type Product = Pick<CatalogProduct, "id" | "name" | "slug" | "short_description" | "image_url" | "category" | "starting_price_cents" | "is_custom" | "availability_status" | "lead_time_text">;
 
 const money = (cents: number | null) => cents == null ? "Price determined after review" : `Starting at $${(cents / 100).toFixed(2)}`;
 
@@ -19,7 +17,7 @@ export default function CatalogPage() {
 
   useEffect(() => {
     void supabase.from("products")
-      .select("id,name,slug,short_description,image_url,category,starting_price_cents,is_custom")
+      .select("id,name,slug,short_description,image_url,category,starting_price_cents,is_custom,availability_status,lead_time_text")
       .eq("is_published", true).order("sort_order").order("created_at", { ascending: false })
       .then(({ data, error: queryError }) => {
         setProducts((data ?? []) as Product[]);
@@ -52,11 +50,12 @@ export default function CatalogPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             {product.image_url ? <img src={product.image_url} alt="" className="h-52 w-full object-cover" /> : <div className="flex h-52 items-center justify-center bg-zinc-900 text-4xl text-brand-primary">KM</div>}
             <div className="p-5">
-              <div className="flex items-center justify-between gap-2 text-xs text-brand-textMuted"><span>{product.category || "Custom made"}</span>{product.is_custom ? <span>Customizable</span> : null}</div>
+              <div className="flex items-center justify-between gap-2 text-xs text-brand-textMuted"><span>{product.category || "Custom made"}</span>{product.is_custom ? <span className="rounded-full border border-brand-primary/40 bg-brand-primary/10 px-2 py-0.5 text-brand-primary">Customizable</span> : null}</div>
               <h2 className="mt-2 text-xl font-semibold">{product.name}</h2>
               <p className="mt-2 min-h-12 text-sm text-brand-textMuted">{product.short_description}</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs"><span className={`rounded-full border px-2.5 py-1 ${product.availability_status === "unavailable" ? "border-rose-400/40 bg-rose-400/10 text-rose-200" : "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-2.5 py-1 text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
               <p className="mt-4 text-sm font-medium text-brand-primary">{money(product.starting_price_cents)}</p>
-              <Link href={`/catalog/${product.slug}`} className="mt-4 inline-flex rounded-full border border-brand-primary/70 bg-brand-primary/10 px-4 py-2 text-sm text-brand-primary hover:bg-brand-primary/20">View & request</Link>
+              <Link href={`/catalog/${product.slug}`} className="mt-4 inline-flex rounded-full border border-brand-primary bg-brand-primary px-4 py-2 text-sm font-semibold text-zinc-950 hover:brightness-110">{product.availability_status === "unavailable" ? "View details" : "Customize & request"}</Link>
             </div>
           </article>
         ))}
