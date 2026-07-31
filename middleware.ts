@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, PostgrestError } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { checkInstallationReadiness, logReadinessFailure, serverSupabaseEnv } from "./src/lib/installer/readiness";
 
@@ -203,7 +203,13 @@ export async function middleware(req: NextRequest) {
       const moduleState = await withTimeout(
         Promise.resolve(adminDb.from("installed_modules").select("enabled").eq("module_key", matched[1]).maybeSingle()),
         750,
-        { data: null, error: { message: "timeout", details: "", hint: "", code: "TIMEOUT", name: "PostgrestError" }, count: null, status: 504, statusText: "Timeout" }
+        {
+          data: null,
+          error: new PostgrestError({ message: "timeout", details: "", hint: "", code: "TIMEOUT" }),
+          count: null,
+          status: 504,
+          statusText: "Timeout",
+        }
       );
       if (moduleState.error || !moduleState.data?.enabled) {
         if (pathname.startsWith("/api")) return NextResponse.json({ error: "Module not installed." }, { status: 404 });
@@ -272,43 +278,3 @@ export async function middleware(req: NextRequest) {
       return new NextResponse("Forbidden. Staff only.", { status: 403 });
     }
   }
-
-  if (isAdminPath) {
-    if (!userId) return NextResponse.redirect(new URL("/auth/login", req.url));
-    if (role !== "admin") {
-      if (pathname.startsWith("/api")) {
-        return NextResponse.json({ error: "Forbidden. Admins only." }, { status: 403 });
-      }
-      return new NextResponse("Forbidden. Admins only.", { status: 403 });
-    }
-  }
-
-  const { maintenance_mode } = await withTimeout(getSecuritySettings(adminDb), 750, { maintenance_mode: false });
-  if (maintenance_mode) {
-    const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-    if (isWrite) {
-      const isAdminOrAuthPath =
-        pathname.startsWith("/admin") ||
-        pathname.startsWith("/api/admin") ||
-        pathname.startsWith("/staff") ||
-        pathname.startsWith("/api/staff") ||
-        pathname.startsWith("/auth") ||
-        pathname.startsWith("/api/auth") ||
-        pathname.startsWith("/api/lockdown-status") ||
-        pathname.startsWith("/api/verify-lockdown-password");
-
-      if (!isAdminOrAuthPath) {
-        if (pathname.startsWith("/api")) {
-          return NextResponse.json({ error: "Maintenance mode: writes disabled." }, { status: 503 });
-        }
-        return new NextResponse("Maintenance mode: writes disabled.", { status: 503 });
-      }
-    }
-  }
-
-  return res;
-}
-
-export const config = {
-  matcher: "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
-};
