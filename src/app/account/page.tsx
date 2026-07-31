@@ -785,7 +785,7 @@ const loadMyReports = async (viewerId: string) => {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-8 text-brand-text">
+      <div className="page-container page-stack text-brand-text">
         <p className="text-sm text-brand-textMuted">Loading account…</p>
       </div>
     );
@@ -800,7 +800,7 @@ const loadMyReports = async (viewerId: string) => {
         </p>
         <Link
           href="/auth/login"
-          className="inline-flex items-center justify-center rounded-full border border-white bg-white px-4 py-2 text-sm font-medium text-black shadow-sm shadow-black/60 transition hover:bg-zinc-200 active:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-60"
+          className="ui-btn ui-btn-primary"
         >
           Go to login
         </Link>
@@ -809,7 +809,7 @@ const loadMyReports = async (viewerId: string) => {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
+    <div className="page-container page-stack">
       <ImageCropModal
         open={avatarCropOpen}
         file={avatarCropFile}
@@ -830,7 +830,7 @@ const loadMyReports = async (viewerId: string) => {
 
       {/* Header – same structure as admin/users header */}
       <section className="space-y-2">
-        <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
+        <p className="ui-eyebrow">
           Account
         </p>
         <h1 className="text-2xl font-semibold tracking-tight text-brand-text sm:text-3xl">
@@ -842,7 +842,7 @@ const loadMyReports = async (viewerId: string) => {
         <div className="mt-1 text-[11px] text-brand-textMuted">
           <Link
             href={`/user/${user.id}`}
-            className="underline underline-offset-2 text-amber-300 hover:text-amber-200"
+            className="font-medium text-brand-primary hover:underline"
           >
             View public profile →
           </Link>
@@ -853,7 +853,7 @@ const loadMyReports = async (viewerId: string) => {
           </p>
         )}
       </section>
-      <section className="rounded-xl border border-zinc-800/80 bg-black/40 p-6">
+      <section className="ui-card p-5 sm:p-6">
         {/* Header row inside card */}
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
@@ -891,15 +891,14 @@ const loadMyReports = async (viewerId: string) => {
         </div>
 
         {/* Tabs – same style as SortChip group, but not full width */}
-        <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-black/40 p-0.5 text-[11px]">
+        <div className="ui-tabs mt-6" role="tablist" aria-label="Account sections">
           <button
             type="button"
             onClick={() => setActiveTab("profile")}
             className={
-              "rounded-full px-2 py-0.5 text-[11px] " +
+              "ui-tab " +
               (activeTab === "profile"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-400/80"
-                : "text-brand-textMuted hover:text-brand-text")
+                ? "is-active" : "")
             }
           >
             Profile
@@ -908,10 +907,9 @@ const loadMyReports = async (viewerId: string) => {
             type="button"
             onClick={() => setActiveTab("security")}
             className={
-              "rounded-full px-2 py-0.5 text-[11px] " +
+              "ui-tab " +
               (activeTab === "security"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-400/80"
-                : "text-brand-textMuted hover:text-brand-text")
+                ? "is-active" : "")
             }
           >
             Security
@@ -920,10 +918,9 @@ const loadMyReports = async (viewerId: string) => {
             type="button"
             onClick={() => setActiveTab("reports")}
             className={
-              "rounded-full px-2 py-0.5 text-[11px] " +
+              "ui-tab " +
               (activeTab === "reports"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-400/80"
-                : "text-brand-textMuted hover:text-brand-text")
+                ? "is-active" : "")
             }
           >
             Reports
@@ -932,10 +929,9 @@ const loadMyReports = async (viewerId: string) => {
             type="button"
             onClick={() => setActiveTab("blocked")}
             className={
-              "rounded-full px-2 py-0.5 text-[11px] " +
+              "ui-tab " +
               (activeTab === "blocked"
-                ? "bg-amber-500/20 text-amber-300 border border-amber-400/80"
-                : "text-brand-textMuted hover:text-brand-text")
+                ? "is-active" : "")
             }
           >
             Blocked users
@@ -955,7 +951,7 @@ const loadMyReports = async (viewerId: string) => {
                 things fast.
               </p>
               <div className="flex flex-wrap items-center gap-3">
-                <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] font-medium text-brand-text transition hover:bg-black/60">
+                <label className="ui-btn ui-btn-ghost cursor-pointer text-xs">
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
@@ -995,7 +991,7 @@ const loadMyReports = async (viewerId: string) => {
                     type="text"
                     value={displayNameInput}
                     onChange={(e) => setDisplayNameInput(e.target.value)}
-                    className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70"
+                    className="ui-input no-zoom-input"
                     placeholder="Your public name"
                   />
                   <p className="mt-1 text-[11px] text-brand-textMuted">
@@ -1016,7 +1012,7 @@ const loadMyReports = async (viewerId: string) => {
                     type="text"
                     value={usernameInput}
                     onChange={(e) => setUsernameInput(e.target.value.toLowerCase())}
-                    className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70"
+                    className="ui-input no-zoom-input"
                     placeholder="Unique handle (lowercase)"
                   />
                   <p className="mt-1 text-[11px] text-brand-textMuted">
@@ -1037,7 +1033,7 @@ const loadMyReports = async (viewerId: string) => {
                     value={bioInput}
                     onChange={(e) => setBioInput(e.target.value)}
                     rows={4}
-                    className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70"
+                    className="ui-input no-zoom-input"
                     placeholder="Tell people a bit about you, your cars, or what you know."
                   />
                   <p className="mt-1 text-[11px] text-brand-textMuted">
@@ -1057,7 +1053,7 @@ const loadMyReports = async (viewerId: string) => {
                     type="text"
                     value={locationInput}
                     onChange={(e) => setLocationInput(e.target.value)}
-                    className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70"
+                    className="ui-input no-zoom-input"
                     placeholder="City / region (optional)"
                   />
                   <p className="mt-1 text-[11px] text-brand-textMuted">
@@ -1072,7 +1068,7 @@ const loadMyReports = async (viewerId: string) => {
                   type="button"
                   onClick={handleProfileSave}
                   disabled={profileSaving}
-                  className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-4 py-2 text-[12px] font-medium text-amber-300 hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="ui-btn ui-btn-primary text-xs"
                 >
                   {profileSaving ? "Saving…" : "Save changes"}
                 </button>
@@ -1127,13 +1123,13 @@ const loadMyReports = async (viewerId: string) => {
                 <div className="flex flex-wrap gap-2">
                   <Link
                     href="/info/mine"
-                    className="inline-flex items-center justify-center rounded-full border border-white bg-white px-4 py-2 text-[12px] font-medium text-black shadow-sm shadow-black/60 transition hover:bg-zinc-200 active:bg-zinc-300"
+                    className="ui-btn ui-btn-primary text-xs"
                   >
                     View my submissions
                   </Link>
                   <Link
                     href="/info/submit"
-                    className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] font-medium text-brand-text transition hover:bg-black/60"
+                    className="ui-btn ui-btn-ghost text-xs"
                   >
                     Submit info page
                   </Link>
@@ -1151,7 +1147,7 @@ const loadMyReports = async (viewerId: string) => {
               </p>
               <Link
                 href="/auth/logout"
-                className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] font-medium text-brand-text transition hover:bg-black/60"
+                className="ui-btn ui-btn-ghost text-xs"
               >
                 Log out
               </Link>
@@ -1202,7 +1198,7 @@ const loadMyReports = async (viewerId: string) => {
       <button
         type="button"
         onClick={() => user && void loadMyReports(user.id)}
-        className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] font-medium text-brand-text transition hover:bg-black/60"
+        className="ui-btn ui-btn-ghost text-xs"
       >
         Refresh
       </button>
@@ -1213,11 +1209,11 @@ const loadMyReports = async (viewerId: string) => {
     ) : myReportsError ? (
       <p className="text-[11px] text-rose-300/80">{myReportsError}</p>
     ) : myReports.length === 0 ? (
-      <div className="rounded-xl border border-zinc-800 bg-black/25 p-4 text-[11px] text-brand-textMuted">
+      <div className="ui-card text-xs text-brand-textMuted">
         You haven’t submitted any reports.
       </div>
     ) : (
-      <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-black/25">
+      <div className="ui-table-wrap">
         <table className="min-w-full text-left text-[12px]">
           <thead className="text-[11px] text-brand-textMuted">
             <tr className="border-b border-zinc-800">
@@ -1260,7 +1256,7 @@ const loadMyReports = async (viewerId: string) => {
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <Link
                     href={`/reports/${r.id}`}
-                    className="inline-flex items-center justify-center rounded-full border border-white bg-white px-3 py-1 text-[11px] font-medium text-black shadow-sm shadow-black/60 transition hover:bg-zinc-200 active:bg-zinc-300"
+                    className="ui-btn ui-btn-primary px-3 py-1 text-xs"
                   >
                     Open
                   </Link>
@@ -1292,7 +1288,7 @@ const loadMyReports = async (viewerId: string) => {
             {blockedLoading ? (
               <p className="text-[11px] text-brand-textMuted">Loading blocked users…</p>
             ) : blockedUsers.length === 0 ? (
-              <div className="rounded-xl border border-zinc-800 bg-black/25 p-4 text-[11px] text-brand-textMuted">
+              <div className="ui-card text-xs text-brand-textMuted">
                 You haven’t blocked anyone.
               </div>
             ) : (
@@ -1307,7 +1303,7 @@ const loadMyReports = async (viewerId: string) => {
                   return (
                     <div
                       key={b.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/25 p-3"
+                      className="ui-card flex items-center justify-between gap-3 p-3"
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         {p?.avatar_url ? (
@@ -1339,7 +1335,7 @@ const loadMyReports = async (viewerId: string) => {
                         type="button"
                         onClick={() => handleUnblock(b.id)}
                         disabled={isBusy}
-                        className="shrink-0 inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] font-medium text-brand-text transition hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="ui-btn ui-btn-ghost shrink-0 px-3 py-1 text-xs"
                       >
                         {isBusy ? "Unblocking…" : "Unblock"}
                       </button>
