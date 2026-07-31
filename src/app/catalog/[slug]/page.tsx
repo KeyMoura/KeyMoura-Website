@@ -61,7 +61,7 @@ export default function ProductRequestPage() {
           </div>
           <label className="mt-4 block text-sm">Notes<textarea className={`${input} mt-1 min-h-32`} required value={notes} onChange={e => setNotes(e.target.value)} placeholder="Describe the part, customization, use, and anything else I should know." /></label>
           {error ? <p className="mt-3 text-sm text-rose-200">{error}</p> : null}
-          <button disabled={busy} className="mt-5 w-full rounded-xl bg-brand-primary px-4 py-3 font-semibold text-black disabled:opacity-50">{busy ? "Sending…" : "Send request"}</button>
+          <button disabled={busy} className="mt-5 w-full rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-3 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50">{busy ? "Sending…" : "Send request"}</button>
         </form>
       </div>
     </main>
