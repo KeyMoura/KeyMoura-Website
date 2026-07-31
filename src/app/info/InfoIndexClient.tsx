@@ -16,16 +16,7 @@ function InfoCtaButton({
   children: React.ReactNode;
   variant?: "primary" | "secondary";
 }) {
-  const base =
-    "inline-flex items-center justify-center rounded-full px-4 py-2 text-[12px] font-medium transition";
-
-  const primary =
-    "border border-amber-400/80 bg-amber-500/20 text-amber-200 shadow-sm shadow-black/60 hover:bg-amber-500/30 hover:border-amber-300/90";
-
-  const secondary =
-    "border border-zinc-700 bg-black/40 text-brand-textMuted hover:border-amber-400/80 hover:text-brand-text";
-
-  const classes = `${base} ${variant === "primary" ? primary : secondary}`;
+  const classes = `ui-btn text-xs ${variant === "primary" ? "ui-btn-primary" : "ui-btn-ghost"}`;
 
   return (
     <Link href={href} className={classes}>
@@ -171,7 +162,7 @@ function highlightText(text: string, tokens: string[]): ReactNode {
       return (
         <span
           key={idx}
-          className="rounded-[3px] bg-amber-500/20 px-0.5 text-amber-300"
+          className="rounded-[3px] bg-brand-primary/15 px-0.5 text-brand-primary"
         >
           {part}
         </span>
