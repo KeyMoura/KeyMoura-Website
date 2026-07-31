@@ -1,13 +1,13 @@
 export const colors = {
-  primary: "#7ee6ff",
-  primarySoft: "#b6f3ff",
+  primary: "var(--brand-primary, #fbbf24)",
+  primarySoft: "color-mix(in srgb, var(--brand-primary, #fbbf24) 70%, white)",
 
-  accent: "#ffcc00",
-  accentSoft: "#ffe57a",
+  accent: "var(--brand-accent, #f59e0b)",
+  accentSoft: "color-mix(in srgb, var(--brand-accent, #f59e0b) 70%, white)",
 
-  bgStart: "#052229",
-  bgEnd: "#0a0f10",
+  bgStart: "var(--km-bg, #0a0f10)",
+  bgEnd: "var(--km-bg-end, #050708)",
 
-  text: "#f5f5f5",
-  textMuted: "#9ca3af",
+  text: "var(--km-text, #f4f4f5)",
+  textMuted: "var(--km-muted, #a1a1aa)",
 } as const;
