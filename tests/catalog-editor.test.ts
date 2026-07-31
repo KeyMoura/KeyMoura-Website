@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const migration = readFileSync("supabase/migrations/20260731180000_catalog_inventory_editor.sql", "utf8");
+const editor = readFileSync("src/app/staff/catalog/page.tsx", "utf8");
+const storefront = readFileSync("src/app/catalog/page.tsx", "utf8");
+const orderRoute = readFileSync("src/app/api/orders/route.ts", "utf8");
+
+test("catalog inventory migration is constrained and hides archived products", () => {
+  assert.match(migration, /inventory_policy in \('unlimited', 'track'\)/);
+  assert.match(migration, /inventory_quantity >= 0/);
+  assert.match(migration, /is_published and archived_at is null/);
+  assert.match(migration, /unique index if not exists products_sku_unique_idx/);
+});
+
+test("staff editor includes inventory, lifecycle, duplication, and search tools", () => {
+  for (const expected of ["Inventory mode", "Low-stock warning", "Duplicate", "Archive", "Search products or SKU"]) {
+    assert.ok(editor.includes(expected), `missing editor control: ${expected}`);
+  }
+});
+
+test("storefront and order API enforce catalog availability", () => {
+  assert.match(storefront, /productCanBeRequested/);
+  assert.match(storefront, /\.is\("archived_at", null\)/);
+  assert.match(orderRoute, /inventory_quantity < quantity/);
+  assert.match(orderRoute, /product\.archived_at/);
+});

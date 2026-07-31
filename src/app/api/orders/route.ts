@@ -17,13 +17,16 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: product } = await routeServiceClient.from("products")
-    .select("id,name,is_published,is_custom,starting_price_cents,availability_status")
+    .select("id,name,is_published,is_custom,starting_price_cents,availability_status,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock,archived_at")
     .eq("id", body.product_id)
     .eq("is_published", true)
     .maybeSingle();
   if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 });
-  if (product.availability_status === "unavailable") {
+  if (product.archived_at || product.availability_status === "unavailable") {
     return NextResponse.json({ error: "This product is not accepting requests right now." }, { status: 409 });
+  }
+  if (product.inventory_policy === "track" && product.inventory_quantity < quantity && !product.continue_selling_when_out_of_stock) {
+    return NextResponse.json({ error: product.inventory_quantity > 0 ? `Only ${product.inventory_quantity} available.` : "This product is out of stock." }, { status: 409 });
   }
 
   const requested = body.specifications && typeof body.specifications === "object" && !Array.isArray(body.specifications)

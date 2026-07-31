@@ -47,6 +47,24 @@ export type CatalogProduct = {
   sort_order: number;
   availability_status: "available" | "limited" | "made_to_order" | "unavailable";
   lead_time_text: string | null;
+  sku: string | null;
+  inventory_policy: "unlimited" | "track";
+  inventory_quantity: number;
+  low_stock_threshold: number;
+  continue_selling_when_out_of_stock: boolean;
+  archived_at: string | null;
+};
+
+export const productCanBeRequested = (product: Pick<CatalogProduct, "availability_status" | "inventory_policy" | "inventory_quantity" | "continue_selling_when_out_of_stock">) =>
+  product.availability_status !== "unavailable" && (
+    product.inventory_policy === "unlimited" || product.inventory_quantity > 0 || product.continue_selling_when_out_of_stock
+  );
+
+export const inventoryLabel = (product: Pick<CatalogProduct, "inventory_policy" | "inventory_quantity" | "low_stock_threshold">) => {
+  if (product.inventory_policy === "unlimited") return "Made to order";
+  if (product.inventory_quantity === 0) return "Out of stock";
+  if (product.inventory_quantity <= product.low_stock_threshold) return `Only ${product.inventory_quantity} left`;
+  return `${product.inventory_quantity} in stock`;
 };
 
 export const availabilityLabel = (status: CatalogProduct["availability_status"]) => ({

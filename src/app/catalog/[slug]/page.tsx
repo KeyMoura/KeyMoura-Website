@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ProductModelViewer } from "@/components/ProductModelViewer";
 import { MenuSelect } from "@/components/ui/MenuSelect";
-import { availabilityLabel, CatalogProduct, money, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
+import { availabilityLabel, CatalogProduct, inventoryLabel, money, productCanBeRequested, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 
 type Selection = string | number | boolean | null;
@@ -110,7 +110,7 @@ export default function ProductRequestPage() {
   const input = "w-full rounded-xl border border-zinc-700 bg-black/40 px-3 py-2.5 outline-none focus:border-brand-primary";
   const images = media.filter(asset => asset.kind === "image");
   const modelUrl = media.find(asset => asset.kind === "model")?.url ?? product.model_url;
-  const canRequest = product.availability_status !== "unavailable";
+  const canRequest = productCanBeRequested(product);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
@@ -125,7 +125,7 @@ export default function ProductRequestPage() {
             {images.map(asset => <button type="button" key={asset.id} onClick={() => { setShowModel(false); setActiveImage(asset.url); }} className={`shrink-0 overflow-hidden rounded-xl border bg-zinc-950 text-brand-text transition hover:border-brand-primary/70 ${!showModel && activeImage === asset.url ? "border-brand-primary ring-1 ring-brand-primary/40" : "border-zinc-700"}`}><Image src={asset.url} alt={asset.alt_text || product.name} width={88} height={88} className="h-20 w-20 object-cover" unoptimized /></button>)}
             {modelUrl ? <button type="button" onClick={() => setShowModel(true)} className={`h-20 w-24 shrink-0 rounded-xl border text-sm font-medium transition hover:border-brand-primary/70 hover:text-brand-primary ${showModel ? "border-brand-primary bg-brand-primary/10 text-brand-primary" : "border-zinc-700 bg-zinc-950 text-brand-text"}`}>3D view</button> : null}
           </div>
-          <div className="mt-5 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-3 py-1 text-xs ${canRequest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
+          <div className="mt-5 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-3 py-1 text-xs ${canRequest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.inventory_policy === "track" ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{inventoryLabel(product)}</span> : null}{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
           <h1 className="mt-3 text-3xl font-semibold">{product.name}</h1>
           <p className="mt-3 whitespace-pre-wrap text-brand-textMuted">{product.description}</p>
         </section>

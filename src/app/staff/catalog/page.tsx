@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
@@ -26,6 +27,19 @@ export default function StaffCatalogPage() {
   const [draft, setDraft] = useState<Partial<CatalogProduct>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"active" | "draft" | "published" | "archived" | "all">("active");
+
+  const filteredProducts = useMemo(() => products.filter(product => {
+    const term = search.trim().toLowerCase();
+    const matchesSearch = !term || [product.name, product.slug, product.sku, product.category].some(value => value?.toLowerCase().includes(term));
+    const matchesStatus = statusFilter === "all" ||
+      (statusFilter === "active" && !product.archived_at) ||
+      (statusFilter === "archived" && Boolean(product.archived_at)) ||
+      (statusFilter === "published" && product.is_published && !product.archived_at) ||
+      (statusFilter === "draft" && !product.is_published && !product.archived_at);
+    return matchesSearch && matchesStatus;
+  }), [products, search, statusFilter]);
 
   const loadProducts = useCallback(async () => {
     const { data, error: queryError } = await supabase.from("products").select("*").order("sort_order").order("created_at", { ascending: false });
@@ -63,7 +77,7 @@ export default function StaffCatalogPage() {
       short_description: String(form.get("description") ?? "").trim() || null,
       description: String(form.get("description") ?? "").trim() || null,
       starting_price_cents: form.get("price") ? Math.round(Number(form.get("price")) * 100) : null,
-      is_published: false,
+      is_published: false, inventory_policy: "unlimited", inventory_quantity: 0, low_stock_threshold: 2,
     }).select("*").single();
     setBusy(false);
     if (insertError) return setError(insertError.message);
@@ -75,6 +89,9 @@ export default function StaffCatalogPage() {
 
   async function saveProduct() {
     if (!selectedId) return;
+    if (!draft.name?.trim()) return setError("Product name is required.");
+    if (!slugify(draft.slug || draft.name)) return setError("Enter a valid product slug.");
+    if (draft.is_published && !draft.short_description?.trim()) return setError("Add a short description before publishing.");
     setBusy(true); setError("");
     const payload = {
       name: draft.name?.trim(), slug: slugify(draft.slug || draft.name || ""),
@@ -84,6 +101,9 @@ export default function StaffCatalogPage() {
       is_published: Boolean(draft.is_published), sort_order: Number(draft.sort_order || 0),
       availability_status: draft.availability_status || "made_to_order", lead_time_text: draft.lead_time_text?.trim() || null,
       image_url: draft.image_url || null, model_url: draft.model_url || null, model_poster_url: draft.model_poster_url || null,
+      sku: draft.sku?.trim() || null, inventory_policy: draft.inventory_policy || "unlimited",
+      inventory_quantity: Math.max(0, Number(draft.inventory_quantity || 0)), low_stock_threshold: Math.max(0, Number(draft.low_stock_threshold || 0)),
+      continue_selling_when_out_of_stock: Boolean(draft.continue_selling_when_out_of_stock),
     };
     const { data, error: updateError } = await supabase.from("products").update(payload).eq("id", selectedId).select("*").single();
     setBusy(false);
@@ -190,6 +210,44 @@ export default function StaffCatalogPage() {
     await loadProducts();
   }
 
+  async function toggleArchive() {
+    if (!selectedId) return;
+    const archived_at = draft.archived_at ? null : new Date().toISOString();
+    const { data, error: updateError } = await supabase.from("products").update({ archived_at, ...(archived_at ? { is_published: false } : {}) }).eq("id", selectedId).select("*").single();
+    if (updateError) return setError(updateError.message);
+    setDraft(data as CatalogProduct);
+    await loadProducts();
+  }
+
+  async function duplicateProduct() {
+    if (!selectedId) return;
+    setBusy(true); setError("");
+    const name = `${draft.name || "Product"} copy`;
+    const { data: copy, error: copyError } = await supabase.from("products").insert({
+      name, slug: `${slugify(name)}-${crypto.randomUUID().slice(0, 6)}`, sku: null,
+      category: draft.category || null, short_description: draft.short_description || null, description: draft.description || null,
+      starting_price_cents: draft.starting_price_cents ?? null, is_custom: Boolean(draft.is_custom), is_published: false,
+      sort_order: draft.sort_order || 0, availability_status: draft.availability_status || "made_to_order", lead_time_text: draft.lead_time_text || null,
+      image_url: draft.image_url || null, model_url: draft.model_url || null, model_poster_url: draft.model_poster_url || null,
+      inventory_policy: draft.inventory_policy || "unlimited", inventory_quantity: draft.inventory_quantity || 0,
+      low_stock_threshold: draft.low_stock_threshold || 0, continue_selling_when_out_of_stock: Boolean(draft.continue_selling_when_out_of_stock), archived_at: null,
+    }).select("*").single();
+    if (copyError || !copy) { setBusy(false); return setError(copyError?.message || "Could not duplicate product"); }
+    if (media.length) await supabase.from("product_media").insert(media.map(item => ({ product_id: copy.id, kind: item.kind, url: item.url, alt_text: item.alt_text, sort_order: item.sort_order })));
+    for (const group of groups) {
+      const { data: newGroup, error: groupError } = await supabase.from("product_option_groups").insert({
+        product_id: copy.id, name: group.name, option_key: group.option_key, input_type: group.input_type,
+        description: group.description, placeholder: group.placeholder, is_required: group.is_required, sort_order: group.sort_order,
+      }).select("id").single();
+      if (groupError || !newGroup) continue;
+      if (group.product_option_values?.length) await supabase.from("product_option_values").insert(group.product_option_values.map(value => ({
+        option_group_id: newGroup.id, label: value.label, value: value.value, price_adjustment_cents: value.price_adjustment_cents,
+        is_default: value.is_default, is_active: value.is_active, sort_order: value.sort_order,
+      })));
+    }
+    setBusy(false); await loadProducts(); setSelectedId(copy.id); await loadEditor(copy as CatalogProduct);
+  }
+
   async function addValue(group: ProductOptionGroup) {
     const position = group.product_option_values?.length ?? 0;
     const label = `Choice ${position + 1}`;
@@ -238,30 +296,47 @@ export default function StaffCatalogPage() {
       {error ? <p className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p> : null}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[320px_1fr]">
-        <aside className="space-y-2">
-          {products.map(product => <button key={product.id} onClick={() => { setSelectedId(product.id); void loadEditor(product); }}
+        <aside className="space-y-3">
+          <input className={input} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search products or SKU" aria-label="Search catalog" />
+          <MenuSelect className="ui-select-trigger" value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} options={[{value:"active",label:"Active products"},{value:"published",label:"Published"},{value:"draft",label:"Drafts"},{value:"archived",label:"Archived"},{value:"all",label:"All products"}]} />
+          <div className="space-y-2">
+          {filteredProducts.map(product => <button key={product.id} onClick={() => { setSelectedId(product.id); void loadEditor(product); }}
             className={`w-full rounded-xl border p-4 text-left ${selectedId === product.id ? "border-brand-primary bg-brand-primary/10" : "border-zinc-800 bg-black/30 hover:border-zinc-600"}`}>
-            <span className="font-semibold">{product.name}</span>
-            <span className="mt-1 block text-xs text-brand-textMuted">/{product.slug} · {product.is_published ? "Published" : "Draft"}</span>
+            <span className="flex items-center justify-between gap-2"><span className="font-semibold">{product.name}</span>{product.inventory_policy === "track" && product.inventory_quantity <= product.low_stock_threshold ? <span className="text-xs text-amber-300">{product.inventory_quantity} left</span> : null}</span>
+            <span className="mt-1 block text-xs text-brand-textMuted">{product.sku ? `${product.sku} · ` : ""}/{product.slug} · {product.archived_at ? "Archived" : product.is_published ? "Published" : "Draft"}</span>
           </button>)}
+          {filteredProducts.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-700 p-4 text-center text-sm text-brand-textMuted">No products match this view.</p> : null}
+          </div>
         </aside>
 
         {selectedId ? <section className="space-y-6">
           <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
-            <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Product details</h2><span className={draft.is_published ? "text-sm text-emerald-300" : "text-sm text-brand-textMuted"}>{draft.is_published ? "Published" : "Draft"}</span></div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Product details</h2><div className="flex items-center gap-3"><span className={draft.archived_at ? "text-sm text-amber-300" : draft.is_published ? "text-sm text-emerald-300" : "text-sm text-brand-textMuted"}>{draft.archived_at ? "Archived" : draft.is_published ? "Published" : "Draft"}</span>{draft.slug && draft.is_published && !draft.archived_at ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>View live ↗</Link> : null}</div></div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">Name<input className={`${input} mt-1`} value={draft.name ?? ""} onChange={e => setDraft(current => ({ ...current, name: e.target.value }))} /></label>
               <label className="text-sm">Slug<input className={`${input} mt-1`} value={draft.slug ?? ""} onChange={e => setDraft(current => ({ ...current, slug: e.target.value }))} /></label>
               <label className="text-sm">Category<input className={`${input} mt-1`} value={draft.category ?? ""} onChange={e => setDraft(current => ({ ...current, category: e.target.value }))} /></label>
+              <label className="text-sm">SKU<input className={`${input} mt-1`} value={draft.sku ?? ""} onChange={e => setDraft(current => ({ ...current, sku: e.target.value }))} placeholder="Example: KM-SHIFT-001" /></label>
               <label className="text-sm">Starting price ($)<input className={`${input} mt-1`} type="number" min="0" step=".01" value={draft.starting_price_cents == null ? "" : draft.starting_price_cents / 100} onChange={e => setDraft(current => ({ ...current, starting_price_cents: e.target.value ? Math.round(Number(e.target.value) * 100) : null }))} /></label>
               <label className="text-sm">Availability<MenuSelect className="ui-select-trigger mt-1" value={draft.availability_status ?? "made_to_order"} onChange={value => setDraft(current => ({ ...current, availability_status: value as CatalogProduct["availability_status"] }))} options={[{value:"available",label:"Available"},{value:"limited",label:"Limited availability"},{value:"made_to_order",label:"Made to order"},{value:"unavailable",label:"Currently unavailable"}]} /></label>
               <label className="text-sm">Lead time<input className={`${input} mt-1`} value={draft.lead_time_text ?? ""} onChange={e => setDraft(current => ({ ...current, lead_time_text: e.target.value }))} placeholder="Example: Usually 1–2 weeks" /></label>
               <label className="text-sm sm:col-span-2">Short description<input className={`${input} mt-1`} value={draft.short_description ?? ""} onChange={e => setDraft(current => ({ ...current, short_description: e.target.value }))} /></label>
               <label className="text-sm sm:col-span-2">Full description<textarea className={`${input} mt-1 min-h-32`} value={draft.description ?? ""} onChange={e => setDraft(current => ({ ...current, description: e.target.value }))} /></label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(draft.is_custom)} onChange={e => setDraft(current => ({ ...current, is_custom: e.target.checked }))} /> Customer can customize this product</label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={Boolean(draft.archived_at)} checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
             </div>
-            <div className="mt-4 flex gap-3"><button disabled={!canManage || busy} onClick={() => void saveProduct()} className={primary}>Save product</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className={`${subtle} text-rose-300`}>Delete product</button></div>
+            <div className="mt-4 flex flex-wrap gap-3"><button disabled={!canManage || busy} onClick={() => void saveProduct()} className={primary}>Save product</button><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className={`${subtle} text-rose-300`}>Delete permanently</button></div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+            <h2 className="text-xl font-semibold">Inventory</h2>
+            <p className="mt-1 text-sm text-brand-textMuted">Use made-to-order for custom work, or track a real quantity for ready-to-ship items.</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <label className="text-sm">Inventory mode<MenuSelect className="ui-select-trigger mt-1" value={draft.inventory_policy ?? "unlimited"} onChange={value => setDraft(current => ({ ...current, inventory_policy: value as CatalogProduct["inventory_policy"] }))} options={[{value:"unlimited",label:"Made to order / unlimited"},{value:"track",label:"Track quantity"}]} /></label>
+              <label className="text-sm">Quantity<input disabled={draft.inventory_policy !== "track"} className={`${input} mt-1 disabled:opacity-50`} type="number" min="0" value={draft.inventory_quantity ?? 0} onChange={e => setDraft(current => ({ ...current, inventory_quantity: Number(e.target.value) }))} /></label>
+              <label className="text-sm">Low-stock warning<input disabled={draft.inventory_policy !== "track"} className={`${input} mt-1 disabled:opacity-50`} type="number" min="0" value={draft.low_stock_threshold ?? 2} onChange={e => setDraft(current => ({ ...current, low_stock_threshold: Number(e.target.value) }))} /></label>
+              {draft.inventory_policy === "track" ? <label className="flex items-center gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={Boolean(draft.continue_selling_when_out_of_stock)} onChange={e => setDraft(current => ({ ...current, continue_selling_when_out_of_stock: e.target.checked }))} /> Keep accepting requests when quantity reaches zero</label> : null}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
