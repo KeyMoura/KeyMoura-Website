@@ -8,7 +8,7 @@ const currentYear = new Date().getFullYear();
 export default function SiteFooter() {
   const siteSettings = useSiteSettings();
   return (
-    <footer className="mt-8 border-t border-zinc-800/80 bg-black/40">
+    <footer className="mt-8 border-t border-[var(--border)] bg-[var(--panel)]">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-4 text-[11px] text-brand-textMuted md:flex-row">
         <p className="text-[11px] text-brand-textMuted">
           © {currentYear} {siteSettings.name}. All rights reserved.
