@@ -44,6 +44,7 @@ export function StaffNav() {
   const canSeeAnalytics = hasAny(perms, ["analytics.view"]);
   const canSeeCatalog = hasAny(perms, ["catalog.view", "catalog.manage"]);
   const canSeeOrders = hasAny(perms, ["orders.view", "orders.manage"]);
+  const canManageAppearance = hasAny(perms, ["appearance.manage"]);
   // The INFO section is specifically for the info submission/update queues.
   // To-do is its own top-level staff tool.
   const canSeeInfo = hasAny(perms, ["info.pending.view", "info.updates.view"]);
@@ -51,6 +52,7 @@ export function StaffNav() {
   const topLinks: NavLink[] = [
     ...(canSeeOrders ? [{ href: "/staff/orders", label: "Orders" } satisfies NavLink] : []),
     ...(canSeeCatalog ? [{ href: "/staff/catalog", label: "Catalog" } satisfies NavLink] : []),
+    ...(canManageAppearance ? [{ href: "/staff/appearance", label: "Appearance" } satisfies NavLink] : []),
     ...(canSeeAnalytics ? [{ href: "/staff/info/analytics", label: "Analytics" } satisfies NavLink] : []),
     ...(canSeeModeration ? [{ href: "/staff/moderation/reports", label: "Reports" } satisfies NavLink] : []),
     ...(canSeeAudit ? [{ href: "/staff/security/audit", label: "Audit Log" } satisfies NavLink] : []),
