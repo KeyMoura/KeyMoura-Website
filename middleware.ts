@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, PostgrestError } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { checkInstallationReadiness, logReadinessFailure, serverSupabaseEnv } from "./src/lib/installer/readiness";
 
@@ -200,18 +200,13 @@ export async function middleware(req: NextRequest) {
   if (installed && !isInstallerPath) {
     const matched = moduleRoutes.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`));
     if (matched) {
-      const moduleState = await withTimeout(
-        Promise.resolve(adminDb.from("installed_modules").select("enabled").eq("module_key", matched[1]).maybeSingle()),
+      const moduleEnabled = await withTimeout(
+        Promise.resolve(adminDb.from("installed_modules").select("enabled").eq("module_key", matched[1]).maybeSingle())
+          .then(({ data, error }) => !error && data?.enabled === true),
         750,
-        {
-          data: null,
-          error: new PostgrestError({ message: "timeout", details: "", hint: "", code: "TIMEOUT" }),
-          count: null,
-          status: 504,
-          statusText: "Timeout",
-        }
+        false
       );
-      if (moduleState.error || !moduleState.data?.enabled) {
+      if (!moduleEnabled) {
         if (pathname.startsWith("/api")) return NextResponse.json({ error: "Module not installed." }, { status: 404 });
         return new NextResponse("Not found.", { status: 404 });
       }
