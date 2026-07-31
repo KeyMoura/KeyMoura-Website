@@ -50,6 +50,7 @@ export function MenuSelect<T extends string = string>({
     minWidth: number;
     maxWidth: number;
   } | null>(null);
+  const [portalTheme, setPortalTheme] = React.useState<React.CSSProperties>({});
 
   const selected = React.useMemo(
     () => options.find((o) => o.value === value),
@@ -99,19 +100,35 @@ export function MenuSelect<T extends string = string>({
     let left = align === "right" ? rect.right - maxWidth : rect.left;
     left = Math.max(PAD, Math.min(left, viewportW - PAD - maxWidth));
 
-    // Max visible items = 8, item height ~36px, plus panel padding.
-    const maxPanelH = 288 + 16;
+    // Position from the amount of content this menu actually has. Using the
+    // eight-row maximum for every menu made short menus flip hundreds of
+    // pixels above their trigger.
+    const visibleRows = Math.max(1, Math.min(options.length, 8));
+    const estimatedPanelH = Math.min(304, visibleRows * 40 + 16);
 
     const spaceBelow = viewportH - rect.bottom - PAD;
     const spaceAbove = rect.top - PAD;
-    const shouldFlip = spaceBelow < maxPanelH && spaceAbove > spaceBelow;
+    const shouldFlip = spaceBelow < estimatedPanelH && spaceAbove > spaceBelow;
 
     // Always position using `top` (never `bottom`). Some browsers can produce
     // odd document scroll behavior when a portaled, fixed-position element uses
     // only `bottom`.
     const top = shouldFlip
-      ? Math.max(PAD, rect.top - GAP - maxPanelH)
-      : Math.min(viewportH - PAD - maxPanelH, rect.bottom + GAP);
+      ? Math.max(PAD, rect.top - GAP - estimatedPanelH)
+      : Math.min(viewportH - PAD - estimatedPanelH, rect.bottom + GAP);
+
+    // Portals do not inherit locally-scoped preview variables. Copy the live
+    // values from the trigger so Appearance previews and embedded themed areas
+    // render the menu with the same colors, radius, and density as the control.
+    const computed = window.getComputedStyle(btn);
+    const themeProperties = [
+      "--brand-primary", "--brand-accent", "--km-bg", "--km-bg-end",
+      "--km-surface", "--km-surface-strong", "--km-text", "--km-muted",
+      "--km-border", "--control-radius", "--control-pad-y",
+    ] as const;
+    setPortalTheme(Object.fromEntries(
+      themeProperties.map((property) => [property, computed.getPropertyValue(property)])
+    ) as React.CSSProperties);
 
     setPos({
       top,
@@ -119,7 +136,7 @@ export function MenuSelect<T extends string = string>({
       minWidth: rect.width,
       maxWidth,
     });
-  }, [align]);
+  }, [align, options.length]);
 
   React.useEffect(() => {
     if (!open) {
@@ -179,6 +196,7 @@ export function MenuSelect<T extends string = string>({
                 minWidth: pos.minWidth,
                 width: pos.maxWidth,
                 zIndex: 1000,
+                ...portalTheme,
               }}
               className={menuWrapCls}
             >

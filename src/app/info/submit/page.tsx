@@ -1118,7 +1118,7 @@ function InfoSubmitInner() {
               <button
                 type="submit"
                 disabled={submissionDisabled}
-                className="rounded-md border border-[#16b9f9] bg-[#022736]/40 px-4 py-2 text-xs font-medium text-[#16b9f9] shadow-sm shadow-brand-primary/40 transition hover:bg-brand-accent disabled:opacity-60"
+                className="ui-btn ui-btn-primary px-4 py-2 text-xs disabled:opacity-60"
               >
                 {status === "submitting"
                   ? "Submitting..."

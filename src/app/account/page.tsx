@@ -754,16 +754,16 @@ const loadMyReports = async (viewerId: string) => {
         <svg viewBox="0 0 40 40" className="h-full w-full" aria-hidden="true">
           <defs>
             <linearGradient id="avatarGradient" x1="0%" x2="100%" y1="0%" y2="100%">
-              <stop offset="0%" stopColor="#7ee6ff" />
-              <stop offset="100%" stopColor="#ffcc00" />
+              <stop offset="0%" stopColor="var(--brand-primary)" />
+              <stop offset="100%" stopColor="var(--brand-accent)" />
             </linearGradient>
           </defs>
           <circle cx="20" cy="20" r="19" fill="url(#avatarGradient)" opacity="0.25" />
-          <circle cx="20" cy="16" r="7" fill="none" stroke="#7ee6ff" strokeWidth="2" />
+          <circle cx="20" cy="16" r="7" fill="none" stroke="var(--brand-primary)" strokeWidth="2" />
           <path
             d="M10 30c2.5-4 6-6 10-6s7.5 2 10 6"
             fill="none"
-            stroke="#7ee6ff"
+            stroke="var(--brand-primary)"
             strokeWidth="2"
             strokeLinecap="round"
           />
@@ -771,7 +771,7 @@ const loadMyReports = async (viewerId: string) => {
             x="20"
             y="22"
             textAnchor="middle"
-            fill="#f5f5f5"
+            fill="var(--km-text)"
             fontSize="11"
             fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
             dy="4"

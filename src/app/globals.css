@@ -393,6 +393,16 @@
     color: var(--muted);
   }
 
+  .ui-color-input {
+    width: 3.5rem;
+    height: 2.75rem;
+    flex: 0 0 auto;
+    border-radius: var(--control-radius);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+    padding: 0.25rem;
+  }
+
   .ui-label { display: block; margin-bottom: 0.4rem; color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: .04em; }
   .ui-eyebrow { color: var(--brand-primary); font-size: .7rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
   .ui-select-trigger { display: flex; width: 100%; min-height: 2.5rem; align-items: center; justify-content: space-between; gap: .5rem; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel-strong); padding: var(--control-pad-y) .75rem; color: var(--text); font-size: .875rem; text-align: left; transition: border-color 120ms ease; }
@@ -533,5 +543,8 @@
     .bg-amber-500\/15, .bg-amber-500\/20, .bg-amber-500\/25,
     .bg-amber-500\/30, .bg-amber-950\/30) {
     background-color: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  }
+  :where(.ring-amber-400\/30, .ring-amber-400\/40) {
+    --tw-ring-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
   }
 }
