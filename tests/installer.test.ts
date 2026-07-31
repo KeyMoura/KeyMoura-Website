@@ -105,7 +105,7 @@ test("application baseline covers every current application relation and RPC", a
   const relations = new Set(
     [...source.matchAll(/\.from\(["']([a-z][a-z0-9_-]+)["']\)/g)].map((match) => match[1])
   );
-  const storageBuckets = new Set(["avatars", "garage-covers"]);
+  const storageBuckets = new Set(["avatars", "garage-covers", "product-assets", "order-assets"]);
   for (const relation of relations) {
     if (storageBuckets.has(relation)) continue;
     assert.match(
