@@ -13,11 +13,12 @@ export type NotificationType =
   | "broadcast"
   | "admin_approval"
   | "report_update"
-  | "moderation";
+  | "moderation"
+  | "order";
 
 export type CreateNotificationArgs = {
   recipientUserId: string;
-  actorUserId: string;
+  actorUserId: string | null;
   type: NotificationType;
   threadId?: number | null;
   postId?: number | null;
@@ -63,10 +64,10 @@ export async function isBlockedEitherDirection(
 export async function createNotification(args: CreateNotificationArgs) {
   const { recipientUserId, actorUserId, type, threadId, postId, payload, bypassBlock } = args;
 
-  if (!recipientUserId || !actorUserId) return;
-  if (recipientUserId === actorUserId) return;
+  if (!recipientUserId) return;
+  if (actorUserId && recipientUserId === actorUserId) return;
 
-  if (!bypassBlock) {
+  if (!bypassBlock && actorUserId) {
     const blocked = await isBlockedEitherDirection(recipientUserId, actorUserId);
     if (blocked) return;
   }

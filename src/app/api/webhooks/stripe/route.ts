@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { sendOrderEmail } from "@/lib/commerceEmail";
+import { notifyOrderUser } from "@/lib/orderNotifications";
 
 export const runtime = "nodejs";
 
@@ -36,6 +37,13 @@ export async function POST(req: NextRequest) {
   }
   const { data: authUser } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
   await sendOrderEmail({ to: authUser.user?.email, orderId, orderNumber: order.order_number, productName: order.product_name, subject: `Payment received for ${order.order_number || "your KeyMoura order"}`, message: `We received your $${(session.amount_total / 100).toFixed(2)} payment. Your order is now in progress.`, eventKey: `stripe-paid-${event.id}` });
+  await notifyOrderUser({
+    orderId,
+    actorUserId: null,
+    recipientUserId: order.customer_id,
+    title: "Payment received",
+    message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received. Your order is now in progress.`,
+  });
   await routeServiceClient.from("stripe_webhook_events").update({ processed_at: new Date().toISOString() }).eq("stripe_event_id", event.id);
   return NextResponse.json({ received: true });
 }

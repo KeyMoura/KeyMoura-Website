@@ -236,8 +236,10 @@ create table if not exists public.notifications (
   post_id bigint,
   payload jsonb,
   is_read boolean not null default false,
+  read_at timestamptz,
   created_at timestamptz not null default now()
 );
+alter table public.notifications add column if not exists read_at timestamptz;
 create index if not exists notifications_user_idx on public.notifications(user_id, is_read, created_at desc);
 
 create table if not exists public.forum_categories (

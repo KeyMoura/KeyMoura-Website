@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { sendOrderEmail } from "@/lib/commerceEmail";
+import { notifyOrderUser } from "@/lib/orderNotifications";
 
 const allowedStatuses = new Set(["requested","needs_information","accepted","awaiting_payment","in_progress","customer_review","ready","completed","declined","cancelled"]);
 
@@ -40,6 +41,13 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     const finalStatus = String(update.status || existing.status).replaceAll("_", " ");
     const message = priceBecamePayable ? `Your final price is $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. You can now pay securely from your order page.` : `Your order status changed to ${finalStatus}.`;
     await sendOrderEmail({ to: customer.user?.email, orderId: id, orderNumber: existing.order_number, productName: existing.product_name, subject: priceBecamePayable ? `Your ${existing.order_number || "KeyMoura order"} is ready for payment` : `${existing.order_number || "KeyMoura order"}: ${finalStatus}`, message, eventKey: `order-update-${id}-${Date.now()}` });
+    await notifyOrderUser({
+      orderId: id,
+      actorUserId: actor.userId,
+      recipientUserId: existing.customer_id,
+      title: priceBecamePayable ? "Order ready for payment" : "Order status updated",
+      message,
+    });
   }
   return NextResponse.json({ ok: true });
 }

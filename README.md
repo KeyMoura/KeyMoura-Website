@@ -1,8 +1,8 @@
-# S-Chassis Resource Archive
+# KeyMoura Website
 
-A configurable Next.js community application with a knowledge base, forum,
-moderation tools, direct messages, notifications, Garage, and trusted-vendor
-modules. Supabase provides authentication, PostgreSQL, RPCs, and object storage.
+A Next.js storefront and order workspace for KeyMoura, with configurable products,
+Stripe Checkout, customer messaging, notifications, and optional community tools.
+Supabase provides authentication, PostgreSQL, RPCs, and object storage.
 
 > **Template status:** the application UI builds and its static tests pass, but
 > this repository is not yet a one-command fresh database install. The checked-in
@@ -62,8 +62,7 @@ not added during this pass.
 2. Replace instance artwork in `public/brand` and `public/hero-silvia.png`.
 3. Adjust centralized theme tokens in `src/app/globals.css` and
    `tailwind.config.ts` rather than recoloring individual pages.
-4. Review editorial/legal content. S-Chassis examples inside content are
-   intentionally instance data and are not all derived from configuration.
+4. Review editorial and legal content before production releases.
 5. Keep authorization on every route even when a module is hidden. Current
    feature switches control discoverability; they are not security controls.
 

@@ -9,20 +9,20 @@ export const siteConfig = {
   identity: {
     name: "KeyMoura",
     shortName: "KeyMoura",
-    description: "A community-powered automotive knowledge base.",
-    tagline: "Automotive knowledge, builds, and community in one place.",
+    description: "Custom parts, products, and made-to-order projects.",
+    tagline: "Built around your idea.",
     url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
     logo: {
-      src: "/brand/sca-logo.svg",
+      src: "/brand/keymoura-colored.png",
       alt: "KeyMoura",
     },
   },
   navigation: {
     primary: [
+      { label: "Catalog", href: "/catalog" },
+      { label: "Orders", href: "/orders" },
       { label: "Knowledge Base", href: "/info", module: "knowledgeBase" },
       { label: "Community", href: "/community", module: "forum" },
-      { label: "Garage", href: "/garage", module: "garage" },
-      { label: "Trusted Shops", href: "/shops", module: "trustedVendors" },
     ],
     legal: [
       { label: "Terms of Service", href: "/terms" },
@@ -47,8 +47,8 @@ export const siteConfig = {
     messaging: true,
     audit: true,
     security: true,
-    garage: true,
-    trustedVendors: true,
+    garage: false,
+    trustedVendors: false,
   },
 } as const;
 

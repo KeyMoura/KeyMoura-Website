@@ -14,7 +14,7 @@ export default async function PrivacyPage() {
         <header className="space-y-2">
           <h1 className="text-3xl font-bold">Privacy Policy</h1>
           <p className="text-sm text-muted-foreground">
-            Last updated: December 7, 2025
+            Last updated: July 31, 2026
           </p>
         </header>
 
@@ -117,10 +117,10 @@ export default async function PrivacyPage() {
           <p>
             Questions? Contact us at{" "}
             <a
-              href="mailto:schassisresourcearchive@gmail.com"
+              href="mailto:support@keymoura.com"
               className="underline"
             >
-              schassisresourcearchive@gmail.com
+              support@keymoura.com
             </a>
             .
           </p>
