@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   "catalog.manage",
   "orders.view",
   "orders.manage",
+  "appearance.manage",
   // Reports
   "moderation.reports.view",
   "moderation.reports.moderate",
@@ -141,6 +142,11 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       category: "Commerce",
       label: "Manage orders",
       description: "Allows accepting requests and updating order, payment, and customer-visible details.",
+    },
+    "appearance.manage": {
+      category: "Site",
+      label: "Manage appearance",
+      description: "Allows changing the shared KeyMoura colors, typography, spacing, and control styles.",
     },
 
     "security.view": {
