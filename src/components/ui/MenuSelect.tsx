@@ -141,10 +141,10 @@ export function MenuSelect<T extends string = string>({
 
   const triggerCls =
     className ??
-    "flex h-9 items-center gap-2 rounded-xl border border-zinc-800 bg-black/40 px-3 text-xs text-brand-text outline-none transition-all hover:border-amber-400/80 disabled:opacity-50 disabled:cursor-not-allowed";
+    "ui-select-trigger";
 
   const menuWrapCls =
-    menuClassName ?? "overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl";
+    menuClassName ?? "ui-select-menu";
 
   return (
     <div ref={rootRef} className="relative inline-block">
@@ -199,11 +199,7 @@ export function MenuSelect<T extends string = string>({
                             onChange(o.value);
                             setOpen(false);
                           }}
-                          className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-xs transition ${
-                            active
-                              ? "border-amber-400/40 bg-amber-500/10 text-amber-100"
-                              : "border-transparent bg-transparent text-brand-text hover:border-zinc-700"
-                          } ${optDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                          className={`ui-select-option ${active ? "is-active" : ""} ${optDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
                         >
                           {renderOption ? renderOption(o, active) : <span className="text-[11px]">{o.label}</span>}
                         </button>
