@@ -36,11 +36,18 @@ export default async function RootLayout({
   const brandStyles = {
     "--brand-primary": settings.primaryColor,
     "--brand-accent": settings.accentColor,
+    "--km-bg": settings.theme.background,
+    "--km-bg-end": settings.theme.backgroundEnd,
+    "--km-surface": settings.theme.surface,
+    "--km-surface-strong": settings.theme.surfaceStrong,
+    "--km-text": settings.theme.text,
+    "--km-muted": settings.theme.mutedText,
+    "--km-border": settings.theme.border,
   } as CSSProperties;
 
   return (
     <html lang="en">
-      <body style={brandStyles} className="min-h-screen bg-gradient-to-b from-brand-bgStart to-brand-bgEnd text-brand-text antialiased">
+      <body style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-button-style={settings.theme.buttonStyle} className="min-h-screen text-brand-text antialiased">
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
