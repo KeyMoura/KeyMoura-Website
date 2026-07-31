@@ -3,3 +3,4 @@
 \ir ../../migrations/20260731070000_stripe_payments.sql
 \ir ../../migrations/20260731130000_storefront_availability.sql
 \ir ../../migrations/20260731180000_catalog_inventory_editor.sql
+\ir ../../migrations/20260731190000_checkout_inventory_reservations.sql
