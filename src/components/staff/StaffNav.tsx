@@ -51,6 +51,7 @@ export function StaffNav() {
   const canSeeInfo = hasAny(perms, ["info.pending.view", "info.updates.view"]);
 
   const topLinks: NavLink[] = [
+    ...(canSeeOrders || canSeeCatalog || canSeeAnalytics ? [{ href: "/staff", label: "Dashboard" } satisfies NavLink] : []),
     ...(canSeeOrders ? [{ href: "/staff/orders", label: "Orders" } satisfies NavLink] : []),
     ...(canSeeCatalog ? [{ href: "/staff/catalog", label: "Catalog" } satisfies NavLink] : []),
     ...(canManageAppearance ? [{ href: "/staff/appearance", label: "Appearance" } satisfies NavLink] : []),
@@ -81,6 +82,7 @@ export function StaffNav() {
   // - The Security root button should NOT stay highlighted when you're in a specific security tool
   //   (Users / Roles / Permissions / Audit / Recycle Bin). Those have their own buttons.
   const isActive = (href: string) => {
+    if (href === "/staff") return pathname === "/staff";
     if (href === "/staff/security") return pathname === "/staff/security";
     return pathname === href || pathname.startsWith(href + "/");
   };
