@@ -10,9 +10,12 @@ export default function SiteFooter() {
   return (
     <footer className="mt-8 border-t border-[var(--border)] bg-[var(--panel)]">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-4 text-[11px] text-brand-textMuted md:flex-row">
-        <p className="text-[11px] text-brand-textMuted">
-          © {currentYear} {siteSettings.name}. All rights reserved.
-        </p>
+        <div className="flex items-center gap-2">
+          {siteSettings.footerLogoUrl ? <img src={siteSettings.footerLogoUrl} alt="" className="h-6 w-auto object-contain" /> : null}
+          <p className="text-[11px] text-brand-textMuted">
+            © {currentYear} {siteSettings.name}. {siteSettings.copyrightText}
+          </p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <Link
