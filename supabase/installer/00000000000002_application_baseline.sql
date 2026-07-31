@@ -1118,3 +1118,4 @@ set enabled = true, schema_version = greatest(public.installed_modules.schema_ve
 
 notify pgrst, 'reload schema';
 commit;
+\ir modules/commerce.sql

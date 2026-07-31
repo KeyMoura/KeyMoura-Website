@@ -9,6 +9,10 @@ export const PERMISSIONS = [
   "security.view",
   "audit.view",
   "shops.view",
+  "catalog.view",
+  "catalog.manage",
+  "orders.view",
+  "orders.manage",
   // Reports
   "moderation.reports.view",
   "moderation.reports.moderate",
@@ -116,6 +120,27 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       category: "Community",
       label: "View staff community tools",
       description: "Allows viewing the staff community moderation section.",
+    },
+
+    "catalog.view": {
+      category: "Commerce",
+      label: "View catalog tools",
+      description: "Allows viewing the staff product catalog.",
+    },
+    "catalog.manage": {
+      category: "Commerce",
+      label: "Manage catalog",
+      description: "Allows creating, editing, publishing, and archiving KeyMoura products.",
+    },
+    "orders.view": {
+      category: "Commerce",
+      label: "View orders",
+      description: "Allows viewing customer requests and orders.",
+    },
+    "orders.manage": {
+      category: "Commerce",
+      label: "Manage orders",
+      description: "Allows accepting requests and updating order, payment, and customer-visible details.",
     },
 
     "security.view": {

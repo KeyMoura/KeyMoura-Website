@@ -95,7 +95,10 @@ test("application baseline covers every current application relation and RPC", a
   sourceFiles.push(new URL("../middleware.ts", import.meta.url).pathname);
 
   const source = (await Promise.all(sourceFiles.map((file) => readFile(file, "utf8")))).join("\n");
-  const sqlFiles = (await filesUnder(new URL("../supabase/installer/", import.meta.url)))
+  const sqlFiles = [
+    ...(await filesUnder(new URL("../supabase/installer/", import.meta.url))),
+    ...(await filesUnder(new URL("../supabase/migrations/", import.meta.url))),
+  ]
     .filter((file) => file.endsWith(".sql"));
   const sql = (await Promise.all(sqlFiles.map((file) => readFile(file, "utf8")))).join("\n");
 
@@ -128,6 +131,7 @@ test("application baseline covers every current application relation and RPC", a
   assert.match(sql, /grant select, insert, update, delete on all tables in schema public to service_role/i);
 
   const baseline = await readFile(new URL("../supabase/installer/00000000000002_application_baseline.sql", import.meta.url), "utf8");
+  assert.match(baseline, /\\ir modules\/commerce\.sql/, "application baseline includes commerce schema");
   for (const moduleKey of ["forum", "knowledge_base", "garage", "vendors", "messaging", "notifications", "moderation"]) {
     assert.match(
       baseline,
@@ -186,6 +190,20 @@ test("blank-project profile DDL implements the application profile contract", as
   assert.match(ddl, /where id = auth\.uid\(\)/);
   assert.match(ddl, /interval '5 minutes'/);
   assert.match(ddl, /grant execute on function public\.touch_last_seen\(\) to authenticated/);
+  assert.match(ddl, /function public\.ensure_user_profile\(p_user_id uuid\)/);
+  assert.match(ddl, /auth_user_create_profile/);
+  assert.match(ddl, /exception when unique_violation/);
+  assert.match(ddl, /raw_user_meta_data->>'full_name'/);
+  assert.match(ddl, /split_part\(coalesce\(auth_user\.email/);
+});
+
+test("automatic username migration repairs existing users and protects internal functions", async () => {
+  const ddl = await readFile(new URL("../supabase/migrations/20260731020000_assign_automatic_usernames.sql", import.meta.url), "utf8");
+  assert.match(ddl, /for existing_user in select id from auth\.users loop/);
+  assert.match(ddl, /perform public\.ensure_user_profile\(existing_user\.id\)/);
+  assert.match(ddl, /revoke all on function public\.ensure_user_profile\(uuid\) from public, anon, authenticated/);
+  assert.match(ddl, /revoke all on function public\.create_profile_for_auth_user\(\) from public, anon, authenticated/);
+  assert.match(ddl, /username is not null/);
 });
 
 test("Garage installer schema matches create/read/update and ownership contracts", async () => {
