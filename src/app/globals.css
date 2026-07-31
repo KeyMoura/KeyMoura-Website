@@ -1,3 +1,4 @@
+@config "../../tailwind.config.ts";
 @import "tailwindcss";
 
 /*
@@ -190,6 +191,30 @@
 }
 
 @layer components {
+  /* Storefront actions use the live site theme without relying on opacity
+     variants of custom Tailwind colors. Keep their contrast deterministic. */
+  .catalog-action-primary {
+    background-color: var(--brand-primary, #fbbf24);
+    border: 1px solid var(--brand-primary, #fbbf24);
+    color: #09090b;
+    font-weight: 700;
+  }
+
+  .catalog-action-primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .catalog-action-secondary {
+    background-color: rgba(24, 24, 27, 0.92);
+    border: 1px solid var(--brand-primary, #fbbf24);
+    color: var(--brand-primary, #fbbf24);
+    font-weight: 600;
+  }
+
+  .catalog-action-secondary:hover {
+    background-color: rgba(39, 39, 42, 0.96);
+  }
+
   /* Page layout primitives */
   .page-container {
     width: 100%;
