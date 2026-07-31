@@ -63,7 +63,7 @@ export function MenuSelect<T extends string = string>({
     const onPointerDown = (e: PointerEvent) => {
       const root = rootRef.current;
       const menu = menuRef.current;
-      const path = typeof (e as any).composedPath === "function" ? (e as any).composedPath() : [];
+      const path = typeof e.composedPath === "function" ? e.composedPath() : [];
 
       if (root && (path.includes(root) || root.contains(e.target as Node))) return;
       if (menu && (path.includes(menu) || menu.contains(e.target as Node))) return;
