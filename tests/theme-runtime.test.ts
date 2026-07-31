@@ -39,3 +39,12 @@ test("appearance variables are scoped where theme aliases can resolve them", () 
   assert.match(appearance, /data-theme-scope="true"/);
   assert.match(css, /\[data-theme-scope="true"\]/);
 });
+
+test("legacy amber and yellow Tailwind utilities inherit the live accent palette", () => {
+  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+
+  assert.match(css, /--color-amber-400:\s*var\(--brand-accent\)/);
+  assert.match(css, /--color-amber-500:\s*var\(--brand-accent\)/);
+  assert.match(css, /--color-yellow-400:\s*var\(--color-amber-400\)/);
+  assert.match(css, /--color-yellow-500:\s*var\(--color-amber-500\)/);
+});
