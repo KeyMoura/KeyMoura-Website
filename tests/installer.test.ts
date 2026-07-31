@@ -76,6 +76,67 @@ test("security bootstrap supplies every middleware and IP-check dependency", asy
   assert.doesNotMatch(ipCheck, /get_ip_ban_detail error[\s\S]*banned: false/);
 });
 
+test("application baseline covers every current application relation and RPC", async () => {
+  const { readdir } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+
+  async function filesUnder(dir: URL): Promise<string[]> {
+    const path = dir.pathname;
+    const entries = await readdir(path, { withFileTypes: true });
+    const nested = await Promise.all(entries.map(async (entry) => {
+      const child = join(path, entry.name);
+      return entry.isDirectory() ? filesUnder(new URL(`file://${child}/`)) : [child];
+    }));
+    return nested.flat();
+  }
+
+  const sourceFiles = (await filesUnder(new URL("../src/", import.meta.url)))
+    .filter((file) => /\.(?:ts|tsx)$/.test(file));
+  sourceFiles.push(new URL("../middleware.ts", import.meta.url).pathname);
+
+  const source = (await Promise.all(sourceFiles.map((file) => readFile(file, "utf8")))).join("\n");
+  const sqlFiles = (await filesUnder(new URL("../supabase/installer/", import.meta.url)))
+    .filter((file) => file.endsWith(".sql"));
+  const sql = (await Promise.all(sqlFiles.map((file) => readFile(file, "utf8")))).join("\n");
+
+  const relations = new Set(
+    [...source.matchAll(/\.from\(["']([a-z][a-z0-9_-]+)["']\)/g)].map((match) => match[1])
+  );
+  const storageBuckets = new Set(["avatars", "garage-covers"]);
+  for (const relation of relations) {
+    if (storageBuckets.has(relation)) continue;
+    assert.match(
+      sql,
+      new RegExp(`(?:create\\s+table\\s+if\\s+not\\s+exists\\s+public\\.|create\\s+(?:or\\s+replace\\s+)?view\\s+public\\.)${relation}\\b`, "i"),
+      `installer SQL does not define application relation ${relation}`
+    );
+  }
+
+  const rpcs = new Set(
+    [...source.matchAll(/\.rpc\(\s*["']([a-z][a-z0-9_]+)["']/g)].map((match) => match[1])
+  );
+  for (const rpc of rpcs) {
+    assert.match(
+      sql,
+      new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${rpc}\\b`, "i"),
+      `installer SQL does not define application RPC ${rpc}`
+    );
+  }
+
+  assert.match(sql, /create table if not exists public\.info_admin_todos/i);
+  assert.match(sql, /grant usage on schema public to service_role/i);
+  assert.match(sql, /grant select, insert, update, delete on all tables in schema public to service_role/i);
+
+  const baseline = await readFile(new URL("../supabase/installer/00000000000002_application_baseline.sql", import.meta.url), "utf8");
+  for (const moduleKey of ["forum", "knowledge_base", "garage", "vendors", "messaging", "notifications", "moderation"]) {
+    assert.match(
+      baseline,
+      new RegExp(`\\('${moduleKey}'\\)`),
+      `application baseline does not enable middleware-gated module ${moduleKey}`
+    );
+  }
+});
+
 test("unavailable module schemas cannot be selected or finalized", async () => {
   const { assertModulesAvailable, moduleAvailability } = await import("../src/lib/installer/model.ts");
   const availability = moduleAvailability(["core", "garage", "vendors"]);

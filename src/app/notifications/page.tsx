@@ -4,7 +4,7 @@ import Link from "next/link";
 import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabaseClient";
-import { siteConfig } from "@/site.config";
+import { useSiteSettings } from "@/components/SiteSettingsProvider";
 
 type NotificationRow = {
   id: number;
@@ -164,6 +164,7 @@ function formatTimeAgo(iso: string): string {
 }
 
 export default function NotificationsPage() {
+  const siteSettings = useSiteSettings();
   const [userId, setUserId] = useState<string | null>(null);
 
   const [items, setItems] = useState<NotificationRow[]>([]);
@@ -473,7 +474,7 @@ export default function NotificationsPage() {
             const actor = n.actor_user_id ? actorMap.get(n.actor_user_id) : null;
             const isSystem = !n.actor_user_id;
             const actorName = isSystem
-              ? siteConfig.identity.shortName
+              ? siteSettings.shortName
               : actor?.display_name || actor?.username || "Someone";
             const title = notifTitle(n);
             const sub = notifSubtitle(n);

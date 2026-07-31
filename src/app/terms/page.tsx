@@ -1,10 +1,13 @@
-import { siteConfig } from "@/site.config";
+import type { Metadata } from "next";
+import { getSiteSettings } from "@/lib/siteSettings";
 
-export const metadata = {
-  title: `Terms of Service | ${siteConfig.identity.name}`,
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSiteSettings();
+  return { title: `Terms of Service | ${settings.name}` };
+}
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  const siteSettings = await getSiteSettings();
   return (
     <main className="flex justify-center px-4 py-16">
       <article className="w-full max-w-3xl text-center space-y-10">
@@ -20,7 +23,7 @@ export default function TermsPage() {
             Agreement to Our Legal Terms
           </h2>
           <p>
-            We are <strong>{siteConfig.identity.name}</strong> (&quot;Company&quot;,
+            We are <strong>{siteSettings.name}</strong> (&quot;Company&quot;,
             &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;). We operate a
             community-driven automotive information platform including a forum,
             database, and related services (collectively, the
@@ -43,9 +46,9 @@ export default function TermsPage() {
         <section className="space-y-4">
           <h2 className="text-xl font-semibold">1. Our Services</h2>
           <p>
-            {siteConfig.identity.name} provides community-submitted automotive
+            {siteSettings.name} provides community-submitted automotive
             information, technical discussions, documentation, and media related
-            to Nissan S-chassis vehicles and related platforms.
+            to vehicles and related platforms.
           </p>
           <p>
             All information is provided for informational purposes only and

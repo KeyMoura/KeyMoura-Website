@@ -1,10 +1,13 @@
-import { siteConfig } from "@/site.config";
+import type { Metadata } from "next";
+import { getSiteSettings } from "@/lib/siteSettings";
 
-export const metadata = {
-  title: `Privacy Policy | ${siteConfig.identity.name}`,
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSiteSettings();
+  return { title: `Privacy Policy | ${settings.name}` };
+}
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const siteSettings = await getSiteSettings();
   return (
     <main className="flex justify-center px-4 py-16">
       <article className="w-full max-w-3xl text-center space-y-10">
@@ -18,7 +21,7 @@ export default function PrivacyPage() {
         <section className="space-y-4">
           <h2 className="text-xl font-semibold">Overview</h2>
           <p>
-            This Privacy Policy explains how <strong>{siteConfig.identity.name}</strong>{" "}
+            This Privacy Policy explains how <strong>{siteSettings.name}</strong>{" "}
             (&quot;Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;)
             collects, uses, and shares information when you use our website, forum,
             and related services (collectively, the &ldquo;Services&rdquo;).

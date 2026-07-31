@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
-import { siteConfig } from "@/site.config";
+import { useSiteSettings } from "@/components/SiteSettingsProvider";
 
 function InfoCtaButton({
   href,
@@ -258,6 +258,7 @@ type ClickAggRow = {
 };
 
 export default function InfoIndexClient() {
+  const siteSettings = useSiteSettings();
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -924,7 +925,7 @@ export default function InfoIndexClient() {
               Info pages
             </p>
             <h1 className="text-2xl font-semibold tracking-tight text-brand-text sm:text-3xl">
-              {siteConfig.identity.shortName} {siteConfig.terminology.knowledgeBase.toLowerCase()}
+              {siteSettings.shortName} {siteSettings.terminology.knowledgeBase.toLowerCase()}
             </h1>
             <p className="mt-1 text-[12px] text-brand-textMuted sm:text-sm">
               Browse organized info pages, or search across titles, content, and

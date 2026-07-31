@@ -9,17 +9,29 @@ test("production auth-debug route is absent", () => {
 });
 
 test("shared product surfaces use deployment identity configuration", () => {
-  const sharedSurfaces = [
+  const clientSurfaces = [
     "src/components/GlobalLockdownGate.tsx",
     "src/components/SiteHeader.tsx",
     "src/app/notifications/page.tsx",
+  ];
+  const serverSurfaces = [
     "src/app/privacy/page.tsx",
     "src/app/terms/page.tsx",
   ];
 
-  for (const path of sharedSurfaces) {
-    assert.match(read(path), /siteConfig\.identity/);
+  for (const path of clientSurfaces) {
+    assert.match(read(path), /useSiteSettings/);
   }
+  for (const path of serverSurfaces) {
+    assert.match(read(path), /getSiteSettings/);
+  }
+
+  const settings = read("src/lib/siteSettings.ts");
+  assert.match(settings, /\.from\("site_settings"\)/);
+  assert.match(settings, /site_name,description,public_url,logo_url,primary_color,accent_color,terminology/);
+
+  const header = read("src/components/SiteHeader.tsx");
+  assert.doesNotMatch(header, /\/brand\/sca-logo(?:-dull)?\.svg/);
 });
 
 test("the document exposes a keyboard skip target", () => {

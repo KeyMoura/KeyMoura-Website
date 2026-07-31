@@ -14,12 +14,8 @@ function parseStatus(v: unknown): TodoStatus | null {
   return null;
 }
 
-function parseNumber(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (isString(v) && v.trim() !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
+function parsePriority(v: unknown): "low" | "normal" | "high" | null {
+  if (v === "low" || v === "normal" || v === "high") return v;
   return null;
 }
 
@@ -57,7 +53,7 @@ export async function POST(req: NextRequest) {
   if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 });
 
   const description = isString(body.description) ? body.description.trim() : null;
-  const priority = parseNumber(body.priority) ?? 0;
+  const priority = parsePriority(body.priority) ?? "normal";
   const relatedSlug = isString(body.related_info_page_slug) ? body.related_info_page_slug.trim() : null;
 
   const insertBase: Record<string, any> = {
@@ -149,9 +145,9 @@ export async function PATCH(req: NextRequest) {
       contentTouched = true;
     }
   }
-  const priority = parseNumber(body.priority);
+  const priority = parsePriority(body.priority);
   if (priority !== null) {
-    if (priority != (existing.priority ?? 0)) {
+    if (priority !== (existing.priority ?? "normal")) {
       patch.priority = priority;
       contentTouched = true;
     }

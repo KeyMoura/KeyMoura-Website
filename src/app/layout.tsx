@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import "./globals.css";
 import ReactQueryProvider from "./ReactQueryProvider";
@@ -9,25 +10,37 @@ import GlobalLockdownGate from "@/components/GlobalLockdownGate";
 import SiteBroadcastBanner from "@/components/SiteBroadcastBanner";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BlocksProvider } from "@/components/BlocksProvider";
-import { siteConfig } from "@/site.config";
+import { getSiteSettings } from "@/lib/siteSettings";
+import { SiteSettingsProvider } from "@/components/SiteSettingsProvider";
 
-export const metadata: Metadata = {
-  title: siteConfig.identity.name,
-  description: siteConfig.identity.description,
-  metadataBase: new URL(siteConfig.identity.url),
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSiteSettings();
+  return {
+    title: settings.name,
+    description: settings.description,
+    metadataBase: new URL(settings.url),
+    icons: settings.logoUrl ? { icon: settings.logoUrl } : undefined,
+  };
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const settings = await getSiteSettings();
+  const brandStyles = {
+    "--brand-primary": settings.primaryColor,
+    "--brand-accent": settings.accentColor,
+  } as CSSProperties;
+
   return (
     <html lang="en">
-      <body className="min-h-screen bg-gradient-to-b from-brand-bgStart to-brand-bgEnd text-brand-text antialiased">
+      <body style={brandStyles} className="min-h-screen bg-gradient-to-b from-brand-bgStart to-brand-bgEnd text-brand-text antialiased">
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
+        <SiteSettingsProvider settings={settings}>
         <LastSeenUpdater />
         <ReactQueryProvider>
           <BlocksProvider>
@@ -45,6 +58,7 @@ export default function RootLayout({
             </GlobalLockdownGate>
           </BlocksProvider>
         </ReactQueryProvider>
+        </SiteSettingsProvider>
       </body>
     </html>
   );

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
-import { siteConfig } from "@/site.config";
+import { useSiteSettings } from "@/components/SiteSettingsProvider";
 
 type Props = {
   children: React.ReactNode;
@@ -26,6 +26,7 @@ const LOCAL_UNLOCK_KEY = "scra_lockdown_ok"; // JSON: { v: number }
 const LOCAL_FORCE_LOGOUT_KEY = "scra_force_logout_seen";
 
 export default function GlobalLockdownGate({ children }: Props) {
+  const siteSettings = useSiteSettings();
   const pathname = usePathname();
   const supabase = useMemo(() => supabaseBrowser(), []);
 
@@ -215,7 +216,7 @@ export default function GlobalLockdownGate({ children }: Props) {
         <div className="w-full max-w-sm rounded-xl border border-red-700 bg-brand-bgStart/95 p-4 text-sm text-brand-text shadow-xl shadow-black/80">
           <h2 className="mb-2 text-base font-semibold text-red-100">Access blocked</h2>
           <p className="mb-2 text-[12px] text-red-100/80">
-            This IP address has been blocked from accessing {siteConfig.identity.name}.
+            This IP address has been blocked from accessing {siteSettings.name}.
           </p>
           {ipBanReason && (
             <p className="mb-2 text-[11px] text-red-200/80">Reason: {ipBanReason}</p>

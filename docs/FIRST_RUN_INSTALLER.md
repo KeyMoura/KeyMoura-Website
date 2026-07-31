@@ -21,17 +21,15 @@
    ```bash
    psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
      -f supabase/installer/00000000000000_installer_core.sql \
-     -f supabase/installer/00000000000001_security_bootstrap.sql
+     -f supabase/installer/00000000000001_security_bootstrap.sql \
+     -f supabase/installer/00000000000002_application_baseline.sql
    ```
 
-4. Apply optional module schemas before selecting them in the wizard. For the
-   reproducible blank-database baseline currently available in this repository:
+4. Garage is already included in the application baseline. The standalone
+   module file remains available for repairing an older partial installation:
 
    ```bash
-   # Only if Garage will be selected
    psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/installer/modules/garage.sql
-   # Only if Shops / Vendors will be selected
-   psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/installer/modules/vendors.sql
    ```
 
 5. Deploy/start the Next.js application and visit `/install`. Unlock with
@@ -58,7 +56,9 @@ Core plus the required security bootstrap always create `installation_state`, `s
 `role_permissions`, `user_roles`, `user_permissions`, the `avatars` bucket, and
 `complete_first_install`, along with `site_security_settings`, `ip_bans`,
 `user_bans`, and `get_ip_ban_detail`. Garage adds `garage_cars`, `garage_car_likes`, and the
-`garage-covers` bucket. Vendors adds `shops`.
+`garage-covers` bucket. The application baseline adds Shops plus the Forum,
+Knowledge Base, Messaging, Notifications, Moderation, audit, and staff to-do
+schemas used by the current code.
 
 Skipped modules have no `installed_modules` row. Middleware returns 404 before
 their page/API code runs, preventing database calls. Disabling a module changes
@@ -90,11 +90,7 @@ and screenshots of post-unlock steps specifically require either:
 - Docker plus the Supabase CLI for a local stack (neither executable exists in
   the supplied environment).
 
-Forum, Knowledge Base, Messaging, Notifications, and Moderation are supported by
-the registry and route guards for an existing compatible S-Chassis database, but
-their complete blank-project schemas cannot be reconstructed safely from client
-query names. The exact missing compatibility input is the approved sanitized
-schema-only export containing their columns, constraints, functions, triggers,
-grants, RLS policies, storage policies, cron jobs, and required reference rows.
-Do not select those modules on a blank project until their module migrations are
-produced from that export.
+The application baseline now contains the blank-project schemas used by Forum,
+Knowledge Base, Messaging, Notifications, Moderation, Shops, Garage, audit, and
+staff tools. The schema-coverage test fails when application code names a table
+or RPC that no installer SQL defines.

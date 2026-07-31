@@ -7,14 +7,14 @@
  */
 export const siteConfig = {
   identity: {
-    name: "S-Chassis Resource Archive",
-    shortName: "S-Chassis",
-    description: "A collection of resources for the S-Chassis.",
-    tagline: "One place for all your S-Chassis knowledge.",
+    name: "KeyMoura",
+    shortName: "KeyMoura",
+    description: "A community-powered automotive knowledge base.",
+    tagline: "Automotive knowledge, builds, and community in one place.",
     url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
     logo: {
-      src: "/hero-silvia.png",
-      alt: "S-Chassis Resource Archive",
+      src: "/brand/sca-logo.svg",
+      alt: "KeyMoura",
     },
   },
   navigation: {

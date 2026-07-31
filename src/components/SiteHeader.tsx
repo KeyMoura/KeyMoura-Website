@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
-import { siteConfig } from "@/site.config";
+import { useSiteSettings } from "@/components/SiteSettingsProvider";
 import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
 import { RolePill } from "@/components/RolePill";
@@ -1082,6 +1081,7 @@ function MessageBell({
 
 export default function SiteHeader() {
   const pathname = usePathname();
+  const siteSettings = useSiteSettings();
 
   const [user, setUser] = useState<SimpleUser | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -1351,13 +1351,13 @@ export default function SiteHeader() {
                 isHome ? "" : "hover:scale-[1.06]"
               }`}
             >
-              <Image
-                src={isHome ? "/brand/sca-logo.svg" : "/brand/sca-logo-dull.svg"}
-                alt={siteConfig.identity.logo.alt}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={siteSettings.logoUrl}
+                alt={siteSettings.name}
                 width={44}
                 height={44}
                 className="object-contain drop-shadow-[0_8px_14px_rgba(0,0,0,0.55)]"
-                priority
               />
             </Link>
 
@@ -1445,13 +1445,13 @@ export default function SiteHeader() {
               isHome ? "" : "hover:scale-[1.06]"
             }`}
           >
-            <Image
-              src={isHome ? "/brand/sca-logo.svg" : "/brand/sca-logo-dull.svg"}
-              alt={siteConfig.identity.logo.alt}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={siteSettings.logoUrl}
+              alt={siteSettings.name}
               width={36}
               height={36}
               className="object-contain drop-shadow-[0_8px_14px_rgba(0,0,0,0.55)]"
-              priority
             />
           </Link>
 

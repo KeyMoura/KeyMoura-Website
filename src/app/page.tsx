@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { siteConfig } from "@/site.config";
+import { getSiteSettings } from "@/lib/siteSettings";
 
 export default async function Home() {
+  const siteSettings = await getSiteSettings();
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,7 +41,7 @@ export default async function Home() {
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{
-            backgroundImage: "url('/hero-silvia.png')",
+            backgroundImage: `url('${siteSettings.logoUrl}')`,
           }}
         />
 
@@ -52,20 +53,15 @@ export default async function Home() {
           {/* Left */}
           <div className="max-w-xl space-y-4">
             <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-              {siteConfig.identity.name}
+              {siteSettings.name}
             </p>
 
             <h1 className="text-3xl font-semibold tracking-tight text-brand-text sm:text-4xl">
-              {siteConfig.identity.tagline}
-              <span className="block text-sm font-normal text-brand-textMuted">
-                (ETA: X/X/2026)
-              </span>
+              {siteSettings.tagline}
             </h1>
 
             <p className="text-sm leading-relaxed text-brand-textMuted sm:text-base">
-              Curated, community-driven information for Nissan S-chassis owners.
-              Engine swaps, suspension setups, wiring references, builds, and
-              more — all in one place.
+              {siteSettings.description}
             </p>
 
             <div className="mt-4 flex flex-wrap gap-3">
@@ -73,14 +69,14 @@ export default async function Home() {
                 href="/info"
                 className="inline-flex items-center justify-center rounded-full border border-[#ebc313] bg-[#ebc313] px-4 py-2 font-medium text-black shadow-sm shadow-black/60 transition hover:bg-[#ebe013]"
               >
-                Browse info guides
+                Browse {siteSettings.terminology.knowledgeBase.toLowerCase()}
               </Link>
 
               <Link
                 href="/community"
                 className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-sm font-medium text-brand-text transition hover:bg-black/60"
               >
-                Join the community
+                Join the {siteSettings.terminology.forum.toLowerCase()}
               </Link>
             </div>
 
