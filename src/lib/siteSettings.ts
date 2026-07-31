@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { installerAdmin } from "@/lib/installer/server";
 import { siteConfig } from "@/site.config";
+import { defaultSiteTheme, normalizeSiteTheme, type SiteTheme } from "@/theme/runtime";
 
 export type RuntimeSiteSettings = {
   name: string;
@@ -13,12 +14,14 @@ export type RuntimeSiteSettings = {
   logoUrl: string;
   primaryColor: string;
   accentColor: string;
+  theme: SiteTheme;
   terminology: {
     forum: string;
     knowledgeBase: string;
     trustedVendor: string;
   };
 };
+
 
 const fallback: RuntimeSiteSettings = {
   name: siteConfig.identity.name,
@@ -29,6 +32,7 @@ const fallback: RuntimeSiteSettings = {
   logoUrl: siteConfig.identity.logo.src,
   primaryColor: "#dc2626",
   accentColor: "#f59e0b",
+  theme: defaultSiteTheme,
   terminology: {
     forum: siteConfig.terminology.forum,
     knowledgeBase: siteConfig.terminology.knowledgeBase,
@@ -44,7 +48,7 @@ export const getSiteSettings = cache(async (): Promise<RuntimeSiteSettings> => {
   try {
     const { data, error } = await installerAdmin()
       .from("site_settings")
-      .select("site_name,description,public_url,logo_url,primary_color,accent_color,terminology")
+      .select("site_name,description,public_url,logo_url,primary_color,accent_color,terminology,theme_config")
       .eq("singleton", true)
       .maybeSingle();
 
@@ -61,6 +65,7 @@ export const getSiteSettings = cache(async (): Promise<RuntimeSiteSettings> => {
       logoUrl: data.logo_url || fallback.logoUrl,
       primaryColor: data.primary_color || fallback.primaryColor,
       accentColor: data.accent_color || fallback.accentColor,
+      theme: normalizeSiteTheme(data.theme_config),
       terminology: {
         forum: typeof terms?.forum === "string" ? terms.forum : fallback.terminology.forum,
         knowledgeBase:
