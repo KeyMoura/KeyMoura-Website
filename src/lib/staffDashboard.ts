@@ -30,7 +30,7 @@ export type DashboardProduct = {
 };
 
 const closed = new Set(["completed", "declined", "cancelled"]);
-const urgent = new Set(["requested", "needs_information", "customer_review", "ready"]);
+const urgent = new Set(["requested", "needs_information", "customer_review", "final_review", "ready"]);
 
 export function dashboardNextAction(order: DashboardOrder) {
   if (order.status === "requested") return "Review request";
@@ -39,6 +39,7 @@ export function dashboardNextAction(order: DashboardOrder) {
   if (order.status === "awaiting_payment") return "Payment pending";
   if (order.status === "in_progress") return "Continue production";
   if (order.status === "customer_review") return "Review customer reply";
+  if (order.status === "final_review") return "Waiting for customer approval";
   if (order.status === "ready" && !order.shipped_at) return "Arrange delivery";
   if (order.shipped_at && !order.delivered_at) return "Confirm delivery";
   return "View order";
