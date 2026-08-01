@@ -32,6 +32,8 @@ test("stripe supports deposit then remaining balance without overpayment", () =>
   assert.match(checkout, /payment_kind/);
   assert.match(webhook, /newNetCollected > order\.agreed_price_cents/);
   assert.match(webhook, /payment_status: fullyPaid \? "paid" : "partial"/);
+  assert.match(webhook, /from\("order_status_history"\)\.insert/);
+  assert.match(webhook, /Deposit received; production started/);
 });
 
 test("drafts and quotes have explicit RLS boundaries", () => {
