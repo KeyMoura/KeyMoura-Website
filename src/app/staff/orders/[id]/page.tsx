@@ -45,6 +45,7 @@ type Message = {
 };
 type EmailDelivery = { id:string; recipient:string; subject:string; status:"sent"|"failed"|"skipped"; error_message:string|null; created_at:string };
 type History = { id:number; from_status:string|null; to_status:string; note:string|null; created_at:string };
+type Payment = { id:string; amount_cents:number; received_at:string };
 const statuses = [
   "requested",
   "needs_information",
@@ -70,6 +71,7 @@ export default function StaffOrderDetail() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [emails, setEmails] = useState<EmailDelivery[]>([]);
   const [history, setHistory] = useState<History[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [body, setBody] = useState("");
   const [internal, setInternal] = useState(false);
   const [price, setPrice] = useState("");
@@ -89,7 +91,7 @@ export default function StaffOrderDetail() {
   const [error, setError] = useState("");
   const [pendingStatus, setPendingStatus] = useState("");
   const load = useCallback(async () => {
-    const [o, m, e, h] = await Promise.all([
+    const [o, m, e, h, p] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
@@ -98,12 +100,14 @@ export default function StaffOrderDetail() {
         .order("created_at"),
       supabase.from("email_deliveries").select("id,recipient,subject,status,error_message,created_at").eq("order_id",id).order("created_at",{ascending:false}),
       supabase.from("order_status_history").select("id,from_status,to_status,note,created_at").eq("order_id",id).order("created_at",{ascending:false}),
+      supabase.from("order_payments").select("id,amount_cents,received_at").eq("order_id",id).order("received_at",{ascending:false}),
     ]);
     const row = o.data as Order | null;
     setOrder(row);
     setMessages((m.data ?? []) as Message[]);
     setEmails((e.data ?? []) as EmailDelivery[]);
     setHistory((h.data ?? []) as History[]);
+    setPayments((p.data ?? []) as Payment[]);
     if (row) {
       setPrice(
         row.agreed_price_cents == null
@@ -121,7 +125,7 @@ export default function StaffOrderDetail() {
       setTrackingNumber(row.tracking_number ?? "");
       setTrackingUrl(row.tracking_url ?? "");
     }
-    setError(o.error?.message ?? m.error?.message ?? "");
+    setError(o.error?.message ?? m.error?.message ?? e.error?.message ?? h.error?.message ?? p.error?.message ?? "");
   }, [id, supabase]);
   useEffect(() => {
     if (!canView) return;
@@ -375,7 +379,7 @@ export default function StaffOrderDetail() {
         <section className="md:col-span-2">
           <h2 className="font-semibold">Activity timeline</h2>
           <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 p-4">
-            {[...history.map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...messages.map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...(order.paid_at?[{id:"paid",at:order.paid_at,label:"Payment received",detail:`$${(order.amount_paid_cents/100).toFixed(2)}`}]:[]),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:method==="pickup"?"Ready for pickup":"Order shipped",detail:trackingNumber || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className="border-l-2 border-brand-accent/60 pl-4"><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
+            {[...history.map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...messages.map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...payments.map(payment=>({id:`p-${payment.id}`,at:payment.received_at,label:"Payment received",detail:`$${(payment.amount_cents/100).toFixed(2)}`})),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:method==="pickup"?"Ready for pickup":"Order shipped",detail:trackingNumber || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className="border-l-2 border-brand-accent/60 pl-4"><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
           </div>
         </section>
         <section className="md:col-span-2">
