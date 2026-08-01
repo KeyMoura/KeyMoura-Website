@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 import { notifyOrderUser } from "@/lib/orderNotifications";
+import { netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
 
 const allowedStatuses = new Set(["requested","needs_information","accepted","awaiting_payment","in_progress","customer_review","ready","completed","declined","cancelled"]);
 const allowedFulfillmentMethods = new Set(["shipping", "pickup"]);
@@ -22,7 +23,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     update.status = body.status;
   }
   if (body.agreed_price_cents === null || Number.isInteger(body.agreed_price_cents)) {
-    if (existing.payment_status === "paid" && body.agreed_price_cents !== existing.agreed_price_cents) return NextResponse.json({ error: "A paid order's price cannot be changed." }, { status: 409 });
+    if (remainingBalanceCents(existing) === 0 && (existing.amount_paid_cents || 0) > (existing.amount_refunded_cents || 0) && body.agreed_price_cents !== existing.agreed_price_cents) return NextResponse.json({ error: "A paid order's price cannot be changed." }, { status: 409 });
     if (typeof body.agreed_price_cents === "number" && body.agreed_price_cents < 0) return NextResponse.json({ error: "Price cannot be negative." }, { status: 400 });
     update.agreed_price_cents = body.agreed_price_cents;
   }
@@ -57,7 +58,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     update.delivered_at = existing.delivered_at || new Date().toISOString();
     update.status = "completed";
   }
-  if (typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && existing.payment_status !== "paid") {
+  if (typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && (remainingBalanceCents(existing) > 0 || netCollectedCents(existing) === 0)) {
     update.payment_status = "unpaid";
     if (update.agreed_price_cents !== existing.agreed_price_cents || (update.deposit_amount_cents !== undefined && update.deposit_amount_cents !== existing.deposit_amount_cents)) {
       update.quote_revision = (existing.quote_revision || 0) + 1;

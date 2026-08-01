@@ -14,7 +14,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   if (!["accepted", "awaiting_payment", "in_progress"].includes(order.status) || !order.agreed_price_cents || order.agreed_price_cents < 50) {
     return NextResponse.json({ error: "This order is not ready for payment." }, { status: 409 });
   }
-  if (order.payment_status === "paid") return NextResponse.json({ error: "This order is already paid." }, { status: 409 });
   if (order.quote_expires_at && new Date(order.quote_expires_at).getTime() <= Date.now()) {
     return NextResponse.json({ error: "This quote has expired. Message KeyMoura to request an updated quote." }, { status: 409 });
   }

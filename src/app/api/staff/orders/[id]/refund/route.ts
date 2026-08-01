@@ -58,7 +58,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   await routeServiceClient.from("orders").update({
     amount_refunded_cents: totalRefunded,
     payment_status: fullyRefunded ? "refunded" : order.payment_status,
-  }).eq("id", id).eq("amount_refunded_cents", order.amount_refunded_cents || 0);
+  }).eq("id", id).eq("amount_refunded_cents", totalRefunded);
   await notifyOrderUser({ orderId:id, actorUserId:actor.userId, recipientUserId:order.customer_id,
     title:"Refund issued", message:`A $${(Number(amount) / 100).toFixed(2)} refund was issued. Your bank may take several business days to post it.` });
   return NextResponse.json({ ok: true, amount_refunded_cents: totalRefunded });
