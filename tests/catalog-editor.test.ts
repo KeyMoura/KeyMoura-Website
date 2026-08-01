@@ -15,9 +15,10 @@ test("catalog inventory migration is constrained and hides archived products", (
 });
 
 test("staff editor includes inventory, lifecycle, duplication, and search tools", () => {
-  for (const expected of ["Inventory mode", "Low-stock warning", "Duplicate", "Archive", "Search products or SKU"]) {
+  for (const expected of ["Inventory mode", "Low-stock warning", "Duplicate", "Archive", "Search products or SKU", "Publish checklist", "Save changes", "Set cover"]) {
     assert.ok(editor.includes(expected), `missing editor control: ${expected}`);
   }
+  assert.match(editor, /disabled=\{Boolean\(draft\.archived_at\) \|\| \(!draft\.is_published && !readyToPublish\)\}/);
 });
 
 test("storefront and order API enforce catalog availability", () => {
