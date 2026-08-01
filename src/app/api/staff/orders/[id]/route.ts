@@ -38,6 +38,16 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     update.quote_expires_at = body.quote_expires_at;
   }
   if (typeof body.staff_notes === "string" || body.staff_notes === null) update.staff_notes = body.staff_notes;
+  if (typeof body.final_review_note === "string") {
+    const note = body.final_review_note.trim().slice(0, 3000);
+    if (body.status === "final_review" && note.length < 3) return NextResponse.json({ error: "Add a note for the customer before sending this review." }, { status: 400 });
+    update.final_review_note = note || null;
+  }
+  if (Array.isArray(body.final_review_asset_paths)) {
+    const paths = body.final_review_asset_paths.filter((path): path is string => typeof path === "string" && path.length <= 1000).slice(0, 6);
+    if (body.status === "final_review" && paths.length < 1) return NextResponse.json({ error: "Add at least one finished-product photo before sending this review." }, { status: 400 });
+    update.final_review_asset_paths = paths;
+  }
   if (typeof body.fulfillment_method === "string") {
     if (!allowedFulfillmentMethods.has(body.fulfillment_method)) return NextResponse.json({ error: "Invalid fulfillment method" }, { status: 400 });
     update.fulfillment_method = body.fulfillment_method;
@@ -63,6 +73,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     update.status = "completed";
   }
   if (update.status === "final_review" && (existing.status !== "in_progress" || remainingBalanceCents(existing) > 0)) return NextResponse.json({ error: "Only a fully paid order in production can be sent for final review." }, { status: 409 });
+  if (update.status === "final_review" && (!update.final_review_note || !Array.isArray(update.final_review_asset_paths) || update.final_review_asset_paths.length < 1)) return NextResponse.json({ error: "Add a customer note and at least one photo before sending this review." }, { status: 400 });
   if (typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && (remainingBalanceCents(existing) > 0 || netCollectedCents(existing) === 0)) {
     update.payment_status = "unpaid";
     if (update.agreed_price_cents !== existing.agreed_price_cents || (update.deposit_amount_cents !== undefined && update.deposit_amount_cents !== existing.deposit_amount_cents)) {
@@ -95,7 +106,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   const statusChanged = typeof update.status === "string" && update.status !== existing.status;
   if (priceBecamePayable || (statusChanged && !shipmentAction)) {
     const finalStatus = String(update.status || existing.status).replaceAll("_", " ");
-    const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : `Your order status changed to ${finalStatus}.`;
+    const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : update.status === "final_review" ? "Your finished product is ready to review. View the photos and note, then approve it from your order page." : `Your order status changed to ${finalStatus}.`;
     const config = await getCommerceEmailConfig();
     const templateKey: CommerceEmailTemplateKey = priceBecamePayable ? "quote_ready" : update.status === "needs_information" ? "needs_information" : "status_update";
     if ((priceBecamePayable || update.status === "awaiting_payment") ? config.sendPaymentUpdates : config.sendStatusUpdates) await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-update-${id}-${historyId}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your request", status:finalStatus, price:typeof update.agreed_price_cents === "number" ? `$${(update.agreed_price_cents/100).toFixed(2)}` : "Price pending" } });
@@ -103,7 +114,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       orderId: id,
       actorUserId: actor.userId,
       recipientUserId: existing.customer_id,
-      title: priceBecamePayable ? "Quote ready for review" : "Order status updated",
+      title: priceBecamePayable ? "Quote ready for review" : update.status === "final_review" ? "Finished product ready for review" : "Order status updated",
       message,
     });
   }

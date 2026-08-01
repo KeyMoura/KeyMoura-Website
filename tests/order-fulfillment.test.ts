@@ -26,8 +26,8 @@ test("staff and customer order pages expose the fulfillment workflow", () => {
   const staff = read("src/app/staff/orders/[id]/page.tsx");
   const customer = read("src/app/orders/[id]/page.tsx");
   assert.match(staff, /Activity timeline/);
-  assert.match(staff, /Mark shipped \+ email/);
-  assert.match(staff, /Mark delivered \+ email/);
+  assert.match(staff, /Confirm shipment & notify customer/);
+  assert.match(staff, /Confirm delivery & complete order/);
   assert.match(customer, /Track shipment/);
 });
 
@@ -65,4 +65,18 @@ test("finished-product review is distinct from quote review and customer approva
   assert.match(approvalRoute, /from_status:"final_review", to_status:"ready"/);
   assert.match(approvalRoute, /Finished order approved by customer/);
   assert.match(customer, /Approve finished order/);
+});
+
+test("production review package requires private photos and a customer note", () => {
+  const migration = read("supabase/migrations/20260801060000_order_review_packages.sql");
+  const staff = read("src/app/staff/orders/[id]/page.tsx");
+  const customer = read("src/app/orders/[id]/page.tsx");
+  const route = read("src/app/api/staff/orders/[id]/route.ts");
+  assert.match(migration, /final_review_note/);
+  assert.match(migration, /final_review_asset_paths/);
+  assert.match(migration, /staff upload order review assets/);
+  assert.match(staff, /Customer preview/);
+  assert.match(staff, /Review & send to customer/);
+  assert.match(route, /Add a customer note and at least one photo/);
+  assert.match(customer, /OrderReviewGallery/);
 });

@@ -7,6 +7,7 @@ import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
 import { StaffOrderWorkspace } from "@/components/staff/StaffOrderWorkspace";
+import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 
 type Order = {
   id: string;
@@ -35,6 +36,8 @@ type Order = {
   delivered_at: string | null;
   created_at: string;
   paid_at: string | null;
+  final_review_note: string | null;
+  final_review_asset_paths: string[];
 };
 type Message = {
   id: number;
@@ -135,6 +138,9 @@ export default function StaffOrderDetail() {
   const [trackingUrl, setTrackingUrl] = useState("");
   const [error, setError] = useState("");
   const [pendingStatus, setPendingStatus] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewFiles, setReviewFiles] = useState<File[]>([]);
+  const [sendingReview, setSendingReview] = useState(false);
   const load = useCallback(async () => {
     const [o, m, e, h, p, r] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
@@ -168,6 +174,7 @@ export default function StaffOrderDetail() {
       setCarrier(row.shipping_carrier ?? "");
       setTrackingNumber(row.tracking_number ?? "");
       setTrackingUrl(row.tracking_url ?? "");
+      setReviewNote(row.final_review_note ?? "");
       const remainingRefundableCents = Math.max(0, row.amount_paid_cents - (row.amount_refunded_cents || 0));
       setRefundAmount(remainingRefundableCents > 0 ? String(remainingRefundableCents / 100) : "");
     }
@@ -225,6 +232,27 @@ export default function StaffOrderDetail() {
     const result = await r.json();
     if (!r.ok) setError(result.error || "Could not save details");
     else await load();
+  }
+  async function sendForReview() {
+    if (!order || reviewNote.trim().length < 3 || reviewFiles.length < 1) {
+      setError("Add a customer note and at least one finished-product photo.");
+      return;
+    }
+    if (!window.confirm(`Send ${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} and this note to the customer for approval?`)) return;
+    setSendingReview(true); setError("");
+    const uploaded: string[] = [];
+    for (const file of reviewFiles) {
+      const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase() || "jpg";
+      const path = `${order.customer_id}/${order.id}/final-review/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabase.storage.from("order-assets").upload(path, file, { contentType:file.type, upsert:false });
+      if (uploadError) { setError(`Could not upload ${file.name}: ${uploadError.message}`); setSendingReview(false); return; }
+      uploaded.push(path);
+    }
+    const response = await fetch(`/api/staff/orders/${id}`, { method:"PATCH", headers:await authHeaders(), body:JSON.stringify({ status:"final_review", final_review_note:reviewNote.trim(), final_review_asset_paths:uploaded }) });
+    const result = await response.json();
+    if (!response.ok) setError(result.error || "Could not send the review package");
+    else { setReviewFiles([]); await load(); }
+    setSendingReview(false);
   }
   async function issueRefund() {
     const cents = Math.round(Number(refundAmount) * 100);
@@ -290,8 +318,8 @@ export default function StaffOrderDetail() {
             <button onClick={() => void updateStatus("cancelled")} className="rounded-xl border border-rose-500/60 px-4 py-2 font-semibold text-rose-200">Cancel request</button>
             <button onClick={() => void updateStatus("accepted")} className="rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black">Accept & continue</button>
           </> : null}
-          {order.status === "in_progress" && canManage ? <button onClick={() => void updateStatus("final_review")} className="rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black">Send for customer review</button> : null}
-          {order.status !== "requested" && order.status !== "needs_information" && order.status !== "in_progress" ? <a href={nextStep.href} className="inline-flex rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black">{order.status === "accepted" ? "Continue to quote" : "View current stage"}</a> : null}
+          {order.status === "in_progress" && canManage ? <a href="#customer-review-package" className="inline-flex rounded-xl border border-amber-300/70 bg-zinc-950 px-4 py-2 font-semibold text-amber-200 shadow-sm transition hover:bg-zinc-900">Prepare customer review</a> : null}
+          {order.status !== "requested" && order.status !== "needs_information" && order.status !== "in_progress" ? <a href={nextStep.href} className="inline-flex rounded-xl border border-brand-primary/70 bg-zinc-950 px-4 py-2 font-semibold text-brand-primary">{order.status === "accepted" ? "Continue to quote" : "View current stage"}</a> : null}
         </div>
       </div>
       <nav className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800 bg-black/25 p-3" aria-label="Order workflow">
@@ -313,6 +341,20 @@ export default function StaffOrderDetail() {
         <div id="production" className="scroll-mt-5 lg:col-span-2">
           <StaffOrderWorkspace orderId={id} canManage={canManage} />
         </div>
+        {order.status === "in_progress" && canManage ? <section id="customer-review-package" className="scroll-mt-5 rounded-2xl border border-amber-400/35 bg-amber-400/5 p-5 lg:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-[.16em] text-amber-300">Next · Customer review</p>
+          <h2 className="mt-1 text-xl font-semibold">Show the customer the finished work</h2>
+          <p className="mt-2 text-sm text-brand-textMuted">Add the photos and note the customer should review. Nothing is sent until you confirm below.</p>
+          <label className="mt-5 block text-sm font-medium">Finished-product photos
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple onChange={event=>setReviewFiles(Array.from(event.target.files || []).slice(0,6))} className="mt-2 block w-full rounded-xl border border-dashed border-zinc-700 bg-black/30 px-4 py-5 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-white" />
+            <span className="mt-1 block text-xs text-brand-textMuted">Up to 6 photos. These are private to staff and this customer.</span>
+          </label>
+          {reviewFiles.length ? <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">{reviewFiles.map((file,index)=><div key={`${file.name}-${index}`} className="rounded-xl border border-zinc-700 bg-black/30 p-3"><p className="truncate text-sm font-medium">{file.name}</p><p className="mt-1 text-xs text-brand-textMuted">{(file.size/1024/1024).toFixed(1)} MB</p></div>)}</div> : null}
+          <label className="mt-5 block text-sm font-medium">Note to customer<textarea value={reviewNote} onChange={event=>setReviewNote(event.target.value)} maxLength={3000} className={`${input} mt-2 min-h-28 w-full`} placeholder="Here is the finished piece. Please review the photos, finish, color, and details…" /></label>
+          <div className="mt-5 rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">Customer preview</p><p className="mt-2 whitespace-pre-wrap text-sm">{reviewNote.trim() || "Your note will appear here."}</p><p className="mt-3 text-xs text-brand-textMuted">{reviewFiles.length ? `${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} attached` : "No photos attached yet"}</p></div>
+          <button disabled={sendingReview || reviewFiles.length < 1 || reviewNote.trim().length < 3} onClick={()=>void sendForReview()} className="mt-5 rounded-xl border border-amber-300/70 bg-zinc-950 px-5 py-2.5 font-semibold text-amber-200 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40">{sendingReview ? "Sending review…" : "Review & send to customer"}</button>
+        </section> : null}
+        {order.status === "final_review" ? <section className="rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Sent to customer</p><h2 className="mt-1 text-xl font-semibold">Finished-product review package</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : null}<OrderReviewGallery paths={order.final_review_asset_paths || []} /></section> : null}
         <section id="quote" className="-order-1 scroll-mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2">
           <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Customer quote</p><h2 className="mt-1 text-xl font-semibold">Price & schedule</h2></div><span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">Revision {order.quote_revision}</span></div>
           <p className="mt-2 text-sm leading-6 text-brand-textMuted">This is the final price the customer pays—not your material or labor cost. Internal costs stay in the Production workspace.</p>

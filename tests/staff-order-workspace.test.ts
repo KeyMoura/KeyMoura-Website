@@ -47,8 +47,8 @@ test("staff order queue separates staff actions from customer waits", () => {
 test("staff order detail leads with the next action and hides manual overrides", () => {
   const detail = read("src/app/staff/orders/[id]/page.tsx");
   assert.match(detail, /Next step/);
-  assert.match(detail, /Go to action/);
-  assert.match(detail, /Quote & request/);
+  assert.match(detail, /Prepare customer review/);
+  assert.match(detail, /Customer quote/);
   assert.match(detail, /Advanced status override/);
   assert.match(detail, /Quote Review/);
   assert.match(detail, /Finished Product Review/);
