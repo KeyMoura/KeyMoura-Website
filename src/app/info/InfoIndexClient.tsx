@@ -49,35 +49,34 @@ type InfoSummary = {
 
 const CATEGORIES = [
   {
-    slug: "oem-manuals",
-    name: "OEM Literature",
-    description: "Nissan OEM full service manuals, brochures, parts catalogs.",
+    slug: "cnc-machining",
+    name: "CNC & Machining",
+    description: "Machined parts, fixtures, tooling experiments, and production notes.",
   },
   {
-    slug: "chassis-suspension",
-    name: "Chassis & Suspension",
-    description:
-      "Arms, bushings, alignment specs, coilovers, braces.",
+    slug: "product-design",
+    name: "Product Design",
+    description: "Concepts, prototypes, revisions, materials, and finished products.",
   },
   {
-    slug: "engine-drivetrain",
-    name: "Engine & Drivetrain",
-    description: "Engine swaps, turbos, fueling, cooling, clutches, differentials.",
+    slug: "automation-tools",
+    name: "Automation & Tools",
+    description: "Custom machines, shop tools, controllers, and process improvements.",
   },
   {
-    slug: "wiring-electronics",
-    name: "Wiring & Electronics",
-    description: "ECUs, digital dashes, sensors, harnesses, CAN, diagnostics.",
+    slug: "electronics-software",
+    name: "Electronics & Software",
+    description: "Embedded systems, interfaces, websites, apps, and connected builds.",
   },
   {
-    slug: "body-aero",
-    name: "Body & Aero",
-    description: "Kits, wings, diffusers, aero balance, cooling ducts.",
+    slug: "automotive",
+    name: "Automotive",
+    description: "Vehicle parts, modifications, research, and installation projects.",
   },
   {
-    slug: "maintenance-general",
-    name: "Maintenance & General",
-    description: "Basic maintenance, torque specs, common issues.",
+    slug: "business-brand",
+    name: "KeyMoura Build Log",
+    description: "Brand, business, shop, and behind-the-scenes development updates.",
   },
 ] as const;
 
@@ -913,14 +912,14 @@ export default function InfoIndexClient() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-              Info pages
+              Project hub
             </p>
             <h1 className="text-2xl font-semibold tracking-tight text-brand-text sm:text-3xl">
-              {siteSettings.shortName} {siteSettings.terminology.knowledgeBase.toLowerCase()}
+              {siteSettings.shortName} Projects
             </h1>
             <p className="mt-1 text-[12px] text-brand-textMuted sm:text-sm">
-              Browse organized info pages, or search across titles, content, and
-              tags.
+              Explore builds from first idea to finished result, including designs,
+              decisions, files, progress, and lessons learned.
             </p>
           </div>
 
@@ -1054,8 +1053,8 @@ export default function InfoIndexClient() {
               </p>
             ) : (
               <p className="mt-1 text-[11px] text-brand-textMuted">
-                Searching approved pages. Use commas to add multiple terms like{" "}
-                <code>s14, subframe</code>.
+                Searching published projects. Use commas to combine topics like{" "}
+                <code>cnc, enclosure</code>.
               </p>
             )}
           </div>
@@ -1067,18 +1066,18 @@ export default function InfoIndexClient() {
                 {canSubmitInfo && (
                   maintenanceMode ? (
                     <span className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] font-medium text-zinc-500 cursor-not-allowed">
-                      Submit new information (disabled)
+                      Submit a project (disabled)
                     </span>
                   ) : (
                     <InfoCtaButton href="/info/submit" variant="primary">
-                      Submit new information
+                      Submit a project
                     </InfoCtaButton>
                   )
                 )}
 
                 {canSubmitInfo && (
                   <InfoCtaButton href="/info/mine" variant="secondary">
-                    View my submissions
+                    My project submissions
                   </InfoCtaButton>
                 )}
               </div>
@@ -1110,10 +1109,10 @@ export default function InfoIndexClient() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-                  Info search help
+                  Project search help
                 </div>
                 <div className="mt-1 text-base font-semibold">
-                  Find the right page fast
+                  Find the right project fast
                 </div>
               </div>
               <button
@@ -1185,7 +1184,7 @@ export default function InfoIndexClient() {
       {/* Categories (hide on ALL screen sizes when typing/filtering) */}
       <section className={(hideCategoriesWhenSearching ? "hidden " : "") + "space-y-3"}>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-textMuted">
-          Categories
+          Project categories
         </h2>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {CATEGORIES.map((cat) => (
@@ -1215,7 +1214,7 @@ export default function InfoIndexClient() {
         <div className="flex items-center justify-between">
           <div className="flex flex-col gap-0.5">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-textMuted">
-              {hasActiveQuery ? "Search results" : "Recently updated"}
+              {hasActiveQuery ? "Project results" : "Recently updated projects"}
             </h2>
             {results.length > 0 && (
               <p className="text-[11px] text-brand-textMuted">
@@ -1235,7 +1234,7 @@ export default function InfoIndexClient() {
 
         {results.length === 0 && !searchError && initialLoaded && (
           <p className="text-[12px] text-brand-textMuted">
-            No pages found yet.
+            No projects found yet.
           </p>
         )}
 
