@@ -44,6 +44,7 @@ type Message = {
 };
 type History = { id: number; from_status: string | null; to_status: string; note: string | null; created_at: string };
 type Payment = { id: string; amount_cents: number; received_at: string };
+type Refund = { id: string; amount_cents: number; reason: string; created_at: string };
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -52,6 +53,7 @@ export default function OrderDetailPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [history, setHistory] = useState<History[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [refunds, setRefunds] = useState<Refund[]>([]);
   const [userId, setUserId] = useState("");
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
@@ -60,7 +62,7 @@ export default function OrderDetailPage() {
   const load = useCallback(async () => {
     const auth = await supabase.auth.getUser();
     setUserId(auth.data.user?.id ?? "");
-    const [o, m, h, p] = await Promise.all([
+    const [o, m, h, p, r] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
@@ -69,6 +71,7 @@ export default function OrderDetailPage() {
         .order("created_at"),
       supabase.from("order_status_history").select("id,from_status,to_status,note,created_at").eq("order_id", id).order("created_at", { ascending: false }),
       supabase.from("order_payments").select("id,amount_cents,received_at").eq("order_id", id).order("received_at", { ascending: false }),
+      supabase.from("order_refunds").select("id,amount_cents,reason,created_at").eq("order_id", id).order("created_at", { ascending: false }),
     ]);
     const loadedOrder = o.data as Order | null;
     setOrder(loadedOrder);
@@ -76,7 +79,8 @@ export default function OrderDetailPage() {
     setMessages((m.data ?? []) as Message[]);
     setHistory((h.data ?? []) as History[]);
     setPayments((p.data ?? []) as Payment[]);
-    setError(o.error?.message ?? m.error?.message ?? h.error?.message ?? p.error?.message ?? "");
+    setRefunds((r.data ?? []) as Refund[]);
+    setError(o.error?.message ?? m.error?.message ?? h.error?.message ?? p.error?.message ?? r.error?.message ?? "");
   }, [id, supabase]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -259,7 +263,7 @@ export default function OrderDetailPage() {
       <aside className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
         <h2 className="font-semibold">Activity</h2>
         <div className="mt-4 space-y-4">
-          {[...history.map(item => ({ id:`status-${item.id}`, at:item.created_at, label:orderLabel(item.to_status), detail:item.note })), ...payments.map(payment => ({ id:`payment-${payment.id}`, at:payment.received_at, label:"Payment received", detail:moneyFromCents(payment.amount_cents) })), { id:"created", at:order.created_at, label:"Request submitted", detail:null }].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item => <div key={item.id} className="relative border-l border-zinc-700 pl-4"><span className={`absolute -left-1 top-0 h-2 w-2 rounded-full ${item.id.startsWith("payment-") ? "bg-emerald-400" : item.id === "created" ? "bg-zinc-500" : "bg-brand-primary"}`} /><p className="text-sm font-medium">{item.label}</p>{item.detail ? <p className="mt-1 text-xs text-brand-textMuted">{item.detail}</p> : null}<time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</time></div>)}
+          {[...history.map(item => ({ id:`status-${item.id}`, at:item.created_at, label:orderLabel(item.to_status), detail:item.note })), ...payments.map(payment => ({ id:`payment-${payment.id}`, at:payment.received_at, label:"Payment received", detail:moneyFromCents(payment.amount_cents) })), ...refunds.map(refund => ({ id:`refund-${refund.id}`, at:refund.created_at, label:"Refund issued", detail:`${moneyFromCents(refund.amount_cents)} — ${refund.reason}` })), { id:"created", at:order.created_at, label:"Request submitted", detail:null }].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item => <div key={item.id} className="relative border-l border-zinc-700 pl-4"><span className={`absolute -left-1 top-0 h-2 w-2 rounded-full ${item.id.startsWith("payment-") ? "bg-emerald-400" : item.id.startsWith("refund-") ? "bg-rose-400" : item.id === "created" ? "bg-zinc-500" : "bg-brand-primary"}`} /><p className="text-sm font-medium">{item.label}</p>{item.detail ? <p className="mt-1 text-xs text-brand-textMuted">{item.detail}</p> : null}<time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</time></div>)}
         </div>
       </aside>
       </div>
