@@ -1,9 +1,11 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
+import { moneyFromCents, ORDER_STATUS_STEPS, orderLabel, orderNeedsCustomerAction, orderNextStep, orderProgressIndex } from "@/lib/orderHub";
 
 type Order = {
   id: string;
@@ -33,14 +35,14 @@ type Message = {
   is_internal: boolean;
   created_at: string;
 };
-const pretty = (s: string) =>
-  s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+type History = { id: number; from_status: string | null; to_status: string; note: string | null; created_at: string };
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const supabase = useMemo(() => supabaseBrowser(), []);
   const [order, setOrder] = useState<Order | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [history, setHistory] = useState<History[]>([]);
   const [userId, setUserId] = useState("");
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
@@ -48,17 +50,19 @@ export default function OrderDetailPage() {
   const load = useCallback(async () => {
     const auth = await supabase.auth.getUser();
     setUserId(auth.data.user?.id ?? "");
-    const [o, m] = await Promise.all([
+    const [o, m, h] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
         .select("id,sender_id,body,is_internal,created_at")
         .eq("order_id", id)
         .order("created_at"),
+      supabase.from("order_status_history").select("id,from_status,to_status,note,created_at").eq("order_id", id).order("created_at", { ascending: false }),
     ]);
     setOrder(o.data as Order | null);
     setMessages((m.data ?? []) as Message[]);
-    setError(o.error?.message ?? m.error?.message ?? "");
+    setHistory((h.data ?? []) as History[]);
+    setError(o.error?.message ?? m.error?.message ?? h.error?.message ?? "");
   }, [id, supabase]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -111,8 +115,12 @@ export default function OrderDetailPage() {
         {error || "Loading order…"}
       </main>
     );
+  const needsAction = orderNeedsCustomerAction(order);
+  const progressIndex = orderProgressIndex(order.status);
+  const isClosed = ["declined", "cancelled"].includes(order.status);
   return (
-    <main className="mx-auto max-w-4xl px-4 py-10">
+    <main className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+      <Link href="/orders" className="text-sm text-brand-textMuted transition hover:text-brand-primary">← Back to your orders</Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[.2em] text-brand-primary">
@@ -121,21 +129,31 @@ export default function OrderDetailPage() {
           <h1 className="mt-2 text-3xl font-semibold">{order.product_name}</h1>
         </div>
         <span className="rounded-full border border-brand-primary/60 bg-brand-primary/10 px-4 py-2 text-sm text-brand-primary">
-          {pretty(order.status)}
+          {orderLabel(order.status)}
         </span>
       </div>
+      <section className={`mt-6 rounded-2xl border p-5 ${needsAction ? "border-brand-primary/50 bg-brand-primary/10" : "border-zinc-800 bg-black/30"}`}>
+        <p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-textMuted">What happens next</p>
+        <p className={`mt-2 text-lg font-semibold ${needsAction ? "text-brand-primary" : "text-brand-text"}`}>{orderNextStep(order)}</p>
+        {order.status === "needs_information" ? <p className="mt-1 text-sm text-brand-textMuted">Send the missing details in order chat below so work can continue.</p> : null}
+      </section>
+
+      {!isClosed ? <section className="mt-6 rounded-2xl border border-zinc-800 bg-black/30 p-5" aria-label="Order progress">
+        <div className="flex items-center justify-between text-xs text-brand-textMuted"><span>Request</span><span>Making</span><span>Complete</span></div>
+        <div className="mt-3 flex gap-1.5">{ORDER_STATUS_STEPS.map((step, index) => <div key={step} title={orderLabel(step)} className={`h-2 flex-1 rounded-full ${index <= progressIndex ? "bg-brand-primary" : "bg-zinc-800"}`} />)}</div>
+      </section> : null}
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-zinc-800 p-4">
           <div className="text-xs text-brand-textMuted">Price</div>
           <div className="mt-1 font-medium">
             {order.agreed_price_cents == null
               ? "Pending"
-              : `$${(order.agreed_price_cents / 100).toFixed(2)}`}
+              : moneyFromCents(order.agreed_price_cents)}
           </div>
         </div>
         <div className="rounded-xl border border-zinc-800 p-4">
           <div className="text-xs text-brand-textMuted">Payment</div>
-          <div className="mt-1 font-medium">{pretty(order.payment_status)}</div>
+          <div className="mt-1 font-medium">{orderLabel(order.payment_status)}</div>
         </div>
         <div className="rounded-xl border border-zinc-800 p-4">
           <div className="text-xs text-brand-textMuted">Target</div>
@@ -160,7 +178,7 @@ export default function OrderDetailPage() {
           >
             {busy
               ? "Opening checkout…"
-              : `Pay $${(order.agreed_price_cents / 100).toFixed(2)}`}
+              : `Pay ${moneyFromCents(order.agreed_price_cents)}`}
           </button>
         </div>
       ) : null}
@@ -180,9 +198,12 @@ export default function OrderDetailPage() {
         ) : null}
       </section>
       {(order.fulfillment_method === "pickup" || order.tracking_number || order.shipped_at) ? <section className="mt-6 rounded-2xl border border-zinc-800 bg-black/30 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">Fulfillment</h2><p className="mt-1 text-sm text-brand-textMuted">{order.delivered_at ? order.fulfillment_method === "pickup" ? "Pickup complete" : "Delivered" : order.shipped_at ? order.fulfillment_method === "pickup" ? "Ready for pickup" : "Shipped" : order.fulfillment_method === "pickup" ? "Customer pickup" : "Shipping details"}</p></div>{order.tracking_url ? <a className="ui-btn ui-btn-primary" href={order.tracking_url} target="_blank" rel="noreferrer">Track shipment</a> : null}</div>{order.tracking_number ? <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-brand-textMuted">Carrier</dt><dd>{order.shipping_carrier || "Carrier"}</dd></div><div><dt className="text-brand-textMuted">Tracking number</dt><dd className="break-all">{order.tracking_number}</dd></div></dl> : null}</section> : null}
-      <section className="mt-6">
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1.4fr_.8fr]">
+      <section className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
         <h2 className="text-xl font-semibold">Order chat</h2>
+        <p className="mt-1 text-sm text-brand-textMuted">Messages here stay connected to this order.</p>
         <div className="mt-3 space-y-3">
+          {messages.length === 0 ? <div className="rounded-xl border border-dashed border-zinc-700 p-5 text-center text-sm text-brand-textMuted">No messages yet. Send a question whenever you need help.</div> : null}
           {messages.map((m) => (
             <div
               key={m.id}
@@ -212,6 +233,14 @@ export default function OrderDetailPage() {
         </form>
         {error ? <p className="mt-2 text-sm text-rose-200">{error}</p> : null}
       </section>
+      <aside className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+        <h2 className="font-semibold">Activity</h2>
+        <div className="mt-4 space-y-4">
+          {history.map((item) => <div key={item.id} className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-brand-primary" /><p className="text-sm font-medium">{orderLabel(item.to_status)}</p>{item.note ? <p className="mt-1 text-xs text-brand-textMuted">{item.note}</p> : null}<time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(item.created_at).toLocaleString()}</time></div>)}
+          <div className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-zinc-500" /><p className="text-sm font-medium">Request submitted</p><time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(order.created_at).toLocaleString()}</time></div>
+        </div>
+      </aside>
+      </div>
     </main>
   );
 }
