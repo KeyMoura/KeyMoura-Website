@@ -766,50 +766,14 @@ const loadMyReports = async (viewerId: string) => {
     }
   };
 
-  const renderAvatar = () => {
-    if (avatarUrl) {
-      return (
-        <img
-          src={avatarUrl}
-          alt={displayName}
-          className="h-20 w-20 rounded-2xl border border-zinc-700 object-cover shadow-xl"
-        />
-      );
-    }
-
-    return (
-      <div className="h-20 w-20 rounded-2xl border border-zinc-700 bg-brand-primary/10 text-brand-primary shadow-xl">
-        <svg viewBox="0 0 40 40" className="h-full w-full" aria-hidden="true">
-          <defs>
-            <linearGradient id="avatarGradient" x1="0%" x2="100%" y1="0%" y2="100%">
-              <stop offset="0%" stopColor="var(--brand-primary)" />
-              <stop offset="100%" stopColor="var(--brand-accent)" />
-            </linearGradient>
-          </defs>
-          <circle cx="20" cy="20" r="19" fill="url(#avatarGradient)" opacity="0.25" />
-          <circle cx="20" cy="16" r="7" fill="none" stroke="var(--brand-primary)" strokeWidth="2" />
-          <path
-            d="M10 30c2.5-4 6-6 10-6s7.5 2 10 6"
-            fill="none"
-            stroke="var(--brand-primary)"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <text
-            x="20"
-            y="22"
-            textAnchor="middle"
-            fill="var(--km-text)"
-            fontSize="11"
-            fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-            dy="4"
-          >
-            {avatarInitial}
-          </text>
-        </svg>
-      </div>
-    );
-  };
+  const renderAvatar = () => (
+    <div
+      className="flex h-20 w-20 items-center justify-center rounded-full border border-brand-primary/40 bg-brand-primary/15 text-2xl font-semibold text-brand-primary shadow-xl"
+      aria-label={`${displayName} avatar`}
+    >
+      {avatarInitial}
+    </div>
+  );
 
   if (loading) {
     return (
@@ -905,7 +869,7 @@ const loadMyReports = async (viewerId: string) => {
             className={
               "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "profile"
-                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
+                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Profile
@@ -916,7 +880,7 @@ const loadMyReports = async (viewerId: string) => {
             className={
               "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "security"
-                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
+                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Security
@@ -927,7 +891,7 @@ const loadMyReports = async (viewerId: string) => {
             className={
               "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "reports"
-                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
+                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Reports
@@ -938,7 +902,7 @@ const loadMyReports = async (viewerId: string) => {
             className={
               "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "blocked"
-                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
+                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Blocked users
