@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
 import { moneyFromCents, ORDER_STATUS_STEPS, orderLabel, orderNeedsCustomerAction, orderNextStep, orderProgressIndex } from "@/lib/orderHub";
+import { checkoutAmountCents } from "@/lib/paymentMath";
 
 type Order = {
   id: string;
@@ -135,6 +136,7 @@ export default function OrderDetailPage() {
   const needsAction = orderNeedsCustomerAction(order);
   const progressIndex = orderProgressIndex(order.status);
   const isClosed = ["declined", "cancelled"].includes(order.status);
+  const checkoutAmount = checkoutAmountCents(order);
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
       <Link href="/orders" className="text-sm text-brand-textMuted transition hover:text-brand-primary">← Back to your orders</Link>
@@ -182,7 +184,7 @@ export default function OrderDetailPage() {
       </div>
       {order.status === "customer_review" && !order.quote_accepted_at && order.agreed_price_cents ? <section className={`mt-4 rounded-2xl border p-5 ${quoteExpired ? "border-amber-500/50 bg-amber-500/10" : "border-brand-primary/50 bg-brand-primary/10"}`}><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Quote revision {order.quote_revision}</p><h2 className="mt-2 text-xl font-semibold">{quoteExpired ? "This quote has expired" : `Review and approve ${moneyFromCents(order.agreed_price_cents)}`}</h2><p className="mt-2 text-sm text-brand-textMuted">{quoteExpired ? "Send a message below to request an updated price and schedule." : <>Approve this quote to unlock secure payment. {order.deposit_amount_cents ? `${moneyFromCents(order.deposit_amount_cents)} is due first; the remaining balance is collected later.` : "The full amount will be due."}{order.quote_expires_at ? ` Valid through ${new Date(order.quote_expires_at).toLocaleDateString()}.` : ""}</>}</p>{!quoteExpired ? <button type="button" disabled={busy} onClick={()=>void approveQuote()} className="catalog-action-primary mt-4 rounded-xl px-5 py-2.5 font-semibold disabled:opacity-50">{busy?"Approving…":"Approve quote"}</button> : null}</section> : null}
       {order.status === "cancelled" ? <section className="mt-4 rounded-2xl border border-zinc-700 bg-zinc-900/40 p-5"><h2 className="font-semibold">Order cancelled</h2><p className="mt-1 text-sm text-brand-textMuted">{order.cancellation_reason || "Contact KeyMoura through order chat if you have questions."}</p>{order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <p className="mt-2 text-sm text-amber-200">Cancellation does not automatically mean a refund. Any approved refund will appear in the payment summary.</p> : null}</section> : null}
-      {order.agreed_price_cents &&
+      {order.agreed_price_cents && checkoutAmount >= 50 &&
       order.payment_status !== "paid" &&
       (["accepted", "awaiting_payment"].includes(order.status) || (order.status === "in_progress" && order.payment_status === "partial")) ? (
         <div className="mt-4 rounded-2xl border border-brand-primary/50 bg-brand-primary/10 p-5">
@@ -196,7 +198,7 @@ export default function OrderDetailPage() {
             onClick={() => void checkout()}
             className="mt-4 rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-5 py-2.5 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50"
           >
-            {busy ? "Opening checkout…" : `Pay ${moneyFromCents(order.amount_paid_cents > 0 ? order.agreed_price_cents-order.amount_paid_cents : Math.min(order.deposit_amount_cents || order.agreed_price_cents,order.agreed_price_cents))}`}
+            {busy ? "Opening checkout…" : `Pay ${moneyFromCents(checkoutAmount)}`}
           </button>
         </div>
       ) : null}

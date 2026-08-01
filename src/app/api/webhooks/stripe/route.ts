@@ -4,6 +4,7 @@ import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 import { notifyOrderUser } from "@/lib/orderNotifications";
+import { netCollectedCents } from "@/lib/paymentMath";
 
 export const runtime = "nodejs";
 
@@ -25,13 +26,14 @@ export async function POST(req: NextRequest) {
   if (inserted.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
   if (inserted.error) return NextResponse.json({ error: "Could not record event" }, { status: 500 });
 
-  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,agreed_price_cents,amount_paid_cents").eq("id", orderId).maybeSingle();
+  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,agreed_price_cents,amount_paid_cents,amount_refunded_cents").eq("id", orderId).maybeSingle();
   const newPaid = (order?.amount_paid_cents || 0) + session.amount_total;
-  if (!order || !order.agreed_price_cents || newPaid > order.agreed_price_cents) {
+  const newNetCollected = order ? netCollectedCents({ ...order, amount_paid_cents: newPaid }) : 0;
+  if (!order || !order.agreed_price_cents || newNetCollected > order.agreed_price_cents) {
     await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
     return NextResponse.json({ error: "Order amount mismatch" }, { status: 409 });
   }
-  const fullyPaid = newPaid >= order.agreed_price_cents;
+  const fullyPaid = newNetCollected >= order.agreed_price_cents;
   const paymentIntentId = String(session.payment_intent || "");
   if (!paymentIntentId) {
     await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
     actorUserId: null,
     recipientUserId: order.customer_id,
     title: "Payment received",
-    message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received.${fullyPaid ? " Your order is paid in full." : ` $${((order.agreed_price_cents-newPaid)/100).toFixed(2)} remains.`}`,
+    message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received.${fullyPaid ? " Your order is paid in full." : ` $${((order.agreed_price_cents-newNetCollected)/100).toFixed(2)} remains.`}`,
   });
   await routeServiceClient.from("stripe_webhook_events").update({ processed_at: new Date().toISOString() }).eq("stripe_event_id", event.id);
   return NextResponse.json({ received: true });
