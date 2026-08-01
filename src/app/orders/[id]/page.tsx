@@ -255,8 +255,8 @@ export default function OrderDetailPage() {
       <aside className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
         <h2 className="font-semibold">Activity</h2>
         <div className="mt-4 space-y-4">
-          {history.map((item) => <div key={item.id} className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-brand-primary" /><p className="text-sm font-medium">{orderLabel(item.to_status)}</p>{item.note ? <p className="mt-1 text-xs text-brand-textMuted">{item.note}</p> : null}<time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(item.created_at).toLocaleString()}</time></div>)}
-          <div className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-zinc-500" /><p className="text-sm font-medium">Request submitted</p><time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(order.created_at).toLocaleString()}</time></div>
+          {history.map((item) => <div key={item.id} className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-0 h-2 w-2 rounded-full bg-brand-primary" /><p className="text-sm font-medium">{orderLabel(item.to_status)}</p>{item.note ? <p className="mt-1 text-xs text-brand-textMuted">{item.note}</p> : null}<time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(item.created_at).toLocaleString()}</time></div>)}
+          <div className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-0 h-2 w-2 rounded-full bg-zinc-500" /><p className="text-sm font-medium">Request submitted</p><time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(order.created_at).toLocaleString()}</time></div>
         </div>
       </aside>
       </div>
