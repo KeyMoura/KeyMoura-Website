@@ -1,9 +1,10 @@
 export const ORDER_STATUS_STEPS = [
   "requested",
   "accepted",
+  "customer_review",
   "awaiting_payment",
   "in_progress",
-  "customer_review",
+  "final_review",
   "ready",
   "completed",
 ] as const;
@@ -19,7 +20,7 @@ export function orderNeedsCustomerAction(order: {
 }) {
   return (
     order.status === "needs_information" ||
-    order.status === "customer_review" ||
+    ["customer_review", "final_review"].includes(order.status) ||
     (Boolean(order.agreed_price_cents) &&
       order.payment_status !== "paid" &&
       ["accepted", "awaiting_payment"].includes(order.status))
@@ -34,6 +35,7 @@ export function orderNextStep(order: {
 }) {
   if (order.status === "needs_information") return "Reply with the requested details";
   if (order.status === "customer_review") return "Review KeyMoura’s latest update";
+  if (order.status === "final_review") return "Approve the finished order";
   if (
     order.agreed_price_cents &&
     order.payment_status !== "paid" &&
