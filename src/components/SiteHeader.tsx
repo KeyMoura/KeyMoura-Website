@@ -1236,7 +1236,7 @@ export default function SiteHeader() {
     () => [
       { href: "/about", label: "About" },
       { href: "/capabilities", label: "Capabilities" },
-      { href: "/info", label: "Info" },
+      { href: "/info", label: "Projects" },
     ],
     []
   );
@@ -1372,13 +1372,9 @@ export default function SiteHeader() {
                   {l.label}
                 </Link>
               ))}
-              <span
-                className={`${pillBase} cursor-not-allowed border border-zinc-800 text-zinc-500 opacity-70`}
-                aria-disabled="true"
-                title="Community is coming soon"
-              >
-                Community <span className="ml-1 text-[9px] uppercase tracking-wide">Soon</span>
-              </span>
+              <Link href="/community" className={navLinkClasses("/community")}>
+                Community
+              </Link>
             </nav>
           </div>
 
@@ -1531,7 +1527,7 @@ export default function SiteHeader() {
             Capabilities
           </Link>
           <Link href="/info" className={navLinkClasses("/info")} onClick={() => setIsMobileOpen(false)}>
-            Info
+            Projects
           </Link>
           <Link href="/catalog" className={navLinkClasses("/catalog")} onClick={() => setIsMobileOpen(false)}>
             Catalog
@@ -1539,13 +1535,9 @@ export default function SiteHeader() {
           <Link href="/contact" className={navLinkClasses("/contact")} onClick={() => setIsMobileOpen(false)}>
             Contact
           </Link>
-          <span
-            className={`${pillBase} cursor-not-allowed border border-zinc-800 text-zinc-500 opacity-70`}
-            aria-disabled="true"
-            title="Community is coming soon"
-          >
-            Community <span className="ml-1 text-[9px] uppercase tracking-wide">Coming soon</span>
-          </span>
+          <Link href="/community" className={navLinkClasses("/community")} onClick={() => setIsMobileOpen(false)}>
+            Community
+          </Link>
         </div>
 
         <div className="border-t border-zinc-800/80 pt-3">
