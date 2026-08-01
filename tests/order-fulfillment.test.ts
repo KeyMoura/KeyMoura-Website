@@ -37,3 +37,15 @@ test("staff and customer activity timelines show each recorded payment", () => {
     assert.match(page, /payment\.received_at/);
   }
 });
+
+test("staff and customer activity timelines show each recorded refund", () => {
+  const staff = read("src/app/staff/orders/[id]/page.tsx");
+  const customer = read("src/app/orders/[id]/page.tsx");
+  for (const page of [staff, customer]) {
+    assert.match(page, /from\("order_refunds"\)/);
+    assert.match(page, /Refund issued/);
+    assert.match(page, /refund\.amount_cents/);
+    assert.match(page, /refund\.reason/);
+    assert.match(page, /refund\.created_at/);
+  }
+});
