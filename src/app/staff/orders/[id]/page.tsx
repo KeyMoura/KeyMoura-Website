@@ -70,7 +70,8 @@ const statusLabel = (status: string) => {
 const nextStaffStep = (order: Order) => {
   if (order.status === "requested") return { title: "Review the request", detail: "Confirm the specifications, then prepare and send the customer quote.", href: "#quote" };
   if (order.status === "needs_information") return { title: "Waiting for customer information", detail: "Use the conversation to follow up if the customer has not replied.", href: "#conversation" };
-  if (order.status === "accepted" || order.status === "awaiting_payment") return { title: "Waiting for payment", detail: "The customer has the quote. Production can begin after the required payment is received.", href: "#activity" };
+  if (order.status === "accepted") return { title: "Prepare the quote", detail: "The request is accepted. Set the customer price, deposit, schedule, and send the quote for approval.", href: "#quote" };
+  if (order.status === "awaiting_payment") return { title: "Waiting for payment", detail: "The quote is approved. Production begins automatically when the required payment is received.", href: "#activity" };
   if (order.status === "customer_review") return { title: "Waiting for quote approval", detail: "The customer needs to approve the current quote before checkout.", href: "#quote" };
   if (order.status === "in_progress") return { title: "Complete production", detail: "Use the production workspace, then send the finished product for customer review.", href: "#production" };
   if (order.status === "final_review") return { title: "Waiting for finished-product approval", detail: "The customer is reviewing the finished product. Fulfillment unlocks after approval.", href: "#fulfillment" };
@@ -78,6 +79,18 @@ const nextStaffStep = (order: Order) => {
   if (order.status === "completed") return { title: "Order complete", detail: "No action is required. The full record remains available below.", href: "#activity" };
   if (order.status === "declined" || order.status === "cancelled") return { title: statusLabel(order.status), detail: "No normal workflow action is pending. Review payment and refund records if needed.", href: "#activity" };
   return { title: "Review this order", detail: "Check the order details and choose the appropriate next action.", href: "#quote" };
+};
+const workflowSteps = [
+  { label: "Request", statuses: ["requested", "needs_information"] },
+  { label: "Quote", statuses: ["accepted"] },
+  { label: "Approval & payment", statuses: ["customer_review", "awaiting_payment"] },
+  { label: "Production", statuses: ["in_progress"] },
+  { label: "Customer review", statuses: ["final_review"] },
+  { label: "Fulfillment", statuses: ["ready", "completed"] },
+] as const;
+const workflowStepIndex = (status: string) => {
+  const index = workflowSteps.findIndex((step) => (step.statuses as readonly string[]).includes(status));
+  return index < 0 ? 0 : index;
 };
 export default function StaffOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -245,6 +258,8 @@ export default function StaffOrderDetail() {
   const input =
     "rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 outline-none focus:border-brand-primary";
   const nextStep = nextStaffStep(order);
+  const activeStep = workflowStepIndex(order.status);
+  const isClosed = order.status === "cancelled" || order.status === "declined";
   return (
     <main>
       <header className="rounded-3xl border border-zinc-800 bg-[linear-gradient(145deg,rgba(24,24,27,.95),rgba(0,0,0,.75))] p-5 sm:p-7">
@@ -260,10 +275,30 @@ export default function StaffOrderDetail() {
       </header>
       <div className="mt-5 rounded-2xl border border-brand-primary/35 bg-brand-primary/10 p-4 sm:flex sm:items-center sm:justify-between sm:gap-5">
         <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Next step</p><h2 className="mt-1 text-lg font-semibold">{nextStep.title}</h2><p className="mt-1 text-sm text-brand-textMuted">{nextStep.detail}</p></div>
-        <a href={nextStep.href} className="mt-3 inline-flex shrink-0 rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black sm:mt-0">Go to action</a>
+        <div className="mt-4 flex shrink-0 flex-wrap gap-2 sm:mt-0">
+          {(order.status === "requested" || order.status === "needs_information") && canManage ? <>
+            <a href="#conversation" className="rounded-xl border border-zinc-700 px-4 py-2 font-semibold text-white">Message customer</a>
+            <button onClick={() => void updateStatus("cancelled")} className="rounded-xl border border-rose-500/60 px-4 py-2 font-semibold text-rose-200">Cancel request</button>
+            <button onClick={() => void updateStatus("accepted")} className="rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black">Accept & continue</button>
+          </> : null}
+          {order.status === "in_progress" && canManage ? <button onClick={() => void updateStatus("final_review")} className="rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black">Send for customer review</button> : null}
+          {order.status !== "requested" && order.status !== "needs_information" && order.status !== "in_progress" ? <a href={nextStep.href} className="inline-flex rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black">{order.status === "accepted" ? "Continue to quote" : "View current stage"}</a> : null}
+        </div>
       </div>
-      <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 text-xs font-medium text-brand-textMuted" aria-label="Order sections">
-        <a href="#quote" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Quote & request</a><a href="#production" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Production</a><a href="#fulfillment" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Fulfillment</a><a href="#conversation" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Conversation</a><a href="#activity" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Activity</a>
+      <nav className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800 bg-black/25 p-3" aria-label="Order workflow">
+        <ol className="flex min-w-[680px] items-center">
+          {workflowSteps.map((step, index) => {
+            const complete = !isClosed && index < activeStep;
+            const active = !isClosed && index === activeStep;
+            return <li key={step.label} className="flex flex-1 items-center last:flex-none">
+              <div className="flex items-center gap-2">
+                <span className={`grid size-7 place-items-center rounded-full border text-xs font-bold ${complete ? "border-emerald-400 bg-emerald-400 text-black" : active ? "border-brand-primary bg-brand-primary text-black" : "border-zinc-700 bg-zinc-950 text-brand-textMuted"}`}>{complete ? "✓" : index + 1}</span>
+                <span className={`whitespace-nowrap text-xs font-semibold ${active ? "text-white" : complete ? "text-emerald-300" : "text-brand-textMuted"}`}>{step.label}</span>
+              </div>
+              {index < workflowSteps.length - 1 ? <span className={`mx-3 h-px flex-1 ${index < activeStep ? "bg-emerald-400/60" : "bg-zinc-800"}`} /> : null}
+            </li>;
+          })}
+        </ol>
       </nav>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         <div id="production" className="scroll-mt-5 lg:col-span-2">
