@@ -1234,8 +1234,8 @@ export default function SiteHeader() {
 
   const leftLinks = useMemo(
     () => [
-      { href: "/info", label: "Info" },
-      { href: "/community", label: "Community" },
+      { href: "/about", label: "About" },
+      { href: "/capabilities", label: "Capabilities" },
     ],
     []
   );
@@ -1243,7 +1243,7 @@ export default function SiteHeader() {
   const rightLinks = useMemo(
     () => [
       { href: "/catalog", label: "Catalog" },
-      { href: "/workshop", label: "Workshop" },
+      { href: "/contact", label: "Contact" },
     ],
     []
   );
@@ -1516,19 +1516,18 @@ export default function SiteHeader() {
         }`}
       >
         <div className="mb-3 flex flex-col gap-2">
-          <Link href="/info" className={navLinkClasses("/info")} onClick={() => setIsMobileOpen(false)}>
-            Info
+          <Link href="/about" className={navLinkClasses("/about")} onClick={() => setIsMobileOpen(false)}>
+            About
           </Link>
-          <Link href="/workshop" className={navLinkClasses("/workshop")} onClick={() => setIsMobileOpen(false)}>
-            Workshop
-          </Link>
-          <Link href="/community" className={navLinkClasses("/community")} onClick={() => setIsMobileOpen(false)}>
-            Community
+          <Link href="/capabilities" className={navLinkClasses("/capabilities")} onClick={() => setIsMobileOpen(false)}>
+            Capabilities
           </Link>
           <Link href="/catalog" className={navLinkClasses("/catalog")} onClick={() => setIsMobileOpen(false)}>
             Catalog
           </Link>
-          {user ? <Link href="/orders" className={navLinkClasses("/orders")} onClick={() => setIsMobileOpen(false)}>My Orders</Link> : null}
+          <Link href="/contact" className={navLinkClasses("/contact")} onClick={() => setIsMobileOpen(false)}>
+            Contact
+          </Link>
         </div>
 
         <div className="border-t border-zinc-800/80 pt-3">

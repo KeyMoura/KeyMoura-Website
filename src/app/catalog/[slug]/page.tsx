@@ -173,6 +173,13 @@ export default function ProductRequestPage() {
           <div className="mt-5 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-3 py-1 text-xs ${canRequest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.inventory_policy === "track" ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{inventoryLabel(product)}</span> : null}{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
           <h1 className="mt-3 text-3xl font-semibold">{product.name}</h1>
           <p className="mt-3 whitespace-pre-wrap text-brand-textMuted">{product.description}</p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs uppercase tracking-wide text-brand-textMuted">Lead time</p><p className="mt-2 font-medium">{product.lead_time_text || "Confirmed with your quote"}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs uppercase tracking-wide text-brand-textMuted">Pricing basis</p><p className="mt-2 font-medium">{product.starting_price_cents == null ? "Quoted after design review" : `Starts at $${(product.starting_price_cents / 100).toFixed(2)}`}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs uppercase tracking-wide text-brand-textMuted">Customization</p><p className="mt-2 font-medium">{product.is_custom ? "Options and project details supported" : "Sold in the listed configuration"}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs uppercase tracking-wide text-brand-textMuted">Before payment</p><p className="mt-2 font-medium">Scope, final price, and fulfillment are confirmed</p></div>
+          </div>
+          <p className="mt-4 text-sm leading-6 text-brand-textMuted">Need help choosing a material or tolerance? Read the <a href="/design-guide" className="font-medium text-brand-primary hover:underline">design guide</a> or <a href="/contact" className="font-medium text-brand-primary hover:underline">contact us</a>.</p>
         </section>
 
         <form onSubmit={submit} className="h-fit rounded-2xl border border-zinc-700 bg-zinc-950/70 p-5 shadow-xl sm:p-6 lg:sticky lg:top-24">
