@@ -7,7 +7,8 @@ const read = (path: string) => readFileSync(path, "utf8");
 test("catalog uses gallery media and exposes image navigation", () => {
   const catalog = read("src/app/catalog/page.tsx");
   const product = read("src/app/catalog/[slug]/page.tsx");
-  assert.match(catalog, /product_media\(url,kind,sort_order\)/);
+  assert.match(catalog, /from\("product_media"\)/);
+  assert.match(catalog, /data-fallback-src/);
   assert.doesNotMatch(catalog, /My requests & orders/);
   assert.match(product, /Previous product image/);
   assert.match(product, /Next product image/);
