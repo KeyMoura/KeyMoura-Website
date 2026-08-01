@@ -26,3 +26,14 @@ test("staff and customer order pages expose the fulfillment workflow", () => {
   assert.match(staff, /Mark delivered \+ email/);
   assert.match(customer, /Track shipment/);
 });
+
+test("staff and customer activity timelines show each recorded payment", () => {
+  const staff = read("src/app/staff/orders/[id]/page.tsx");
+  const customer = read("src/app/orders/[id]/page.tsx");
+  for (const page of [staff, customer]) {
+    assert.match(page, /from\("order_payments"\)/);
+    assert.match(page, /Payment received/);
+    assert.match(page, /payment\.amount_cents/);
+    assert.match(page, /payment\.received_at/);
+  }
+});
