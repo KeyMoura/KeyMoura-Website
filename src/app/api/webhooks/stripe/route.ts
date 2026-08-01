@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (inserted.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
   if (inserted.error) return NextResponse.json({ error: "Could not record event" }, { status: 500 });
 
-  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,agreed_price_cents,amount_paid_cents,amount_refunded_cents").eq("id", orderId).maybeSingle();
+  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,status,agreed_price_cents,amount_paid_cents,amount_refunded_cents").eq("id", orderId).maybeSingle();
   const newPaid = (order?.amount_paid_cents || 0) + session.amount_total;
   const newNetCollected = order ? netCollectedCents({ ...order, amount_paid_cents: newPaid }) : 0;
   if (!order || !order.agreed_price_cents || newNetCollected > order.agreed_price_cents) {
@@ -48,6 +48,15 @@ export async function POST(req: NextRequest) {
   if (update.error) {
     await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
     return NextResponse.json({ error: "Could not fulfill payment" }, { status: 500 });
+  }
+  if (order.status !== "in_progress") {
+    await routeServiceClient.from("order_status_history").insert({
+      order_id: orderId,
+      from_status: order.status,
+      to_status: "in_progress",
+      changed_by: null,
+      note: fullyPaid ? "Payment received; production started" : "Deposit received; production started",
+    });
   }
   const { data: authUser } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
   const config = await getCommerceEmailConfig();
