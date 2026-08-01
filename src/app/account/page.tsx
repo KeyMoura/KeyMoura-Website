@@ -322,7 +322,6 @@ useEffect(() => {
   const displayName =
     profile?.display_name || profile?.username || user?.email || "Your account";
 
-  const avatarUrl = profile?.avatar_url ?? null;
   const avatarInitial = (displayName?.[0] || "U").toUpperCase();
 
   const memberSince =
