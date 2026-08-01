@@ -62,6 +62,23 @@ const statuses = [
 ];
 const pretty = (s: string) =>
   s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const statusLabel = (status: string) => {
+  if (status === "customer_review") return "Quote Review";
+  if (status === "final_review") return "Finished Product Review";
+  return pretty(status);
+};
+const nextStaffStep = (order: Order) => {
+  if (order.status === "requested") return { title: "Review the request", detail: "Confirm the specifications, then prepare and send the customer quote.", href: "#quote" };
+  if (order.status === "needs_information") return { title: "Waiting for customer information", detail: "Use the conversation to follow up if the customer has not replied.", href: "#conversation" };
+  if (order.status === "accepted" || order.status === "awaiting_payment") return { title: "Waiting for payment", detail: "The customer has the quote. Production can begin after the required payment is received.", href: "#activity" };
+  if (order.status === "customer_review") return { title: "Waiting for quote approval", detail: "The customer needs to approve the current quote before checkout.", href: "#quote" };
+  if (order.status === "in_progress") return { title: "Complete production", detail: "Use the production workspace, then send the finished product for customer review.", href: "#production" };
+  if (order.status === "final_review") return { title: "Waiting for finished-product approval", detail: "The customer is reviewing the finished product. Fulfillment unlocks after approval.", href: "#fulfillment" };
+  if (order.status === "ready") return { title: order.fulfillment_method === "pickup" ? "Prepare customer pickup" : "Ship the order", detail: "Confirm the balance is paid, then complete the fulfillment action below.", href: "#fulfillment" };
+  if (order.status === "completed") return { title: "Order complete", detail: "No action is required. The full record remains available below.", href: "#activity" };
+  if (order.status === "declined" || order.status === "cancelled") return { title: statusLabel(order.status), detail: "No normal workflow action is pending. Review payment and refund records if needed.", href: "#activity" };
+  return { title: "Review this order", detail: "Check the order details and choose the appropriate next action.", href: "#quote" };
+};
 export default function StaffOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const supabase = useMemo(() => supabaseBrowser(), []);
@@ -227,30 +244,34 @@ export default function StaffOrderDetail() {
     return <p className="text-rose-200">{error || "Order not found."}</p>;
   const input =
     "rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 outline-none focus:border-brand-primary";
+  const nextStep = nextStaffStep(order);
   return (
     <main>
       <header className="rounded-3xl border border-zinc-800 bg-[linear-gradient(145deg,rgba(24,24,27,.95),rgba(0,0,0,.75))] p-5 sm:p-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">{order.order_number || "Request pending"}</p><h1 className="mt-2 text-3xl font-semibold">{order.product_name}</h1><p className="mt-2 text-sm text-brand-textMuted">Quantity {order.quantity} · Submitted {new Date(order.created_at).toLocaleDateString()}</p></div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Status</p><p className="mt-1 text-sm font-semibold text-brand-primary">{pretty(order.status)}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Status</p><p className="mt-1 text-sm font-semibold text-brand-primary">{statusLabel(order.status)}</p></div>
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Customer price</p><p className="mt-1 text-sm font-semibold">{order.agreed_price_cents == null ? "Not quoted" : `$${(order.agreed_price_cents/100).toFixed(2)}`}</p></div>
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Net paid</p><p className="mt-1 text-sm font-semibold text-emerald-300">${((order.amount_paid_cents-(order.amount_refunded_cents||0))/100).toFixed(2)}</p>{order.amount_refunded_cents ? <p className="text-[10px] text-brand-textMuted">${(order.amount_refunded_cents/100).toFixed(2)} refunded</p> : null}</div>
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Balance</p><p className="mt-1 text-sm font-semibold">${(Math.max(0,(order.agreed_price_cents || 0)-order.amount_paid_cents)/100).toFixed(2)}</p></div>
           </div>
         </div>
       </header>
-      <div className="mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-4 sm:flex sm:items-end sm:justify-between sm:gap-4">
-        <label className="block flex-1 text-sm font-medium">Update customer-facing status<select disabled={!canManage} value={pendingStatus || order.status} onChange={e=>setPendingStatus(e.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 outline-none focus:border-brand-primary">{statuses.map(s=><option key={s} value={s}>{pretty(s)}</option>)}</select></label>
-        <button disabled={!canManage || !pendingStatus || pendingStatus===order.status} onClick={()=>void updateStatus(pendingStatus)} className="mt-3 rounded-xl bg-brand-primary px-5 py-2.5 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0">Review & confirm update</button>
+      <div className="mt-5 rounded-2xl border border-brand-primary/35 bg-brand-primary/10 p-4 sm:flex sm:items-center sm:justify-between sm:gap-5">
+        <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Next step</p><h2 className="mt-1 text-lg font-semibold">{nextStep.title}</h2><p className="mt-1 text-sm text-brand-textMuted">{nextStep.detail}</p></div>
+        <a href={nextStep.href} className="mt-3 inline-flex shrink-0 rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black sm:mt-0">Go to action</a>
       </div>
+      <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 text-xs font-medium text-brand-textMuted" aria-label="Order sections">
+        <a href="#quote" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Quote & request</a><a href="#production" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Production</a><a href="#fulfillment" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Fulfillment</a><a href="#conversation" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Conversation</a><a href="#activity" className="rounded-full border border-zinc-800 px-3 py-1.5 hover:text-white">Activity</a>
+      </nav>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <div className="lg:col-span-2">
+        <div id="production" className="scroll-mt-5 lg:col-span-2">
           <StaffOrderWorkspace orderId={id} canManage={canManage} />
         </div>
-        <section className="-order-1 rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2">
+        <section id="quote" className="-order-1 scroll-mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2">
           <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Customer quote</p><h2 className="mt-1 text-xl font-semibold">Price & schedule</h2></div><span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">Revision {order.quote_revision}</span></div>
-          <p className="mt-2 text-sm leading-6 text-brand-textMuted">The customer price is the complete amount you are quoting for the item. Material, labor, and other internal costs are tracked separately in the job workspace above.</p>
+          <p className="mt-2 text-sm leading-6 text-brand-textMuted">This is the final price the customer pays—not your material or labor cost. Internal costs stay in the Production workspace.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               Total customer price ($)
@@ -302,7 +323,7 @@ export default function StaffOrderDetail() {
               />
             </label>
           </div>
-          <div className="mt-5 border-t border-zinc-800 pt-5">
+          <div id="fulfillment" className="mt-5 scroll-mt-5 border-t border-zinc-800 pt-5">
             <h2 className="font-semibold">Fulfillment</h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">Delivery method<select disabled={!canManage} className={`${input} mt-1 w-full`} value={method} onChange={e=>setMethod(e.target.value as "shipping"|"pickup")}><option value="shipping">Ship to customer</option><option value="pickup">Customer pickup</option></select></label>
@@ -338,7 +359,7 @@ export default function StaffOrderDetail() {
             </p>
           </div>
         </section>
-        <section>
+        <section id="conversation" className="scroll-mt-5">
           <h2 className="font-semibold">Conversation</h2>
           <div className="mt-3 max-h-[480px] space-y-3 overflow-y-auto">
             {messages.map((m) => (
@@ -381,7 +402,7 @@ export default function StaffOrderDetail() {
             </form>
           ) : null}
         </section>
-        <section className="md:col-span-2">
+        <section id="activity" className="scroll-mt-5 md:col-span-2">
           <h2 className="font-semibold">Activity timeline</h2>
           <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 p-4">
             {[...history.map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...messages.map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...payments.map(payment=>({id:`p-${payment.id}`,at:payment.received_at,label:"Payment received",detail:`$${(payment.amount_cents/100).toFixed(2)}`})),...refunds.map(refund=>({id:`r-${refund.id}`,at:refund.created_at,label:"Refund issued",detail:`$${(refund.amount_cents/100).toFixed(2)} — ${refund.reason}`})),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:method==="pickup"?"Ready for pickup":"Order shipped",detail:trackingNumber || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className={`border-l-2 pl-4 ${item.id.startsWith("r-") ? "border-rose-400/70" : item.id.startsWith("p-") ? "border-emerald-400/70" : "border-brand-accent/60"}`}><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
@@ -394,6 +415,7 @@ export default function StaffOrderDetail() {
             {emails.length===0?<div className="px-4 py-6 text-center text-sm text-brand-textMuted">No email attempts for this order yet.</div>:null}
           </div>
         </section>
+        {canManage ? <details className="md:col-span-2 rounded-2xl border border-zinc-800 bg-black/20 p-4"><summary className="cursor-pointer font-semibold">Advanced status override</summary><p className="mt-2 text-xs text-brand-textMuted">Use this only when the normal quote, payment, review, or fulfillment buttons cannot represent what happened. The customer will be notified.</p><div className="mt-3 sm:flex sm:items-end sm:gap-4"><label className="block flex-1 text-sm font-medium">Customer-facing status<select value={pendingStatus || order.status} onChange={e=>setPendingStatus(e.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 outline-none focus:border-brand-primary">{statuses.map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></label><button disabled={!pendingStatus || pendingStatus===order.status} onClick={()=>void updateStatus(pendingStatus)} className="mt-3 rounded-xl border border-amber-400/60 px-5 py-2.5 font-semibold text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0">Review & confirm update</button></div></details> : null}
       </div>
       {error ? <p className="mt-4 text-rose-200">{error}</p> : null}
     </main>
