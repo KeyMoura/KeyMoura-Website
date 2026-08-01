@@ -43,6 +43,7 @@ type Message = {
   created_at: string;
 };
 type History = { id: number; from_status: string | null; to_status: string; note: string | null; created_at: string };
+type Payment = { id: string; amount_cents: number; received_at: string };
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -50,6 +51,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [history, setHistory] = useState<History[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [userId, setUserId] = useState("");
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
@@ -58,7 +60,7 @@ export default function OrderDetailPage() {
   const load = useCallback(async () => {
     const auth = await supabase.auth.getUser();
     setUserId(auth.data.user?.id ?? "");
-    const [o, m, h] = await Promise.all([
+    const [o, m, h, p] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
@@ -66,13 +68,15 @@ export default function OrderDetailPage() {
         .eq("order_id", id)
         .order("created_at"),
       supabase.from("order_status_history").select("id,from_status,to_status,note,created_at").eq("order_id", id).order("created_at", { ascending: false }),
+      supabase.from("order_payments").select("id,amount_cents,received_at").eq("order_id", id).order("received_at", { ascending: false }),
     ]);
     const loadedOrder = o.data as Order | null;
     setOrder(loadedOrder);
     setQuoteExpired(Boolean(loadedOrder?.quote_expires_at && new Date(loadedOrder.quote_expires_at).getTime() <= Date.now()));
     setMessages((m.data ?? []) as Message[]);
     setHistory((h.data ?? []) as History[]);
-    setError(o.error?.message ?? m.error?.message ?? h.error?.message ?? "");
+    setPayments((p.data ?? []) as Payment[]);
+    setError(o.error?.message ?? m.error?.message ?? h.error?.message ?? p.error?.message ?? "");
   }, [id, supabase]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -255,8 +259,7 @@ export default function OrderDetailPage() {
       <aside className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
         <h2 className="font-semibold">Activity</h2>
         <div className="mt-4 space-y-4">
-          {history.map((item) => <div key={item.id} className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-0 h-2 w-2 rounded-full bg-brand-primary" /><p className="text-sm font-medium">{orderLabel(item.to_status)}</p>{item.note ? <p className="mt-1 text-xs text-brand-textMuted">{item.note}</p> : null}<time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(item.created_at).toLocaleString()}</time></div>)}
-          <div className="relative border-l border-zinc-700 pl-4"><span className="absolute -left-1 top-0 h-2 w-2 rounded-full bg-zinc-500" /><p className="text-sm font-medium">Request submitted</p><time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(order.created_at).toLocaleString()}</time></div>
+          {[...history.map(item => ({ id:`status-${item.id}`, at:item.created_at, label:orderLabel(item.to_status), detail:item.note })), ...payments.map(payment => ({ id:`payment-${payment.id}`, at:payment.received_at, label:"Payment received", detail:moneyFromCents(payment.amount_cents) })), { id:"created", at:order.created_at, label:"Request submitted", detail:null }].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item => <div key={item.id} className="relative border-l border-zinc-700 pl-4"><span className={`absolute -left-1 top-0 h-2 w-2 rounded-full ${item.id.startsWith("payment-") ? "bg-emerald-400" : item.id === "created" ? "bg-zinc-500" : "bg-brand-primary"}`} /><p className="text-sm font-medium">{item.label}</p>{item.detail ? <p className="mt-1 text-xs text-brand-textMuted">{item.detail}</p> : null}<time className="mt-1 block text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</time></div>)}
         </div>
       </aside>
       </div>
