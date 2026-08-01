@@ -28,7 +28,7 @@ type View = "attention" | "active" | "completed" | "all";
 type PriorityFilter = "all" | Workspace["priority"];
 
 const closedStatuses = new Set(["completed", "declined", "cancelled"]);
-const attentionStatuses = new Set(["requested", "needs_information", "customer_review"]);
+const attentionStatuses = new Set(["requested", "needs_information", "customer_review", "final_review"]);
 const pretty = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
 const money = (cents: number | null) => cents == null ? "Price pending" : `$${(cents / 100).toFixed(2)}`;
 
@@ -47,6 +47,7 @@ function nextAction(order: Order) {
   if (order.status === "awaiting_payment") return "Waiting for payment";
   if (order.status === "in_progress") return "Continue production";
   if (order.status === "customer_review") return "Review customer reply";
+  if (order.status === "final_review") return "Waiting for customer approval";
   if (order.status === "ready" && !order.shipped_at) return "Arrange delivery";
   if (order.shipped_at && !order.delivered_at) return "Confirm delivery";
   return "View order";
