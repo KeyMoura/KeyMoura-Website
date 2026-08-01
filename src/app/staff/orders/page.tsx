@@ -23,7 +23,9 @@ type Order = {
 };
 
 type Profile = { id: string; username: string | null; display_name: string | null };
+type Workspace = { order_id:string; priority:"low"|"normal"|"high"|"urgent"; assigned_to:string|null; started_at:string|null };
 type View = "attention" | "active" | "completed" | "all";
+type PriorityFilter = "all" | Workspace["priority"];
 
 const closedStatuses = new Set(["completed", "declined", "cancelled"]);
 const attentionStatuses = new Set(["requested", "needs_information", "customer_review"]);
@@ -57,7 +59,9 @@ export default function StaffOrdersPage() {
   const canView = permissions.has("orders.view") || permissions.has("orders.manage");
   const [orders, setOrders] = useState<Order[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
+  const [workspaces, setWorkspaces] = useState<Record<string, Workspace>>({});
   const [view, setView] = useState<View>("attention");
+  const [priority, setPriority] = useState<PriorityFilter>("all");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -66,19 +70,21 @@ export default function StaffOrdersPage() {
     if (!canView) return;
     void (async () => {
       setLoading(true);
-      const orderResult = await supabase
-        .from("orders")
-        .select("id,order_number,customer_id,product_name,status,quantity,agreed_price_cents,payment_status,target_date,created_at,updated_at,shipped_at,delivered_at")
-        .order("updated_at", { ascending: false });
+      const [orderResult, workspaceResult] = await Promise.all([
+        supabase.from("orders").select("id,order_number,customer_id,product_name,status,quantity,agreed_price_cents,payment_status,target_date,created_at,updated_at,shipped_at,delivered_at").order("updated_at", { ascending: false }),
+        supabase.from("order_workspaces").select("order_id,priority,assigned_to,started_at"),
+      ]);
       const rows = (orderResult.data ?? []) as Order[];
       setOrders(rows);
+      const workspaceRows = (workspaceResult.data ?? []) as Workspace[];
+      setWorkspaces(Object.fromEntries(workspaceRows.map(item => [item.order_id, item])));
       if (rows.length) {
         const profileResult = await supabase.from("profiles").select("id,username,display_name").in("id", [...new Set(rows.map(row => row.customer_id))]);
         const profileRows = (profileResult.data ?? []) as Profile[];
         setProfiles(Object.fromEntries(profileRows.map(profile => [profile.id, profile])));
-        setError(orderResult.error?.message ?? profileResult.error?.message ?? "");
+        setError(orderResult.error?.message ?? workspaceResult.error?.message ?? profileResult.error?.message ?? "");
       } else {
-        setError(orderResult.error?.message ?? "");
+        setError(orderResult.error?.message ?? workspaceResult.error?.message ?? "");
       }
       setLoading(false);
     })();
@@ -95,10 +101,11 @@ export default function StaffOrdersPage() {
     if (view === "attention" && !attentionStatuses.has(order.status)) return false;
     if (view === "active" && closedStatuses.has(order.status)) return false;
     if (view === "completed" && !closedStatuses.has(order.status)) return false;
+    if (priority !== "all" && (workspaces[order.id]?.priority ?? "normal") !== priority) return false;
     const profile = profiles[order.customer_id];
     const haystack = [order.order_number, order.product_name, profile?.display_name, profile?.username].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
-  }), [orders, profiles, query, view]);
+  }), [orders, priority, profiles, query, view, workspaces]);
 
   if (isLoading) return <div className="ui-card">Loading…</div>;
   if (!canView) return <AccessDeniedCard message="You do not have access to orders." />;
@@ -106,7 +113,7 @@ export default function StaffOrdersPage() {
   return <main>
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs uppercase tracking-[.2em] text-brand-accent">Commerce</p><h1 className="mt-1 text-3xl font-semibold">Order cockpit</h1><p className="mt-2 text-sm text-brand-textMuted">See what needs attention and move every request through quoting, payment, production, and delivery.</p></div>
-      <label className="w-full sm:w-72"><span className="sr-only">Search orders</span><input value={query} onChange={event => setQuery(event.target.value)} className="w-full rounded-xl border border-brand-border bg-black/30 px-4 py-2.5 text-sm outline-none focus:border-brand-accent" placeholder="Search order, product, customer…" /></label>
+      <div className="flex w-full gap-2 sm:w-auto"><label className="min-w-0 flex-1 sm:w-72"><span className="sr-only">Search orders</span><input value={query} onChange={event => setQuery(event.target.value)} className="w-full rounded-xl border border-brand-border bg-black/30 px-4 py-2.5 text-sm outline-none focus:border-brand-accent" placeholder="Search order, product, customer…" /></label><label><span className="sr-only">Filter by priority</span><select value={priority} onChange={event=>setPriority(event.target.value as PriorityFilter)} className="h-full rounded-xl border border-brand-border bg-black/30 px-3 text-sm outline-none focus:border-brand-accent"><option value="all">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label></div>
     </div>
 
     <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -117,9 +124,10 @@ export default function StaffOrdersPage() {
     <div className="mt-5 space-y-3">
       {shown.map(order => {
         const profile = profiles[order.customer_id];
+        const workspace = workspaces[order.id];
         const customer = profile?.display_name || (profile?.username ? `@${profile.username}` : "Customer");
         return <Link href={`/staff/orders/${order.id}`} key={order.id} className="group grid gap-4 rounded-2xl border border-brand-border bg-black/25 p-5 transition hover:border-brand-accent/70 md:grid-cols-[1.5fr_1fr_auto] md:items-center">
-          <div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{order.product_name}</span>{order.quantity > 1 ? <span className="rounded-full border border-brand-border px-2 py-0.5 text-[11px] text-brand-textMuted">Qty {order.quantity}</span> : null}</div><div className="mt-1 text-xs text-brand-textMuted">{order.order_number || "New request"} · {customer} · {ageLabel(order.updated_at)}</div></div>
+          <div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{order.product_name}</span>{order.quantity > 1 ? <span className="rounded-full border border-brand-border px-2 py-0.5 text-[11px] text-brand-textMuted">Qty {order.quantity}</span> : null}{workspace && workspace.priority !== "normal" ? <span className={`rounded-full border px-2 py-0.5 text-[11px] ${workspace.priority === "urgent" ? "border-rose-500/60 text-rose-300" : workspace.priority === "high" ? "border-amber-500/60 text-amber-200" : "border-zinc-600 text-brand-textMuted"}`}>{pretty(workspace.priority)}</span> : null}</div><div className="mt-1 text-xs text-brand-textMuted">{order.order_number || "New request"} · {customer} · {ageLabel(order.updated_at)}</div></div>
           <div><div className="text-sm font-medium text-brand-accent">{nextAction(order)}</div><div className="mt-1 text-xs text-brand-textMuted">{pretty(order.status)} · {pretty(order.payment_status)}</div></div>
           <div className="text-left md:text-right"><div className="font-medium">{money(order.agreed_price_cents)}</div><div className="mt-1 text-xs text-brand-textMuted">{order.target_date ? `Target ${new Date(`${order.target_date}T00:00:00`).toLocaleDateString()}` : "No target date"}</div></div>
         </Link>;

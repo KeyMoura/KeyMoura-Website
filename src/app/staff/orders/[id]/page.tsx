@@ -6,6 +6,7 @@ import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
+import { StaffOrderWorkspace } from "@/components/staff/StaffOrderWorkspace";
 
 type Order = {
   id: string;
@@ -205,6 +206,9 @@ export default function StaffOrderDetail() {
         ))}
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
+        <div className="lg:col-span-2">
+          <StaffOrderWorkspace orderId={id} canManage={canManage} />
+        </div>
         <section className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
           <h2 className="font-semibold">Order details</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
