@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ProductModelViewer } from "@/components/ProductModelViewer";
@@ -21,6 +20,7 @@ export default function ProductRequestPage() {
   const [selections, setSelections] = useState<Record<string, Selection>>({});
   const [files, setFiles] = useState<Record<string, File | null>>({});
   const [activeImage, setActiveImage] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<string[]>([]);
   const [showModel, setShowModel] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [targetDate, setTargetDate] = useState("");
@@ -149,6 +149,12 @@ export default function ProductRequestPage() {
     setShowModel(false);
     setActiveImage(galleryImages[next].url);
   };
+  const handleImageError = (url: string) => {
+    const failed = new Set([...failedImages, url]);
+    setFailedImages([...failed]);
+    const next = galleryImages.find(asset => !failed.has(asset.url));
+    setActiveImage(next?.url ?? null);
+  };
   const modelUrl = media.find(asset => asset.kind === "model")?.url ?? product.model_url;
   const canRequest = productCanBeRequested(product);
 
@@ -158,7 +164,7 @@ export default function ProductRequestPage() {
         <section>
           <div className="group/gallery relative aspect-square overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
             {showModel && modelUrl ? <ProductModelViewer src={modelUrl} poster={product.model_poster_url || activeImage} alt={`3D view of ${product.name}`} /> :
-              activeImage ? <Image src={activeImage} alt={product.name} width={1000} height={1000} className="h-full w-full object-cover" priority unoptimized /> :
+              activeImage ? <img src={activeImage} alt={product.name} className="h-full w-full object-cover" onError={() => handleImageError(activeImage)} /> :
                 <div className="flex h-full items-center justify-center text-6xl text-brand-primary">KM</div>}
             {!showModel && galleryImages.length > 1 ? <>
               <button type="button" aria-label="Previous product image" onClick={() => moveImage(-1)} className="absolute left-3 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/20 bg-black/70 text-2xl text-white shadow-lg transition hover:border-brand-primary hover:text-brand-primary">‹</button>
@@ -167,7 +173,7 @@ export default function ProductRequestPage() {
             </> : null}
           </div>
           <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
-            {galleryImages.map(asset => <button type="button" key={asset.id} onClick={() => { setShowModel(false); setActiveImage(asset.url); }} className={`shrink-0 overflow-hidden rounded-xl border bg-zinc-950 text-brand-text transition hover:border-brand-primary/70 ${!showModel && activeImage === asset.url ? "border-brand-primary ring-1 ring-brand-primary/40" : "border-zinc-700"}`}><Image src={asset.url} alt={asset.alt_text || product.name} width={88} height={88} className="h-20 w-20 object-cover" unoptimized /></button>)}
+            {galleryImages.map(asset => <button type="button" key={asset.id} aria-label={`View ${asset.alt_text || product.name}`} onClick={() => { setShowModel(false); setActiveImage(asset.url); }} className={`shrink-0 overflow-hidden rounded-xl border bg-zinc-950 text-brand-text transition hover:border-brand-primary/70 ${!showModel && activeImage === asset.url ? "border-brand-primary ring-1 ring-brand-primary/40" : "border-zinc-700"}`}><img src={asset.url} alt="" className="h-20 w-20 object-cover" /></button>)}
             {modelUrl ? <button type="button" onClick={() => setShowModel(true)} className={`h-20 w-24 shrink-0 rounded-xl border text-sm font-medium transition hover:border-brand-primary/70 hover:text-brand-primary ${showModel ? "border-brand-primary bg-brand-primary/10 text-brand-primary" : "border-zinc-700 bg-zinc-950 text-brand-text"}`}>3D view</button> : null}
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-3 py-1 text-xs ${canRequest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.inventory_policy === "track" ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{inventoryLabel(product)}</span> : null}{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
