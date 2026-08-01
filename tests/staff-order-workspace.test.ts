@@ -33,3 +33,13 @@ test("staff UI exposes planning, costs, job sheet, and priority filtering", () =
   assert.match(list, /All priorities/);
   assert.match(list, /order_workspaces/);
 });
+
+test("staff order queue separates staff actions from customer waits", () => {
+  const list = read("src/app/staff/orders/page.tsx");
+  assert.match(list, /Needs action/);
+  assert.match(list, /Waiting on customer/);
+  assert.match(list, /Quote Review/);
+  assert.match(list, /Finished Product Review/);
+  assert.match(list, /needsStaffAction/);
+  assert.match(list, /isWaitingOnCustomer/);
+});
