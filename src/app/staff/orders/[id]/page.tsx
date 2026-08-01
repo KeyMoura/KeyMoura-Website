@@ -67,6 +67,18 @@ const statusLabel = (status: string) => {
   if (status === "final_review") return "Finished Product Review";
   return pretty(status);
 };
+const requestedEstimateCents = (order: Order) => {
+  const value = order.specifications?.estimated_total_cents;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : null;
+};
+const optionAdjustmentCents = (order: Order) =>
+  Object.entries(order.specifications || {}).reduce((sum, [key, raw]) => {
+    if (key === "estimated_total_cents" || !raw || typeof raw !== "object") return sum;
+    const adjustment = (raw as { price_adjustment_cents?: unknown }).price_adjustment_cents;
+    return sum + (typeof adjustment === "number" && Number.isFinite(adjustment) ? Math.round(adjustment) : 0);
+  }, 0);
 const nextStaffStep = (order: Order) => {
   if (order.status === "requested") return { title: "Review the request", detail: "Confirm the specifications, then prepare and send the customer quote.", href: "#quote" };
   if (order.status === "needs_information") return { title: "Waiting for customer information", detail: "Use the conversation to follow up if the customer has not replied.", href: "#conversation" };
@@ -144,11 +156,8 @@ export default function StaffOrderDetail() {
     setPayments((p.data ?? []) as Payment[]);
     setRefunds((r.data ?? []) as Refund[]);
     if (row) {
-      setPrice(
-        row.agreed_price_cents == null
-          ? ""
-          : String(row.agreed_price_cents / 100),
-      );
+      const initialCustomerPrice = row.agreed_price_cents ?? requestedEstimateCents(row);
+      setPrice(initialCustomerPrice == null ? "" : String(initialCustomerPrice / 100));
       setPaid(String(row.amount_paid_cents / 100));
       setDeposit(row.deposit_amount_cents == null ? "" : String(row.deposit_amount_cents / 100));
       setQuoteExpires(row.quote_expires_at?.slice(0, 10) ?? "");
@@ -159,6 +168,8 @@ export default function StaffOrderDetail() {
       setCarrier(row.shipping_carrier ?? "");
       setTrackingNumber(row.tracking_number ?? "");
       setTrackingUrl(row.tracking_url ?? "");
+      const remainingRefundableCents = Math.max(0, row.amount_paid_cents - (row.amount_refunded_cents || 0));
+      setRefundAmount(remainingRefundableCents > 0 ? String(remainingRefundableCents / 100) : "");
     }
     setError(o.error?.message ?? m.error?.message ?? e.error?.message ?? h.error?.message ?? p.error?.message ?? r.error?.message ?? "");
   }, [id, supabase]);
@@ -255,6 +266,9 @@ export default function StaffOrderDetail() {
   const nextStep = nextStaffStep(order);
   const activeStep = workflowStepIndex(order.status);
   const isClosed = order.status === "cancelled" || order.status === "declined";
+  const requestedTotalCents = requestedEstimateCents(order);
+  const requestedOptionTotalCents = optionAdjustmentCents(order) * order.quantity;
+  const requestedBaseTotalCents = requestedTotalCents == null ? null : requestedTotalCents - requestedOptionTotalCents;
   return (
     <main>
       <header className="rounded-3xl border border-zinc-800 bg-[linear-gradient(145deg,rgba(24,24,27,.95),rgba(0,0,0,.75))] p-5 sm:p-7">
@@ -364,8 +378,24 @@ export default function StaffOrderDetail() {
           {canManage && order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <div className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4"><h3 className="font-semibold text-rose-200">Cancellation & refund</h3><p className="mt-1 text-xs text-brand-textMuted">Cancelling an order does not move money. Refunds are separate, recorded actions sent through Stripe.</p><div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr_auto]"><label className="text-sm">Refund amount ($)<input className={`${input} mt-1 w-full`} type="number" min=".01" max={(order.amount_paid_cents-(order.amount_refunded_cents||0))/100} step=".01" value={refundAmount} onChange={e=>setRefundAmount(e.target.value)} /></label><label className="text-sm">Internal reason<input className={`${input} mt-1 w-full`} value={refundReason} onChange={e=>setRefundReason(e.target.value)} placeholder="Why is this refund being issued?" /></label><button onClick={()=>void issueRefund()} className="self-end rounded-xl border border-rose-500/60 px-4 py-2 font-semibold text-rose-200">Review & issue refund</button></div></div> : null}
           <dl className="mt-5 grid gap-3 border-t border-zinc-800 pt-4 text-sm sm:grid-cols-2">
             <div>
+              <dt className="text-brand-textMuted">Item</dt>
+              <dd className="mt-0.5 font-medium">{order.product_name}</dd>
+            </div>
+            <div>
+              <dt className="text-brand-textMuted">Base item price</dt>
+              <dd className="mt-0.5">
+                {requestedBaseTotalCents == null
+                  ? "Price pending"
+                  : `${(requestedBaseTotalCents / 100).toFixed(2)}${order.quantity > 1 ? ` (${(requestedBaseTotalCents / order.quantity / 100).toFixed(2)} each)` : ""}`}
+              </dd>
+            </div>
+            <div>
               <dt className="text-brand-textMuted">Quantity</dt>
               <dd>{order.quantity}</dd>
+            </div>
+            <div>
+              <dt className="text-brand-textMuted">Requested total</dt>
+              <dd className="mt-0.5 font-semibold text-brand-primary">{requestedTotalCents == null ? "Quoted after review" : `${(requestedTotalCents / 100).toFixed(2)}`}</dd>
             </div>
             <RequestSpecifications
               specifications={order.specifications || {}}
