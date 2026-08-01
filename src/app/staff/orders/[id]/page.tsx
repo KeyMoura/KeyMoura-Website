@@ -82,6 +82,7 @@ export default function StaffOrderDetail() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingUrl, setTrackingUrl] = useState("");
   const [error, setError] = useState("");
+  const [pendingStatus, setPendingStatus] = useState("");
   const load = useCallback(async () => {
     const [o, m, e, h] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
@@ -131,6 +132,8 @@ export default function StaffOrderDetail() {
     };
   }
   async function updateStatus(status: string) {
+    if (status === order?.status) return;
+    if (!window.confirm(`Change this order from ${pretty(order?.status || "current")} to ${pretty(status)}?\n\nThe customer will be notified and may receive an email.`)) return;
     const r = await fetch(`/api/staff/orders/${id}`, {
       method: "PATCH",
       headers: await authHeaders(),
@@ -141,11 +144,14 @@ export default function StaffOrderDetail() {
       setError(result.error || "Could not update status");
       return;
     }
+    setPendingStatus("");
     await load();
   }
   async function save() {
     const priceCents = price.trim() ? Math.round(Number(price) * 100) : null;
     const depositCents = deposit.trim() ? Math.round(Number(deposit) * 100) : null;
+    const quoteChanged = priceCents !== order?.agreed_price_cents || depositCents !== order?.deposit_amount_cents;
+    if (quoteChanged && priceCents && !window.confirm(`Send quote revision ${(order?.quote_revision ?? 0) + 1} for $${(priceCents / 100).toFixed(2)}?\n\nThis moves the order to Customer Review and notifies the customer. Internal material and labor costs are not the customer price.`)) return;
     const r = await fetch(`/api/staff/orders/${id}`, {
       method: "PATCH",
       headers: await authHeaders(),
@@ -167,6 +173,8 @@ export default function StaffOrderDetail() {
     else await load();
   }
   async function fulfillmentAction(shipment_action: "mark_shipped"|"mark_delivered") {
+    const actionLabel = shipment_action === "mark_delivered" ? "mark this order completed" : method === "pickup" ? "mark this order ready for pickup" : "mark this order shipped";
+    if (!window.confirm(`Confirm you want to ${actionLabel}?\n\nThe status will change and the customer will be notified by email.`)) return;
     const r = await fetch(`/api/staff/orders/${id}`, { method:"PATCH", headers:await authHeaders(), body:JSON.stringify({ shipment_action, fulfillment_method:method, shipping_address:method === "shipping" ? address : null, shipping_carrier:carrier || null, tracking_number:trackingNumber || null, tracking_url:trackingUrl || null }) });
     const result = await r.json();
     if (!r.ok) setError(result.error || "Could not update fulfillment"); else { setError(""); await load(); }
@@ -194,34 +202,31 @@ export default function StaffOrderDetail() {
     "rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 outline-none focus:border-brand-primary";
   return (
     <main>
-      <p className="text-xs uppercase tracking-[.2em] text-brand-primary">
-        {order.order_number || "Request pending"}
-      </p>
-      <h1 className="mt-1 text-3xl font-semibold">{order.product_name}</h1>
-      <p className="mt-1 text-sm text-brand-textMuted">
-        Customer {order.customer_id} · Quantity {order.quantity}
-      </p>
-      <div className="mt-5 flex flex-wrap gap-2">
-        {statuses.map((s) => (
-          <button
-            disabled={!canManage}
-            onClick={() => void updateStatus(s)}
-            key={s}
-            className={`rounded-full border px-3 py-1.5 text-xs ${order.status === s ? "border-brand-primary bg-brand-primary/10 text-brand-primary" : "border-zinc-700 text-brand-textMuted"}`}
-          >
-            {pretty(s)}
-          </button>
-        ))}
+      <header className="rounded-3xl border border-zinc-800 bg-[linear-gradient(145deg,rgba(24,24,27,.95),rgba(0,0,0,.75))] p-5 sm:p-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">{order.order_number || "Request pending"}</p><h1 className="mt-2 text-3xl font-semibold">{order.product_name}</h1><p className="mt-2 text-sm text-brand-textMuted">Quantity {order.quantity} · Submitted {new Date(order.created_at).toLocaleDateString()}</p></div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Status</p><p className="mt-1 text-sm font-semibold text-brand-primary">{pretty(order.status)}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Customer price</p><p className="mt-1 text-sm font-semibold">{order.agreed_price_cents == null ? "Not quoted" : `$${(order.agreed_price_cents/100).toFixed(2)}`}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Paid</p><p className="mt-1 text-sm font-semibold text-emerald-300">${(order.amount_paid_cents/100).toFixed(2)}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Balance</p><p className="mt-1 text-sm font-semibold">${(Math.max(0,(order.agreed_price_cents || 0)-order.amount_paid_cents)/100).toFixed(2)}</p></div>
+          </div>
+        </div>
+      </header>
+      <div className="mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-4 sm:flex sm:items-end sm:justify-between sm:gap-4">
+        <label className="block flex-1 text-sm font-medium">Update customer-facing status<select disabled={!canManage} value={pendingStatus || order.status} onChange={e=>setPendingStatus(e.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 outline-none focus:border-brand-primary">{statuses.map(s=><option key={s} value={s}>{pretty(s)}</option>)}</select></label>
+        <button disabled={!canManage || !pendingStatus || pendingStatus===order.status} onClick={()=>void updateStatus(pendingStatus)} className="mt-3 rounded-xl bg-brand-primary px-5 py-2.5 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0">Review & confirm update</button>
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         <div className="lg:col-span-2">
           <StaffOrderWorkspace orderId={id} canManage={canManage} />
         </div>
-        <section className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
-          <h2 className="font-semibold">Order details</h2>
+        <section className="-order-1 rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2">
+          <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Customer quote</p><h2 className="mt-1 text-xl font-semibold">Price & schedule</h2></div><span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">Revision {order.quote_revision}</span></div>
+          <p className="mt-2 text-sm leading-6 text-brand-textMuted">The customer price is the complete amount you are quoting for the item. Material, labor, and other internal costs are tracked separately in the job workspace above.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
-              Agreed price ($)
+              Total customer price ($)
               <input
                 disabled={!canManage || order.payment_status === "paid"}
                 className={`${input} mt-1 w-full`}
@@ -245,7 +250,7 @@ export default function StaffOrderDetail() {
             </label>
             <label className="text-sm">
               Deposit due first ($)
-              <input disabled={!canManage || order.payment_status === "paid"} className={`${input} mt-1 w-full`} type="number" min="0.5" step=".01" value={deposit} onChange={(e)=>setDeposit(e.target.value)} placeholder="Blank = full payment" />
+              <input disabled={!canManage || order.payment_status === "paid"} className={`${input} mt-1 w-full`} type="number" min="0.5" step=".01" value={deposit} onChange={(e)=>setDeposit(e.target.value)} placeholder="Blank = collect full price" />
               <span className="mt-1 block text-[10px] text-brand-textMuted">Leave blank to collect the full quote. Editing price or deposit creates a new quote revision.</span>
             </label>
             <label className="text-sm sm:col-span-2">Quote note<textarea disabled={!canManage} className={`${input} mt-1 min-h-20 w-full`} value={quoteNote} onChange={e=>setQuoteNote(e.target.value)} placeholder="What changed or what is included in this quote?" /></label>
@@ -285,7 +290,7 @@ export default function StaffOrderDetail() {
               onClick={() => void save()}
               className="mt-3 rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-2 font-semibold text-brand-primary transition hover:bg-brand-primary/30"
             >
-              Save details
+              {price.trim() && Math.round(Number(price)*100)!==order.agreed_price_cents ? "Review & send quote" : "Save internal details"}
             </button>
           ) : null}
           <dl className="mt-5 grid gap-3 border-t border-zinc-800 pt-4 text-sm sm:grid-cols-2">

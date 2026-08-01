@@ -34,6 +34,7 @@ export default function NewCustomRequestPage() {
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState("");
   const [saved,setSaved] = useState("");
+  const [deletingDraft,setDeletingDraft] = useState<string|null>(null);
 
   useEffect(() => { void (async()=>{
     const { data:{ user } } = await supabase.auth.getUser();
@@ -59,6 +60,16 @@ export default function NewCustomRequestPage() {
     if(result.error) setError(result.error.message); else { setDraftId(result.data.id); setSaved("Draft saved. Files are added when you submit."); setDrafts(current=>[result.data as Draft,...current.filter(item=>item.id!==result.data.id)]); }
     setBusy(false);
   }
+  async function deleteDraft(id:string) {
+    if (!window.confirm("Delete this draft? This cannot be undone.")) return;
+    setDeletingDraft(id); setError("");
+    const { data:{ user } }=await supabase.auth.getUser();
+    if (!user) { setDeletingDraft(null); return; }
+    const result=await supabase.from("order_request_drafts").delete().eq("id",id).eq("customer_id",user.id);
+    if (result.error) setError(result.error.message);
+    else { setDrafts(current=>current.filter(item=>item.id!==id)); if(draftId===id){setDraftId(null);setForm(initial());setStep(1);setSaved("Draft deleted.");} }
+    setDeletingDraft(null);
+  }
   async function submit(e:FormEvent) {
     e.preventDefault(); const message=[1,2,3].map(validate).find(Boolean); if(message) return setError(message);
     setBusy(true); setError("");
@@ -77,7 +88,7 @@ export default function NewCustomRequestPage() {
     <div className="grid gap-8 lg:grid-cols-[.7fr_1.3fr]">
       <aside><p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">Custom CNC request</p><h1 className="mt-2 text-4xl font-semibold">Tell us what you need made.</h1><p className="mt-4 leading-7 text-brand-textMuted">A sketch or plain-language idea is enough to start. No payment is taken until you review and approve a quote.</p>
         <div className="mt-7 rounded-2xl border border-zinc-800 bg-black/30 p-5"><h2 className="font-semibold">Before production</h2><ul className="mt-3 space-y-2 text-sm text-brand-textMuted"><li>• We review manufacturability and ask questions.</li><li>• You receive a written price and payment schedule.</li><li>• Production starts only after quote approval and required payment.</li></ul></div>
-        {drafts.length?<div className="mt-5 rounded-2xl border border-zinc-800 p-4"><h2 className="text-sm font-semibold">Saved drafts</h2><div className="mt-3 space-y-2">{drafts.map(d=><button type="button" key={d.id} onClick={()=>{setForm({...initial(),...d.request_data});setDraftId(d.id);setStep(1);}} className="block w-full rounded-xl border border-zinc-800 p-3 text-left text-sm hover:border-brand-primary"><span className="block font-medium">{d.title}</span><span className="mt-1 block text-xs text-brand-textMuted">Updated {new Date(d.updated_at).toLocaleDateString()}</span></button>)}</div></div>:null}
+        {drafts.length?<div className="mt-5 rounded-2xl border border-zinc-800 p-4"><h2 className="text-sm font-semibold">Saved drafts</h2><div className="mt-3 space-y-2">{drafts.map(d=><div key={d.id} className={`flex items-center gap-2 rounded-xl border p-2 ${draftId===d.id?"border-brand-primary bg-brand-primary/5":"border-zinc-800"}`}><button type="button" onClick={()=>{setForm({...initial(),...d.request_data});setDraftId(d.id);setStep(1);setSaved("");}} className="min-w-0 flex-1 p-1 text-left text-sm"><span className="block truncate font-medium">{d.title}</span><span className="mt-1 block text-xs text-brand-textMuted">Updated {new Date(d.updated_at).toLocaleDateString()}</span></button><button type="button" disabled={deletingDraft===d.id} onClick={()=>void deleteDraft(d.id)} className="rounded-lg border border-rose-500/30 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">{deletingDraft===d.id?"Deleting…":"Delete"}</button></div>)}</div></div>:null}
       </aside>
       <form onSubmit={submit} className="rounded-3xl border border-zinc-700 bg-zinc-950/70 p-5 sm:p-7">
         <div className="grid grid-cols-4 gap-2">{labels.map((label,index)=><button type="button" key={label} onClick={()=>index+1<step&&setStep((index+1) as 1|2|3|4)} className={`rounded-lg border px-2 py-2 text-xs ${step===index+1?"border-brand-primary bg-brand-primary/10 text-brand-primary":step>index+1?"border-emerald-500/40 text-emerald-200":"border-zinc-800 text-brand-textMuted"}`}>{index+1}. {label}</button>)}</div>

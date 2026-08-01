@@ -772,13 +772,13 @@ const loadMyReports = async (viewerId: string) => {
         <img
           src={avatarUrl}
           alt={displayName}
-          className="h-12 w-12 rounded-full border border-zinc-700 object-cover"
+          className="h-20 w-20 rounded-2xl border border-zinc-700 object-cover shadow-xl"
         />
       );
     }
 
     return (
-      <div className="h-12 w-12 rounded-full border border-zinc-700 bg-brand-primary/10 text-brand-primary">
+      <div className="h-20 w-20 rounded-2xl border border-zinc-700 bg-brand-primary/10 text-brand-primary shadow-xl">
         <svg viewBox="0 0 40 40" className="h-full w-full" aria-hidden="true">
           <defs>
             <linearGradient id="avatarGradient" x1="0%" x2="100%" y1="0%" y2="100%">
@@ -837,7 +837,7 @@ const loadMyReports = async (viewerId: string) => {
   }
 
   return (
-    <div className="page-container page-stack">
+    <main className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
       <ImageCropModal
         open={avatarCropOpen}
         file={avatarCropFile}
@@ -856,34 +856,9 @@ const loadMyReports = async (viewerId: string) => {
         }}
       />
 
-      {/* Header – same structure as admin/users header */}
-      <section className="space-y-2">
-        <p className="ui-eyebrow">
-          Account
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-brand-text sm:text-3xl">
-          Your profile & account
-        </h1>
-        <p className="text-[12px] text-brand-textMuted sm:text-sm">
-          Update your public profile, avatar, and account details.
-        </p>
-        <div className="mt-1 text-[11px] text-brand-textMuted">
-          <Link
-            href={`/user/${user.id}`}
-            className="font-medium text-brand-primary hover:underline"
-          >
-            View public profile →
-          </Link>
-        </div>
-        {avatarMessage && (
-          <p className="mt-1 text-[11px] text-brand-textMuted">
-            {avatarMessage}
-          </p>
-        )}
-      </section>
-      <section className="ui-card p-5 sm:p-6">
-        {/* Header row inside card */}
-        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <section className="overflow-hidden rounded-3xl border border-zinc-800 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,.16),transparent_38%),linear-gradient(145deg,rgba(24,24,27,.96),rgba(0,0,0,.88))] p-6 shadow-2xl sm:p-8">
+        <p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">Your KeyMoura account</p>
+        <div className="mt-5 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             {renderAvatar()}
             <div>
@@ -895,38 +870,42 @@ const loadMyReports = async (viewerId: string) => {
                 ) : null}
                 {myRole && myRole !== "member" ? <RolePill role={myRole} /> : null}
               </h2>
-              <p className="text-[11px] text-brand-textMuted">
+              <p className="mt-1 text-sm text-brand-textMuted">
                 {user.email || "No email on file"}
               </p>
-              {memberSince && (
-                <p className="text-[11px] text-brand-textMuted">
-                  Member since {memberSince}
-                </p>
-              )}
-              {lastSeen && (
-                <p className="text-[11px] text-brand-textMuted">
-                  Last seen: <span className="text-brand-text">{lastSeen}</span>
-                </p>
-              )}
-              <p className="text-[11px] text-brand-textMuted">
-                User ID:{" "}
-                <span className="font-mono text-[11px] text-brand-text">
-                    {user.id}
-                </span>
-              </p>
+              <p className="mt-1 text-xs text-brand-textMuted">{memberSince ? `Member since ${memberSince}` : "KeyMoura customer"}</p>
             </div>
           </div>
+          <Link href={`/user/${user.id}`} className="rounded-full border border-zinc-700 px-4 py-2 text-sm font-medium transition hover:border-brand-primary hover:text-brand-primary">View public profile</Link>
         </div>
+        {avatarMessage ? <p className="mt-4 text-sm text-brand-textMuted">{avatarMessage}</p> : null}
+      </section>
+
+      <section className="mt-5 grid gap-4 sm:grid-cols-2">
+        <Link href="/orders" className="group rounded-2xl border border-brand-primary/40 bg-brand-primary/10 p-5 transition hover:-translate-y-0.5 hover:border-brand-primary">
+          <div className="flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-[.18em] text-brand-primary">Orders</span><span className="text-2xl text-brand-primary transition group-hover:translate-x-1">→</span></div>
+          <h2 className="mt-3 text-xl font-semibold">Requests & orders</h2>
+          <p className="mt-2 text-sm leading-6 text-brand-textMuted">Review quotes, make payments, send messages, and track production or delivery.</p>
+        </Link>
+        <Link href="/orders/new" className="group rounded-2xl border border-zinc-800 bg-black/30 p-5 transition hover:-translate-y-0.5 hover:border-brand-primary/60">
+          <div className="flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-[.18em] text-brand-textMuted">Custom CNC</span><span className="text-2xl text-brand-primary transition group-hover:translate-x-1">+</span></div>
+          <h2 className="mt-3 text-xl font-semibold">Start a new request</h2>
+          <p className="mt-2 text-sm leading-6 text-brand-textMuted">Describe a part, upload drawings, or continue working from a saved draft.</p>
+        </Link>
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-zinc-800 bg-black/25 p-4 sm:p-6">
+        <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-brand-textMuted">Account settings</p><h2 className="mt-1 text-2xl font-semibold">Manage your account</h2></div>
 
         {/* Tabs – same style as SortChip group, but not full width */}
-        <div className="ui-tabs mt-6" role="tablist" aria-label="Account sections">
+        <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-2 sm:grid-cols-4" role="tablist" aria-label="Account sections">
           <button
             type="button"
             onClick={() => setActiveTab("profile")}
             className={
-              "ui-tab " +
+              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "profile"
-                ? "is-active" : "")
+                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Profile
@@ -935,9 +914,9 @@ const loadMyReports = async (viewerId: string) => {
             type="button"
             onClick={() => setActiveTab("security")}
             className={
-              "ui-tab " +
+              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "security"
-                ? "is-active" : "")
+                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Security
@@ -946,9 +925,9 @@ const loadMyReports = async (viewerId: string) => {
             type="button"
             onClick={() => setActiveTab("reports")}
             className={
-              "ui-tab " +
+              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "reports"
-                ? "is-active" : "")
+                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Reports
@@ -957,9 +936,9 @@ const loadMyReports = async (viewerId: string) => {
             type="button"
             onClick={() => setActiveTab("blocked")}
             className={
-              "ui-tab " +
+              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
               (activeTab === "blocked"
-                ? "is-active" : "")
+                ? "bg-brand-primary text-black" : "text-brand-textMuted hover:bg-zinc-900 hover:text-brand-text")
             }
           >
             Blocked users
@@ -1400,6 +1379,6 @@ const loadMyReports = async (viewerId: string) => {
           </div>
         )}
       </section>
-    </div>
+    </main>
   );
 }
