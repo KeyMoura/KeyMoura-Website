@@ -40,6 +40,15 @@ export default function StaffCatalogPage() {
       (statusFilter === "draft" && !product.is_published && !product.archived_at);
     return matchesSearch && matchesStatus;
   }), [products, search, statusFilter]);
+  const imageCount = media.filter(item => item.kind === "image").length;
+  const publishChecks = [
+    { label: "Product name", complete: Boolean(draft.name?.trim()) },
+    { label: "Short description", complete: Boolean(draft.short_description?.trim()) },
+    { label: "Starting price", complete: draft.starting_price_cents != null },
+    { label: "Product image", complete: imageCount > 0 || Boolean(draft.image_url) },
+    { label: "Customization choices", complete: !draft.is_custom || groups.length > 0 },
+  ];
+  const readyToPublish = publishChecks.every(check => check.complete);
 
   const loadProducts = useCallback(async () => {
     const { data, error: queryError } = await supabase.from("products").select("*").order("sort_order").order("created_at", { ascending: false });
@@ -163,6 +172,21 @@ export default function StaffCatalogPage() {
     const firstImage = next.find(item => item.kind === "image")?.url ?? null;
     await supabase.from("products").update({ image_url: firstImage }).eq("id", selectedId);
     setDraft(current => ({ ...current, image_url: firstImage }));
+  }
+
+  async function setCoverImage(item: ProductMedia) {
+    if (!selectedId || item.kind !== "image") return;
+    setBusy(true); setError("");
+    const images = media.filter(value => value.kind === "image");
+    const otherMedia = media.filter(value => value.kind !== "image");
+    const ordered = [item, ...images.filter(value => value.id !== item.id), ...otherMedia];
+    const results = await Promise.all(ordered.map((value, sort_order) => supabase.from("product_media").update({ sort_order }).eq("id", value.id)));
+    const update = await supabase.from("products").update({ image_url: item.url }).eq("id", selectedId);
+    setBusy(false);
+    const failure = results.find(result => result.error)?.error ?? update.error;
+    if (failure) return setError(failure.message);
+    setMedia(ordered.map((value, sort_order) => ({ ...value, sort_order })));
+    setDraft(current => ({ ...current, image_url: item.url }));
   }
 
   async function addGroup() {
@@ -310,6 +334,20 @@ export default function StaffCatalogPage() {
         </aside>
 
         {selectedId ? <section className="space-y-6">
+          <div className="sticky top-3 z-20 rounded-2xl border border-brand-primary/30 bg-zinc-950/95 p-4 shadow-xl backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><p className="text-xs uppercase tracking-[.16em] text-brand-primary">Editing</p><p className="font-semibold">{draft.name || "Untitled product"}</p></div>
+              <div className="flex flex-wrap gap-2">
+                {draft.slug ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>{draft.is_published ? "View live" : "Preview URL"} ↗</Link> : null}
+                <button disabled={!canManage || busy} onClick={() => void saveProduct()} className={primary}>{busy ? "Saving…" : "Save changes"}</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Publish checklist</h2><p className="mt-1 text-sm text-brand-textMuted">Finish these essentials before making the product visible to customers.</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${readyToPublish ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-400/10 text-amber-200"}`}>{publishChecks.filter(check => check.complete).length}/{publishChecks.length} ready</span></div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">{publishChecks.map(check => <div key={check.label} className={`rounded-xl border px-3 py-2 text-sm ${check.complete ? "border-emerald-500/30 text-emerald-200" : "border-zinc-700 text-brand-textMuted"}`}><span aria-hidden="true">{check.complete ? "✓" : "○"}</span> {check.label}</div>)}</div>
+          </div>
           <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Product details</h2><div className="flex items-center gap-3"><span className={draft.archived_at ? "text-sm text-amber-300" : draft.is_published ? "text-sm text-emerald-300" : "text-sm text-brand-textMuted"}>{draft.archived_at ? "Archived" : draft.is_published ? "Published" : "Draft"}</span>{draft.slug && draft.is_published && !draft.archived_at ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>View live ↗</Link> : null}</div></div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -323,8 +361,9 @@ export default function StaffCatalogPage() {
               <label className="text-sm sm:col-span-2">Short description<input className={`${input} mt-1`} value={draft.short_description ?? ""} onChange={e => setDraft(current => ({ ...current, short_description: e.target.value }))} /></label>
               <label className="text-sm sm:col-span-2">Full description<textarea className={`${input} mt-1 min-h-32`} value={draft.description ?? ""} onChange={e => setDraft(current => ({ ...current, description: e.target.value }))} /></label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(draft.is_custom)} onChange={e => setDraft(current => ({ ...current, is_custom: e.target.checked }))} /> Customer can customize this product</label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={Boolean(draft.archived_at)} checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={Boolean(draft.archived_at) || (!draft.is_published && !readyToPublish)} checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
             </div>
+            {!readyToPublish && !draft.is_published ? <p className="mt-3 text-xs text-amber-200">Complete the publish checklist to enable publishing. You can save the draft at any time.</p> : null}
             <div className="mt-4 flex flex-wrap gap-3"><button disabled={!canManage || busy} onClick={() => void saveProduct()} className={primary}>Save product</button><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className={`${subtle} text-rose-300`}>Delete permanently</button></div>
           </div>
 
@@ -347,9 +386,9 @@ export default function StaffCatalogPage() {
               <label className={`${subtle} cursor-pointer`}>Upload 3D model<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) void uploadAsset(file, "model"); e.target.value = ""; }} /></label>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              {media.map(item => <div key={item.id} className="overflow-hidden rounded-xl border border-zinc-800">
+              {media.map(item => <div key={item.id} className={`overflow-hidden rounded-xl border ${item.kind === "image" && draft.image_url === item.url ? "border-brand-primary" : "border-zinc-800"}`}>
                 {item.kind === "image" ? <Image src={item.url} alt={item.alt_text || ""} width={500} height={320} className="h-32 w-full object-cover" unoptimized /> : <div className="flex h-32 items-center justify-center bg-zinc-950 text-sm text-brand-primary">3D MODEL</div>}
-                <div className="flex items-center justify-between gap-2 p-2 text-xs"><span>{item.kind === "image" ? "Image" : "Interactive model"}</span><span className="flex gap-2"><button onClick={() => void moveMedia(media.indexOf(item), -1)} aria-label="Move asset earlier">↑</button><button onClick={() => void moveMedia(media.indexOf(item), 1)} aria-label="Move asset later">↓</button><button onClick={() => void deleteMedia(item)} className="text-rose-300">Remove</button></span></div>
+                <div className="flex items-center justify-between gap-2 p-2 text-xs"><span>{item.kind === "image" && draft.image_url === item.url ? "Cover image" : item.kind === "image" ? "Gallery image" : "Interactive model"}</span><span className="flex gap-2">{item.kind === "image" && draft.image_url !== item.url ? <button onClick={() => void setCoverImage(item)} className="text-brand-primary">Set cover</button> : null}<button onClick={() => void moveMedia(media.indexOf(item), -1)} aria-label="Move asset earlier">↑</button><button onClick={() => void moveMedia(media.indexOf(item), 1)} aria-label="Move asset later">↓</button><button onClick={() => void deleteMedia(item)} className="text-rose-300">Remove</button></span></div>
               </div>)}
             </div>
           </div>
