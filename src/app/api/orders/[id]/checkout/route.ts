@@ -7,13 +7,16 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   const { data: order, error } = await routeServiceClient.from("orders")
-    .select("id,order_number,product_name,customer_id,status,agreed_price_cents,deposit_amount_cents,amount_paid_cents,payment_status,stripe_checkout_session_id")
+    .select("id,order_number,product_name,customer_id,status,agreed_price_cents,deposit_amount_cents,amount_paid_cents,payment_status,stripe_checkout_session_id,quote_expires_at")
     .eq("id", id).eq("customer_id", user.id).maybeSingle();
   if (error || !order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
   if (!["accepted", "awaiting_payment", "in_progress"].includes(order.status) || !order.agreed_price_cents || order.agreed_price_cents < 50) {
     return NextResponse.json({ error: "This order is not ready for payment." }, { status: 409 });
   }
   if (order.payment_status === "paid") return NextResponse.json({ error: "This order is already paid." }, { status: 409 });
+  if (order.quote_expires_at && new Date(order.quote_expires_at).getTime() <= Date.now()) {
+    return NextResponse.json({ error: "This quote has expired. Message KeyMoura to request an updated quote." }, { status: 409 });
+  }
   const remaining = order.agreed_price_cents - (order.amount_paid_cents || 0);
   const amountDue = order.amount_paid_cents > 0 ? remaining : Math.min(order.deposit_amount_cents || remaining, remaining);
   if (amountDue < 50) return NextResponse.json({ error: "No payable balance remains." }, { status: 409 });

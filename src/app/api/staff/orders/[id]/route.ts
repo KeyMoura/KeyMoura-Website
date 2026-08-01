@@ -32,6 +32,10 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     update.deposit_amount_cents = body.deposit_amount_cents;
   }
   if (typeof body.target_date === "string" || body.target_date === null) update.target_date = body.target_date;
+  if (typeof body.quote_expires_at === "string" || body.quote_expires_at === null) {
+    if (body.quote_expires_at && Number.isNaN(new Date(body.quote_expires_at).getTime())) return NextResponse.json({ error: "Invalid quote expiration date." }, { status: 400 });
+    update.quote_expires_at = body.quote_expires_at;
+  }
   if (typeof body.staff_notes === "string" || body.staff_notes === null) update.staff_notes = body.staff_notes;
   if (typeof body.fulfillment_method === "string") {
     if (!allowedFulfillmentMethods.has(body.fulfillment_method)) return NextResponse.json({ error: "Invalid fulfillment method" }, { status: 400 });
@@ -61,6 +65,13 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       update.stripe_checkout_session_id = null;
       if (!body.status) update.status = "customer_review";
     }
+  }
+  if (update.status === "cancelled" && existing.status !== "cancelled") {
+    const reason = optionalText(body.cancellation_reason, 1000);
+    if (!reason) return NextResponse.json({ error: "A cancellation reason is required." }, { status: 400 });
+    update.cancelled_at = new Date().toISOString();
+    update.cancellation_reason = reason;
+    update.stripe_checkout_session_id = null;
   }
   const { error } = await routeServiceClient.from("orders").update(update).eq("id", id);
   if (error) return NextResponse.json({ error: "Could not update order" }, { status: 500 });

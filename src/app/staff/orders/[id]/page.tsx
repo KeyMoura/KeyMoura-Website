@@ -23,6 +23,8 @@ type Order = {
   amount_paid_cents: number;
   deposit_amount_cents: number | null;
   quote_revision: number;
+  quote_expires_at: string | null;
+  amount_refunded_cents: number;
   target_date: string | null;
   fulfillment_method: "shipping" | "pickup";
   shipping_address: Record<string, string> | null;
@@ -74,6 +76,9 @@ export default function StaffOrderDetail() {
   const [paid, setPaid] = useState("");
   const [deposit, setDeposit] = useState("");
   const [quoteNote, setQuoteNote] = useState("");
+  const [quoteExpires, setQuoteExpires] = useState("");
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
   const [target, setTarget] = useState("");
   const [staffNotes, setStaffNotes] = useState("");
   const [method, setMethod] = useState<"shipping"|"pickup">("shipping");
@@ -107,6 +112,7 @@ export default function StaffOrderDetail() {
       );
       setPaid(String(row.amount_paid_cents / 100));
       setDeposit(row.deposit_amount_cents == null ? "" : String(row.deposit_amount_cents / 100));
+      setQuoteExpires(row.quote_expires_at?.slice(0, 10) ?? "");
       setTarget(row.target_date ?? "");
       setStaffNotes(row.staff_notes ?? "");
       setMethod(row.fulfillment_method ?? "shipping");
@@ -133,11 +139,13 @@ export default function StaffOrderDetail() {
   }
   async function updateStatus(status: string) {
     if (status === order?.status) return;
-    if (!window.confirm(`Change this order from ${pretty(order?.status || "current")} to ${pretty(status)}?\n\nThe customer will be notified and may receive an email.`)) return;
+    const cancellationReason = status === "cancelled" ? window.prompt("Why is this order being cancelled? This reason is kept with the order.")?.trim() : "";
+    if (status === "cancelled" && !cancellationReason) return;
+    if (!window.confirm(`Change this order from ${pretty(order?.status || "current")} to ${pretty(status)}?\n\nThe customer will be notified and may receive an email.${order?.amount_paid_cents ? " This does not issue a refund; use the refund control separately." : ""}`)) return;
     const r = await fetch(`/api/staff/orders/${id}`, {
       method: "PATCH",
       headers: await authHeaders(),
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, cancellation_reason: cancellationReason || undefined }),
     });
     const result = await r.json();
     if (!r.ok) {
@@ -159,6 +167,7 @@ export default function StaffOrderDetail() {
         agreed_price_cents: priceCents,
         deposit_amount_cents: depositCents,
         quote_note: quoteNote.trim() || null,
+        quote_expires_at: quoteExpires ? new Date(`${quoteExpires}T23:59:59.999Z`).toISOString() : null,
         target_date: target || null,
         staff_notes: staffNotes || null,
         fulfillment_method: method,
@@ -171,6 +180,15 @@ export default function StaffOrderDetail() {
     const result = await r.json();
     if (!r.ok) setError(result.error || "Could not save details");
     else await load();
+  }
+  async function issueRefund() {
+    const cents = Math.round(Number(refundAmount) * 100);
+    if (!Number.isInteger(cents) || cents < 1 || refundReason.trim().length < 3) { setError("Enter a refund amount and reason."); return; }
+    if (!window.confirm(`Issue a $${(cents/100).toFixed(2)} refund through Stripe?\n\nThis cannot be undone. The customer will be notified.`)) return;
+    const r = await fetch(`/api/staff/orders/${id}/refund`, { method:"POST", headers:await authHeaders(), body:JSON.stringify({ amount_cents:cents, reason:refundReason.trim() }) });
+    const result = await r.json();
+    if (!r.ok) setError(result.error || "Could not issue refund");
+    else { setRefundAmount(""); setRefundReason(""); setError(""); await load(); }
   }
   async function fulfillmentAction(shipment_action: "mark_shipped"|"mark_delivered") {
     const actionLabel = shipment_action === "mark_delivered" ? "mark this order completed" : method === "pickup" ? "mark this order ready for pickup" : "mark this order shipped";
@@ -208,7 +226,7 @@ export default function StaffOrderDetail() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Status</p><p className="mt-1 text-sm font-semibold text-brand-primary">{pretty(order.status)}</p></div>
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Customer price</p><p className="mt-1 text-sm font-semibold">{order.agreed_price_cents == null ? "Not quoted" : `$${(order.agreed_price_cents/100).toFixed(2)}`}</p></div>
-            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Paid</p><p className="mt-1 text-sm font-semibold text-emerald-300">${(order.amount_paid_cents/100).toFixed(2)}</p></div>
+            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Net paid</p><p className="mt-1 text-sm font-semibold text-emerald-300">${((order.amount_paid_cents-(order.amount_refunded_cents||0))/100).toFixed(2)}</p>{order.amount_refunded_cents ? <p className="text-[10px] text-brand-textMuted">${(order.amount_refunded_cents/100).toFixed(2)} refunded</p> : null}</div>
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Balance</p><p className="mt-1 text-sm font-semibold">${(Math.max(0,(order.agreed_price_cents || 0)-order.amount_paid_cents)/100).toFixed(2)}</p></div>
           </div>
         </div>
@@ -254,6 +272,7 @@ export default function StaffOrderDetail() {
               <span className="mt-1 block text-[10px] text-brand-textMuted">Leave blank to collect the full quote. Editing price or deposit creates a new quote revision.</span>
             </label>
             <label className="text-sm sm:col-span-2">Quote note<textarea disabled={!canManage} className={`${input} mt-1 min-h-20 w-full`} value={quoteNote} onChange={e=>setQuoteNote(e.target.value)} placeholder="What changed or what is included in this quote?" /></label>
+            <label className="text-sm">Quote valid through<input disabled={!canManage || order.payment_status === "paid"} className={`${input} mt-1 w-full`} type="date" value={quoteExpires} onChange={e=>setQuoteExpires(e.target.value)} /><span className="mt-1 block text-[10px] text-brand-textMuted">Checkout is blocked after this date until a new quote is sent.</span></label>
             <label className="text-sm">
               Target date
               <input
@@ -293,6 +312,7 @@ export default function StaffOrderDetail() {
               {price.trim() && Math.round(Number(price)*100)!==order.agreed_price_cents ? "Review & send quote" : "Save internal details"}
             </button>
           ) : null}
+          {canManage && order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <div className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4"><h3 className="font-semibold text-rose-200">Cancellation & refund</h3><p className="mt-1 text-xs text-brand-textMuted">Cancelling an order does not move money. Refunds are separate, recorded actions sent through Stripe.</p><div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr_auto]"><label className="text-sm">Refund amount ($)<input className={`${input} mt-1 w-full`} type="number" min=".01" max={(order.amount_paid_cents-(order.amount_refunded_cents||0))/100} step=".01" value={refundAmount} onChange={e=>setRefundAmount(e.target.value)} /></label><label className="text-sm">Internal reason<input className={`${input} mt-1 w-full`} value={refundReason} onChange={e=>setRefundReason(e.target.value)} placeholder="Why is this refund being issued?" /></label><button onClick={()=>void issueRefund()} className="self-end rounded-xl border border-rose-500/60 px-4 py-2 font-semibold text-rose-200">Review & issue refund</button></div></div> : null}
           <dl className="mt-5 grid gap-3 border-t border-zinc-800 pt-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-brand-textMuted">Quantity</dt>

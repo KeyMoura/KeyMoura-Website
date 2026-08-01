@@ -32,6 +32,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Order amount mismatch" }, { status: 409 });
   }
   const fullyPaid = newPaid >= order.agreed_price_cents;
+  const paymentIntentId = String(session.payment_intent || "");
+  if (!paymentIntentId) {
+    await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
+    return NextResponse.json({ error: "Missing payment intent" }, { status: 409 });
+  }
+  const paymentRecord = await routeServiceClient.from("order_payments").insert({ order_id:orderId, stripe_payment_intent_id:paymentIntentId, amount_cents:session.amount_total });
+  if (paymentRecord.error?.code !== "23505" && paymentRecord.error) {
+    await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
+    return NextResponse.json({ error: "Could not record payment" }, { status: 500 });
+  }
   const update = await routeServiceClient.from("orders").update({ payment_status: fullyPaid ? "paid" : "partial", amount_paid_cents: newPaid, stripe_checkout_session_id:null, stripe_payment_intent_id: String(session.payment_intent || ""), paid_at: fullyPaid ? new Date().toISOString() : null, status: "in_progress" }).eq("id", orderId).eq("amount_paid_cents", order.amount_paid_cents || 0);
   if (update.error) {
     await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
