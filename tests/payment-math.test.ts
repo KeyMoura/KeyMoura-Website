@@ -17,6 +17,19 @@ test("uses the full remaining balance when a stale deposit is negative", () => {
   assert.equal(checkoutAmountCents(order), 100);
 });
 
+test("an unpaid $1 order ignores a stale paid amount and remains payable", () => {
+  const order = {
+    agreed_price_cents: 100,
+    amount_paid_cents: 2500,
+    amount_refunded_cents: 0,
+    deposit_amount_cents: -2400,
+    payment_status: "unpaid",
+  };
+
+  assert.equal(remainingBalanceCents(order), 100);
+  assert.equal(checkoutAmountCents(order), 100);
+});
+
 test("uses a valid deposit for the first payment", () => {
   const order = {
     agreed_price_cents: 5500,
