@@ -4,7 +4,7 @@ import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKe
 import { notifyOrderUser } from "@/lib/orderNotifications";
 import { netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
 
-const allowedStatuses = new Set(["requested","needs_information","accepted","awaiting_payment","in_progress","customer_review","ready","completed","declined","cancelled"]);
+const allowedStatuses = new Set(["requested","needs_information","accepted","awaiting_payment","in_progress","customer_review","final_review","ready","completed","declined","cancelled"]);
 const allowedFulfillmentMethods = new Set(["shipping", "pickup"]);
 const optionalText = (value: unknown, max: number) => value === null ? null : typeof value === "string" ? value.trim().slice(0, max) || null : undefined;
 
@@ -50,14 +50,19 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   if (update.tracking_url && !/^https:\/\//i.test(String(update.tracking_url))) return NextResponse.json({ error: "Tracking link must use https://" }, { status: 400 });
   const shipmentAction = body.shipment_action;
   if (shipmentAction === "mark_shipped") {
+    if (existing.status !== "ready") return NextResponse.json({ error: "The customer must approve the finished order before fulfillment." }, { status: 409 });
+    if (remainingBalanceCents(existing) > 0) return NextResponse.json({ error: "The remaining balance must be paid before fulfillment." }, { status: 409 });
     if ((update.fulfillment_method || existing.fulfillment_method) === "shipping" && !(update.tracking_number || existing.tracking_number)) return NextResponse.json({ error: "Add a tracking number before marking this order shipped." }, { status: 400 });
     update.shipped_at = existing.shipped_at || new Date().toISOString();
     update.status = "ready";
   } else if (shipmentAction === "mark_delivered") {
-    update.shipped_at = existing.shipped_at || new Date().toISOString();
+    if (!existing.shipped_at) return NextResponse.json({ error: "Mark this order shipped or ready for pickup first." }, { status: 409 });
+    update.shipped_at = existing.shipped_at;
     update.delivered_at = existing.delivered_at || new Date().toISOString();
+    update.completed_at = existing.completed_at || new Date().toISOString();
     update.status = "completed";
   }
+  if (update.status === "final_review" && (existing.status !== "in_progress" || remainingBalanceCents(existing) > 0)) return NextResponse.json({ error: "Only a fully paid order in production can be sent for final review." }, { status: 409 });
   if (typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && (remainingBalanceCents(existing) > 0 || netCollectedCents(existing) === 0)) {
     update.payment_status = "unpaid";
     if (update.agreed_price_cents !== existing.agreed_price_cents || (update.deposit_amount_cents !== undefined && update.deposit_amount_cents !== existing.deposit_amount_cents)) {
@@ -88,7 +93,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   const { data: customer } = await routeServiceClient.auth.admin.getUserById(existing.customer_id);
   const priceBecamePayable = typeof update.quote_revision === "number" && typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0;
   const statusChanged = typeof update.status === "string" && update.status !== existing.status;
-  if (priceBecamePayable || statusChanged) {
+  if (priceBecamePayable || (statusChanged && !shipmentAction)) {
     const finalStatus = String(update.status || existing.status).replaceAll("_", " ");
     const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : `Your order status changed to ${finalStatus}.`;
     const config = await getCommerceEmailConfig();
