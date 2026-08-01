@@ -16,6 +16,10 @@ test("staff fulfillment actions validate tracking and send idempotent emails", (
   assert.match(route, /Add a tracking number before marking this order shipped/);
   assert.match(route, /order-fulfillment-\$\{id\}-\$\{templateKey\}/);
   assert.match(route, /Tracking link must use https:\/\//);
+  assert.match(route, /customer must approve the finished order before fulfillment/i);
+  assert.match(route, /remaining balance must be paid before fulfillment/i);
+  assert.match(route, /Mark this order shipped or ready for pickup first/);
+  assert.match(route, /update\.completed_at/);
 });
 
 test("staff and customer order pages expose the fulfillment workflow", () => {
@@ -48,4 +52,17 @@ test("staff and customer activity timelines show each recorded refund", () => {
     assert.match(page, /refund\.reason/);
     assert.match(page, /refund\.created_at/);
   }
+});
+
+test("finished-product review is distinct from quote review and customer approval is recorded", () => {
+  const migration = read("supabase/migrations/20260801010000_order_final_review.sql");
+  const staffRoute = read("src/app/api/staff/orders/[id]/route.ts");
+  const approvalRoute = read("src/app/api/orders/[id]/final-review/route.ts");
+  const customer = read("src/app/orders/[id]/page.tsx");
+  assert.match(migration, /'final_review'/);
+  assert.match(staffRoute, /"final_review"/);
+  assert.match(approvalRoute, /status !== "final_review"/);
+  assert.match(approvalRoute, /from_status:"final_review", to_status:"ready"/);
+  assert.match(approvalRoute, /Finished order approved by customer/);
+  assert.match(customer, /Approve finished order/);
 });
