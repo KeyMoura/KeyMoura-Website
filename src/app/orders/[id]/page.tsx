@@ -18,6 +18,9 @@ type Order = {
   agreed_price_cents: number | null;
   payment_status: string;
   amount_paid_cents: number;
+  deposit_amount_cents: number | null;
+  quote_revision: number;
+  quote_accepted_at: string | null;
   target_date: string | null;
   created_at: string;
   fulfillment_method: "shipping" | "pickup";
@@ -109,6 +112,14 @@ export default function OrderDetailPage() {
     }
     window.location.assign(result.url);
   }
+  async function approveQuote() {
+    setBusy(true); setError("");
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch(`/api/orders/${id}/quote`, { method:"POST", headers:data.session?.access_token ? { Authorization:`Bearer ${data.session.access_token}` } : {} });
+    const result = await response.json();
+    if (!response.ok) setError(result.error || "Could not approve quote."); else await load();
+    setBusy(false);
+  }
   if (!order)
     return (
       <main className="mx-auto max-w-4xl px-4 py-10 text-brand-textMuted">
@@ -162,9 +173,10 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </div>
+      {order.status === "customer_review" && !order.quote_accepted_at && order.agreed_price_cents ? <section className="mt-4 rounded-2xl border border-brand-primary/50 bg-brand-primary/10 p-5"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Quote revision {order.quote_revision}</p><h2 className="mt-2 text-xl font-semibold">Review and approve {moneyFromCents(order.agreed_price_cents)}</h2><p className="mt-2 text-sm text-brand-textMuted">Approve this quote to unlock secure payment. {order.deposit_amount_cents ? `${moneyFromCents(order.deposit_amount_cents)} is due first; the remaining balance is collected later.` : "The full amount will be due."}</p><button type="button" disabled={busy} onClick={()=>void approveQuote()} className="catalog-action-primary mt-4 rounded-xl px-5 py-2.5 font-semibold disabled:opacity-50">{busy?"Approving…":"Approve quote"}</button></section> : null}
       {order.agreed_price_cents &&
       order.payment_status !== "paid" &&
-      ["accepted", "awaiting_payment"].includes(order.status) ? (
+      (["accepted", "awaiting_payment"].includes(order.status) || (order.status === "in_progress" && order.payment_status === "partial")) ? (
         <div className="mt-4 rounded-2xl border border-brand-primary/50 bg-brand-primary/10 p-5">
           <h2 className="font-semibold">Ready for payment</h2>
           <p className="mt-1 text-sm text-brand-textMuted">
@@ -176,9 +188,7 @@ export default function OrderDetailPage() {
             onClick={() => void checkout()}
             className="mt-4 rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-5 py-2.5 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50"
           >
-            {busy
-              ? "Opening checkout…"
-              : `Pay ${moneyFromCents(order.agreed_price_cents)}`}
+            {busy ? "Opening checkout…" : `Pay ${moneyFromCents(order.amount_paid_cents > 0 ? order.agreed_price_cents-order.amount_paid_cents : Math.min(order.deposit_amount_cents || order.agreed_price_cents,order.agreed_price_cents))}`}
           </button>
         </div>
       ) : null}

@@ -7,19 +7,22 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   const { data: order, error } = await routeServiceClient.from("orders")
-    .select("id,order_number,product_name,customer_id,status,agreed_price_cents,payment_status,stripe_checkout_session_id")
+    .select("id,order_number,product_name,customer_id,status,agreed_price_cents,deposit_amount_cents,amount_paid_cents,payment_status,stripe_checkout_session_id")
     .eq("id", id).eq("customer_id", user.id).maybeSingle();
   if (error || !order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  if (!["accepted", "awaiting_payment"].includes(order.status) || !order.agreed_price_cents || order.agreed_price_cents < 50) {
+  if (!["accepted", "awaiting_payment", "in_progress"].includes(order.status) || !order.agreed_price_cents || order.agreed_price_cents < 50) {
     return NextResponse.json({ error: "This order is not ready for payment." }, { status: 409 });
   }
   if (order.payment_status === "paid") return NextResponse.json({ error: "This order is already paid." }, { status: 409 });
+  const remaining = order.agreed_price_cents - (order.amount_paid_cents || 0);
+  const amountDue = order.amount_paid_cents > 0 ? remaining : Math.min(order.deposit_amount_cents || remaining, remaining);
+  if (amountDue < 50) return NextResponse.json({ error: "No payable balance remains." }, { status: 409 });
 
   const stripe = stripeClient();
   if (order.stripe_checkout_session_id) {
     try {
       const existingSession = await stripe.checkout.sessions.retrieve(order.stripe_checkout_session_id);
-      if (existingSession.status === "open" && existingSession.amount_total === order.agreed_price_cents && existingSession.url) {
+      if (existingSession.status === "open" && existingSession.amount_total === amountDue && existingSession.url) {
         return NextResponse.json({ url: existingSession.url });
       }
     } catch {
@@ -31,9 +34,9 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     mode: "payment",
     customer_email: user.email,
     client_reference_id: order.id,
-    metadata: { order_id: order.id, customer_id: user.id },
+    metadata: { order_id: order.id, customer_id: user.id, payment_kind: order.amount_paid_cents > 0 ? "balance" : amountDue < remaining ? "deposit" : "full" },
     payment_intent_data: { metadata: { order_id: order.id, customer_id: user.id } },
-    line_items: [{ quantity: 1, price_data: { currency: "usd", unit_amount: order.agreed_price_cents, product_data: { name: `${order.order_number || "KeyMoura order"} · ${order.product_name}` } } }],
+    line_items: [{ quantity: 1, price_data: { currency: "usd", unit_amount: amountDue, product_data: { name: `${order.order_number || "KeyMoura order"} · ${order.product_name} · ${order.amount_paid_cents > 0 ? "remaining balance" : amountDue < remaining ? "deposit" : "payment"}` } } }],
     success_url: `${siteUrl}/orders/${order.id}?payment=success`,
     cancel_url: `${siteUrl}/orders/${order.id}?payment=cancelled`,
   });

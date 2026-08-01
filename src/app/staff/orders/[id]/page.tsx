@@ -21,6 +21,8 @@ type Order = {
   agreed_price_cents: number | null;
   payment_status: string;
   amount_paid_cents: number;
+  deposit_amount_cents: number | null;
+  quote_revision: number;
   target_date: string | null;
   fulfillment_method: "shipping" | "pickup";
   shipping_address: Record<string, string> | null;
@@ -70,6 +72,8 @@ export default function StaffOrderDetail() {
   const [internal, setInternal] = useState(false);
   const [price, setPrice] = useState("");
   const [paid, setPaid] = useState("");
+  const [deposit, setDeposit] = useState("");
+  const [quoteNote, setQuoteNote] = useState("");
   const [target, setTarget] = useState("");
   const [staffNotes, setStaffNotes] = useState("");
   const [method, setMethod] = useState<"shipping"|"pickup">("shipping");
@@ -101,6 +105,7 @@ export default function StaffOrderDetail() {
           : String(row.agreed_price_cents / 100),
       );
       setPaid(String(row.amount_paid_cents / 100));
+      setDeposit(row.deposit_amount_cents == null ? "" : String(row.deposit_amount_cents / 100));
       setTarget(row.target_date ?? "");
       setStaffNotes(row.staff_notes ?? "");
       setMethod(row.fulfillment_method ?? "shipping");
@@ -140,11 +145,14 @@ export default function StaffOrderDetail() {
   }
   async function save() {
     const priceCents = price.trim() ? Math.round(Number(price) * 100) : null;
+    const depositCents = deposit.trim() ? Math.round(Number(deposit) * 100) : null;
     const r = await fetch(`/api/staff/orders/${id}`, {
       method: "PATCH",
       headers: await authHeaders(),
       body: JSON.stringify({
         agreed_price_cents: priceCents,
+        deposit_amount_cents: depositCents,
+        quote_note: quoteNote.trim() || null,
         target_date: target || null,
         staff_notes: staffNotes || null,
         fulfillment_method: method,
@@ -235,6 +243,12 @@ export default function StaffOrderDetail() {
                 Updated automatically by Stripe
               </span>
             </label>
+            <label className="text-sm">
+              Deposit due first ($)
+              <input disabled={!canManage || order.payment_status === "paid"} className={`${input} mt-1 w-full`} type="number" min="0.5" step=".01" value={deposit} onChange={(e)=>setDeposit(e.target.value)} placeholder="Blank = full payment" />
+              <span className="mt-1 block text-[10px] text-brand-textMuted">Leave blank to collect the full quote. Editing price or deposit creates a new quote revision.</span>
+            </label>
+            <label className="text-sm sm:col-span-2">Quote note<textarea disabled={!canManage} className={`${input} mt-1 min-h-20 w-full`} value={quoteNote} onChange={e=>setQuoteNote(e.target.value)} placeholder="What changed or what is included in this quote?" /></label>
             <label className="text-sm">
               Target date
               <input

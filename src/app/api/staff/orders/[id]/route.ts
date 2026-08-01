@@ -26,6 +26,11 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     if (typeof body.agreed_price_cents === "number" && body.agreed_price_cents < 0) return NextResponse.json({ error: "Price cannot be negative." }, { status: 400 });
     update.agreed_price_cents = body.agreed_price_cents;
   }
+  if (body.deposit_amount_cents === null || Number.isInteger(body.deposit_amount_cents)) {
+    const total = typeof body.agreed_price_cents === "number" ? body.agreed_price_cents : existing.agreed_price_cents;
+    if (typeof body.deposit_amount_cents === "number" && (body.deposit_amount_cents < 50 || !total || body.deposit_amount_cents > total)) return NextResponse.json({ error: "Deposit must be at least $0.50 and no more than the quote total." }, { status: 400 });
+    update.deposit_amount_cents = body.deposit_amount_cents;
+  }
   if (typeof body.target_date === "string" || body.target_date === null) update.target_date = body.target_date;
   if (typeof body.staff_notes === "string" || body.staff_notes === null) update.staff_notes = body.staff_notes;
   if (typeof body.fulfillment_method === "string") {
@@ -50,10 +55,18 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   }
   if (typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && existing.payment_status !== "paid") {
     update.payment_status = "unpaid";
-    if (!body.status && ["accepted", "requested"].includes(existing.status)) update.status = "awaiting_payment";
+    if (update.agreed_price_cents !== existing.agreed_price_cents || (update.deposit_amount_cents !== undefined && update.deposit_amount_cents !== existing.deposit_amount_cents)) {
+      update.quote_revision = (existing.quote_revision || 0) + 1;
+      update.quote_accepted_at = null;
+      update.stripe_checkout_session_id = null;
+      if (!body.status) update.status = "customer_review";
+    }
   }
   const { error } = await routeServiceClient.from("orders").update(update).eq("id", id);
   if (error) return NextResponse.json({ error: "Could not update order" }, { status: 500 });
+  if (typeof update.quote_revision === "number" && typeof update.agreed_price_cents === "number") {
+    await routeServiceClient.from("order_quotes").insert({ order_id:id, revision:update.quote_revision, total_cents:update.agreed_price_cents, deposit_cents:update.deposit_amount_cents ?? existing.deposit_amount_cents, note:optionalText(body.quote_note,2000), created_by:actor.userId });
+  }
   let historyId: number|string = Date.now();
   if (update.status && update.status !== existing.status) {
     const { data: history } = await routeServiceClient.from("order_status_history").insert({ order_id: id, from_status: existing.status, to_status: update.status, changed_by: actor.userId }).select("id").single();
@@ -61,11 +74,11 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   }
 
   const { data: customer } = await routeServiceClient.auth.admin.getUserById(existing.customer_id);
-  const priceBecamePayable = typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0 && update.agreed_price_cents !== existing.agreed_price_cents;
+  const priceBecamePayable = typeof update.quote_revision === "number" && typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0;
   const statusChanged = typeof update.status === "string" && update.status !== existing.status;
   if (priceBecamePayable || statusChanged) {
     const finalStatus = String(update.status || existing.status).replaceAll("_", " ");
-    const message = priceBecamePayable ? `Your final price is $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. You can now pay securely from your order page.` : `Your order status changed to ${finalStatus}.`;
+    const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : `Your order status changed to ${finalStatus}.`;
     const config = await getCommerceEmailConfig();
     const templateKey: CommerceEmailTemplateKey = priceBecamePayable ? "quote_ready" : update.status === "needs_information" ? "needs_information" : "status_update";
     if ((priceBecamePayable || update.status === "awaiting_payment") ? config.sendPaymentUpdates : config.sendStatusUpdates) await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-update-${id}-${historyId}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your request", status:finalStatus, price:typeof update.agreed_price_cents === "number" ? `$${(update.agreed_price_cents/100).toFixed(2)}` : "Price pending" } });
@@ -73,7 +86,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       orderId: id,
       actorUserId: actor.userId,
       recipientUserId: existing.customer_id,
-      title: priceBecamePayable ? "Order ready for payment" : "Order status updated",
+      title: priceBecamePayable ? "Quote ready for review" : "Order status updated",
       message,
     });
   }
