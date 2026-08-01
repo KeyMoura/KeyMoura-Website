@@ -30,7 +30,7 @@ test("quote approval is customer-owned and revision-specific", () => {
 test("stripe supports deposit then remaining balance without overpayment", () => {
   assert.match(checkout, /amountDue/);
   assert.match(checkout, /payment_kind/);
-  assert.match(webhook, /newPaid > order\.agreed_price_cents/);
+  assert.match(webhook, /newNetCollected > order\.agreed_price_cents/);
   assert.match(webhook, /payment_status: fullyPaid \? "paid" : "partial"/);
 });
 
