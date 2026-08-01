@@ -209,11 +209,6 @@ export default function StaffOrderDetail() {
         quote_expires_at: quoteExpires ? new Date(`${quoteExpires}T23:59:59.999Z`).toISOString() : null,
         target_date: target || null,
         staff_notes: staffNotes || null,
-        fulfillment_method: method,
-        shipping_address: method === "shipping" ? address : null,
-        shipping_carrier: carrier || null,
-        tracking_number: trackingNumber || null,
-        tracking_url: trackingUrl || null,
       }),
     });
     const result = await r.json();
@@ -358,17 +353,6 @@ export default function StaffOrderDetail() {
               />
             </label>
           </div>
-          <div id="fulfillment" className="mt-5 scroll-mt-5 border-t border-zinc-800 pt-5">
-            <h2 className="font-semibold">Fulfillment</h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="text-sm">Delivery method<select disabled={!canManage} className={`${input} mt-1 w-full`} value={method} onChange={e=>setMethod(e.target.value as "shipping"|"pickup")}><option value="shipping">Ship to customer</option><option value="pickup">Customer pickup</option></select></label>
-              <label className="text-sm">Carrier<input disabled={!canManage || method === "pickup"} className={`${input} mt-1 w-full`} value={carrier} onChange={e=>setCarrier(e.target.value)} placeholder="USPS, UPS, FedEx…" /></label>
-              {method === "shipping" ? <><label className="text-sm sm:col-span-2">Recipient<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.name} onChange={e=>setAddress({...address,name:e.target.value})} /></label><label className="text-sm sm:col-span-2">Address<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.line1} onChange={e=>setAddress({...address,line1:e.target.value})} /></label><label className="text-sm">City<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.city} onChange={e=>setAddress({...address,city:e.target.value})} /></label><label className="text-sm">State / region<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.state} onChange={e=>setAddress({...address,state:e.target.value})} /></label><label className="text-sm">Postal code<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.postal_code} onChange={e=>setAddress({...address,postal_code:e.target.value})} /></label></> : null}
-              <label className="text-sm">Tracking number<input disabled={!canManage || method === "pickup"} className={`${input} mt-1 w-full`} value={trackingNumber} onChange={e=>setTrackingNumber(e.target.value)} /></label>
-              <label className="text-sm sm:col-span-2">Tracking link<input disabled={!canManage || method === "pickup"} type="url" className={`${input} mt-1 w-full`} value={trackingUrl} onChange={e=>setTrackingUrl(e.target.value)} placeholder="https://…" /></label>
-            </div>
-            {canManage ? <div className="mt-4 flex flex-wrap gap-2"><button onClick={()=>void save()} className="rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-2 font-semibold text-brand-primary">Save fulfillment</button>{order.status === "in_progress" ? <button onClick={()=>void updateStatus("final_review")} className="rounded-xl border border-brand-primary/80 bg-brand-primary px-4 py-2 font-semibold text-black">Send for Customer Review</button> : null}<button disabled={Boolean(order.shipped_at) || order.status !== "ready" || order.amount_paid_cents - (order.amount_refunded_cents || 0) < (order.agreed_price_cents || 0)} onClick={()=>void fulfillmentAction("mark_shipped")} className="rounded-xl border border-brand-accent/70 px-4 py-2 font-semibold text-brand-accent disabled:opacity-40">{order.shipped_at ? "Shipped" : method === "pickup" ? "Mark ready for pickup" : "Mark shipped + email"}</button><button disabled={!order.shipped_at || Boolean(order.delivered_at)} onClick={()=>void fulfillmentAction("mark_delivered")} className="rounded-xl border border-emerald-500/60 px-4 py-2 font-semibold text-emerald-300 disabled:opacity-40">{order.delivered_at ? "Completed" : method === "pickup" ? "Mark picked up + email" : "Mark delivered + email"}</button></div> : null}
-          </div>
           {canManage ? (
             <button
               onClick={() => void save()}
@@ -394,6 +378,63 @@ export default function StaffOrderDetail() {
             </p>
           </div>
         </section>
+        {(order.status === "ready" || Boolean(order.shipped_at) || Boolean(order.delivered_at)) ? (
+          <section id="fulfillment" className="scroll-mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Current step</p>
+              <h2 className="mt-1 text-xl font-semibold">{order.delivered_at ? "Fulfillment complete" : order.shipped_at ? (method === "pickup" ? "Awaiting pickup" : "Shipment in transit") : "Fulfill this order"}</h2>
+              <p className="mt-2 text-sm text-brand-textMuted">
+                {order.delivered_at ? "This order has been completed." : order.shipped_at ? "Confirm delivery or pickup when the customer has received the order." : "Choose how the customer will receive the order, add the required details, then review and confirm."}
+              </p>
+            </div>
+
+            {!order.shipped_at ? (
+              <div className="mt-5 space-y-5">
+                <div className="rounded-xl border border-zinc-800 bg-black/25 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">1 · Delivery method</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <button type="button" disabled={!canManage} onClick={() => setMethod("shipping")} className={`rounded-xl border p-4 text-left transition ${method === "shipping" ? "border-brand-primary bg-brand-primary/10" : "border-zinc-700 hover:border-zinc-600"}`}>
+                      <span className="block font-semibold">Ship to customer</span>
+                      <span className="mt-1 block text-xs text-brand-textMuted">Add the destination and tracking details.</span>
+                    </button>
+                    <button type="button" disabled={!canManage} onClick={() => setMethod("pickup")} className={`rounded-xl border p-4 text-left transition ${method === "pickup" ? "border-brand-primary bg-brand-primary/10" : "border-zinc-700 hover:border-zinc-600"}`}>
+                      <span className="block font-semibold">Customer pickup</span>
+                      <span className="mt-1 block text-xs text-brand-textMuted">No address, carrier, or tracking required.</span>
+                    </button>
+                  </div>
+                </div>
+
+                {method === "shipping" ? (
+                  <div className="rounded-xl border border-zinc-800 bg-black/25 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">2 · Shipping details</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="text-sm sm:col-span-2">Recipient<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.name} onChange={e=>setAddress({...address,name:e.target.value})} /></label>
+                      <label className="text-sm sm:col-span-2">Street address<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.line1} onChange={e=>setAddress({...address,line1:e.target.value})} /></label>
+                      <label className="text-sm">City<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.city} onChange={e=>setAddress({...address,city:e.target.value})} /></label>
+                      <label className="text-sm">State / region<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.state} onChange={e=>setAddress({...address,state:e.target.value})} /></label>
+                      <label className="text-sm">Postal code<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.postal_code} onChange={e=>setAddress({...address,postal_code:e.target.value})} /></label>
+                      <label className="text-sm">Carrier<input disabled={!canManage} className={`${input} mt-1 w-full`} value={carrier} onChange={e=>setCarrier(e.target.value)} placeholder="USPS, UPS, FedEx…" /></label>
+                      <label className="text-sm">Tracking number<input disabled={!canManage} className={`${input} mt-1 w-full`} value={trackingNumber} onChange={e=>setTrackingNumber(e.target.value)} /></label>
+                      <label className="text-sm">Tracking link<input disabled={!canManage} type="url" className={`${input} mt-1 w-full`} value={trackingUrl} onChange={e=>setTrackingUrl(e.target.value)} placeholder="https://…" /></label>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="rounded-xl border border-brand-primary/30 bg-brand-primary/5 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-primary">{method === "shipping" ? "3" : "2"} · Review & confirm</p>
+                  <p className="mt-2 text-sm text-brand-textMuted">
+                    {method === "shipping"
+                      ? `This will mark the order shipped${carrier ? ` with ${carrier}` : ""}${trackingNumber ? ` (tracking ${trackingNumber})` : ""} and email the customer.`
+                      : "This will mark the order ready for pickup and email the customer."}
+                  </p>
+                  {canManage ? <button disabled={order.amount_paid_cents - (order.amount_refunded_cents || 0) < (order.agreed_price_cents || 0)} onClick={()=>void fulfillmentAction("mark_shipped")} className="mt-4 rounded-xl bg-brand-primary px-5 py-2.5 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40">{method === "pickup" ? "Confirm ready for pickup" : "Confirm shipment & notify customer"}</button> : null}
+                </div>
+              </div>
+            ) : !order.delivered_at && canManage ? (
+              <button onClick={()=>void fulfillmentAction("mark_delivered")} className="mt-5 rounded-xl border border-emerald-500/60 px-5 py-2.5 font-semibold text-emerald-300">{method === "pickup" ? "Confirm customer picked it up" : "Confirm delivery & complete order"}</button>
+            ) : null}
+          </section>
+        ) : null}
         <section id="conversation" className="scroll-mt-5">
           <h2 className="font-semibold">Conversation</h2>
           <div className="mt-3 max-h-[480px] space-y-3 overflow-y-auto">
