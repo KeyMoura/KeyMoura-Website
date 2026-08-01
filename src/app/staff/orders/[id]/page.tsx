@@ -386,7 +386,7 @@ export default function StaffOrderDetail() {
               <dd className="mt-0.5">
                 {requestedBaseTotalCents == null
                   ? "Price pending"
-                  : `${(requestedBaseTotalCents / 100).toFixed(2)}${order.quantity > 1 ? ` (${(requestedBaseTotalCents / order.quantity / 100).toFixed(2)} each)` : ""}`}
+                  : "$" + (requestedBaseTotalCents / 100).toFixed(2) + (order.quantity > 1 ? " ($" + (requestedBaseTotalCents / order.quantity / 100).toFixed(2) + " each)" : "")}
               </dd>
             </div>
             <div>
@@ -395,7 +395,7 @@ export default function StaffOrderDetail() {
             </div>
             <div>
               <dt className="text-brand-textMuted">Requested total</dt>
-              <dd className="mt-0.5 font-semibold text-brand-primary">{requestedTotalCents == null ? "Quoted after review" : `${(requestedTotalCents / 100).toFixed(2)}`}</dd>
+              <dd className="mt-0.5 font-semibold text-brand-primary">{requestedTotalCents == null ? "Quoted after review" : "$" + (requestedTotalCents / 100).toFixed(2)}</dd>
             </div>
             <RequestSpecifications
               specifications={order.specifications || {}}
