@@ -10,6 +10,7 @@ test("flags payment, information, and review actions", () => {
   assert.equal(orderNeedsCustomerAction({ status: "awaiting_payment", payment_status: "unpaid", agreed_price_cents: 2500 }), true);
   assert.equal(orderNeedsCustomerAction({ status: "needs_information", payment_status: "not_required", agreed_price_cents: null }), true);
   assert.equal(orderNeedsCustomerAction({ status: "customer_review", payment_status: "paid", agreed_price_cents: 2500 }), true);
+  assert.equal(orderNeedsCustomerAction({ status: "final_review", payment_status: "paid", agreed_price_cents: 2500 }), true);
   assert.equal(orderNeedsCustomerAction({ status: "in_progress", payment_status: "paid", agreed_price_cents: 2500 }), false);
 });
 
@@ -21,8 +22,8 @@ test("describes the next customer-facing step", () => {
 
 test("maps exceptional statuses into the progress track", () => {
   assert.equal(orderProgressIndex("needs_information"), 0);
-  assert.equal(orderProgressIndex("in_progress"), 3);
-  assert.equal(orderProgressIndex("completed"), 6);
+  assert.equal(orderProgressIndex("in_progress"), 4);
+  assert.equal(orderProgressIndex("completed"), 7);
 });
 
 test("customer hub exposes actions, activity, fulfillment, files, and chat", () => {
