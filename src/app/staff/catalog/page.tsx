@@ -13,6 +13,7 @@ const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]
 const input = "w-full rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 outline-none focus:border-brand-primary";
 const primary = "rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-2 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50";
 const subtle = "rounded-xl border border-zinc-700 px-3 py-2 text-sm transition hover:border-brand-primary disabled:opacity-50";
+const editorSnapshot = (draft: Partial<CatalogProduct>, groups: ProductOptionGroup[]) => JSON.stringify({ draft, groups });
 
 export default function StaffCatalogPage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
@@ -29,6 +30,8 @@ export default function StaffCatalogPage() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "draft" | "published" | "archived" | "all">("active");
+  const [savedSnapshot, setSavedSnapshot] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
 
   const filteredProducts = useMemo(() => products.filter(product => {
     const term = search.trim().toLowerCase();
@@ -63,10 +66,13 @@ export default function StaffCatalogPage() {
       supabase.from("product_option_groups").select("*,product_option_values(*)").eq("product_id", product.id).order("sort_order"),
     ]);
     setMedia((mediaResult.data ?? []) as ProductMedia[]);
-    setGroups(((optionResult.data ?? []) as ProductOptionGroup[]).map(group => ({
+    const loadedGroups = ((optionResult.data ?? []) as ProductOptionGroup[]).map(group => ({
       ...group,
       product_option_values: [...(group.product_option_values ?? [])].sort((a, b) => a.sort_order - b.sort_order),
-    })));
+    }));
+    setGroups(loadedGroups);
+    setSavedSnapshot(editorSnapshot(product, loadedGroups));
+    setSaveMessage("");
     setError(mediaResult.error?.message ?? optionResult.error?.message ?? "");
   }, [supabase]);
 
@@ -96,7 +102,7 @@ export default function StaffCatalogPage() {
     await loadEditor(data as CatalogProduct);
   }
 
-  async function saveProduct() {
+  async function saveAllChanges() {
     if (!selectedId) return;
     if (!draft.name?.trim()) return setError("Product name is required.");
     if (!slugify(draft.slug || draft.name)) return setError("Enter a valid product slug.");
@@ -114,11 +120,34 @@ export default function StaffCatalogPage() {
       inventory_quantity: Math.max(0, Number(draft.inventory_quantity || 0)), low_stock_threshold: Math.max(0, Number(draft.low_stock_threshold || 0)),
       continue_selling_when_out_of_stock: Boolean(draft.continue_selling_when_out_of_stock),
     };
-    const { data, error: updateError } = await supabase.from("products").update(payload).eq("id", selectedId).select("*").single();
+    const productResult = await supabase.from("products").update(payload).eq("id", selectedId).select("*").single();
+    if (productResult.error) { setBusy(false); return setError(productResult.error.message); }
+    const optionResults = await Promise.all(groups.flatMap((group, groupIndex) => [
+      supabase.from("product_option_groups").update({
+        name: group.name.trim(), option_key: optionKey(group.option_key || group.name), input_type: group.input_type,
+        description: group.description?.trim() || null, placeholder: group.placeholder?.trim() || null,
+        is_required: group.is_required, sort_order: groupIndex,
+      }).eq("id", group.id),
+      ...(group.product_option_values ?? []).map((value, valueIndex) => supabase.from("product_option_values").update({
+        label: value.label.trim(), value: optionKey(value.value || value.label),
+        price_adjustment_cents: value.price_adjustment_cents, is_default: value.is_default,
+        is_active: value.is_active, sort_order: valueIndex,
+      }).eq("id", value.id)),
+    ]));
+    const optionError = optionResults.find(result => result.error)?.error;
     setBusy(false);
-    if (updateError) return setError(updateError.message);
+    if (optionError) return setError(optionError.message);
     await loadProducts();
-    setDraft(data as CatalogProduct);
+    const savedProduct = productResult.data as CatalogProduct;
+    const savedGroups = groups.map((group, groupIndex) => ({
+      ...group,
+      sort_order: groupIndex,
+      product_option_values: group.product_option_values?.map((value, valueIndex) => ({ ...value, sort_order: valueIndex })),
+    }));
+    setDraft(savedProduct);
+    setGroups(savedGroups);
+    setSavedSnapshot(editorSnapshot(savedProduct, savedGroups));
+    setSaveMessage("All catalog changes saved.");
   }
 
   async function uploadAsset(file: File, kind: "image" | "model") {
@@ -200,15 +229,6 @@ export default function StaffCatalogPage() {
     setGroups(current => [...current, data as ProductOptionGroup]);
   }
 
-  async function saveGroup(group: ProductOptionGroup) {
-    const { error: updateError } = await supabase.from("product_option_groups").update({
-      name: group.name.trim(), option_key: optionKey(group.option_key || group.name), input_type: group.input_type,
-      description: group.description?.trim() || null, placeholder: group.placeholder?.trim() || null,
-      is_required: group.is_required, sort_order: group.sort_order,
-    }).eq("id", group.id);
-    if (updateError) setError(updateError.message);
-  }
-
   async function removeGroup(id: string) {
     if (!confirm("Delete this option and all of its choices?")) return;
     const { error: deleteError } = await supabase.from("product_option_groups").delete().eq("id", id);
@@ -282,16 +302,6 @@ export default function StaffCatalogPage() {
     setGroups(current => current.map(item => item.id === group.id ? { ...item, product_option_values: [...(item.product_option_values ?? []), data] } : item));
   }
 
-  async function saveValue(groupId: string, valueId: string) {
-    const value = groups.find(group => group.id === groupId)?.product_option_values?.find(item => item.id === valueId);
-    if (!value) return;
-    const { error: updateError } = await supabase.from("product_option_values").update({
-      label: value.label.trim(), value: optionKey(value.value || value.label), price_adjustment_cents: value.price_adjustment_cents,
-      is_default: value.is_default, is_active: value.is_active, sort_order: value.sort_order,
-    }).eq("id", value.id);
-    if (updateError) setError(updateError.message);
-  }
-
   async function removeValue(groupId: string, valueId: string) {
     const { error: deleteError } = await supabase.from("product_option_values").delete().eq("id", valueId);
     if (deleteError) return setError(deleteError.message);
@@ -302,6 +312,8 @@ export default function StaffCatalogPage() {
 
   if (isLoading) return <div className="ui-card">Loading…</div>;
   if (!canView) return <AccessDeniedCard message="You do not have access to catalog management." />;
+
+  const hasUnsavedChanges = selectedId ? editorSnapshot(draft, groups) !== savedSnapshot : false;
 
   return (
     <main>
@@ -322,7 +334,7 @@ export default function StaffCatalogPage() {
       <div className="mt-6 grid gap-6 xl:grid-cols-[320px_1fr]">
         <aside className="space-y-3">
           <input className={input} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search products or SKU" aria-label="Search catalog" />
-          <MenuSelect className="ui-select-trigger" value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} options={[{value:"active",label:"Active products"},{value:"published",label:"Published"},{value:"draft",label:"Drafts"},{value:"archived",label:"Archived"},{value:"all",label:"All products"}]} />
+          <MenuSelect ariaLabel="Filter catalog products" className="ui-select-trigger" value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} options={[{value:"active",label:"Active products"},{value:"published",label:"Published"},{value:"draft",label:"Drafts"},{value:"archived",label:"Archived"},{value:"all",label:"All products"}]} />
           <div className="space-y-2">
           {filteredProducts.map(product => <button key={product.id} onClick={() => { setSelectedId(product.id); void loadEditor(product); }}
             className={`w-full rounded-xl border p-4 text-left ${selectedId === product.id ? "border-brand-primary bg-brand-primary/10" : "border-zinc-800 bg-black/30 hover:border-zinc-600"}`}>
@@ -334,12 +346,13 @@ export default function StaffCatalogPage() {
         </aside>
 
         {selectedId ? <section className="space-y-6">
-          <div className="sticky top-3 z-20 rounded-2xl border border-brand-primary/30 bg-zinc-950/95 p-4 shadow-xl backdrop-blur">
+          <div className="sticky top-2 z-20 rounded-2xl border border-brand-primary/30 bg-zinc-950/95 p-3 shadow-xl backdrop-blur sm:top-3 sm:p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><p className="text-xs uppercase tracking-[.16em] text-brand-primary">Editing</p><p className="font-semibold">{draft.name || "Untitled product"}</p></div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <span className={`text-xs ${hasUnsavedChanges ? "text-amber-200" : "text-brand-textMuted"}`} aria-live="polite">{busy ? "Saving all changes…" : hasUnsavedChanges ? "Unsaved changes" : saveMessage || "Everything saved"}</span>
                 {draft.slug ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>{draft.is_published ? "View live" : "Preview URL"} ↗</Link> : null}
-                <button disabled={!canManage || busy} onClick={() => void saveProduct()} className={primary}>{busy ? "Saving…" : "Save changes"}</button>
+                <button disabled={!canManage || busy || !hasUnsavedChanges} onClick={() => void saveAllChanges()} className={`${primary} ml-auto sm:ml-0`}>{busy ? "Saving…" : "Save changes"}</button>
               </div>
             </div>
           </div>
@@ -364,7 +377,7 @@ export default function StaffCatalogPage() {
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={Boolean(draft.archived_at) || (!draft.is_published && !readyToPublish)} checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
             </div>
             {!readyToPublish && !draft.is_published ? <p className="mt-3 text-xs text-amber-200">Complete the publish checklist to enable publishing. You can save the draft at any time.</p> : null}
-            <div className="mt-4 flex flex-wrap gap-3"><button disabled={!canManage || busy} onClick={() => void saveProduct()} className={primary}>Save product</button><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className={`${subtle} text-rose-300`}>Delete permanently</button></div>
+            <div className="mt-4 flex flex-wrap gap-3"><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className={`${subtle} text-rose-300`}>Delete permanently</button></div>
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
@@ -406,13 +419,13 @@ export default function StaffCatalogPage() {
                   <input className={`${input} md:col-span-2`} value={group.description ?? ""} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, description: e.target.value } : item))} placeholder="Help text (optional)" />
                   <input className={`${input} md:col-span-2`} value={group.placeholder ?? ""} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, placeholder: e.target.value } : item))} placeholder="Placeholder (optional)" />
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2"><button onClick={() => void saveGroup({ ...group, sort_order: groupIndex })} className={subtle}>Save option</button><button onClick={() => void moveGroup(groupIndex, -1)} className={subtle} aria-label="Move option up">Move up</button><button onClick={() => void moveGroup(groupIndex, 1)} className={subtle} aria-label="Move option down">Move down</button><button onClick={() => void removeGroup(group.id)} className={`${subtle} text-rose-300`}>Delete option</button>{["select", "radio"].includes(group.input_type) ? <button onClick={() => void addValue(group)} className={subtle}>Add choice</button> : null}</div>
+                <div className="mt-3 flex flex-wrap gap-2"><button onClick={() => void moveGroup(groupIndex, -1)} className={subtle} aria-label="Move option up">Move up</button><button onClick={() => void moveGroup(groupIndex, 1)} className={subtle} aria-label="Move option down">Move down</button><button onClick={() => void removeGroup(group.id)} className={`${subtle} text-rose-300`}>Delete option</button>{["select", "radio"].includes(group.input_type) ? <button onClick={() => void addValue(group)} className={subtle}>Add choice</button> : null}</div>
                 {["select", "radio"].includes(group.input_type) ? <div className="mt-4 space-y-2">
                   {(group.product_option_values ?? []).map((value, valueIndex) => <div key={value.id} className="grid gap-2 rounded-xl bg-zinc-950/70 p-3 sm:grid-cols-[1fr_1fr_130px_auto]">
                     <input className={input} value={value.label} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, label: e.target.value, value: optionKey(e.target.value) } : choice) }))} placeholder="Choice label" />
                     <input className={input} value={value.value} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, value: optionKey(e.target.value) } : choice) }))} placeholder="Saved value" />
                     <label className="text-xs text-brand-textMuted">Price change ($)<input className={`${input} mt-1`} type="number" step=".01" value={value.price_adjustment_cents / 100} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, price_adjustment_cents: Math.round(Number(e.target.value) * 100), sort_order: valueIndex } : choice) }))} /></label>
-                    <div className="flex items-center gap-2"><button onClick={() => void saveValue(group.id, value.id)} className={subtle}>Save</button><button onClick={() => void removeValue(group.id, value.id)} className="text-sm text-rose-300">×</button></div>
+                    <div className="flex items-center justify-end gap-2"><button onClick={() => void removeValue(group.id, value.id)} className={`${subtle} text-rose-300`} aria-label={`Remove ${value.label || "choice"}`}>Remove</button></div>
                   </div>)}
                 </div> : null}
               </div>)}

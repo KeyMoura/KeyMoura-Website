@@ -419,11 +419,12 @@ export default function NotificationsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
           <button
             type="button"
             onClick={() => setShowUnreadOnly((v) => !v)}
-            className="rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
+            className="min-h-11 rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
+            aria-pressed={showUnreadOnly}
           >
             {showUnreadOnly ? "Showing unread" : "Showing all"}
           </button>
@@ -433,7 +434,7 @@ export default function NotificationsPage() {
             <button
               type="button"
               onClick={markAllRead}
-              className="rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
+              className="min-h-11 rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
               disabled={!userId}
             >
               Mark all read
@@ -503,14 +504,15 @@ export default function NotificationsPage() {
                 ].join(" ")}
               >
                 <div className="mt-0.5 h-9 w-9 shrink-0 overflow-hidden rounded-full border border-zinc-800 bg-black/30">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   {isSystem ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={SERVER_AVATAR_URL}
                       alt=""
                       className="h-full w-full object-cover"
                     />
                   ) : actor?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={actor.avatar_url} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-[11px] text-zinc-500">

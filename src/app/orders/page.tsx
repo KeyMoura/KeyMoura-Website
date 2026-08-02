@@ -76,7 +76,7 @@ export default function OrdersPage() {
           <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Your KeyMoura orders</h1>
           <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">Track requests, reply to questions, pay securely, and follow delivery from one place.</p>
         </div>
-        <Link href="/catalog" className="catalog-action-primary rounded-full px-5 py-2.5 text-sm font-semibold">Start a new request</Link>
+        <Link href="/catalog" className="catalog-action-primary w-full rounded-full px-5 py-2.5 text-center text-sm font-semibold sm:w-auto">Start a new request</Link>
       </div>
 
       {!loading && !error && orders.length > 0 ? (
@@ -93,9 +93,9 @@ export default function OrdersPage() {
             <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-full border px-4 py-2 text-sm transition ${filter === value ? "border-brand-primary bg-brand-primary/15 text-brand-primary" : "border-zinc-700 text-brand-textMuted hover:border-zinc-500 hover:text-brand-text"}`}>{text}</button>
           ))}
         </div>
-        <label className="flex shrink-0 items-center gap-2 text-sm text-brand-textMuted">
-          <span>Sort by</span>
-          <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="rounded-xl border border-zinc-700 bg-black/30 px-3 py-2 text-brand-text outline-none focus:border-brand-primary" aria-label="Sort your orders">
+        <label className="flex w-full items-center gap-2 text-sm text-brand-textMuted sm:w-auto sm:shrink-0">
+          <span className="shrink-0">Sort by</span>
+          <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-black/30 px-3 py-2 text-brand-text outline-none focus:border-brand-primary sm:flex-none" aria-label="Sort your orders">
             <option value="updated">Recently updated</option>
             <option value="newest">Newest request</option>
             <option value="oldest">Oldest request</option>

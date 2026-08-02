@@ -21,6 +21,15 @@ test("customer order hub supports customer-safe sort modes", () => {
   assert.match(page, /created_at,updated_at/);
 });
 
+test("primary order and notification controls adapt for mobile", () => {
+  const orders = read("src/app/orders/page.tsx");
+  const notifications = read("src/app/notifications/page.tsx");
+  assert.match(orders, /sm:w-auto/);
+  assert.match(orders, /min-w-0 flex-1/);
+  assert.match(notifications, /aria-pressed=\{showUnreadOnly\}/);
+  assert.match(notifications, /min-h-11/);
+});
+
 test("account security exposes safe Supabase identity linking", () => {
   const page = read("src/app/account/page.tsx");
   assert.match(page, /getUserIdentities\(\)/);

@@ -333,6 +333,13 @@
     transform: translateY(1px);
   }
 
+  @media (max-width: 639px) {
+    .ui-btn,
+    .ui-select-trigger {
+      min-height: 2.75rem;
+    }
+  }
+
   .skip-link {
     position: fixed;
     top: 0.75rem;
