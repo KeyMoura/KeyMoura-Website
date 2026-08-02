@@ -1,1228 +1,634 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
+import {
+  availableDestinations,
+  itemHref,
+  KIND_LABELS,
+  KIND_ORDER,
+  rankSearchItems,
+  suggestTerm,
+  tokenize,
+  type ProjectItem,
+  type SearchItem,
+} from "@/lib/siteSearch";
 
-type InfoPageSearch = {
-  id: string;
-  title: string;
-  slug: string;
-  status: string;
-  created_at: string;
-  updated_at?: string | null;
-  content_markdown?: string | null;
-  tags?: string[] | null;
-  category?: string | null;
-  chassis?: string | null;
-};
+/**
+ * Global site search.
+ *
+ * Dismissal rules, which the regression tests pin down:
+ *
+ * - Clicking anywhere outside the complete search interface closes the search
+ *   menu. The help panel renders inside that interface, so a click on the page
+ *   behind it closes the whole thing rather than leaving an orphaned panel.
+ * - Clicking inside the search interface but outside the help panel does **not**
+ *   close the help panel. The panel is a reference meant to be read while
+ *   looking at the search controls.
+ * - The help icon toggles the panel, and "Got it" closes it.
+ * - Escape unwinds one layer at a time: it closes the help panel if that is
+ *   open, otherwise it closes the search menu. That keeps a modal surface
+ *   keyboard-dismissible without letting one keypress skip past the help panel.
+ * - Closing returns focus to whatever opened the palette.
+ */
 
-type ForumCategoryRow = {
-  id: number;
-  slug: string;
-  name: string;
-  description: string | null;
-  is_archived: boolean;
-  created_at: string;
-};
+// Enough rows to search well without pulling an unbounded table into the
+// browser. Both queries take the most recently touched rows.
+const PROJECT_LIMIT = 300;
+const THREAD_LIMIT = 500;
+const PRODUCT_LIMIT = 200;
+const PAGE_SIZE = 6;
 
-type ForumThreadRow = {
-  id: number;
-  category_id: number;
-  title: string;
-  slug: string;
-  created_at: string;
-  updated_at: string | null;
-  created_by: string;
-  last_post_at: string | null;
-  last_post_by: string | null;
-  reply_count: number;
-  view_count: number;
-  is_locked: boolean;
-  is_pinned: boolean;
-  is_deleted: boolean;
-};
+type Loaded = { items: SearchItem[]; signedIn: boolean };
 
-type SearchItem =
-  | {
-      kind: "info";
-      id: string;
-      title: string;
-      slug: string;
-      created_at: string;
-      updated_at?: string | null;
-      tags?: string[] | null;
-      category?: string | null;
-      chassis?: string | null;
-      content_markdown?: string | null;
-      _raw: InfoPageSearch;
-    }
-  | {
-      kind: "forum-thread";
-      id: string; // stringified
-      slug: string; // thread slug
-      title: string;
-      categorySlug: string;
-      categoryName: string;
-      created_at: string;
-      updated_at: string | null;
-      last_post_at: string | null;
-      reply_count: number;
-      view_count: number;
-      is_locked: boolean;
-      is_pinned: boolean;
-      _raw: ForumThreadRow;
-    };
-
-function notNull<T>(v: T | null | undefined): v is T {
-  return v != null;
-}
-
-// --- fuzzy helpers ---
-
-function levenshtein(a: string, b: string): number {
-  const s = a.toLowerCase();
-  const t = b.toLowerCase();
-  const m = s.length;
-  const n = t.length;
-
-  if (m === 0) return n;
-  if (n === 0) return m;
-
-  const dp: number[][] = Array.from({ length: m + 1 }, () =>
-    new Array(n + 1).fill(0)
-  );
-
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-  for (let i = 1; i <= m; i++) {
-    const si = s[i - 1];
-    for (let j = 1; j <= n; j++) {
-      const tj = t[j - 1];
-      const cost = si === tj ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost
-      );
-    }
-  }
-
-  return dp[m][n];
-}
-
-function normalizedSimilarity(a: string, b: string): number {
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen === 0) return 1;
-  const dist = levenshtein(a, b);
-  return 1 - dist / maxLen;
-}
-
-// includes + fuzzy for TEXT tokens
-function fieldMatchesToken(field: string, token: string): boolean {
-  const f = field.toLowerCase();
-  const t = token.toLowerCase();
-  if (!f || !t) return false;
-
-  if (f.includes(t)) return true;
-
-  const parts = f.split(/\s+/);
-  for (const part of parts) {
-    if (!part) continue;
-    const lenDiff = Math.abs(part.length - t.length);
-    if (lenDiff > 1) continue;
-    const sim = normalizedSimilarity(part, t);
-    if (sim >= 0.7) return true;
-  }
-
-  return false;
-}
-
-// --- highlight helpers ---
-
-function escapeRegExp(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function highlightText(text: string, tokens: string[]): ReactNode {
   if (!text || tokens.length === 0) return text;
+  const unique = Array.from(new Set(tokens.map((token) => token.trim().toLowerCase()).filter(Boolean)));
+  if (unique.length === 0) return text;
 
-  const cleanedTokens = Array.from(
-    new Set(
-      tokens
-        .map((t) => t.trim().toLowerCase())
-        .filter((t) => t.length > 0)
+  const pattern = unique.map(escapeRegExp).join("|");
+  const parts = text.split(new RegExp(`(${pattern})`, "gi"));
+
+  return parts.map((part, index) =>
+    unique.includes(part.toLowerCase()) ? (
+      <mark key={index} className="search-hit">
+        {part}
+      </mark>
+    ) : (
+      <span key={index}>{part}</span>
     )
   );
-
-  if (cleanedTokens.length === 0) return text;
-
-  const pattern = cleanedTokens.map(escapeRegExp).join("|");
-  if (!pattern) return text;
-
-  const regex = new RegExp(`(${pattern})`, "gi");
-  const parts = text.split(regex);
-
-  return parts.map((part, idx) => {
-    const lower = part.toLowerCase();
-    const isMatch = cleanedTokens.some((t) => t === lower);
-
-    if (isMatch) {
-      return (
-        <span
-          key={idx}
-          className="rounded-[3px] bg-amber-500/20 px-0.5 text-amber-300"
-        >
-          {part}
-        </span>
-      );
-    }
-
-    return <span key={idx}>{part}</span>;
-  });
 }
 
-// --- logging helper: search events (info only, unchanged) ---
-
-type SearchLogPayload = {
-  source: "command-palette";
-  rawQuery: string;
-  tokens: string[];
-  resultsCount: number;
-  topResultId?: string | null;
-  topResultSlug?: string | null;
-};
-
-async function logSearchEvent(payload: SearchLogPayload): Promise<void> {
+async function logSearch(rawQuery: string, tokens: string[], resultsCount: number, top: ProjectItem | null) {
   try {
-    const supabase = supabaseBrowser();
-    await supabase.from("info_search_events").insert({
-      source: payload.source,
-      raw_query: payload.rawQuery,
-      tokens: payload.tokens,
-      results_count: payload.resultsCount,
-      top_result_id: payload.topResultId ?? null,
-      top_result_slug: payload.topResultSlug ?? null,
+    await supabaseBrowser().from("info_search_events").insert({
+      source: "command-palette",
+      raw_query: rawQuery,
+      tokens,
+      results_count: resultsCount,
+      top_result_id: top?.id ?? null,
+      top_result_slug: top?.slug ?? null,
     });
-  } catch (err: unknown) {
-    console.error("Failed to log command palette search event", err);
+  } catch {
+    // Search analytics must never interfere with searching.
   }
 }
 
-// --- logging helper for click events (info only, unchanged) ---
-
-type InfoSearchClickPayload = {
-  source: "command-palette";
-  rawQuery?: string;
-  tokens?: string[];
-  clickedPageId: string;
-  clickedPageSlug: string;
-  position?: number;
-  resultsCount?: number;
-  meta?: Record<string, unknown>;
-};
-
-async function logInfoSearchClick(
-  payload: InfoSearchClickPayload
-): Promise<void> {
+async function logProjectClick(payload: {
+  rawQuery: string;
+  tokens: string[];
+  pageId: string;
+  pageSlug: string;
+  position: number;
+  resultsCount: number;
+}) {
   try {
-    const supabase = supabaseBrowser();
-    const { error } = await supabase.from("info_search_click_events").insert({
-      source: payload.source,
-      raw_query: payload.rawQuery ?? null,
-      tokens: payload.tokens ?? null,
-      clicked_page_id: payload.clickedPageId,
-      clicked_page_slug: payload.clickedPageSlug,
-      position: payload.position ?? null,
-      results_count: payload.resultsCount ?? null,
-      meta: payload.meta ?? null,
+    await supabaseBrowser().from("info_search_click_events").insert({
+      source: "command-palette",
+      raw_query: payload.rawQuery,
+      tokens: payload.tokens,
+      clicked_page_id: payload.pageId,
+      clicked_page_slug: payload.pageSlug,
+      position: payload.position,
+      results_count: payload.resultsCount,
     });
-
-    if (error) {
-      console.error("Failed to log info search click event", error);
-    }
-  } catch (err) {
-    console.error("Failed to log info search click event", err);
+  } catch {
+    // Ignored for the same reason.
   }
 }
 
 export default function CommandPalette() {
-  const [open, setOpen] = useState(false);
+  const router = useRouter();
 
-  // mobile detector
+  const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // help popup
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpRef = useRef<HTMLDivElement | null>(null);
-
-  // chip-style query state
   const [committedTerms, setCommittedTerms] = useState<string[]>([]);
   const [fragment, setFragment] = useState("");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [activeIndex, setActiveIndex] = useState(0);
 
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // info data
-  const [allPagesLoaded, setAllPagesLoaded] = useState(false);
-  const [allPages, setAllPages] = useState<InfoPageSearch[]>([]);
-
-  // forum lookup + threads
-  const [allForumsLoaded, setAllForumsLoaded] = useState(false);
-  const [forumCategoryById, setForumCategoryById] = useState<
-    Map<number, ForumCategoryRow>
-  >(new Map());
-  const [allForumThreads, setAllForumThreads] = useState<ForumThreadRow[]>([]);
-
-  // results
-  const [results, setResults] = useState<SearchItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(5);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
 
-  // how many actually matched tokens (for analytics)
-  const [matchedResultsCount, setMatchedResultsCount] = useState(0);
-
-  const router = useRouter();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const helpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const chipContainerRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
-  const hasActiveQuery =
-    committedTerms.length > 0 || fragment.trim().length > 0;
-
-  // mobile detection (sm breakpoint)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const mq = window.matchMedia("(max-width: 640px)");
-
-    const apply = () => setIsMobile(mq.matches);
-    apply();
-
-    // Safari < 14 fallback
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-
-    mq.addListener(apply);
-    return () => mq.removeListener(apply);
-  }, []);
-
-  // close help on outside click
-  useEffect(() => {
-    if (!open || !helpOpen) return;
-
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node | null;
-      if (!target) return;
-      if (helpRef.current && !helpRef.current.contains(target)) {
-        setHelpOpen(false);
-      }
-    };
-
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open, helpOpen]);
-
-  // tokens for highlighting
-  const searchTokens = useMemo(() => {
-    const tokens: string[] = [];
-
-    const addTokensFrom = (text: string) => {
-      const trimmed = text.trim().toLowerCase();
-      if (!trimmed) return;
-      for (const part of trimmed.split(/\s+/)) {
-        const p = part.trim();
-        if (!p) continue;
-        tokens.push(p);
-      }
-    };
-
-    addTokensFrom(fragment);
-    committedTerms.forEach((term) => addTokensFrom(term));
-
-    return Array.from(new Set(tokens));
-  }, [fragment, committedTerms]);
-
-  // keyboard & global trigger
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === "k" || e.key === "K") && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        setOpen((v) => !v);
-      } else if (e.key === "Escape") {
-        setOpen(false);
-        setHelpOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  useEffect(() => {
-    const onOpen = () => setOpen(true);
-    window.addEventListener("open-command-palette", onOpen as EventListener);
-    return () =>
-      window.removeEventListener("open-command-palette", onOpen as EventListener);
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    setVisibleCount(4);
-    setHelpOpen(false);
-  }, [open]);
-
-  // load all approved info pages once
-  useEffect(() => {
-    if (!open || allPagesLoaded) return;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const supabase = supabaseBrowser();
-
-        const { data, error } = await supabase
-          .from("info_pages")
-          .select(
-            "id, title, slug, status, created_at, updated_at, content_markdown, tags, category, chassis"
-          )
-          .eq("status", "approved");
-
-        if (error) {
-          console.error("Command palette load error", error);
-          setError("Failed to load info pages.");
-          setAllPages([]);
-        } else {
-          setAllPages((data ?? []) as InfoPageSearch[]);
-          setAllPagesLoaded(true);
-        }
-      } catch (e) {
-        console.error("Command palette load error", e);
-        setError("Failed to load info pages.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
-  }, [open, allPagesLoaded]);
-
-  // load forum categories (lookup only) + threads once
-  useEffect(() => {
-    if (!open || allForumsLoaded) return;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const supabase = supabaseBrowser();
-
-        const [
-          { data: catData, error: catErr },
-          { data: threadData, error: thErr },
-        ] = await Promise.all([
-          supabase
-            .from("forum_categories")
-            .select("id, slug, name, description, is_archived, created_at")
-            .eq("is_archived", false),
-          supabase
-            .from("forum_threads")
-            .select(
-              "id, category_id, title, slug, created_at, updated_at, created_by, last_post_at, last_post_by, reply_count, view_count, is_locked, is_pinned, is_deleted"
-            )
-            .eq("is_deleted", false)
-            .order("last_post_at", { ascending: false, nullsFirst: false }),
-        ]);
-
-        if (catErr) console.error("Command palette forum categories load error", catErr);
-        if (thErr) console.error("Command palette forum threads load error", thErr);
-
-        const byId = new Map<number, ForumCategoryRow>();
-        for (const c of (catData ?? []) as ForumCategoryRow[]) byId.set(c.id, c);
-
-        setForumCategoryById(byId);
-        setAllForumThreads((threadData ?? []) as ForumThreadRow[]);
-        setAllForumsLoaded(true);
-      } catch (e) {
-        console.error("Command palette forum load error", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
-  }, [open, allForumsLoaded]);
-
-  const scrollChipsToBottom = () => {
-    const el = chipContainerRef.current;
-    if (!el) return;
-    setTimeout(() => {
-      el.scrollTop = el.scrollHeight;
-    }, 0);
-  };
-
-  const commitFragmentAsChip = () => {
-    const raw = fragment.trim();
-    if (!raw) return;
-    setCommittedTerms((prev) => (prev.includes(raw) ? prev : [...prev, raw]));
-    setFragment("");
-    scrollChipsToBottom();
-  };
-
-  const handleRemoveTerm = (term: string) => {
-    setCommittedTerms((prev) => prev.filter((t) => t !== term));
-  };
-
-  // build combined dataset (INFO + FORUM THREADS ONLY)
-  const combinedItems = useMemo((): SearchItem[] => {
-    const infoItems: SearchItem[] = allPages.map((p) => ({
-      kind: "info",
-      id: p.id,
-      title: p.title,
-      slug: p.slug,
-      created_at: p.created_at,
-      updated_at: p.updated_at ?? null,
-      tags: p.tags ?? null,
-      category: p.category ?? null,
-      chassis: p.chassis ?? null,
-      content_markdown: p.content_markdown ?? null,
-      _raw: p,
-    }));
-
-    const forumThreadItems: SearchItem[] = allForumThreads
-      .map((t): SearchItem | null => {
-        const c = forumCategoryById.get(t.category_id);
-        if (!c) return null;
-
-        const threadItem: SearchItem = {
-          kind: "forum-thread",
-          id: String(t.id),
-          slug: t.slug,
-          title: t.title,
-          categorySlug: c.slug,
-          categoryName: c.name,
-          created_at: t.created_at,
-          updated_at: t.updated_at ?? null,
-          last_post_at: t.last_post_at ?? null,
-          reply_count: t.reply_count,
-          view_count: t.view_count,
-          is_locked: t.is_locked,
-          is_pinned: t.is_pinned,
-          _raw: t,
-        };
-
-        return threadItem;
-      })
-      .filter(notNull);
-
-    return [...infoItems, ...forumThreadItems];
-  }, [allPages, allForumThreads, forumCategoryById]);
-
-  // local fuzzy ranking + suggestion + logging (info analytics still based on info matches)
-  useEffect(() => {
-    if (!open) return;
-    if (!allPagesLoaded || !allForumsLoaded) return;
-
-    setLoading(true);
-    setError(null);
-    setSuggestion(null);
-
-    const timeout = setTimeout(() => {
-      try {
-        const textTokens: string[] = [];
-        const chipTokens: string[] = [];
-
-        const addTokensFrom = (text: string, target: string[]) => {
-          const trimmed = text.trim().toLowerCase();
-          if (!trimmed) return;
-          for (const part of trimmed.split(/\s+/)) {
-            const p = part.trim();
-            if (!p) continue;
-            target.push(p);
-          }
-        };
-
-        addTokensFrom(fragment, textTokens);
-        committedTerms.forEach((term) => addTokensFrom(term, chipTokens));
-
-        const rawQuery = [...committedTerms, fragment]
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-
-        // No query → show recent-ish (threads by last_post_at, info by updated)
-        // No query → show Info first, then Forum (still "recent-ish" within each group)
-        if (!hasActiveQuery) {
-          const ranked = [...combinedItems].sort((a, b) => {
-            // ✅ hard-prioritize info on initial open
-            if (a.kind !== b.kind) return a.kind === "info" ? -1 : 1;
-
-            const aTime =
-              a.kind === "forum-thread"
-                ? new Date(a.last_post_at || a.updated_at || a.created_at).getTime()
-                : new Date(a.updated_at || a.created_at).getTime();
-
-            const bTime =
-              b.kind === "forum-thread"
-                ? new Date(b.last_post_at || b.updated_at || b.created_at).getTime()
-                : new Date(b.updated_at || b.created_at).getTime();
-
-            return bTime - aTime;
-          });
-
-          setResults(ranked);
-          setMatchedResultsCount(0);
-          setLoading(false);
-          return;
-        }
-
-        type Annotated = {
-          item: SearchItem;
-          score: number;
-          matchedTokens: number;
-        };
-
-        const annotated: Annotated[] = combinedItems.map((item) => {
-          let score = 0;
-          let matchedTextTokens = 0;
-          let matchedChipTokens = 0;
-
-          const addRecencyBoost = (dateStr: string | null | undefined) => {
-            const t = dateStr ? new Date(dateStr).getTime() : 0;
-            if (!t) return;
-            score += t / 1000_000_000_000; // tiny
-          };
-
-          const scoreTextToken = (token: string): boolean => {
-            let tokenScore = 0;
-            let matched = false;
-
-            if (item.kind === "info") {
-              const title = (item.title ?? "").toLowerCase();
-              const slug = (item.slug ?? "").toLowerCase();
-              const content = (item.content_markdown ?? "").toLowerCase();
-              const category = (item.category ?? "").toLowerCase();
-              const chassis = (item.chassis ?? "").toLowerCase();
-              const tagStrings = (item.tags ?? [])
-                .map((t) => t.toLowerCase())
-                .filter(Boolean);
-
-              if (fieldMatchesToken(title, token)) {
-                tokenScore += 12;
-                matched = true;
-              }
-              if (fieldMatchesToken(slug, token)) {
-                tokenScore += 8;
-                matched = true;
-              }
-              if (tagStrings.some((tag) => fieldMatchesToken(tag, token))) {
-                tokenScore += 10;
-                matched = true;
-              }
-              if (fieldMatchesToken(chassis, token)) {
-                tokenScore += 7;
-                matched = true;
-              }
-              if (fieldMatchesToken(category, token)) {
-                tokenScore += 6;
-                matched = true;
-              }
-              if (fieldMatchesToken(content, token)) {
-                tokenScore += 4;
-                matched = true;
-              }
-            }
-
-            if (item.kind === "forum-thread") {
-              const title = (item.title ?? "").toLowerCase();
-              const slug = (item.slug ?? "").toLowerCase();
-              const cat = (item.categoryName ?? "").toLowerCase();
-              const catSlug = (item.categorySlug ?? "").toLowerCase();
-
-              if (fieldMatchesToken(title, token)) {
-                tokenScore += 12;
-                matched = true;
-              }
-              if (fieldMatchesToken(slug, token)) {
-                tokenScore += 7;
-                matched = true;
-              }
-              if (fieldMatchesToken(cat, token) || fieldMatchesToken(catSlug, token)) {
-                tokenScore += 6;
-                matched = true;
-              }
-            }
-
-            if (tokenScore > 20) tokenScore = 20;
-            if (matched) score += tokenScore;
-            return matched;
-          };
-
-          const scoreChipToken = (token: string): boolean => {
-            let tokenScore = 0;
-            let matched = false;
-            const t = token.toLowerCase();
-
-            if (item.kind === "info") {
-              const tags = (item.tags ?? []).map((x) => x.toLowerCase());
-              const chassis = (item.chassis ?? "").toLowerCase();
-              const category = (item.category ?? "").toLowerCase();
-              const slug = (item.slug ?? "").toLowerCase();
-              const fullPath = `/info/${slug}`;
-
-              if (tags.some((tag) => tag.includes(t))) {
-                tokenScore += 18;
-                matched = true;
-              }
-              if (chassis && chassis.includes(t)) {
-                tokenScore += 18;
-                matched = true;
-              }
-              if (category && category.includes(t)) {
-                tokenScore += 16;
-                matched = true;
-              }
-              if (slug.includes(t) || fullPath.includes(t)) {
-                tokenScore += 20;
-                matched = true;
-              }
-            }
-
-            if (item.kind === "forum-thread") {
-              const title = (item.title ?? "").toLowerCase();
-              const slug = (item.slug ?? "").toLowerCase();
-              const cat = (item.categoryName ?? "").toLowerCase();
-              const catSlug = (item.categorySlug ?? "").toLowerCase();
-              const fullPath = `/community/${catSlug}/${slug}`;
-
-              if (title.includes(t)) {
-                tokenScore += 18;
-                matched = true;
-              }
-              if (cat.includes(t)) {
-                tokenScore += 16;
-                matched = true;
-              }
-              if (slug.includes(t) || catSlug.includes(t)) {
-                tokenScore += 18;
-                matched = true;
-              }
-              if (fullPath.includes(t)) {
-                tokenScore += 20;
-                matched = true;
-              }
-            }
-
-            if (tokenScore > 24) tokenScore = 24;
-            if (matched) score += tokenScore;
-            return matched;
-          };
-
-          for (const token of textTokens) {
-            const matched = scoreTextToken(token);
-            if (matched) matchedTextTokens += 1;
-          }
-
-          for (const token of chipTokens) {
-            const matched = scoreChipToken(token);
-            if (matched) matchedChipTokens += 1;
-          }
-
-          const totalMatchedTokens = matchedTextTokens + matchedChipTokens;
-          score += totalMatchedTokens * 20;
-
-          // small boosts
-          if (item.kind === "forum-thread") {
-            score += Math.min(item.reply_count, 50) * 0.15;
-            if (item.is_pinned) score += 2;
-            addRecencyBoost(item.last_post_at || item.updated_at || item.created_at);
-          } else {
-            addRecencyBoost(item.updated_at || item.created_at);
-          }
-
-          return { item, score, matchedTokens: totalMatchedTokens };
-        });
-
-        annotated.sort((a, b) => b.score - a.score);
-        const ranked = annotated.map((a) => a.item);
-        setResults(ranked);
-
-        const matchedAnnotated = annotated.filter((a) => a.matchedTokens > 0);
-        setMatchedResultsCount(matchedAnnotated.length);
-
-        // info-only analytics
-        if (rawQuery.length > 0) {
-          const tokensForLog = Array.from(new Set([...textTokens, ...chipTokens]));
-          const topInfo = matchedAnnotated.find((x) => x.item.kind === "info");
-          void logSearchEvent({
-            source: "command-palette",
-            rawQuery,
-            tokens: tokensForLog,
-            resultsCount: matchedAnnotated.length,
-            topResultId: topInfo && topInfo.item.kind === "info" ? topInfo.item.id : null,
-            topResultSlug: topInfo && topInfo.item.kind === "info" ? topInfo.item.slug : null,
-          });
-        }
-
-        // "Did you mean" across site (last token only)
-        const pieces = [...committedTerms, fragment].map((s) => s.trim()).filter(Boolean);
-
-        if (pieces.length === 0 || combinedItems.length === 0) {
-          setSuggestion(null);
-          setLoading(false);
-          return;
-        }
-
-        const lastToken = pieces[pieces.length - 1]
-          .split(/\s+/)
-          .filter(Boolean)
-          .slice(-1)[0]
-          .toLowerCase();
-
-        if (!lastToken) {
-          setSuggestion(null);
-          setLoading(false);
-          return;
-        }
-
-        const candidateSet = new Set<string>();
-
-        for (const it of combinedItems) {
-          if (it.kind === "info") {
-            candidateSet.add(it.title);
-            candidateSet.add(it.slug);
-            if (it.category) candidateSet.add(it.category);
-            if (it.chassis) candidateSet.add(it.chassis);
-            for (const t of it.tags ?? []) candidateSet.add(t);
-          } else {
-            // forum-thread
-            candidateSet.add(it.title);
-            candidateSet.add(it.slug);
-            candidateSet.add(it.categoryName);
-            candidateSet.add(it.categorySlug);
-          }
-        }
-
-        const candidates = Array.from(candidateSet);
-        const candidatesLower = candidates.map((c) => c.toLowerCase());
-
-        if (candidatesLower.includes(lastToken)) {
-          setSuggestion(null);
-          setLoading(false);
-          return;
-        }
-
-        let bestTerm: string | null = null;
-        let bestSim = 0;
-
-        for (let i = 0; i < candidates.length; i++) {
-          const term = candidates[i];
-          const termLower = candidatesLower[i];
-          const sim = normalizedSimilarity(lastToken, termLower);
-          if (sim > bestSim) {
-            bestSim = sim;
-            bestTerm = term;
-          }
-        }
-
-        if (bestTerm && bestSim >= 0.2) setSuggestion(bestTerm);
-        else setSuggestion(null);
-
-        setLoading(false);
-      } catch (e) {
-        console.error("Command palette search error", e);
-        setError("Unexpected error searching.");
-        setResults([]);
-        setSuggestion(null);
-        setMatchedResultsCount(0);
-        setLoading(false);
-      }
-    }, 200);
-
-    return () => clearTimeout(timeout);
-  }, [
-    open,
-    allPagesLoaded,
-    allForumsLoaded,
-    combinedItems,
-    committedTerms,
-    fragment,
-    hasActiveQuery,
-  ]);
-
-  const handleSelect = (item: SearchItem) => {
-    const rawQuery = [...committedTerms, fragment]
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-
-    const position = results.findIndex((p) => p.id === item.id && p.kind === item.kind);
-    const effectiveResultsCount = rawQuery.length > 0 ? matchedResultsCount : undefined;
-
+  const closeAll = useCallback(() => {
     setOpen(false);
     setHelpOpen(false);
+  }, []);
 
-    if (item.kind === "info") {
-      void logInfoSearchClick({
-        source: "command-palette",
-        rawQuery,
-        tokens: searchTokens,
-        clickedPageId: item.id,
-        clickedPageSlug: item.slug,
-        position: position >= 0 ? position : undefined,
-        resultsCount: effectiveResultsCount,
-        meta: { committed_terms: committedTerms, fragment },
-      });
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 640px)");
+    const apply = () => setIsMobile(query.matches);
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
 
-      router.push(`/info/${item.slug}`);
+  // Ctrl/Cmd+K toggles, and the header button dispatches the same event.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.key === "k" || event.key === "K") && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        setOpen((value) => !value);
+      }
+    };
+    const onOpen = () => setOpen(true);
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("open-command-palette", onOpen);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("open-command-palette", onOpen);
+    };
+  }, []);
+
+  // Escape unwinds one layer: help first, then the menu.
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (helpOpen) setHelpOpen(false);
+      else setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, helpOpen]);
+
+  // A click outside the complete interface closes the menu. Clicks inside it —
+  // including clicks beside the help panel — leave the help panel alone.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && rootRef.current && !rootRef.current.contains(target)) closeAll();
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    return () => window.removeEventListener("mousedown", onPointerDown);
+  }, [open, closeAll]);
+
+  // Focus moves into the search box on open and back to the opener on close.
+  useEffect(() => {
+    if (open) {
+      restoreFocusRef.current = document.activeElement as HTMLElement | null;
+      setVisibleCount(PAGE_SIZE);
+      setActiveIndex(0);
+      setHelpOpen(false);
+      inputRef.current?.focus();
       return;
     }
+    restoreFocusRef.current?.focus?.();
+    restoreFocusRef.current = null;
+  }, [open]);
 
-    router.push(`/community/${item.categorySlug}/${item.slug}`);
+  // Keep the page behind the palette from scrolling while it is open.
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || loaded) return;
+    let cancelled = false;
+
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      const supabase = supabaseBrowser();
+
+      try {
+        const [{ data: session }, projects, categories, threads, products] = await Promise.all([
+          supabase.auth.getSession(),
+          supabase
+            .from("info_pages")
+            .select("id,title,slug,category,chassis,tags,content_markdown,updated_at,created_at")
+            .eq("status", "approved")
+            .order("updated_at", { ascending: false })
+            .limit(PROJECT_LIMIT),
+          supabase.from("forum_categories").select("id,slug,name").eq("is_archived", false),
+          supabase
+            .from("forum_threads")
+            .select("id,category_id,title,slug,reply_count,is_pinned,is_locked,last_post_at,updated_at,created_at")
+            .eq("is_deleted", false)
+            .order("last_post_at", { ascending: false, nullsFirst: false })
+            .limit(THREAD_LIMIT),
+          supabase
+            .from("products")
+            .select("id,name,slug,short_description,category,updated_at")
+            .eq("is_published", true)
+            .is("archived_at", null)
+            .order("sort_order")
+            .limit(PRODUCT_LIMIT),
+        ]);
+
+        if (cancelled) return;
+
+        const categoryById = new Map<number, { slug: string; name: string }>();
+        for (const row of categories.data ?? []) categoryById.set(row.id as number, { slug: row.slug as string, name: row.name as string });
+
+        const items: SearchItem[] = [
+          ...(products.data ?? []).map((row) => ({
+            kind: "product" as const,
+            id: String(row.id),
+            title: String(row.name),
+            slug: String(row.slug),
+            category: (row.category as string | null) ?? null,
+            summary: (row.short_description as string | null) ?? null,
+            updatedAt: (row.updated_at as string | null) ?? null,
+          })),
+          ...(projects.data ?? []).map((row) => ({
+            kind: "project" as const,
+            id: String(row.id),
+            title: String(row.title),
+            slug: String(row.slug),
+            category: (row.category as string | null) ?? null,
+            platform: (row.chassis as string | null) ?? null,
+            tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+            body: (row.content_markdown as string | null) ?? null,
+            updatedAt: (row.updated_at as string | null) ?? (row.created_at as string | null) ?? null,
+          })),
+          ...(threads.data ?? []).flatMap((row) => {
+            const category = categoryById.get(row.category_id as number);
+            if (!category) return [];
+            return [
+              {
+                kind: "thread" as const,
+                id: String(row.id),
+                title: String(row.title),
+                slug: String(row.slug),
+                categorySlug: category.slug,
+                categoryName: category.name,
+                replyCount: Number(row.reply_count ?? 0),
+                isPinned: Boolean(row.is_pinned),
+                isLocked: Boolean(row.is_locked),
+                updatedAt: (row.last_post_at as string | null) ?? (row.updated_at as string | null) ?? (row.created_at as string | null) ?? null,
+              },
+            ];
+          }),
+          ...availableDestinations(Boolean(session.session)),
+        ];
+
+        setLoaded({ items, signedIn: Boolean(session.session) });
+      } catch {
+        if (!cancelled) setError("Search is unavailable right now.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, loaded]);
+
+  const searchTokens = useMemo(
+    () => Array.from(new Set([...tokenize(fragment), ...committedTerms.flatMap(tokenize)])),
+    [fragment, committedTerms]
+  );
+  const hasQuery = searchTokens.length > 0;
+
+  const ranked = useMemo(
+    () => (loaded ? rankSearchItems(loaded.items, fragment, committedTerms) : []),
+    [loaded, fragment, committedTerms]
+  );
+  const results = useMemo(() => ranked.map((entry) => entry.item), [ranked]);
+  const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount]);
+
+  const suggestion = useMemo(() => {
+    if (!loaded || !hasQuery || results.length > 0) return null;
+    const last = searchTokens[searchTokens.length - 1];
+    return last ? suggestTerm(loaded.items, last) : null;
+  }, [loaded, hasQuery, results.length, searchTokens]);
+
+  const rawQuery = useMemo(
+    () => [...committedTerms, fragment].map((value) => value.trim()).filter(Boolean).join(" "),
+    [committedTerms, fragment]
+  );
+
+  useEffect(() => {
+    if (!open || !loaded || !rawQuery) return;
+    const timer = setTimeout(() => {
+      const topProject = results.find((item): item is ProjectItem => item.kind === "project") ?? null;
+      void logSearch(rawQuery, searchTokens, results.length, topProject);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [open, loaded, rawQuery, results, searchTokens]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    setVisibleCount(PAGE_SIZE);
+  }, [rawQuery]);
+
+  const select = useCallback(
+    (item: SearchItem) => {
+      const position = results.findIndex((entry) => entry.kind === item.kind && entry.id === item.id);
+      if (item.kind === "project") {
+        void logProjectClick({
+          rawQuery,
+          tokens: searchTokens,
+          pageId: item.id,
+          pageSlug: item.slug,
+          position: Math.max(position, 0),
+          resultsCount: results.length,
+        });
+      }
+      closeAll();
+      router.push(itemHref(item));
+    },
+    [closeAll, rawQuery, results, router, searchTokens]
+  );
+
+  const commitFragment = () => {
+    const value = fragment.trim();
+    if (!value) return;
+    setCommittedTerms((current) => (current.includes(value) ? current : [...current, value]));
+    setFragment("");
+    requestAnimationFrame(() => {
+      const node = chipContainerRef.current;
+      if (node) node.scrollTop = node.scrollHeight;
+    });
   };
 
-  const handleApplySuggestion = () => {
-    if (!suggestion) return;
-    setCommittedTerms([]);
-    setFragment(suggestion);
-    setSuggestion(null);
+  const onInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const active = visibleResults[activeIndex];
+      // Enter picks the highlighted result once one is chosen with the arrow
+      // keys; otherwise it turns the typed text into a chip.
+      if (activeIndex > 0 && active) select(active);
+      else commitFragment();
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((current) => Math.min(current + 1, Math.max(visibleResults.length - 1, 0)));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((current) => Math.max(current - 1, 0));
+      return;
+    }
+    if (event.key === "Backspace" && fragment.length === 0 && committedTerms.length > 0) {
+      event.preventDefault();
+      setCommittedTerms((current) => current.slice(0, -1));
+    }
   };
-
-  const visibleResults = useMemo(
-    () => results.slice(0, visibleCount),
-    [results, visibleCount]
-  );
-
-  const visibleInfo = useMemo(
-    () => visibleResults.filter((r) => r.kind === "info"),
-    [visibleResults]
-  );
-
-  const visibleForumThreads = useMemo(
-    () => visibleResults.filter((r) => r.kind === "forum-thread"),
-    [visibleResults]
-  );
 
   if (!open) return null;
 
+  const grouped = KIND_ORDER.map((kind) => ({
+    kind,
+    items: visibleResults.filter((item) => item.kind === kind),
+  })).filter((group) => group.items.length > 0);
+
+  const statusText = loading
+    ? "Searching…"
+    : error
+      ? error
+      : results.length === 0
+        ? hasQuery
+          ? "No matches."
+          : "Nothing to show yet."
+        : `Showing ${visibleResults.length} of ${results.length} result${results.length === 1 ? "" : "s"}`;
+
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/60 px-4 pt-24">
-      <div className="w-full max-w-xl rounded-xl border border-zinc-800 bg-brand-bgStart/95 shadow-xl backdrop-blur">
-        <div className="border-b border-zinc-800 px-3 py-2">
+    <div className="search-overlay">
+      <div
+        ref={rootRef}
+        className="search-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search this site"
+        data-testid="command-palette"
+      >
+        <div className="search-panel-head">
           <div className="flex items-center gap-2">
             <span className="text-xs text-brand-textMuted">Search site</span>
-
             <button
+              ref={helpButtonRef}
               type="button"
-              onClick={() => setHelpOpen((v) => !v)}
-              className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-zinc-700 bg-black/60 text-[11px] font-semibold text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text focus:outline-none focus:ring-2 focus:ring-amber-400/30"
-              aria-label="Search help"
-              title="Search help"
+              onClick={() => setHelpOpen((value) => !value)}
+              aria-expanded={helpOpen}
+              aria-controls="search-help-panel"
+              className="search-help-toggle"
+              data-testid="search-help-toggle"
             >
-              ?
+              <span aria-hidden="true">?</span>
+              <span className="sr-only">Search help</span>
             </button>
 
-            <span className="ml-auto rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-brand-textMuted">
-              Ctrl+K
+            <span className="ml-auto flex items-center gap-1.5">
+              <kbd className="search-kbd">Ctrl+K</kbd>
+              {isMobile ? (
+                <button type="button" onClick={closeAll} className="ui-btn ui-btn-ghost !px-2 !py-1 text-[11px]">
+                  Close
+                </button>
+              ) : (
+                <kbd className="search-kbd">Esc</kbd>
+              )}
             </span>
-
-            {!isMobile ? (
-              <span className="rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-brand-textMuted">
-                Esc
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  setHelpOpen(false);
-                }}
-                className="inline-flex min-h-[28px] items-center justify-center rounded-md border border-zinc-700 bg-black/60 px-2 py-1 text-[11px] font-medium text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text focus:outline-none focus:ring-2 focus:ring-amber-400/30"
-                aria-label="Close command palette"
-              >
-                Close ✕
-              </button>
-            )}
           </div>
 
-          {helpOpen && (
-            <div
-              ref={helpRef}
-              className="relative mt-2 rounded-lg border border-zinc-700 bg-black/70 p-3 text-[11px] text-brand-text"
-            >
+          {helpOpen ? (
+            <div id="search-help-panel" className="search-help" data-testid="search-help-panel">
               <div className="flex items-start justify-between gap-3">
-                <div className="space-y-2">
-                  <div className="text-[12px] font-semibold text-brand-text">
-                    How search works
-                  </div>
-
-                  <ul className="space-y-1 text-brand-textMuted">
+                <div>
+                  <p className="text-[12px] font-semibold text-brand-text">How search works</p>
+                  <ul className="mt-2 space-y-1 text-[11px] text-brand-textMuted">
                     <li>
-                      <span className="text-brand-text">Type</span> to search across{" "}
-                      <span className="text-brand-text">info pages</span> +{" "}
-                      <span className="text-brand-text">forum threads</span>.
+                      Searches the <span className="text-brand-text">Catalog</span>,{" "}
+                      <span className="text-brand-text">Projects</span>,{" "}
+                      <span className="text-brand-text">Community threads</span>, and site sections you can open.
                     </li>
                     <li>
-                      Press <span className="text-brand-text">Enter</span> to turn what
-                      you typed into a <span className="text-brand-text">pill</span>.
+                      Press <span className="text-brand-text">Enter</span> or type a{" "}
+                      <span className="text-brand-text">comma</span> to turn what you typed into a chip. Each chip is
+                      scored separately.
                     </li>
                     <li>
-                      Or type <span className="text-brand-text">comma</span> to instantly
-                      commit a pill: <span className="text-brand-text">s14, subframe,</span>
+                      Click a chip to remove it, or press <span className="text-brand-text">Backspace</span> on an empty
+                      box.
                     </li>
                     <li>
-                      Pills help you split big searches into smaller chunks so results
-                      rank better.
+                      <span className="text-brand-text">↑ ↓</span> move through results,{" "}
+                      <span className="text-brand-text">Enter</span> opens the highlighted one.
                     </li>
                     <li>
-                      Click a pill to remove it. Hit{" "}
-                      <span className="text-brand-text">Backspace</span> on an empty
-                      input to remove the last pill.
+                      <span className="text-brand-text">Esc</span> closes this panel, then the search menu.
                     </li>
+                    <li>Signed-in visitors also get links to Orders, Account, Messages, and Notifications.</li>
                   </ul>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-textMuted">
-                    <span className="rounded bg-black/60 px-1.5 py-0.5">📄 Info</span>
-                    <span className="rounded bg-black/60 px-1.5 py-0.5">💬 Threads</span>
-                    <span className="rounded bg-black/60 px-1.5 py-0.5">
-                      Highlight = matches
-                    </span>
-                  </div>
                 </div>
-
                 <button
                   type="button"
-                  onClick={() => setHelpOpen(false)}
-                  className="shrink-0 rounded-md border border-zinc-700 bg-black/60 px-2 py-1 text-[11px] font-medium text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                  onClick={() => {
+                    setHelpOpen(false);
+                    helpButtonRef.current?.focus();
+                  }}
+                  className="ui-btn ui-btn-ghost shrink-0 !px-2 !py-1 text-[11px]"
+                  data-testid="search-help-dismiss"
                 >
                   Got it
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
 
-          <div
-            ref={chipContainerRef}
-            className="mt-2 flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 scrollbar-thin scrollbar-track-black/40 scrollbar-thumb-zinc-700/80"
-            onClick={() => {
-              const el = document.getElementById(
-                "command-palette-input"
-              ) as HTMLInputElement | null;
-              el?.focus();
-            }}
-          >
-            <span className="mr-1 text-[13px] text-brand-textMuted">🔍</span>
-
+          <div ref={chipContainerRef} className="search-chips scrollbar-thin" onClick={() => inputRef.current?.focus()}>
             {committedTerms.map((term) => (
               <button
                 key={term}
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRemoveTerm(term);
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setCommittedTerms((current) => current.filter((value) => value !== term));
                 }}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200 transition-transform hover:-translate-y-[1px] hover:bg-amber-500/20"
+                className="ui-chip is-active text-[11px]"
+                aria-label={`Remove search term ${term}`}
               >
                 <span>{term}</span>
-                <span className="text-[10px]">×</span>
+                <span aria-hidden="true">×</span>
               </button>
             ))}
 
             <input
+              ref={inputRef}
               id="command-palette-input"
-              autoFocus
+              type="text"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="search-results"
+              aria-label="Search products, projects, and community threads"
+              autoComplete="off"
               value={fragment}
-              onChange={(e) => {
-                const value = e.target.value;
-
+              onChange={(event) => {
+                const value = event.target.value;
                 if (value.endsWith(",")) {
                   const trimmed = value.slice(0, -1).trim();
-                  if (trimmed.length > 0) {
-                    setCommittedTerms((prev) =>
-                      prev.includes(trimmed) ? prev : [...prev, trimmed]
-                    );
-                    setFragment("");
-                    scrollChipsToBottom();
-                    return;
-                  }
+                  if (trimmed) setCommittedTerms((current) => (current.includes(trimmed) ? current : [...current, trimmed]));
                   setFragment("");
                   return;
                 }
-
                 setFragment(value);
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitFragmentAsChip();
-                  return;
-                }
-
-                if (
-                  e.key === "Backspace" &&
-                  fragment.length === 0 &&
-                  committedTerms.length > 0
-                ) {
-                  e.preventDefault();
-                  setCommittedTerms((prev) => prev.slice(0, -1));
-                  scrollChipsToBottom();
-                }
-              }}
-              placeholder="s14, subframe, install..."
-              className="no-zoom-input min-w-[120px] flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-zinc-500"
+              onKeyDown={onInputKeyDown}
+              placeholder="Search products, projects, and threads…"
+              className="no-zoom-input min-w-[140px] flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-brand-textMuted"
             />
           </div>
 
-          {suggestion && (
+          {suggestion ? (
             <button
               type="button"
-              onClick={handleApplySuggestion}
-              className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-400/80 bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-200 hover:bg-amber-500/30 hover:border-amber-300/90"
+              onClick={() => {
+                setCommittedTerms([]);
+                setFragment(suggestion);
+              }}
+              className="ui-chip is-active mt-2 text-[11px]"
             >
-              <span className="text-[11px]">Did you mean:</span>
-              <span className="font-medium">{suggestion}</span>
-              <span className="text-[10px]">↵</span>
+              Did you mean <span className="font-semibold">{suggestion}</span>?
             </button>
-          )}
+          ) : null}
         </div>
 
-        <div className="max-h-80 overflow-auto p-2 text-xs">
-          {loading && (!allPagesLoaded || !allForumsLoaded) ? (
-            <p className="px-2 py-2 text-brand-textMuted">Loading…</p>
-          ) : loading ? (
-            <p className="px-2 py-2 text-brand-textMuted">Searching…</p>
-          ) : error ? (
-            <p className="px-2 py-2 text-rose-300/80">{error}</p>
-          ) : results.length === 0 ? (
-            <p className="px-2 py-2 text-brand-textMuted">No results.</p>
-          ) : (
-            <>
-              <div className="mb-1 px-2 text-[10px] text-brand-textMuted">
-                Showing {visibleResults.length} of {results.length} result
-                {results.length === 1 ? "" : "s"}
-              </div>
+        <div className="search-results" id="search-results">
+          <p className="px-2 pb-1 text-[10px] text-brand-textMuted" role="status" aria-live="polite">
+            {statusText}
+          </p>
 
-              <ul className="space-y-1">
-                {visibleInfo.length > 0 && (
-                  <li className="px-2 pt-2 text-[10px] font-semibold uppercase tracking-wide text-brand-textMuted">
-                    📄 Info pages
-                  </li>
-                )}
-                {visibleInfo.map((p) => {
-                  const lastUpdated = p.updated_at || p.created_at;
-
-                  const tagChips =
-                    Array.isArray(p.tags) && p.tags.length > 0 ? p.tags.slice(0, 3) : [];
-
+          {grouped.map((group) => (
+            <section key={group.kind} aria-label={KIND_LABELS[group.kind]}>
+              <p className="search-group-label">{KIND_LABELS[group.kind]}</p>
+              <ul>
+                {group.items.map((item) => {
+                  const index = visibleResults.indexOf(item);
                   return (
-                    <li key={`info-${p.id}`}>
+                    <li key={`${item.kind}-${item.id}`}>
                       <button
                         type="button"
-                        onClick={() => handleSelect(p)}
-                        className="flex w-full flex-col rounded-md px-2 py-2 text-left hover:bg-black/60"
+                        onClick={() => select(item)}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        aria-current={index === activeIndex ? "true" : undefined}
+                        className={`search-result${index === activeIndex ? " is-active" : ""}`}
                       >
                         <span className="text-[13px] font-medium text-brand-text">
-                          {highlightText(p.title, searchTokens)}
+                          {highlightText(item.title, searchTokens)}
                         </span>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-brand-textMuted">
-                          <span className="rounded-full bg-black/60 px-1.5 py-0.5">
-                            {highlightText(`/info/${p.slug}`, searchTokens)}
-                          </span>
-                          <span>
-                            Updated: {new Date(lastUpdated).toLocaleString()}
-                          </span>
-                        </div>
-
-                        {(p.chassis || tagChips.length > 0 || p.category) && (
-                          <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-brand-textMuted">
-                            {p.chassis && (
-                              <span className="rounded-full border border-zinc-700 bg-black/40 px-1.5 py-0.5">
-                                {highlightText(p.chassis, searchTokens)}
-                              </span>
-                            )}
-                            {p.category && (
-                              <span className="rounded-full border border-zinc-800 bg-black/40 px-1.5 py-0.5">
-                                {highlightText(p.category, searchTokens)}
-                              </span>
-                            )}
-                            {tagChips.map((tag) => (
-                              <span
-                                key={`${p.id}-${tag}`}
-                                className="rounded-full border border-zinc-700 bg-black/40 px-1.5 py-0.5"
-                              >
-                                {highlightText(tag, searchTokens)}
-                              </span>
-                            ))}
-                            {Array.isArray(p.tags) && p.tags.length > tagChips.length && (
-                              <span>+{p.tags.length - tagChips.length} more</span>
-                            )}
-                          </div>
-                        )}
+                        <span className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-brand-textMuted">
+                          <span className="search-path">{highlightText(itemHref(item), searchTokens)}</span>
+                          <ResultMeta item={item} tokens={searchTokens} />
+                        </span>
                       </button>
                     </li>
                   );
                 })}
-                
-                {visibleForumThreads.length > 0 && (
-                  <li className="px-2 pt-2 text-[10px] font-semibold uppercase tracking-wide text-brand-textMuted">
-                    💬 Forum threads
-                  </li>
-                )}
-                {visibleForumThreads.map((t) => (
-                  <li key={`thread-${t.id}`}>
-                    <button
-                      type="button"
-                      onClick={() => handleSelect(t)}
-                      className="flex w-full flex-col rounded-md px-2 py-2 text-left hover:bg-black/60"
-                    >
-                      <span className="text-[13px] font-medium text-brand-text">
-                        {highlightText(t.title, searchTokens)}
-                      </span>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-brand-textMuted">
-                        <span className="rounded-full bg-black/60 px-1.5 py-0.5">
-                          {highlightText(
-                            `/community/${t.categorySlug}/${t.slug}`,
-                            searchTokens
-                          )}
-                        </span>
-                        <span className="rounded-full border border-zinc-700 bg-black/40 px-1.5 py-0.5">
-                          {highlightText(t.categoryName, searchTokens)}
-                        </span>
-                        <span>
-                          Replies: <span className="text-brand-text">{t.reply_count}</span>
-                        </span>
-                        <span>
-                          Views: <span className="text-brand-text">{t.view_count}</span>
-                        </span>
-                        {t.is_pinned && <span>📌</span>}
-                        {t.is_locked && <span>🔒</span>}
-                      </div>
-                    </button>
-                  </li>
-                ))}
               </ul>
+            </section>
+          ))}
 
-              {results.length > visibleCount && (
-                <div className="mt-2 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setVisibleCount((prev) => prev + 5)}
-                    className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/60 px-3 py-1 text-[11px] text-brand-textMuted hover:border-brand-primary/70 hover:text-brand-text"
-                  >
-                    Show more ({Math.min(results.length - visibleCount, 5)} more)
-                  </button>
-                </div>
-              )}
-            </>
-          )}
+          {results.length > visibleCount ? (
+            <div className="mt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((current) => current + PAGE_SIZE)}
+                className="ui-btn ui-btn-ghost !px-3 !py-1 text-[11px]"
+              >
+                Show {Math.min(results.length - visibleCount, PAGE_SIZE)} more
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
+}
+
+function ResultMeta({ item, tokens }: { item: SearchItem; tokens: string[] }) {
+  if (item.kind === "product") {
+    return item.category ? <span className="ui-chip-static text-[10px]">{highlightText(item.category, tokens)}</span> : null;
+  }
+  if (item.kind === "project") {
+    return (
+      <>
+        {item.category ? <span className="ui-chip-static text-[10px]">{highlightText(item.category, tokens)}</span> : null}
+        {item.tags.slice(0, 2).map((tag) => (
+          <span key={tag} className="ui-chip-static text-[10px]">
+            {highlightText(tag, tokens)}
+          </span>
+        ))}
+      </>
+    );
+  }
+  if (item.kind === "thread") {
+    return (
+      <>
+        <span className="ui-chip-static text-[10px]">{highlightText(item.categoryName, tokens)}</span>
+        <span>
+          {item.replyCount} {item.replyCount === 1 ? "reply" : "replies"}
+        </span>
+        {item.isLocked ? <span>Locked</span> : null}
+      </>
+    );
+  }
+  return <span>{item.description}</span>;
 }
