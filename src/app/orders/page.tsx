@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { moneyFromCents, orderLabel, orderNeedsCustomerAction, orderNextStep } from "@/lib/orderHub";
 import { supabaseBrowser } from "@/lib/supabaseClient";
+import { Badge, EmptyState, MetricCard, Notice } from "@/components/ui/DesignSystem";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
 type Order = {
   id: string;
@@ -69,33 +71,29 @@ export default function OrdersPage() {
   });
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+    <main className="page-container page-stack">
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">Customer hub</p>
           <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Your KeyMoura orders</h1>
           <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">Track requests, reply to questions, pay securely, and follow delivery from one place.</p>
         </div>
-        <Link href="/catalog" className="catalog-action-primary w-full rounded-full px-5 py-2.5 text-center text-sm font-semibold sm:w-auto">Start a new request</Link>
+        <Link href="/catalog" className="ui-btn ui-btn-primary w-full text-center text-sm sm:w-auto">Start a new request</Link>
       </div>
 
       {!loading && !error && orders.length > 0 ? (
-        <section className="mt-8 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4"><div className="text-2xl font-semibold">{active.length}</div><div className="mt-1 text-xs text-brand-textMuted">Active orders</div></div>
-          <div className={`rounded-2xl border p-4 ${actionable.length ? "border-brand-primary/50 bg-brand-primary/10" : "border-zinc-800 bg-black/30"}`}><div className="text-2xl font-semibold">{actionable.length}</div><div className="mt-1 text-xs text-brand-textMuted">Need your attention</div></div>
-          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4"><div className="text-2xl font-semibold">{completed.length}</div><div className="mt-1 text-xs text-brand-textMuted">Finished</div></div>
+        <section className="grid gap-3 sm:grid-cols-3">
+          <MetricCard label="Active orders" value={active.length} detail="Requests currently moving through KeyMoura" />
+          <MetricCard label="Need your attention" value={actionable.length} detail="Replies, approvals, or payment needed" tone={actionable.length ? "warning" : "default"} />
+          <MetricCard label="Finished" value={completed.length} detail="Completed, declined, or cancelled" />
         </section>
       ) : null}
 
-      <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Filter orders">
-          {([['active', `Active (${active.length})`], ['action', `Needs attention (${actionable.length})`], ['complete', `Finished (${completed.length})`], ['all', `All (${orders.length})`]] as [Filter, string][]).map(([value, text]) => (
-            <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-full border px-4 py-2 text-sm transition ${filter === value ? "border-brand-primary bg-brand-primary/15 text-brand-primary" : "border-zinc-700 text-brand-textMuted hover:border-zinc-500 hover:text-brand-text"}`}>{text}</button>
-          ))}
-        </div>
+      <div className="ui-filter-bar flex-col sm:flex-row sm:items-center sm:justify-between">
+        <SegmentedControl className="w-full sm:w-auto" value={filter} onChange={setFilter} ariaLabel="Filter orders" options={[{ value: "active", label: `Active (${active.length})` }, { value: "action", label: `Needs attention (${actionable.length})` }, { value: "complete", label: `Finished (${completed.length})` }, { value: "all", label: `All (${orders.length})` }]} />
         <label className="flex w-full items-center gap-2 text-sm text-brand-textMuted sm:w-auto sm:shrink-0">
           <span className="shrink-0">Sort by</span>
-          <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-black/30 px-3 py-2 text-brand-text outline-none focus:border-brand-primary sm:flex-none" aria-label="Sort your orders">
+          <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="ui-input min-w-0 flex-1 sm:w-auto sm:flex-none" aria-label="Sort your orders">
             <option value="updated">Recently updated</option>
             <option value="newest">Newest request</option>
             <option value="oldest">Oldest request</option>
@@ -106,16 +104,16 @@ export default function OrdersPage() {
         </label>
       </div>
 
-      {loading ? <p className="mt-8 text-brand-textMuted">Loading your orders…</p> : null}
-      {error ? <div className="mt-8 rounded-2xl border border-rose-400/30 bg-rose-400/10 p-5 text-rose-100">{error}</div> : null}
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+      {loading ? <EmptyState>Loading your orders…</EmptyState> : null}
+      {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
+      <div className="grid gap-4 lg:grid-cols-2">
         {shown.map((order) => {
           const needsAction = orderNeedsCustomerAction(order);
           return (
-            <Link key={order.id} href={`/orders/${order.id}`} className={`group rounded-2xl border bg-black/30 p-5 transition hover:-translate-y-0.5 hover:border-brand-primary/60 ${needsAction ? "border-brand-primary/45" : "border-zinc-800"}`}>
+            <Link key={order.id} href={`/orders/${order.id}`} className={`ui-card ui-card-hover group ${needsAction ? "!border-brand-primary/45" : ""}`}>
               <div className="flex items-start justify-between gap-4">
                 <div><p className="text-xs text-brand-textMuted">{order.order_number || "Request pending review"}</p><h2 className="mt-1 text-lg font-semibold group-hover:text-brand-primary">{order.product_name}</h2></div>
-                <span className="shrink-0 rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{orderLabel(order.status)}</span>
+                <Badge>{orderLabel(order.status)}</Badge>
               </div>
               <div className={`mt-5 rounded-xl border p-3 text-sm ${needsAction ? "border-brand-primary/30 bg-brand-primary/10 text-brand-primary" : "border-zinc-800 text-brand-textMuted"}`}><span className="font-medium">Next:</span> {orderNextStep(order)}</div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-brand-textMuted">
@@ -126,8 +124,8 @@ export default function OrdersPage() {
           );
         })}
       </div>
-      {!loading && !error && orders.length === 0 ? <div className="mt-8 rounded-2xl border border-zinc-800 bg-black/20 p-10 text-center"><h2 className="text-lg font-semibold">No requests yet</h2><p className="mt-2 text-sm text-brand-textMuted">Browse the catalog and tell us what you want made.</p><Link href="/catalog" className="catalog-action-primary mt-5 inline-block rounded-full px-5 py-2.5 text-sm font-semibold">Browse catalog</Link></div> : null}
-      {!loading && !error && orders.length > 0 && shown.length === 0 ? <div className="mt-8 rounded-2xl border border-zinc-800 p-8 text-center text-brand-textMuted">Nothing in this view right now.</div> : null}
+      {!loading && !error && orders.length === 0 ? <EmptyState><h2 className="text-lg font-semibold text-brand-text">No requests yet</h2><p className="mt-2">Browse the catalog and tell us what you want made.</p><Link href="/catalog" className="ui-btn ui-btn-primary mt-5">Browse catalog</Link></EmptyState> : null}
+      {!loading && !error && orders.length > 0 && shown.length === 0 ? <EmptyState>Nothing in this view right now.</EmptyState> : null}
     </main>
   );
 }

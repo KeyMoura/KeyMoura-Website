@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { supabaseBrowser } from "@/lib/supabaseClient";
+import { Badge, EmptyState, Notice } from "@/components/ui/DesignSystem";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
 type Order = {
   id: string;
@@ -140,30 +142,33 @@ export default function StaffOrdersPage() {
   if (isLoading) return <div className="ui-card">Loading…</div>;
   if (!canView) return <AccessDeniedCard message="You do not have access to orders." />;
 
-  return <main>
+  return <main className="page-stack">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs uppercase tracking-[.2em] text-brand-accent">Commerce</p><h1 className="mt-1 text-3xl font-semibold">Order cockpit</h1><p className="mt-2 text-sm text-brand-textMuted">See what needs attention and move every request through quoting, payment, production, and delivery.</p></div>
-      <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-[auto_18rem_auto_auto]"><Link href="/staff/orders/new" className="catalog-action-primary rounded-xl px-4 py-2.5 text-center text-sm font-semibold">Create proposal</Link><label className="min-w-0"><span className="sr-only">Search orders</span><input value={query} onChange={event => setQuery(event.target.value)} className="h-full w-full rounded-xl border border-brand-border bg-black/30 px-4 py-2.5 text-sm outline-none focus:border-brand-accent" placeholder="Search order, product, customer…" /></label><label><span className="sr-only">Filter by priority</span><select value={priority} onChange={event=>setPriority(event.target.value as PriorityFilter)} className="h-full w-full rounded-xl border border-brand-border bg-black/30 px-3 text-sm outline-none focus:border-brand-accent"><option value="all">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label><label><span className="sr-only">Sort orders</span><select value={sort} onChange={event=>setSort(event.target.value as Sort)} className="h-full w-full rounded-xl border border-brand-border bg-black/30 px-3 text-sm outline-none focus:border-brand-accent"><option value="updated_desc">Recently updated</option><option value="created_desc">Newest orders</option><option value="created_asc">Oldest orders</option><option value="priority">Highest priority</option><option value="target_date">Target date</option><option value="price_desc">Highest price</option></select></label></div>
+      <Link href="/staff/orders/new" className="ui-btn ui-btn-primary w-full text-center text-sm sm:w-auto">Create proposal</Link>
     </div>
 
-    <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      {(["action", "waiting", "active", "completed", "all"] as const).map(item => <button key={item} onClick={() => setView(item)} className={`rounded-2xl border p-4 text-left transition ${view === item ? "border-brand-accent bg-brand-accent/10" : "border-brand-border bg-black/20 hover:border-brand-accent/60"}`}><div className="text-2xl font-semibold">{counts[item]}</div><div className={`mt-1 text-sm ${view === item ? "text-brand-accent" : "text-brand-textMuted"}`}>{item === "action" ? "Needs action" : item === "waiting" ? "Waiting on customer" : pretty(item)}</div></button>)}
+    <div className="ui-filter-bar">
+      <SegmentedControl className="w-full xl:w-auto" value={view} onChange={setView} ariaLabel="Order queue" options={[{ value: "action", label: `Needs action (${counts.action})` }, { value: "waiting", label: `Waiting (${counts.waiting})` }, { value: "active", label: `Active (${counts.active})` }, { value: "completed", label: `Completed (${counts.completed})` }, { value: "all", label: `All (${counts.all})` }]} />
+      <label className="min-w-[14rem] flex-1"><span className="sr-only">Search orders</span><input value={query} onChange={event => setQuery(event.target.value)} className="ui-input h-full" placeholder="Search order, product, customer…" /></label>
+      <label><span className="sr-only">Filter by priority</span><select value={priority} onChange={event=>setPriority(event.target.value as PriorityFilter)} className="ui-input h-full"><option value="all">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
+      <label><span className="sr-only">Sort orders</span><select value={sort} onChange={event=>setSort(event.target.value as Sort)} className="ui-input h-full"><option value="updated_desc">Recently updated</option><option value="created_desc">Newest orders</option><option value="created_asc">Oldest orders</option><option value="priority">Highest priority</option><option value="target_date">Target date</option><option value="price_desc">Highest price</option></select></label>
     </div>
 
-    {error ? <p className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-rose-200">{error}</p> : null}
-    <div className="mt-5 space-y-3">
+    {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
+    <div className="space-y-3">
       {shown.map(order => {
         const profile = profiles[order.customer_id];
         const workspace = workspaces[order.id];
         const customer = profile?.display_name || (profile?.username ? `@${profile.username}` : "Customer");
-        return <Link href={`/staff/orders/${order.id}`} key={order.id} className="group grid gap-4 rounded-2xl border border-brand-border bg-black/25 p-5 transition hover:border-brand-accent/70 md:grid-cols-[1.5fr_1fr_auto] md:items-center">
-          <div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{order.product_name}</span>{order.quantity > 1 ? <span className="rounded-full border border-brand-border px-2 py-0.5 text-[11px] text-brand-textMuted">Qty {order.quantity}</span> : null}{workspace && workspace.priority !== "normal" ? <span className={`rounded-full border px-2 py-0.5 text-[11px] ${workspace.priority === "urgent" ? "border-rose-500/60 text-rose-300" : workspace.priority === "high" ? "border-amber-500/60 text-amber-200" : "border-zinc-600 text-brand-textMuted"}`}>{pretty(workspace.priority)}</span> : null}</div><div className="mt-1 text-xs text-brand-textMuted">{order.order_number || "New request"} · {customer} · {ageLabel(order.updated_at)}</div></div>
+        return <Link href={`/staff/orders/${order.id}`} key={order.id} className="ui-card ui-card-hover group grid gap-4 md:grid-cols-[1.5fr_1fr_auto] md:items-center">
+          <div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{order.product_name}</span>{order.quantity > 1 ? <Badge>Qty {order.quantity}</Badge> : null}{workspace && workspace.priority !== "normal" ? <Badge tone={workspace.priority === "urgent" ? "danger" : workspace.priority === "high" ? "warning" : "neutral"}>{pretty(workspace.priority)}</Badge> : null}</div><div className="mt-1 text-xs text-brand-textMuted">{order.order_number || "New request"} · {customer} · {ageLabel(order.updated_at)}</div></div>
           <div><div className="text-sm font-medium text-brand-accent">{nextAction(order)}</div><div className="mt-1 text-xs text-brand-textMuted">{prettyStatus(order.status)} · {pretty(order.payment_status)}</div></div>
           <div className="text-left md:text-right"><div className="font-medium">{money(order.agreed_price_cents)}</div><div className="mt-1 text-xs text-brand-textMuted">{order.target_date ? `Target ${new Date(`${order.target_date}T00:00:00`).toLocaleDateString()}` : "No target date"}</div></div>
         </Link>;
       })}
     </div>
-    {!loading && shown.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-brand-border p-10 text-center text-brand-textMuted">{query ? "No orders match that search." : "Nothing in this view."}</div> : null}
-    {loading ? <p className="mt-8 text-center text-brand-textMuted">Loading orders…</p> : null}
+    {!loading && shown.length === 0 ? <EmptyState>{query ? "No orders match that search." : "Nothing in this view."}</EmptyState> : null}
+    {loading ? <EmptyState>Loading orders…</EmptyState> : null}
   </main>;
 }

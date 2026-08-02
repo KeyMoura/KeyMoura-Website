@@ -8,6 +8,7 @@ import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
 import { StaffOrderWorkspace } from "@/components/staff/StaffOrderWorkspace";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
+import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 
 type Order = {
   id: string;
@@ -289,8 +290,7 @@ export default function StaffOrderDetail() {
     return <AccessDeniedCard message="You do not have access to orders." />;
   if (!order)
     return <p className="text-rose-200">{error || "Order not found."}</p>;
-  const input =
-    "rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 outline-none focus:border-brand-primary";
+  const input = "ui-input";
   const nextStep = nextStaffStep(order);
   const activeStep = workflowStepIndex(order.status);
   const isClosed = order.status === "cancelled" || order.status === "declined";
@@ -298,42 +298,36 @@ export default function StaffOrderDetail() {
   const requestedOptionTotalCents = optionAdjustmentCents(order) * order.quantity;
   const requestedBaseTotalCents = requestedTotalCents == null ? null : requestedTotalCents - requestedOptionTotalCents;
   return (
-    <main>
-      <header className="rounded-3xl border border-zinc-800 bg-[linear-gradient(145deg,rgba(24,24,27,.95),rgba(0,0,0,.75))] p-5 sm:p-7">
+    <main className="page-stack">
+      <header className="ui-card p-5 sm:p-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">{order.order_number || "Request pending"}</p><h1 className="mt-2 text-3xl font-semibold">{order.product_name}</h1><p className="mt-2 text-sm text-brand-textMuted">Quantity {order.quantity} · Submitted {new Date(order.created_at).toLocaleDateString()}</p></div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Status</p><p className="mt-1 text-sm font-semibold text-brand-primary">{statusLabel(order.status)}</p></div>
-            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Customer price</p><p className="mt-1 text-sm font-semibold">{order.agreed_price_cents == null ? "Not quoted" : `$${(order.agreed_price_cents/100).toFixed(2)}`}</p></div>
-            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Net paid</p><p className="mt-1 text-sm font-semibold text-emerald-300">${((order.amount_paid_cents-(order.amount_refunded_cents||0))/100).toFixed(2)}</p>{order.amount_refunded_cents ? <p className="text-[10px] text-brand-textMuted">${(order.amount_refunded_cents/100).toFixed(2)} refunded</p> : null}</div>
-            <div className="rounded-xl border border-zinc-800 bg-black/30 p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Balance</p><p className="mt-1 text-sm font-semibold">${(Math.max(0,(order.agreed_price_cents || 0)-order.amount_paid_cents)/100).toFixed(2)}</p></div>
+            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Status</p><p className="mt-1 text-sm font-semibold text-brand-primary">{statusLabel(order.status)}</p></div>
+            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Customer price</p><p className="mt-1 text-sm font-semibold">{order.agreed_price_cents == null ? "Not quoted" : `$${(order.agreed_price_cents/100).toFixed(2)}`}</p></div>
+            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Net paid</p><p className="mt-1 text-sm font-semibold text-emerald-300">${((order.amount_paid_cents-(order.amount_refunded_cents||0))/100).toFixed(2)}</p>{order.amount_refunded_cents ? <p className="text-[10px] text-brand-textMuted">${(order.amount_refunded_cents/100).toFixed(2)} refunded</p> : null}</div>
+            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Balance</p><p className="mt-1 text-sm font-semibold">${(Math.max(0,(order.agreed_price_cents || 0)-order.amount_paid_cents)/100).toFixed(2)}</p></div>
           </div>
         </div>
       </header>
-      <div className="mt-5 rounded-2xl border border-brand-primary/35 bg-brand-primary/10 p-4 sm:flex sm:items-center sm:justify-between sm:gap-5">
+      <div className="ui-card !border-brand-primary/35 !bg-brand-primary/10 sm:flex sm:items-center sm:justify-between sm:gap-5">
         <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Next step</p><h2 className="mt-1 text-lg font-semibold">{nextStep.title}</h2><p className="mt-1 text-sm text-brand-textMuted">{nextStep.detail}</p></div>
         <div className="mt-4 flex shrink-0 flex-wrap gap-2 sm:mt-0">
           {(order.status === "requested" || order.status === "needs_information") && canManage ? <>
-            <a href="#conversation" className="rounded-xl border border-zinc-700 px-4 py-2 font-semibold text-white">Message customer</a>
-            <button onClick={() => void updateStatus("cancelled")} className="rounded-xl border border-rose-500/60 px-4 py-2 font-semibold text-rose-200">Cancel request</button>
-            <button onClick={() => void updateStatus("accepted")} className="rounded-xl bg-brand-primary px-4 py-2 font-semibold text-black">Accept & continue</button>
+            <a href="#conversation" className="ui-btn ui-btn-secondary">Message customer</a>
+            <button onClick={() => void updateStatus("cancelled")} className="ui-btn ui-btn-danger">Cancel request</button>
+            <button onClick={() => void updateStatus("accepted")} className="ui-btn ui-btn-primary">Accept & continue</button>
           </> : null}
-          {order.status === "in_progress" && canManage ? <a href="#customer-review-package" className="inline-flex rounded-xl border border-amber-300/70 bg-zinc-950 px-4 py-2 font-semibold text-amber-200 shadow-sm transition hover:bg-zinc-900">Prepare customer review</a> : null}
-          {order.status !== "requested" && order.status !== "needs_information" && order.status !== "in_progress" ? <a href={nextStep.href} className="inline-flex rounded-xl border border-brand-primary/70 bg-zinc-950 px-4 py-2 font-semibold text-brand-primary">{order.status === "accepted" ? "Continue to quote" : "View current stage"}</a> : null}
+          {order.status === "in_progress" && canManage ? <a href="#customer-review-package" className="ui-btn ui-btn-primary">Prepare customer review</a> : null}
+          {order.status !== "requested" && order.status !== "needs_information" && order.status !== "in_progress" ? <a href={nextStep.href} className="ui-btn ui-btn-primary">{order.status === "accepted" ? "Continue to quote" : "View current stage"}</a> : null}
         </div>
       </div>
-      <nav className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800 bg-black/25 p-3" aria-label="Order workflow">
-        <ol className="flex min-w-[680px] items-center">
+      <nav className="ui-card overflow-x-auto" aria-label="Order workflow">
+        <ol className="ui-stepper min-w-[680px]">
           {workflowSteps.map((step, index) => {
             const complete = !isClosed && index < activeStep;
             const active = !isClosed && index === activeStep;
-            return <li key={step.label} className="flex flex-1 items-center last:flex-none">
-              <div className="flex items-center gap-2">
-                <span className={`grid size-7 place-items-center rounded-full border text-xs font-bold ${complete ? "border-emerald-400 bg-emerald-400 text-black" : active ? "border-brand-primary bg-brand-primary text-black" : "border-zinc-700 bg-zinc-950 text-brand-textMuted"}`}>{complete ? "✓" : index + 1}</span>
-                <span className={`whitespace-nowrap text-xs font-semibold ${active ? "text-white" : complete ? "text-emerald-300" : "text-brand-textMuted"}`}>{step.label}</span>
-              </div>
-              {index < workflowSteps.length - 1 ? <span className={`mx-3 h-px flex-1 ${index < activeStep ? "bg-emerald-400/60" : "bg-zinc-800"}`} /> : null}
-            </li>;
+            return <li key={step.label} data-step={index + 1} aria-current={active ? "step" : undefined} className={cx("ui-step", active && "is-current", complete && "is-complete")}>{step.label}</li>;
           })}
         </ol>
       </nav>
@@ -352,11 +346,11 @@ export default function StaffOrderDetail() {
           {reviewFiles.length ? <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">{reviewFiles.map((file,index)=><div key={`${file.name}-${index}`} className="rounded-xl border border-zinc-700 bg-black/30 p-3"><p className="truncate text-sm font-medium">{file.name}</p><p className="mt-1 text-xs text-brand-textMuted">{(file.size/1024/1024).toFixed(1)} MB</p></div>)}</div> : null}
           <label className="mt-5 block text-sm font-medium">Note to customer<textarea value={reviewNote} onChange={event=>setReviewNote(event.target.value)} maxLength={3000} className={`${input} mt-2 min-h-28 w-full`} placeholder="Here is the finished piece. Please review the photos, finish, color, and details…" /></label>
           <div className="mt-5 rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">Customer preview</p><p className="mt-2 whitespace-pre-wrap text-sm">{reviewNote.trim() || "Your note will appear here."}</p><p className="mt-3 text-xs text-brand-textMuted">{reviewFiles.length ? `${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} attached` : "No photos attached yet"}</p></div>
-          <button disabled={sendingReview || reviewFiles.length < 1 || reviewNote.trim().length < 3} onClick={()=>void sendForReview()} className="mt-5 rounded-xl border border-amber-300/70 bg-zinc-950 px-5 py-2.5 font-semibold text-amber-200 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40">{sendingReview ? "Sending review…" : "Review & send to customer"}</button>
+          <button disabled={sendingReview || reviewFiles.length < 1 || reviewNote.trim().length < 3} onClick={()=>void sendForReview()} className="ui-btn ui-btn-primary mt-5 disabled:cursor-not-allowed disabled:opacity-40">{sendingReview ? "Sending review…" : "Review & send to customer"}</button>
         </section> : null}
-        {order.status === "final_review" ? <section className="rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Sent to customer</p><h2 className="mt-1 text-xl font-semibold">Finished-product review package</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : null}<OrderReviewGallery paths={order.final_review_asset_paths || []} /></section> : null}
-        <section id="quote" className="-order-1 scroll-mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2">
-          <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Customer quote</p><h2 className="mt-1 text-xl font-semibold">Price & schedule</h2></div><span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">Revision {order.quote_revision}</span></div>
+        {order.status === "final_review" ? <section className="ui-card lg:col-span-2"><p className="ui-eyebrow">Sent to customer</p><h2 className="mt-1 text-xl font-semibold">Finished-product review package</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : null}<OrderReviewGallery paths={order.final_review_asset_paths || []} /></section> : null}
+        <section id="quote" className="ui-card -order-1 scroll-mt-5 lg:col-span-2">
+          <div className="flex items-start justify-between gap-4"><div><p className="ui-eyebrow">Customer quote</p><h2 className="mt-1 text-xl font-semibold">Price & schedule</h2></div><Badge>Revision {order.quote_revision}</Badge></div>
           <p className="mt-2 text-sm leading-6 text-brand-textMuted">This is the final price the customer pays—not your material or labor cost. Internal costs stay in the Production workspace.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
@@ -412,12 +406,12 @@ export default function StaffOrderDetail() {
           {canManage ? (
             <button
               onClick={() => void save()}
-              className="mt-3 rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-2 font-semibold text-brand-primary transition hover:bg-brand-primary/30"
+              className="ui-btn ui-btn-primary mt-3"
             >
               {price.trim() && Math.round(Number(price)*100)!==order.agreed_price_cents ? "Review & send quote" : "Save internal details"}
             </button>
           ) : null}
-          {canManage && order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <div className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4"><h3 className="font-semibold text-rose-200">Cancellation & refund</h3><p className="mt-1 text-xs text-brand-textMuted">Cancelling an order does not move money. Refunds are separate, recorded actions sent through Stripe.</p><div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr_auto]"><label className="text-sm">Refund amount ($)<input className={`${input} mt-1 w-full`} type="number" min=".01" max={(order.amount_paid_cents-(order.amount_refunded_cents||0))/100} step=".01" value={refundAmount} onChange={e=>setRefundAmount(e.target.value)} /></label><label className="text-sm">Internal reason<input className={`${input} mt-1 w-full`} value={refundReason} onChange={e=>setRefundReason(e.target.value)} placeholder="Why is this refund being issued?" /></label><button onClick={()=>void issueRefund()} className="self-end rounded-xl border border-rose-500/60 px-4 py-2 font-semibold text-rose-200">Review & issue refund</button></div></div> : null}
+          {canManage && order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <Notice tone="danger" className="mt-6"><h3 className="font-semibold">Cancellation & refund</h3><p className="mt-1 text-xs text-brand-textMuted">Cancelling an order does not move money. Refunds are separate, recorded actions sent through Stripe.</p><div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr_auto]"><label className="text-sm">Refund amount ($)<input className={`${input} mt-1 w-full`} type="number" min=".01" max={(order.amount_paid_cents-(order.amount_refunded_cents||0))/100} step=".01" value={refundAmount} onChange={e=>setRefundAmount(e.target.value)} /></label><label className="text-sm">Internal reason<input className={`${input} mt-1 w-full`} value={refundReason} onChange={e=>setRefundReason(e.target.value)} placeholder="Why is this refund being issued?" /></label><button onClick={()=>void issueRefund()} className="ui-btn ui-btn-danger self-end">Review & issue refund</button></div></Notice> : null}
           <dl className="mt-5 grid gap-3 border-t border-zinc-800 pt-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-brand-textMuted">Item</dt>
@@ -465,11 +459,11 @@ export default function StaffOrderDetail() {
                 <div className="rounded-xl border border-zinc-800 bg-black/25 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">1 · Delivery method</p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <button type="button" disabled={!canManage} onClick={() => setMethod("shipping")} className={`rounded-xl border p-4 text-left transition ${method === "shipping" ? "border-brand-primary bg-brand-primary/10" : "border-zinc-700 hover:border-zinc-600"}`}>
+                    <button type="button" disabled={!canManage} onClick={() => setMethod("shipping")} className={`ui-card ui-card-hover text-left ${method === "shipping" ? "!border-brand-primary !bg-brand-primary/10" : ""}`}>
                       <span className="block font-semibold">Ship to customer</span>
                       <span className="mt-1 block text-xs text-brand-textMuted">Add the destination and tracking details.</span>
                     </button>
-                    <button type="button" disabled={!canManage} onClick={() => setMethod("pickup")} className={`rounded-xl border p-4 text-left transition ${method === "pickup" ? "border-brand-primary bg-brand-primary/10" : "border-zinc-700 hover:border-zinc-600"}`}>
+                    <button type="button" disabled={!canManage} onClick={() => setMethod("pickup")} className={`ui-card ui-card-hover text-left ${method === "pickup" ? "!border-brand-primary !bg-brand-primary/10" : ""}`}>
                       <span className="block font-semibold">Customer pickup</span>
                       <span className="mt-1 block text-xs text-brand-textMuted">No address, carrier, or tracking required.</span>
                     </button>
@@ -499,11 +493,11 @@ export default function StaffOrderDetail() {
                       ? `This will mark the order shipped${carrier ? ` with ${carrier}` : ""}${trackingNumber ? ` (tracking ${trackingNumber})` : ""} and email the customer.`
                       : "This will mark the order ready for pickup and email the customer."}
                   </p>
-                  {canManage ? <button disabled={order.amount_paid_cents - (order.amount_refunded_cents || 0) < (order.agreed_price_cents || 0)} onClick={()=>void fulfillmentAction("mark_shipped")} className="mt-4 rounded-xl bg-brand-primary px-5 py-2.5 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40">{method === "pickup" ? "Confirm ready for pickup" : "Confirm shipment & notify customer"}</button> : null}
+                  {canManage ? <button disabled={order.amount_paid_cents - (order.amount_refunded_cents || 0) < (order.agreed_price_cents || 0)} onClick={()=>void fulfillmentAction("mark_shipped")} className="ui-btn ui-btn-primary mt-4 disabled:cursor-not-allowed disabled:opacity-40">{method === "pickup" ? "Confirm ready for pickup" : "Confirm shipment & notify customer"}</button> : null}
                 </div>
               </div>
             ) : !order.delivered_at && canManage ? (
-              <button onClick={()=>void fulfillmentAction("mark_delivered")} className="mt-5 rounded-xl border border-emerald-500/60 px-5 py-2.5 font-semibold text-emerald-300">{method === "pickup" ? "Confirm customer picked it up" : "Confirm delivery & complete order"}</button>
+              <button onClick={()=>void fulfillmentAction("mark_delivered")} className="ui-btn ui-btn-primary mt-5">{method === "pickup" ? "Confirm customer picked it up" : "Confirm delivery & complete order"}</button>
             ) : null}
           </section>
         ) : null}
@@ -544,7 +538,7 @@ export default function StaffOrderDetail() {
                 />{" "}
                 Internal note (customer cannot see)
               </label>
-              <button className="mt-3 rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-2 font-semibold text-brand-primary transition hover:bg-brand-primary/30">
+              <button className="ui-btn ui-btn-primary mt-3">
                 Send
               </button>
             </form>
@@ -563,9 +557,9 @@ export default function StaffOrderDetail() {
             {emails.length===0?<div className="px-4 py-6 text-center text-sm text-brand-textMuted">No email attempts for this order yet.</div>:null}
           </div>
         </section>
-        {canManage ? <details className="md:col-span-2 rounded-2xl border border-zinc-800 bg-black/20 p-4"><summary className="cursor-pointer font-semibold">Advanced status override</summary><p className="mt-2 text-xs text-brand-textMuted">Use this only when the normal quote, payment, review, or fulfillment buttons cannot represent what happened. The customer will be notified.</p><div className="mt-3 sm:flex sm:items-end sm:gap-4"><label className="block flex-1 text-sm font-medium">Customer-facing status<select value={pendingStatus || order.status} onChange={e=>setPendingStatus(e.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 outline-none focus:border-brand-primary">{statuses.map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></label><button disabled={!pendingStatus || pendingStatus===order.status} onClick={()=>void updateStatus(pendingStatus)} className="mt-3 rounded-xl border border-amber-400/60 px-5 py-2.5 font-semibold text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0">Review & confirm update</button></div></details> : null}
+        {canManage ? <details className="ui-card md:col-span-2"><summary className="cursor-pointer font-semibold">Advanced status override</summary><p className="mt-2 text-xs text-brand-textMuted">Use this only when the normal quote, payment, review, or fulfillment buttons cannot represent what happened. The customer will be notified.</p><div className="mt-3 sm:flex sm:items-end sm:gap-4"><label className="block flex-1 text-sm font-medium">Customer-facing status<select value={pendingStatus || order.status} onChange={e=>setPendingStatus(e.target.value)} className="ui-input mt-2 w-full">{statuses.map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></label><button disabled={!pendingStatus || pendingStatus===order.status} onClick={()=>void updateStatus(pendingStatus)} className="ui-btn ui-btn-secondary mt-3 disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0">Review & confirm update</button></div></details> : null}
       </div>
-      {error ? <p className="mt-4 text-rose-200">{error}</p> : null}
+      {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
     </main>
   );
 }

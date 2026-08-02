@@ -8,6 +8,7 @@ import { RequestSpecifications } from "@/components/RequestSpecifications";
 import { moneyFromCents, orderLabel, orderNeedsCustomerAction, orderNextStep } from "@/lib/orderHub";
 import { checkoutAmountCents } from "@/lib/paymentMath";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
+import { Badge, EmptyState, Notice, cx } from "@/components/ui/DesignSystem";
 
 const CUSTOMER_STAGES = ["Request", "Quote & payment", "Production", "Review", "Fulfillment", "Complete"] as const;
 
@@ -216,7 +217,7 @@ export default function OrderDetailPage() {
   const isClosed = ["declined", "cancelled"].includes(order.status);
   const checkoutAmount = checkoutAmountCents(order);
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+    <main className="page-container page-stack">
       <Link href="/orders" className="text-sm text-brand-textMuted transition hover:text-brand-primary">← Back to your orders</Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -225,26 +226,24 @@ export default function OrderDetailPage() {
           </p>
           <h1 className="mt-2 text-3xl font-semibold">{order.product_name}</h1>
         </div>
-        <span className="rounded-full border border-brand-primary/60 bg-brand-primary/10 px-4 py-2 text-sm text-brand-primary">
-          {orderLabel(order.status)}
-        </span>
+        <Badge tone="accent" className="px-4 py-2 text-sm">{orderLabel(order.status)}</Badge>
       </div>
-      <section className={`mt-6 rounded-2xl border p-5 sm:p-6 ${needsAction ? "border-brand-primary/50 bg-brand-primary/10" : "border-zinc-800 bg-black/30"}`}>
+      <section className={`ui-card ${needsAction ? "!border-brand-primary/50 !bg-brand-primary/10" : ""}`}>
         <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
         <p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-textMuted">{needsAction ? "Your next step" : "What happens next"}</p>
         <p className={`mt-2 text-lg font-semibold ${needsAction ? "text-brand-primary" : "text-brand-text"}`}>{isPendingProposal ? "Review KeyMoura's proposal" : orderNextStep(order)}</p>
         {order.status === "needs_information" ? <p className="mt-1 text-sm text-brand-textMuted">Send the missing details in order chat below so work can continue.</p> : null}
         </div>
-        {needsAction ? <a href="#customer-action" className="rounded-xl border border-brand-primary/70 bg-zinc-950 px-4 py-2 text-sm font-semibold text-brand-primary transition hover:bg-zinc-900">Complete this step ↓</a> : null}
+        {needsAction ? <a href="#customer-action" className="ui-btn ui-btn-primary text-sm">Complete this step ↓</a> : null}
         </div>
       </section>
 
-      {!isClosed ? <section className="mt-6 rounded-2xl border border-zinc-800 bg-black/30 p-5" aria-label="Order progress">
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">{CUSTOMER_STAGES.map((stage, index) => <div key={stage} className={index === customerStage ? "text-brand-primary" : index < customerStage ? "text-brand-text" : "text-brand-textMuted"}><div className={`h-1.5 rounded-full ${index <= customerStage ? "bg-brand-primary" : "bg-zinc-800"}`} /><p className="mt-2 text-[11px] font-medium leading-tight">{stage}</p></div>)}</div>
+      {!isClosed ? <section className="ui-card" aria-label="Order progress">
+        <div className="ui-stepper">{CUSTOMER_STAGES.map((stage, index) => <div key={stage} data-step={index + 1} aria-current={index === customerStage ? "step" : undefined} className={cx("ui-step", index === customerStage && "is-current", index < customerStage && "is-complete")}>{stage}</div>)}</div>
         <p className="mt-4 text-sm text-brand-textMuted">Step {customerStage + 1} of {CUSTOMER_STAGES.length}: <span className="text-brand-text">{CUSTOMER_STAGES[customerStage]}</span></p>
       </section> : null}
-      <details className="mt-6 rounded-2xl border border-zinc-800 bg-black/30">
+      <details className="ui-card !p-0">
         <summary className="cursor-pointer list-none p-5 font-semibold">Order overview <span className="ml-2 text-sm font-normal text-brand-textMuted">price, payment, and target date</span></summary>
       <div className="grid gap-4 border-t border-zinc-800 p-5 sm:grid-cols-3">
         <div className="rounded-xl border border-zinc-800 p-4">
@@ -269,8 +268,8 @@ export default function OrderDetailPage() {
       </div>
       </details>
       <div id="customer-action" className="scroll-mt-24">
-      {isPendingProposal ? <section className="mt-4 rounded-2xl border border-brand-primary/50 bg-brand-primary/10 p-5"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Order proposal</p><h2 className="mt-2 text-xl font-semibold">Accept, decline, or ask a question</h2><p className="mt-2 text-sm text-brand-textMuted">KeyMoura is offering {order.quantity > 1 ? `${order.quantity} × ` : ""}{order.product_name} for {order.agreed_price_cents != null ? moneyFromCents(order.agreed_price_cents) : "a price to be confirmed"}. Accepting moves it into secure payment and the normal production workflow.</p>{order.customer_notes ? <div className="mt-4 rounded-xl border border-zinc-700 bg-black/25 p-4 whitespace-pre-wrap text-sm">{order.customer_notes}</div> : null}<div className="mt-5 rounded-xl border border-zinc-700 bg-black/25 p-4"><label className="block text-sm font-medium">Decline reason<textarea value={proposalDeclineReason} onChange={event=>setProposalDeclineReason(event.target.value)} maxLength={1000} placeholder="Tell KeyMoura why this proposal does not work for you…" className="mt-2 min-h-20 w-full rounded-xl border border-zinc-700 bg-black/40 p-3 outline-none focus:border-brand-primary" /></label></div><div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={busy || proposalDeclineReason.trim().length < 3} onClick={()=>void decideProposal("decline")} className="rounded-xl border border-rose-400/60 px-5 py-2.5 font-semibold text-rose-200 disabled:opacity-40">Decline proposal</button><button type="button" disabled={busy} onClick={()=>void decideProposal("accept")} className="catalog-action-primary rounded-xl px-5 py-2.5 font-semibold disabled:opacity-50">{busy ? "Saving…" : "Accept proposal"}</button><a href="#order-conversation" className="rounded-xl border border-zinc-600 px-5 py-2.5 font-semibold text-brand-text">Message KeyMoura</a></div></section> : null}
-      {order.status === "customer_review" && !order.quote_accepted_at && order.agreed_price_cents ? <section className={`mt-4 rounded-2xl border p-5 ${quoteExpired ? "border-amber-500/50 bg-amber-500/10" : "border-brand-primary/50 bg-brand-primary/10"}`}><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Quote revision {order.quote_revision}</p><h2 className="mt-2 text-xl font-semibold">{quoteExpired ? "This quote has expired" : `Review and approve ${moneyFromCents(order.agreed_price_cents)}`}</h2><p className="mt-2 text-sm text-brand-textMuted">{quoteExpired ? "Send a message below to request an updated price and schedule." : <>Approve this quote to unlock secure payment. {order.deposit_amount_cents ? `${moneyFromCents(order.deposit_amount_cents)} is due first; the remaining balance is collected later.` : "The full amount will be due."}{order.quote_expires_at ? ` Valid through ${new Date(order.quote_expires_at).toLocaleDateString()}.` : ""}</>}</p>{!quoteExpired ? <button type="button" disabled={busy} onClick={()=>void approveQuote()} className="catalog-action-primary mt-4 rounded-xl px-5 py-2.5 font-semibold disabled:opacity-50">{busy?"Approving…":"Approve quote"}</button> : null}</section> : null}
+      {isPendingProposal ? <section className="ui-card !border-brand-primary/50 !bg-brand-primary/10"><p className="ui-eyebrow">Order proposal</p><h2 className="mt-2 text-xl font-semibold">Accept, decline, or ask a question</h2><p className="mt-2 text-sm text-brand-textMuted">KeyMoura is offering {order.quantity > 1 ? `${order.quantity} × ` : ""}{order.product_name} for {order.agreed_price_cents != null ? moneyFromCents(order.agreed_price_cents) : "a price to be confirmed"}. Accepting moves it into secure payment and the normal production workflow.</p>{order.customer_notes ? <div className="ui-card mt-4 whitespace-pre-wrap text-sm">{order.customer_notes}</div> : null}<div className="ui-card mt-5"><label className="block text-sm font-medium">Decline reason<textarea value={proposalDeclineReason} onChange={event=>setProposalDeclineReason(event.target.value)} maxLength={1000} placeholder="Tell KeyMoura why this proposal does not work for you…" className="ui-input mt-2 min-h-20" /></label></div><div className="ui-action-row mt-4"><button type="button" disabled={busy || proposalDeclineReason.trim().length < 3} onClick={()=>void decideProposal("decline")} className="ui-btn ui-btn-danger disabled:opacity-40">Decline proposal</button><button type="button" disabled={busy} onClick={()=>void decideProposal("accept")} className="ui-btn ui-btn-primary disabled:opacity-50">{busy ? "Saving…" : "Accept proposal"}</button><a href="#order-conversation" className="ui-btn ui-btn-secondary">Message KeyMoura</a></div></section> : null}
+      {order.status === "customer_review" && !order.quote_accepted_at && order.agreed_price_cents ? <section className={`ui-card ${quoteExpired ? "!border-amber-500/50 !bg-amber-500/10" : "!border-brand-primary/50 !bg-brand-primary/10"}`}><p className="ui-eyebrow">Quote revision {order.quote_revision}</p><h2 className="mt-2 text-xl font-semibold">{quoteExpired ? "This quote has expired" : `Review and approve ${moneyFromCents(order.agreed_price_cents)}`}</h2><p className="mt-2 text-sm text-brand-textMuted">{quoteExpired ? "Send a message below to request an updated price and schedule." : <>Approve this quote to unlock secure payment. {order.deposit_amount_cents ? `${moneyFromCents(order.deposit_amount_cents)} is due first; the remaining balance is collected later.` : "The full amount will be due."}{order.quote_expires_at ? ` Valid through ${new Date(order.quote_expires_at).toLocaleDateString()}.` : ""}</>}</p>{!quoteExpired ? <button type="button" disabled={busy} onClick={()=>void approveQuote()} className="ui-btn ui-btn-primary mt-4 disabled:opacity-50">{busy?"Approving…":"Approve quote"}</button> : null}</section> : null}
       {order.status === "final_review" ? <section className="mt-4 rounded-2xl border border-brand-accent/50 bg-brand-accent/10 p-5"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-accent">Finished-product review</p><h2 className="mt-2 text-xl font-semibold">Your order is ready for approval</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : <p className="mt-2 text-sm text-brand-textMuted">Review the finished work below. Approving confirms it and sends the order to fulfillment.</p>}<OrderReviewGallery paths={order.final_review_asset_paths || []} /><div className="mt-5 rounded-xl border border-zinc-700 bg-black/25 p-4"><label className="block text-sm font-medium">Need something changed?<textarea value={revisionNote} onChange={event=>setRevisionNote(event.target.value)} maxLength={2000} placeholder="Explain exactly what needs to be revised…" className="mt-2 min-h-24 w-full rounded-xl border border-zinc-700 bg-black/40 p-3 outline-none focus:border-brand-accent" /></label><p className="mt-2 text-xs text-brand-textMuted">Your note will be sent to KeyMoura and the order will return to production.</p></div><div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={busy || revisionNote.trim().length < 3} onClick={()=>void requestRevisions()} className="rounded-xl border border-rose-400/60 px-5 py-2.5 font-semibold text-rose-200 disabled:opacity-40">{busy?"Sending…":"Needs revisions"}</button><button type="button" disabled={busy} onClick={()=>void approveFinishedOrder()} className="rounded-xl border border-brand-accent/70 bg-zinc-950 px-5 py-2.5 font-semibold text-brand-accent disabled:opacity-50">{busy?"Approving…":"Approve finished order"}</button></div></section> : null}
       {order.status === "cancelled" ? <section className="mt-4 rounded-2xl border border-zinc-700 bg-zinc-900/40 p-5"><h2 className="font-semibold">Order cancelled</h2><p className="mt-1 text-sm text-brand-textMuted">{order.cancellation_reason || "Contact KeyMoura through order chat if you have questions."}</p>{order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <p className="mt-2 text-sm text-amber-200">Cancellation does not automatically mean a refund. Any approved refund will appear in the payment summary.</p> : null}</section> : null}
       {order.agreed_price_cents && checkoutAmount >= 50 &&
@@ -284,14 +283,14 @@ export default function OrderDetailPage() {
           <button
             disabled={busy}
             onClick={() => void checkout()}
-            className="mt-4 rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-5 py-2.5 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50"
+            className="ui-btn ui-btn-primary mt-4 disabled:opacity-50"
           >
             {busy ? "Opening checkout…" : `Pay ${moneyFromCents(checkoutAmount)}`}
           </button>
         </div>
       ) : null}
       </div>
-      <details className="mt-6 rounded-2xl border border-zinc-800 bg-black/30">
+      <details className="ui-card !p-0">
         <summary className="cursor-pointer list-none p-5 font-semibold">Request details <span className="ml-2 text-sm font-normal text-brand-textMuted">quantity, options, and original notes</span></summary>
       <section className="border-t border-zinc-800 p-5">
         <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
@@ -310,11 +309,11 @@ export default function OrderDetailPage() {
       </details>
       {(order.fulfillment_method === "pickup" || order.tracking_number || order.shipped_at) ? <section className="mt-6 rounded-2xl border border-zinc-800 bg-black/30 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">Fulfillment</h2><p className="mt-1 text-sm text-brand-textMuted">{order.delivered_at ? order.fulfillment_method === "pickup" ? "Pickup complete" : "Delivered" : order.shipped_at ? order.fulfillment_method === "pickup" ? "Ready for pickup" : "Shipped" : order.fulfillment_method === "pickup" ? "Customer pickup" : "Shipping details"}</p></div>{order.tracking_url ? <a className="ui-btn ui-btn-primary" href={order.tracking_url} target="_blank" rel="noreferrer">Track shipment</a> : null}</div>{order.tracking_number ? <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-brand-textMuted">Carrier</dt><dd>{order.shipping_carrier || "Carrier"}</dd></div><div><dt className="text-brand-textMuted">Tracking number</dt><dd className="break-all">{order.tracking_number}</dd></div></dl> : null}</section> : null}
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1.4fr_.8fr]">
-      <section id="order-conversation" className="scroll-mt-24 rounded-2xl border border-zinc-800 bg-black/30 p-5">
+      <section id="order-conversation" className="ui-card scroll-mt-24">
         <h2 className="text-xl font-semibold">Order chat</h2>
         <p className="mt-1 text-sm text-brand-textMuted">Messages here stay connected to this order.</p>
         <div className="mt-3 space-y-3">
-          {messages.length === 0 ? <div className="rounded-xl border border-dashed border-zinc-700 p-5 text-center text-sm text-brand-textMuted">No messages yet. Send a question whenever you need help.</div> : null}
+          {messages.length === 0 ? <EmptyState>No messages yet. Send a question whenever you need help.</EmptyState> : null}
           {messages.map((m) => (
             <div
               key={m.id}
@@ -333,16 +332,16 @@ export default function OrderDetailPage() {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder="Ask a question or send an update…"
-            className="min-h-20 flex-1 rounded-xl border border-zinc-700 bg-black/40 p-3 outline-none focus:border-brand-primary"
+            className="ui-input min-h-20 flex-1"
           />
           <button
             disabled={busy}
-            className="rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-5 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50"
+            className="ui-btn ui-btn-primary px-5 disabled:opacity-50"
           >
             Send
           </button>
         </form>
-        {error ? <p className="mt-2 text-sm text-rose-200">{error}</p> : null}
+        {error ? <Notice tone="danger" role="alert" className="mt-3">{error}</Notice> : null}
       </section>
       <details className="rounded-2xl border border-zinc-800 bg-black/30">
         <summary className="cursor-pointer list-none p-5 font-semibold">Activity <span className="ml-2 text-sm font-normal text-brand-textMuted">order history</span></summary>

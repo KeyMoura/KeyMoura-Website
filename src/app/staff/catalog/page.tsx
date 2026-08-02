@@ -8,11 +8,12 @@ import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { CatalogProduct, optionKey, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import { EmptyState, Notice } from "@/components/ui/DesignSystem";
 
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-const input = "w-full rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 outline-none focus:border-brand-primary";
-const primary = "rounded-xl border border-brand-primary/80 bg-brand-primary/20 px-4 py-2 font-semibold text-brand-primary transition hover:bg-brand-primary/30 disabled:opacity-50";
-const subtle = "rounded-xl border border-zinc-700 px-3 py-2 text-sm transition hover:border-brand-primary disabled:opacity-50";
+const input = "ui-input";
+const primary = "ui-btn ui-btn-primary disabled:opacity-50";
+const subtle = "ui-btn ui-btn-ghost text-sm disabled:opacity-50";
 const editorSnapshot = (draft: Partial<CatalogProduct>, groups: ProductOptionGroup[]) => JSON.stringify({ draft, groups });
 
 export default function StaffCatalogPage() {
@@ -316,12 +317,12 @@ export default function StaffCatalogPage() {
   const hasUnsavedChanges = selectedId ? editorSnapshot(draft, groups) !== savedSnapshot : false;
 
   return (
-    <main>
-      <p className="text-xs uppercase tracking-[.2em] text-brand-primary">Commerce</p>
+    <main className="page-stack">
+      <div><p className="ui-eyebrow">Commerce</p>
       <h1 className="mt-1 text-3xl font-semibold">Product catalog</h1>
-      <p className="mt-2 text-sm text-brand-textMuted">Build products, galleries, 3D previews, and the exact choices customers can request.</p>
+      <p className="mt-2 text-sm text-brand-textMuted">Build products, galleries, 3D previews, and the exact choices customers can request.</p></div>
 
-      {canManage ? <form onSubmit={createProduct} className="mt-6 grid gap-3 rounded-2xl border border-zinc-800 bg-black/30 p-5 sm:grid-cols-2">
+      {canManage ? <form onSubmit={createProduct} className="ui-card grid gap-3 sm:grid-cols-2">
         <input required name="name" className={input} placeholder="Product name" />
         <input name="category" className={input} placeholder="Category" />
         <input name="price" className={input} type="number" min="0" step=".01" placeholder="Starting price (optional)" />
@@ -329,24 +330,24 @@ export default function StaffCatalogPage() {
         <button disabled={busy} className={`${primary} sm:col-span-2`}>Create draft product</button>
       </form> : null}
 
-      {error ? <p className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p> : null}
+      {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[320px_1fr]">
+      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
         <aside className="space-y-3">
           <input className={input} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search products or SKU" aria-label="Search catalog" />
           <MenuSelect ariaLabel="Filter catalog products" className="ui-select-trigger" value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} options={[{value:"active",label:"Active products"},{value:"published",label:"Published"},{value:"draft",label:"Drafts"},{value:"archived",label:"Archived"},{value:"all",label:"All products"}]} />
           <div className="space-y-2">
           {filteredProducts.map(product => <button key={product.id} onClick={() => { setSelectedId(product.id); void loadEditor(product); }}
-            className={`w-full rounded-xl border p-4 text-left ${selectedId === product.id ? "border-brand-primary bg-brand-primary/10" : "border-zinc-800 bg-black/30 hover:border-zinc-600"}`}>
+            className={`ui-card ui-card-hover w-full text-left ${selectedId === product.id ? "!border-brand-primary !bg-brand-primary/10" : ""}`}>
             <span className="flex items-center justify-between gap-2"><span className="font-semibold">{product.name}</span>{product.inventory_policy === "track" && product.inventory_quantity <= product.low_stock_threshold ? <span className="text-xs text-amber-300">{product.inventory_quantity} left</span> : null}</span>
             <span className="mt-1 block text-xs text-brand-textMuted">{product.sku ? `${product.sku} · ` : ""}/{product.slug} · {product.archived_at ? "Archived" : product.is_published ? "Published" : "Draft"}</span>
           </button>)}
-          {filteredProducts.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-700 p-4 text-center text-sm text-brand-textMuted">No products match this view.</p> : null}
+          {filteredProducts.length === 0 ? <EmptyState>No products match this view.</EmptyState> : null}
           </div>
         </aside>
 
         {selectedId ? <section className="space-y-6">
-          <div className="sticky top-2 z-20 rounded-2xl border border-brand-primary/30 bg-zinc-950/95 p-3 shadow-xl backdrop-blur sm:top-3 sm:p-4">
+          <div className="ui-card sticky top-2 z-20 !border-brand-primary/30 !bg-zinc-950/95 shadow-xl backdrop-blur sm:top-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><p className="text-xs uppercase tracking-[.16em] text-brand-primary">Editing</p><p className="font-semibold">{draft.name || "Untitled product"}</p></div>
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -357,11 +358,11 @@ export default function StaffCatalogPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+          <div className="ui-card">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Publish checklist</h2><p className="mt-1 text-sm text-brand-textMuted">Finish these essentials before making the product visible to customers.</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${readyToPublish ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-400/10 text-amber-200"}`}>{publishChecks.filter(check => check.complete).length}/{publishChecks.length} ready</span></div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">{publishChecks.map(check => <div key={check.label} className={`rounded-xl border px-3 py-2 text-sm ${check.complete ? "border-emerald-500/30 text-emerald-200" : "border-zinc-700 text-brand-textMuted"}`}><span aria-hidden="true">{check.complete ? "✓" : "○"}</span> {check.label}</div>)}</div>
           </div>
-          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+          <div className="ui-card">
             <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Product details</h2><div className="flex items-center gap-3"><span className={draft.archived_at ? "text-sm text-amber-300" : draft.is_published ? "text-sm text-emerald-300" : "text-sm text-brand-textMuted"}>{draft.archived_at ? "Archived" : draft.is_published ? "Published" : "Draft"}</span>{draft.slug && draft.is_published && !draft.archived_at ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>View live ↗</Link> : null}</div></div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">Name<input className={`${input} mt-1`} value={draft.name ?? ""} onChange={e => setDraft(current => ({ ...current, name: e.target.value }))} /></label>
@@ -377,10 +378,10 @@ export default function StaffCatalogPage() {
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={Boolean(draft.archived_at) || (!draft.is_published && !readyToPublish)} checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
             </div>
             {!readyToPublish && !draft.is_published ? <p className="mt-3 text-xs text-amber-200">Complete the publish checklist to enable publishing. You can save the draft at any time.</p> : null}
-            <div className="mt-4 flex flex-wrap gap-3"><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className={`${subtle} text-rose-300`}>Delete permanently</button></div>
+            <div className="ui-action-row mt-4"><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className="ui-btn ui-btn-danger">Delete permanently</button></div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+          <div className="ui-card">
             <h2 className="text-xl font-semibold">Inventory</h2>
             <p className="mt-1 text-sm text-brand-textMuted">Use made-to-order for custom work, or track a real quantity for ready-to-ship items.</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -391,7 +392,7 @@ export default function StaffCatalogPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+          <div className="ui-card">
             <h2 className="text-xl font-semibold">Images & 3D model</h2>
             <p className="mt-1 text-sm text-brand-textMuted">Upload multiple images and one GLB/GLTF model. The first image becomes the catalog cover.</p>
             <div className="mt-4 flex flex-wrap gap-3">
@@ -406,7 +407,7 @@ export default function StaffCatalogPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+          <div className="ui-card">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Customization options</h2><p className="mt-1 text-sm text-brand-textMuted">These fields appear on this product’s request form.</p></div><button disabled={!canManage || !draft.is_custom} onClick={() => void addGroup()} className={subtle}>Add option</button></div>
             {!draft.is_custom ? <p className="mt-4 rounded-xl border border-zinc-800 p-4 text-sm text-brand-textMuted">Customization is disabled. Enable it in Product details to show configured options.</p> : null}
             <div className="mt-4 space-y-4">
@@ -431,7 +432,7 @@ export default function StaffCatalogPage() {
               </div>)}
             </div>
           </div>
-        </section> : <div className="rounded-2xl border border-dashed border-zinc-700 p-10 text-center text-brand-textMuted">Select a product to edit everything customers see.</div>}
+        </section> : <EmptyState>Select a product to edit everything customers see.</EmptyState>}
       </div>
     </main>
   );

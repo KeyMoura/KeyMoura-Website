@@ -5,6 +5,7 @@ import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
+import { EmptyState } from "@/components/ui/DesignSystem";
 
 type NotificationRow = {
   id: number;
@@ -410,8 +411,8 @@ export default function NotificationsPage() {
   const visible = useMemo(() => items, [items]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <main className="page-container page-stack">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[18px] font-semibold text-brand-text">Notifications</h1>
           <p className="mt-1 text-[12px] text-brand-textMuted">
@@ -423,7 +424,7 @@ export default function NotificationsPage() {
           <button
             type="button"
             onClick={() => setShowUnreadOnly((v) => !v)}
-            className="min-h-11 rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
+            className="ui-btn ui-btn-secondary min-h-11 text-[12px]"
             aria-pressed={showUnreadOnly}
           >
             {showUnreadOnly ? "Showing unread" : "Showing all"}
@@ -434,7 +435,7 @@ export default function NotificationsPage() {
             <button
               type="button"
               onClick={markAllRead}
-              className="min-h-11 rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
+              className="ui-btn ui-btn-ghost min-h-11 text-[12px]"
               disabled={!userId}
             >
               Mark all read
@@ -444,7 +445,7 @@ export default function NotificationsPage() {
       </div>
 
       {!userId && !loading && (
-        <div className="rounded-2xl border border-zinc-800/80 bg-black/35 p-6 text-[12px] text-brand-textMuted">
+        <EmptyState>
           You’re not logged in.{" "}
           <Link
             href="/auth/login"
@@ -453,23 +454,19 @@ export default function NotificationsPage() {
             Log in
           </Link>{" "}
           to view notifications.
-        </div>
+        </EmptyState>
       )}
 
       {loading && (
-        <div className="rounded-2xl border border-zinc-800/80 bg-black/35 p-6 text-[12px] text-brand-textMuted">
-          Loading…
-        </div>
+        <EmptyState>Loading…</EmptyState>
       )}
 
       {!loading && userId && visible.length === 0 && (
-        <div className="rounded-2xl border border-zinc-800/80 bg-black/35 p-6 text-[12px] text-brand-textMuted">
-          No notifications yet.
-        </div>
+        <EmptyState>No notifications yet.</EmptyState>
       )}
 
       {!loading && userId && visible.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-zinc-800/80 bg-black/30">
+        <div className="ui-card overflow-hidden !p-0">
           {visible.map((n) => {
             const isRead = !!n.is_read;
             const actor = n.actor_user_id ? actorMap.get(n.actor_user_id) : null;
@@ -500,7 +497,7 @@ export default function NotificationsPage() {
                 key={n.id}
                 className={[
                   "flex items-start gap-3 border-b border-zinc-900 px-4 py-3",
-                  isRead ? "" : "bg-amber-500/5",
+                  isRead ? "" : "bg-brand-primary/5",
                 ].join(" ")}
               >
                 <div className="mt-0.5 h-9 w-9 shrink-0 overflow-hidden rounded-full border border-zinc-800 bg-black/30">
@@ -556,7 +553,7 @@ export default function NotificationsPage() {
                   restoreScrollYRef.current = window.scrollY;
                   setLimit((v) => Math.min(v + 20, 200));
                 }}
-                className="rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
+                className="ui-btn ui-btn-secondary text-[12px]"
               >
                 Load more
               </button>
@@ -564,6 +561,6 @@ export default function NotificationsPage() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }

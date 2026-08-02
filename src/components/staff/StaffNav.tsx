@@ -66,8 +66,8 @@ export function StaffNav() {
   };
 
   return (
-    <nav aria-label="Staff navigation" className="rounded-2xl border border-white/10 bg-black/35 p-3 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md lg:sticky lg:top-4">
-      <div className="mb-4 border-b border-white/10 px-2 pb-4">
+    <nav aria-label="Staff navigation" className="staff-nav shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-md lg:sticky lg:top-4">
+      <div className="mb-4 border-b border-brand-border px-2 pb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-accent">KeyMoura staff</p>
         <p className="mt-1 text-xs text-brand-textMuted">Store operations and site management</p>
       </div>
@@ -77,7 +77,7 @@ export function StaffNav() {
           if (!links.length) return null;
           return (
             <section key={group.label} aria-labelledby={`staff-nav-${group.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
-              <h2 id={`staff-nav-${group.label.toLowerCase().replace(/[^a-z]+/g, "-")}`} className="px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-textMuted">{group.label}</h2>
+              <h2 id={`staff-nav-${group.label.toLowerCase().replace(/[^a-z]+/g, "-")}`} className="staff-nav-title px-2">{group.label}</h2>
               <div className="mt-2 space-y-1">
                 {links.map((link) => {
                   const active = isActive(link.href);
@@ -87,7 +87,7 @@ export function StaffNav() {
                         const menu = event.currentTarget.closest("details");
                         if (menu) menu.open = false;
                       }}
-                      className={`flex min-h-10 items-center rounded-xl border px-3 py-2 text-[13px] font-medium transition ${active ? "border-brand-accent/60 bg-brand-accent/10 text-brand-accent" : "border-transparent text-brand-textMuted hover:border-white/10 hover:bg-white/[.04] hover:text-brand-text"}`}>
+                      className="staff-nav-link min-h-10 text-[13px] font-medium">
                       {link.label}
                     </Link>
                   );
