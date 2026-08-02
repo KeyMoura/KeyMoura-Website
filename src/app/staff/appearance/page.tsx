@@ -312,7 +312,7 @@ export default function AppearancePage() {
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-brand-border bg-black/90 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4"><p className="text-sm text-brand-textMuted">{dirty ? "You have unpublished appearance changes." : "Appearance is up to date."}</p><div className="ui-action-row"><button type="button" onClick={() => setForm(saved)} disabled={!dirty} className="ui-btn ui-btn-ghost">Discard changes</button><button type="button" onClick={() => void save()} disabled={!dirty || Boolean(warning)} className="ui-btn ui-btn-primary">Publish appearance</button></div></div>
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4"><p className="text-sm text-brand-textMuted">{dirty ? "You have unpublished appearance changes." : "Appearance is up to date."}</p><div className="ui-action-row"><button type="button" onClick={() => setForm(saved)} disabled={!dirty} className="ui-btn ui-btn-ghost">Discard changes</button><button type="button" onClick={() => void save()} disabled={!dirty} className="ui-btn ui-btn-primary">Publish appearance</button></div></div>
       </div>
     </main>
   );
