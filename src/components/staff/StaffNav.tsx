@@ -5,140 +5,97 @@ import { usePathname } from "next/navigation";
 
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 
-type NavLink = {
-  href: string;
-  label: string;
-  /**
-   * If provided, the link is only shown when the viewer has at least one of these permissions.
-   */
-  anyOf?: readonly string[];
-};
+type NavLink = { href: string; label: string; anyOf?: readonly string[] };
+type NavGroup = { label: string; links: NavLink[] };
 
-function hasAny(perms: Set<string>, required?: readonly string[]): boolean {
-  if (!required || !required.length) return true;
-  for (const p of required) {
-    if (perms.has(p)) return true;
-  }
-  return false;
-}
+const hasAny = (permissions: Set<string>, required?: readonly string[]) =>
+  !required?.length || required.some((permission) => permissions.has(permission));
 
-/**
- * One consistent staff navigation for all /staff routes.
- */
 export function StaffNav() {
   const pathname = usePathname();
   const { data: access } = useMeAccess();
+  const permissions = new Set(access?.permissions ?? []);
 
-  const perms = new Set(access?.permissions ?? []);
-
-  // Nav visibility rule: ONLY show a page button if the viewer has that page's .view permission.
-  // (Moderation/manage perms do NOT imply view in the UI; keep it explicit.)
-  const canSeeModeration = hasAny(perms, ["moderation.reports.view"]);
-  const canSeeAudit = hasAny(perms, ["audit.view", "audit.read"]);
-  const canSeeTodo = hasAny(perms, ["todo.view"]);
-  const canSeeUsers = hasAny(perms, ["users.view"]);
-  const canSeeRecycleBin = hasAny(perms, ["recycle_bin.view"]);
-  const canSeeSecurity = hasAny(perms, ["security.view"]);
-  const canSeeCommunity = hasAny(perms, ["community.view"]);
-  const canSeeShops = hasAny(perms, ["shops.view"]);
-  const canSeeAnalytics = hasAny(perms, ["analytics.view"]);
-  const canSeeCatalog = hasAny(perms, ["catalog.view", "catalog.manage"]);
-  const canSeeOrders = hasAny(perms, ["orders.view", "orders.manage"]);
-  const canManageAppearance = hasAny(perms, ["appearance.manage"]);
-  const canManageEmail = hasAny(perms, ["emails.manage"]);
-  // The INFO section is specifically for the info submission/update queues.
-  // To-do is its own top-level staff tool.
-  const canSeeInfo = hasAny(perms, ["info.pending.view", "info.updates.view"]);
-
-  const topLinks: NavLink[] = [
-    ...(canSeeOrders || canSeeCatalog || canSeeAnalytics ? [{ href: "/staff", label: "Dashboard" } satisfies NavLink] : []),
-    ...(canSeeOrders ? [{ href: "/staff/orders", label: "Orders" } satisfies NavLink] : []),
-    ...(canSeeCatalog ? [{ href: "/staff/catalog", label: "Catalog" } satisfies NavLink] : []),
-    ...(canManageAppearance ? [{ href: "/staff/appearance", label: "Appearance" } satisfies NavLink] : []),
-    ...(canManageEmail ? [{ href: "/staff/emails", label: "Email" } satisfies NavLink] : []),
-    ...(canSeeAnalytics ? [{ href: "/staff/info/analytics", label: "Analytics" } satisfies NavLink] : []),
-    ...(canSeeModeration ? [{ href: "/staff/moderation/reports", label: "Reports" } satisfies NavLink] : []),
-    ...(canSeeAudit ? [{ href: "/staff/security/audit", label: "Audit Log" } satisfies NavLink] : []),
-    ...(canSeeTodo ? [{ href: "/staff/info/todo", label: "To-do" } satisfies NavLink] : []),
-    ...(canSeeRecycleBin ? [{ href: "/staff/security/recycle-bin", label: "Recycle Bin" } satisfies NavLink] : []),
-    ...(canSeeUsers ? [{ href: "/staff/security/users", label: "Users" } satisfies NavLink] : []),
-    ...(canSeeSecurity ? [{ href: "/staff/security", label: "Security" } satisfies NavLink] : []),
-    ...(canSeeCommunity ? [{ href: "/staff/community", label: "Community" } satisfies NavLink] : []),
-    ...(canSeeShops ? [{ href: "/staff/shops", label: "Shops" } satisfies NavLink] : []),
+  const groups: NavGroup[] = [
+    {
+      label: "Operations",
+      links: [
+        { href: "/staff", label: "Dashboard", anyOf: ["orders.view", "orders.manage", "catalog.view", "catalog.manage", "analytics.view"] },
+        { href: "/staff/orders", label: "Orders", anyOf: ["orders.view", "orders.manage"] },
+        { href: "/staff/catalog", label: "Catalog & inventory", anyOf: ["catalog.view", "catalog.manage"] },
+        { href: "/staff/info/todo", label: "Staff to-do", anyOf: ["todo.view"] },
+        { href: "/staff/info/analytics", label: "Analytics", anyOf: ["analytics.view"] },
+      ],
+    },
+    {
+      label: "Customers & content",
+      links: [
+        { href: "/staff/security/users", label: "Customers & users", anyOf: ["users.view"] },
+        { href: "/staff/moderation/reports", label: "Reports & moderation", anyOf: ["moderation.reports.view"] },
+        { href: "/staff/community", label: "Community", anyOf: ["community.view"] },
+        { href: "/staff/shops", label: "Shops", anyOf: ["shops.view"] },
+        { href: "/staff/info/pending", label: "Pending submissions", anyOf: ["info.pending.view"] },
+        { href: "/staff/info/updates", label: "Content updates", anyOf: ["info.updates.view"] },
+      ],
+    },
+    {
+      label: "Brand & communication",
+      links: [
+        { href: "/staff/appearance", label: "Appearance", anyOf: ["appearance.manage"] },
+        { href: "/staff/emails", label: "Email & notifications", anyOf: ["emails.manage"] },
+      ],
+    },
+    {
+      label: "Access & system",
+      links: [
+        { href: "/staff/settings", label: "Settings overview", anyOf: ["security.view", "roles.view", "audit.view", "audit.read", "recycle_bin.view", "appearance.manage", "emails.manage"] },
+        { href: "/staff/security", label: "Security controls", anyOf: ["security.view"] },
+        { href: "/staff/security/roles", label: "Roles & permissions", anyOf: ["roles.view"] },
+        { href: "/staff/security/audit", label: "Audit log", anyOf: ["audit.view", "audit.read"] },
+        { href: "/staff/security/recycle-bin", label: "Recycle bin", anyOf: ["recycle_bin.view"] },
+        { href: "/staff/security/verified-perks", label: "Verified perks", anyOf: ["security.verified_perks.manage"] },
+      ],
+    },
   ];
 
-  const securityLinks: NavLink[] = [
-    { href: "/staff/security/roles", label: "Roles", anyOf: ["roles.view"] },
-    { href: "/staff/security/verified-perks", label: "Verified Perks", anyOf: ["security.verified_perks.manage"] },
-  ];
-
-  const infoLinks: NavLink[] = [
-    { href: "/staff/info/pending", label: "Pending", anyOf: ["info.pending.view"] },
-    { href: "/staff/info/updates", label: "Updates", anyOf: ["info.updates.view"] },
-  ];
-
-  // Active state rules:
-  // - Most links are active for the exact page OR any nested route.
-  // - The Security root button should NOT stay highlighted when you're in a specific security tool
-  //   (Users / Roles / Permissions / Audit / Recycle Bin). Those have their own buttons.
   const isActive = (href: string) => {
-    if (href === "/staff") return pathname === "/staff";
-    if (href === "/staff/security") return pathname === "/staff/security";
-    return pathname === href || pathname.startsWith(href + "/");
-  };
-
-  // Match SiteHeader's pill aesthetic.
-  const pillBase =
-    "inline-flex items-center justify-between gap-2 rounded-full border px-3 py-2 text-[13px] font-medium tracking-wide transition-all";
-  const pillActive =
-    "border-brand-accent/70 bg-black/60 text-brand-accent";
-  const pillIdle =
-    "border-transparent text-brand-textMuted hover:border-brand-accent/50 hover:bg-black/50 hover:text-brand-accent hover:-translate-y-[1px]";
-
-  const renderLink = (l: NavLink) => {
-    if (l.anyOf && !hasAny(perms, l.anyOf)) return null;
-    const active = isActive(l.href);
-    return (
-      <Link
-        key={l.href}
-        href={l.href}
-        aria-current={active ? "page" : undefined}
-        className={`${pillBase} ${active ? pillActive : pillIdle}`}
-        onClick={(e) => {
-          const target = e.currentTarget as unknown as HTMLElement;
-          const details = target?.closest?.("details") as HTMLDetailsElement | null;
-          if (details) details.open = false;
-        }}
-      >
-        {l.label}
-      </Link>
-    );
+    if (href === "/staff") return pathname === href;
+    if (href === "/staff/settings") return pathname === href;
+    if (href === "/staff/security") return pathname === href;
+    return pathname === href || pathname.startsWith(`${href}/`);
   };
 
   return (
-    <nav
-      aria-label="Staff navigation"
-      className="sticky top-4 rounded-2xl border border-white/10 bg-black/35 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md"
-    >
-      <div className="flex flex-col gap-5">
-        <div>
-          <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-textMuted">STAFF</div>
-          <div className="mt-3 flex flex-col gap-1.5">{topLinks.map((l) => renderLink(l))}</div>
-        </div>
-
-        {canSeeSecurity ? (
-          <div>
-            <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-textMuted">SECURITY</div>
-            <div className="mt-3 flex flex-col gap-1.5">{securityLinks.map((l) => renderLink(l))}</div>
-          </div>
-        ) : null}
-
-        {canSeeInfo ? (
-          <div>
-            <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-textMuted">INFO</div>
-            <div className="mt-3 flex flex-col gap-1.5">{infoLinks.map((l) => renderLink(l))}</div>
-          </div>
-        ) : null}
+    <nav aria-label="Staff navigation" className="rounded-2xl border border-white/10 bg-black/35 p-3 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md lg:sticky lg:top-4">
+      <div className="mb-4 border-b border-white/10 px-2 pb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-accent">KeyMoura staff</p>
+        <p className="mt-1 text-xs text-brand-textMuted">Store operations and site management</p>
+      </div>
+      <div className="space-y-5">
+        {groups.map((group) => {
+          const links = group.links.filter((link) => hasAny(permissions, link.anyOf));
+          if (!links.length) return null;
+          return (
+            <section key={group.label} aria-labelledby={`staff-nav-${group.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
+              <h2 id={`staff-nav-${group.label.toLowerCase().replace(/[^a-z]+/g, "-")}`} className="px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-textMuted">{group.label}</h2>
+              <div className="mt-2 space-y-1">
+                {links.map((link) => {
+                  const active = isActive(link.href);
+                  return (
+                    <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined}
+                      onClick={(event) => {
+                        const menu = event.currentTarget.closest("details");
+                        if (menu) menu.open = false;
+                      }}
+                      className={`flex min-h-10 items-center rounded-xl border px-3 py-2 text-[13px] font-medium transition ${active ? "border-brand-accent/60 bg-brand-accent/10 text-brand-accent" : "border-transparent text-brand-textMuted hover:border-white/10 hover:bg-white/[.04] hover:text-brand-text"}`}>
+                      {link.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </nav>
   );

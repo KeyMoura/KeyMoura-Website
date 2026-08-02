@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { StaffNav } from "@/components/staff/StaffNav";
+import { StaffContextBar } from "@/components/staff/StaffContextBar";
 
 /**
  * Shared staff layout.
@@ -26,6 +27,7 @@ export default function StaffLayout({ children }: { children: ReactNode }) {
             </div>
           </details>
 
+          <StaffContextBar />
           {children}
         </div>
       </div>
