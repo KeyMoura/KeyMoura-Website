@@ -80,3 +80,28 @@ test("staff action buttons no longer use the old amber mini-theme", () => {
     assert.doesNotMatch(source, /bg-brand-primary\/20/, `${path} still contains a legacy brand action`);
   }
 });
+
+test("every design-system class used in markup is actually defined", () => {
+  // A `ui-btn-subtle` that never existed in globals.css rendered the
+  // access-denied action as an unstyled link. Nothing should reference a
+  // ui-* variant the stylesheet does not define.
+  const css = read("src/app/globals.css");
+  const defined = new Set(Array.from(css.matchAll(/\.(ui-[a-z-]+)/g), (match) => match[1]));
+  const undefinedClasses = new Set<string>();
+
+  for (const file of tsxFiles("src")) {
+    for (const match of read(file).matchAll(/\b(ui-[a-z]+-[a-z-]+)\b/g)) {
+      if (!defined.has(match[1])) undefinedClasses.add(`${match[1]} (${file})`);
+    }
+  }
+
+  assert.deepEqual([...undefinedClasses], [], "markup references undefined design-system classes");
+});
+
+test("access-denied shells share one component", () => {
+  const denied = read("src/components/AccessDenied.tsx");
+  const card = read("src/components/AccessDeniedCard.tsx");
+  assert.match(card, /import \{ AccessDenied \} from "@\/components\/AccessDenied"/);
+  assert.match(denied, /role="alert"/);
+  assert.match(denied, /backHref = "\/staff"/, "a generic component needs a generic default destination");
+});

@@ -14,14 +14,14 @@ test("projects is the canonical public route while info remains compatible", () 
     "src/app/projects/mine/page.tsx",
   ]) assert.equal(existsSync(path), true, `${path} is missing`);
 
-  const publicSources = [read("src/components/SiteHeader.tsx"), read("src/app/info/InfoIndexClient.tsx"), read("src/components/info/InfoCard.tsx")].join("\n");
+  const publicSources = [read("src/components/SiteHeader.tsx"), read("src/app/projects/ProjectsIndexClient.tsx"), read("src/components/info/InfoCard.tsx")].join("\n");
   assert.match(publicSources, /\/projects/);
   assert.doesNotMatch(publicSources, /href=[^\n]*\/info/);
 });
 
 test("community and projects share the customer content design system", () => {
   const community = read("src/app/community/page.tsx");
-  const projects = read("src/app/info/InfoIndexClient.tsx");
+  const projects = read("src/app/projects/ProjectsIndexClient.tsx");
   for (const source of [community, projects]) {
     assert.match(source, /content-hub/);
     assert.match(source, /content-hero/);

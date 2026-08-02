@@ -42,7 +42,10 @@ const fallback: RuntimeSiteSettings = {
   appleIconUrl: "/apple-icon.png",
   supportEmail: "support@keymoura.com",
   copyrightText: "All rights reserved.",
-  primaryColor: "#dc2626",
+  // Matches defaultSiteTheme and the built-in KeyMoura preset. The previous
+  // value here was a red that no other default used and that fell below 4.5:1
+  // against the default background wherever the primary color is used as text.
+  primaryColor: "#fbbf24",
   accentColor: "#f59e0b",
   theme: defaultSiteTheme,
   terminology: {

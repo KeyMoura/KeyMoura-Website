@@ -3,7 +3,7 @@
 ## Deployment and bootstrap
 
 1. Create a new Supabase project. Record its project reference and confirm it is
-   not the production S-Chassis project.
+   not the production KeyMoura project.
 2. Set deployment secrets. `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, and
    `INSTALL_TOKEN` are server-only; never use a `NEXT_PUBLIC_` prefix for them.
 
@@ -72,7 +72,7 @@ objects can destroy identity and authorization data. Before completion on a
 disposable database, discard the project to roll back. After completion, restore
 a database backup or write an explicitly reviewed forward migration. Optional
 module files are additive; disabling a module is the safe operational rollback.
-The existing timestamped S-Chassis migrations remain unmodified.
+The existing timestamped migrations remain unmodified.
 
 ## Verification status and exact blockers
 

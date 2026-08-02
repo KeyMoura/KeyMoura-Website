@@ -79,20 +79,23 @@ test("security bootstrap supplies every middleware and IP-check dependency", asy
 test("application baseline covers every current application relation and RPC", async () => {
   const { readdir } = await import("node:fs/promises");
   const { join } = await import("node:path");
+  // URL.pathname keeps a leading slash before the drive letter on Windows, so
+  // readdir would resolve "/C:/…" against the current drive. Convert properly.
+  const { fileURLToPath, pathToFileURL } = await import("node:url");
 
   async function filesUnder(dir: URL): Promise<string[]> {
-    const path = dir.pathname;
+    const path = fileURLToPath(dir);
     const entries = await readdir(path, { withFileTypes: true });
     const nested = await Promise.all(entries.map(async (entry) => {
       const child = join(path, entry.name);
-      return entry.isDirectory() ? filesUnder(new URL(`file://${child}/`)) : [child];
+      return entry.isDirectory() ? filesUnder(pathToFileURL(child + "/")) : [child];
     }));
     return nested.flat();
   }
 
   const sourceFiles = (await filesUnder(new URL("../src/", import.meta.url)))
     .filter((file) => /\.(?:ts|tsx)$/.test(file));
-  sourceFiles.push(new URL("../middleware.ts", import.meta.url).pathname);
+  sourceFiles.push(fileURLToPath(new URL("../middleware.ts", import.meta.url)));
 
   const source = (await Promise.all(sourceFiles.map((file) => readFile(file, "utf8")))).join("\n");
   const sqlFiles = [

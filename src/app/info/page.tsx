@@ -1,11 +1,11 @@
-// src/app/info/page.tsx
-import { Suspense } from "react";
-import InfoIndexClient from "./InfoIndexClient";
+import { permanentRedirect } from "next/navigation";
 
-export default function InfoPage() {
-  return (
-    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-8 text-brand-textMuted">Loading…</div>}>
-      <InfoIndexClient />
-    </Suspense>
-  );
+/**
+ * Legacy alias. Projects lived at /info before it was renamed; those URLs are
+ * still linked from elsewhere, so they permanently redirect to the canonical
+ * /projects route rather than 404 or render a second copy of the page.
+ */
+
+export default function LegacyProjectsIndex(): never {
+  permanentRedirect("/projects");
 }

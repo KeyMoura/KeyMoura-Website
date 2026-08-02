@@ -7,8 +7,14 @@ const read = (path: string) => readFileSync(path, "utf8");
 test("catalog uses gallery media and exposes image navigation", () => {
   const catalog = read("src/app/catalog/page.tsx");
   const product = read("src/app/catalog/[slug]/page.tsx");
+  const image = read("src/components/ProductImage.tsx");
   assert.match(catalog, /from\("product_media"\)/);
-  assert.match(catalog, /data-fallback-src/);
+  // Fallback handling moved from inline DOM juggling into the shared image
+  // component, which steps through every remaining candidate before the
+  // brand mark and never leaves a broken <img> in the layout.
+  assert.match(image, /productImageCandidates/);
+  assert.match(image, /onError=/);
+  assert.match(image, /product-image-fallback/);
   assert.doesNotMatch(catalog, /My requests & orders/);
   assert.match(product, /Previous product image/);
   assert.match(product, /Next product image/);

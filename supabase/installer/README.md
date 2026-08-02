@@ -14,7 +14,7 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/installer/modules/garage.
 ```
 
 The core file is idempotent and additive. It does not delete production data.
-Existing timestamped migrations remain unchanged for S-Chassis compatibility.
+Existing timestamped migrations remain unchanged for upgrade compatibility.
 Module disablement is an application state change, never a schema rollback.
 
 `00000000000002_application_baseline.sql` is the complete additive baseline for

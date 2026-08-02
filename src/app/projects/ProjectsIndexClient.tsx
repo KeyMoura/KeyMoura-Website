@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
+import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 
 function InfoCtaButton({
   href,
@@ -247,7 +248,7 @@ type ClickAggRow = {
   position: number | null;
 };
 
-export default function InfoIndexClient() {
+export default function ProjectsIndexClient() {
   const siteSettings = useSiteSettings();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -289,15 +290,6 @@ export default function InfoIndexClient() {
   // ✅ help popup (same as /community)
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // ✅ ESC closes help (same as /community)
-  useEffect(() => {
-    if (!helpOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setHelpOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [helpOpen]);
 
   const hasActiveQuery =
     committedTerms.length > 0 || fragment.trim().length > 0;
@@ -1006,7 +998,7 @@ export default function InfoIndexClient() {
                     scrollChipsToBottom();
                   }
                 }}
-                placeholder="cnc enclosure, fixture, wiring, prototype"
+                placeholder="Search projects… (e.g. cnc, enclosure, prototype)"
                 className="min-w-[120px] no-zoom-input flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-zinc-500"
               />
             </div>
@@ -1094,92 +1086,18 @@ export default function InfoIndexClient() {
       </section>
 
       {/* Help popup (COPIED wrapper/style 1:1 from /community, info-specific copy) */}
-      {helpOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          onMouseDown={() => setHelpOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
-          <div
-            className="ui-card relative w-full max-w-lg text-sm text-brand-text shadow-xl"
-            onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-                  Project search help
-                </div>
-                <div className="mt-1 text-base font-semibold">
-                  Find the right project fast
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHelpOpen(false)}
-                className="ui-btn ui-btn-ghost h-9 text-[12px]"
-              >
-                Got it
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-3 text-[12px] text-brand-textMuted">
-              <p>
-                <span className="mr-2 inline-flex items-center rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[11px] text-brand-text">
-                  🔍 Type
-                </span>
-                to rank pages by relevance. The best matches rise to the top as you add more detail.
-              </p>
-
-              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
-                <div className="text-[11px] font-semibold text-brand-text">
-                  Chips (comma-separated terms)
-                </div>
-                <p className="mt-1">
-                  Use chips to break your search into multiple ideas. It’s quicker than typing one long sentence,
-                  and it helps the ranking understand what you care about.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    cnc
-                  </span>
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    enclosure
-                  </span>
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    wiring
-                  </span>
-                </div>
-                <div className="mt-2 text-[11px]">
-                  Example:{" "}
-                  <span className="rounded-md border border-zinc-700 bg-black/50 px-1.5 py-0.5 text-brand-text">
-                    cnc, enclosure, aluminum
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
-                <div className="text-[11px] font-semibold text-brand-text">
-                  What gets highlighted
-                </div>
-                <p className="mt-1">
-                  Highlights show exact matches across{" "}
-                  <span className="text-brand-text">title</span>,{" "}
-                  <span className="text-brand-text">tags</span>,{" "}
-                  <span className="text-brand-text">slug</span>, and metadata fields like{" "}
-                  <span className="text-brand-text">category</span> /{" "}
-                  <span className="text-brand-text">platform</span>.
-                </p>
-              </div>
-
-              <p className="text-[11px]">
-                Tip: press <span className="text-brand-text">Enter</span> to turn your current text into a chip.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {helpOpen ? (
+        <SearchHelpDialog
+          open={helpOpen}
+          onClose={() => setHelpOpen(false)}
+          eyebrow="Project search help"
+          title="Find the right project fast"
+          intro=" to rank projects by relevance. The closest matches rise to the top as you add detail."
+          examples={["cnc", "enclosure", "aluminum"]}
+          exampleQuery="cnc, enclosure, aluminum"
+          matchFields={["project title", "tags", "slug", "category", "platform"]}
+        />
+      ) : null}
 
       {/* Categories (hide on ALL screen sizes when typing/filtering) */}
       <section className={(hideCategoriesWhenSearching ? "hidden " : "") + "space-y-3"}>
