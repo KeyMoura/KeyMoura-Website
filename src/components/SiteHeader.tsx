@@ -269,12 +269,8 @@ function NotificationBell({
 
   useOutsideClick(popRef, () => setOpen(false));
 
-  const bellClass = `${desktopPillBase} justify-center w-9 px-0 ${
-    isNotificationsRoute
-      ? "border-white/70 bg-white/10 text-white ring-1 ring-white/30"
-      : unreadCount > 0
-        ? "theme-accent-glow border-amber-400/80 bg-black/55 text-amber-200"
-        : "border-zinc-700 bg-black/40 text-white hover:border-zinc-500"
+  const bellClass = `${desktopPillBase} justify-center w-9 px-0 site-nav-utility${
+    isNotificationsRoute || unreadCount > 0 ? " is-highlighted" : ""
   }`;
 
   const loadUnreadCount = async () => {
@@ -515,12 +511,10 @@ function NotificationBell({
       >
         <FontAwesomeIcon
           icon={unreadCount > 0 ? faBell : faBellSlash}
-          className={`text-[14px] ${
-            unreadCount > 0 ? "text-amber-300" : "text-brand-text"
-          }`}
+          className="text-[14px]"
         />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-amber-400/80 bg-amber-400 px-1 text-[10px] font-bold text-black">
+          <span className="site-nav-utility-badge absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border px-1 text-[10px] font-bold">
             {badgeText}
           </span>
         )}
@@ -723,12 +717,8 @@ function MessageBell({
 
   useOutsideClick(popRef, () => setOpen(false));
 
-  const pillClass = `${desktopPillBase} justify-center w-9 px-0 ${
-    isMessagesRoute
-      ? "border-white/70 bg-white/10 text-white ring-1 ring-white/30"
-      : unreadCount > 0
-        ? "theme-accent-glow border-amber-400/80 bg-black/55 text-amber-200"
-        : "border-zinc-700 bg-black/40 text-white hover:border-zinc-500"
+  const pillClass = `${desktopPillBase} justify-center w-9 px-0 site-nav-utility${
+    isMessagesRoute || unreadCount > 0 ? " is-highlighted" : ""
   }`;
 
   const loadUnreadCount = async () => {
@@ -905,12 +895,10 @@ function MessageBell({
       >
         <FontAwesomeIcon
           icon={unreadCount > 0 ? faEnvelope : faEnvelopeOpen}
-          className={`text-[14px] ${
-            unreadCount > 0 ? "text-amber-300" : "text-brand-text"
-          }`}
+          className="text-[14px]"
         />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-amber-400/80 bg-amber-400 px-1 text-[10px] font-bold text-black">
+          <span className="site-nav-utility-badge absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border px-1 text-[10px] font-bold">
             {badgeText}
           </span>
         )}
@@ -1255,11 +1243,7 @@ export default function SiteHeader() {
   const desktopPillBase =
     "site-nav-link inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all duration-150 ease-out";
 
-  const accountPillClass = `${desktopPillBase} ${
-    isAccountRoute
-      ? "is-active border-brand-accent/80 bg-black/70 text-brand-accent"
-      : "border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/70 hover:bg-black/70 hover:text-brand-accent hover:ring-1 hover:ring-brand-accent/30"
-  }`;
+  const accountPillClass = `${desktopPillBase} site-nav-utility${isAccountRoute ? " is-highlighted" : ""}`;
 
   const hexToRgba = (hex: string, alpha: number) => {
     const h = hex.trim().replace(/^#/, "");
@@ -1281,13 +1265,17 @@ export default function SiteHeader() {
 
     if (dbBorder || dbBg || dbText) {
       return {
-        border: dbBorder ?? "#fbbf24",
-        bg: dbBg ?? "rgba(0,0,0,0.35)",
-        text: dbText ?? "#ffffff",
+        border: dbBorder ?? siteSettings.theme.navigationUtilityBorder,
+        bg: dbBg ?? siteSettings.theme.navigationUtilityBackground,
+        text: dbText ?? siteSettings.theme.navigationUtilityText,
       };
     }
 
-    return { border: "#fbbf24", bg: "rgba(0,0,0,0.35)", text: "#ffffff" };
+    return {
+      border: siteSettings.theme.navigationUtilityBorder,
+      bg: siteSettings.theme.navigationUtilityBackground,
+      text: siteSettings.theme.navigationUtilityText,
+    };
   };
 
   const staffPalette = getStaffPalette();
@@ -1297,7 +1285,7 @@ export default function SiteHeader() {
   const mobilePillBase =
     "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[13px] font-medium transition-all duration-150 ease-out";
 
-  const mobileAccountPillClass = `${mobilePillBase} border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/70 hover:bg-black/70 hover:text-brand-accent`;
+  const mobileAccountPillClass = `${mobilePillBase} site-nav-utility`;
   const mobileStaffPillClass = `${mobilePillBase} hover:brightness-110`;
 
   const headerTheme = "site-header-shell border-b";
@@ -1328,7 +1316,7 @@ export default function SiteHeader() {
             <button
               type="button"
               onClick={handleOpenCommandPalette}
-              className={`${desktopPillBase} max-w-full justify-center border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/60 hover:bg-black/55`}
+              className={`${desktopPillBase} max-w-full justify-center site-nav-utility`}
               aria-label="Search site (Ctrl+K)"
             >
               <FontAwesomeIcon icon={faMagnifyingGlass} className="h-3.5 w-3.5 shrink-0" />
@@ -1469,7 +1457,7 @@ export default function SiteHeader() {
             <button
               type="button"
               onClick={handleOpenCommandPalette}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-zinc-700 bg-black/40 px-2 text-[11px] text-brand-text transition-all duration-150 ease-out hover:border-brand-accent/60"
+              className="site-nav-utility inline-flex h-9 items-center justify-center rounded-md border px-2 text-[11px] transition-all duration-150 ease-out"
               aria-label="Search site (Ctrl+K)"
             >
               🔍

@@ -53,6 +53,12 @@ export default async function RootLayout({
     "--km-nav-text": settings.theme.navigationText,
     "--km-nav-active": settings.theme.navigationActiveText,
     "--km-nav-border": settings.theme.navigationBorder,
+    "--km-nav-util-bg": settings.theme.navigationUtilityBackground,
+    "--km-nav-util-border": settings.theme.navigationUtilityBorder,
+    "--km-nav-util-text": settings.theme.navigationUtilityText,
+    "--km-nav-util-hover-bg": settings.theme.navigationUtilityHoverBackground,
+    "--km-nav-util-hover-border": settings.theme.navigationUtilityHoverBorder,
+    "--km-nav-util-hover-text": settings.theme.navigationUtilityHoverText,
   } as CSSProperties;
 
   return (

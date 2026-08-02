@@ -636,6 +636,28 @@
   }
   .site-header-shell .site-nav-link { color: var(--km-nav-text, #d4d4d8) !important; }
   .site-header-shell .site-nav-link.is-active { color: var(--km-nav-active, #f59e0b) !important; }
+
+  /* Navbar utility controls (search, messages, notifications, account, staff) intentionally use
+     their own dedicated tokens instead of the shared secondary/accent color, so changing the
+     site's primary action color never recolors them. Declared after .site-nav-link so it wins
+     the tie-break (equal specificity, later source order) for elements that carry both classes. */
+  .site-header-shell .site-nav-utility {
+    border-color: var(--km-nav-util-border, #3f3f46) !important;
+    background-color: var(--km-nav-util-bg, #0a0a0c) !important;
+    color: var(--km-nav-util-text, #f4f4f5) !important;
+  }
+  .site-header-shell .site-nav-utility:hover,
+  .site-header-shell .site-nav-utility.is-highlighted {
+    border-color: var(--km-nav-util-hover-border, #52525b) !important;
+    background-color: var(--km-nav-util-hover-bg, #18181b) !important;
+    color: var(--km-nav-util-hover-text, #ffffff) !important;
+  }
+  .site-header-shell .site-nav-utility-badge {
+    border-color: var(--km-nav-util-hover-border, #52525b);
+    background-color: var(--km-nav-util-hover-bg, #18181b);
+    color: var(--km-nav-util-hover-text, #ffffff);
+  }
+
   [data-public-navigation-style="classic"] .site-header-shell .site-nav-link { border-radius: 9999px; background: transparent; }
   [data-public-navigation-style="classic"] .site-header-shell .site-nav-link.is-active { border-color: color-mix(in srgb, var(--km-nav-active) 70%, transparent); background: color-mix(in srgb, var(--km-nav-bg) 84%, black); }
   [data-public-navigation-style="soft"] .site-header-shell .site-nav-link { border-radius: var(--control-radius); background: color-mix(in srgb, var(--km-nav-text) 7%, transparent); }

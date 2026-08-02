@@ -15,6 +15,8 @@ export type SiteTheme = {
   navigationBehavior: "sticky" | "auto-hide";
   navigationDensity: "compact" | "comfortable";
   navigationBackground: string; navigationText: string; navigationActiveText: string; navigationBorder: string;
+  navigationUtilityBackground: string; navigationUtilityBorder: string; navigationUtilityText: string;
+  navigationUtilityHoverBackground: string; navigationUtilityHoverBorder: string; navigationUtilityHoverText: string;
   backgroundStyle: "gradient" | "solid" | "spotlight";
   contentWidth: "standard" | "wide" | "full";
   shadowStyle: "none" | "soft" | "glow";
@@ -32,6 +34,8 @@ export const defaultSiteTheme: SiteTheme = {
   navigationStyle: "soft", publicNavigationStyle: "classic", navigationBehavior: "auto-hide",
   navigationDensity: "compact", navigationBackground: "#09090b", navigationText: "#d4d4d8",
   navigationActiveText: "#f59e0b", navigationBorder: "#3f3f46",
+  navigationUtilityBackground: "#0a0a0c", navigationUtilityBorder: "#3f3f46", navigationUtilityText: "#f4f4f5",
+  navigationUtilityHoverBackground: "#18181b", navigationUtilityHoverBorder: "#52525b", navigationUtilityHoverText: "#ffffff",
   backgroundStyle: "gradient", contentWidth: "standard", shadowStyle: "soft", borderStrength: "standard",
 };
 
@@ -49,6 +53,9 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     primaryButtonText: color("primaryButtonText"), secondaryButtonText: color("secondaryButtonText"),
     navigationBackground: color("navigationBackground"), navigationText: color("navigationText"),
     navigationActiveText: color("navigationActiveText"), navigationBorder: color("navigationBorder"),
+    navigationUtilityBackground: color("navigationUtilityBackground"), navigationUtilityBorder: color("navigationUtilityBorder"),
+    navigationUtilityText: color("navigationUtilityText"), navigationUtilityHoverBackground: color("navigationUtilityHoverBackground"),
+    navigationUtilityHoverBorder: color("navigationUtilityHoverBorder"), navigationUtilityHoverText: color("navigationUtilityHoverText"),
     radius: oneOf(input.radius, ["soft", "rounded", "pill"] as const, defaultSiteTheme.radius),
     density: oneOf(input.density, ["compact", "comfortable"] as const, defaultSiteTheme.density),
     font: oneOf(input.font, ["system", "modern", "technical"] as const, defaultSiteTheme.font),
