@@ -14,15 +14,18 @@ type Order = {
   payment_status: string;
   fulfillment_method: "shipping" | "pickup";
   tracking_number: string | null;
+  created_at: string;
   updated_at: string;
 };
 
 type Filter = "active" | "action" | "complete" | "all";
+type Sort = "updated" | "newest" | "oldest" | "attention" | "price_high" | "price_low";
 
 export default function OrdersPage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<Filter>("active");
+  const [sort, setSort] = useState<Sort>("updated");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -35,7 +38,7 @@ export default function OrdersPage() {
       }
       const result = await supabase
         .from("orders")
-        .select("id,order_number,product_name,status,agreed_price_cents,payment_status,fulfillment_method,tracking_number,updated_at")
+        .select("id,order_number,product_name,status,agreed_price_cents,payment_status,fulfillment_method,tracking_number,created_at,updated_at")
         .eq("customer_id", data.user.id)
         .order("updated_at", { ascending: false });
       setOrders((result.data ?? []) as Order[]);
@@ -47,7 +50,23 @@ export default function OrdersPage() {
   const actionable = orders.filter(orderNeedsCustomerAction);
   const active = orders.filter((order) => !["completed", "declined", "cancelled"].includes(order.status));
   const completed = orders.filter((order) => ["completed", "declined", "cancelled"].includes(order.status));
-  const shown = filter === "action" ? actionable : filter === "active" ? active : filter === "complete" ? completed : orders;
+  const filtered = filter === "action" ? actionable : filter === "active" ? active : filter === "complete" ? completed : orders;
+  const shown = [...filtered].sort((left, right) => {
+    if (sort === "newest") return Date.parse(right.created_at) - Date.parse(left.created_at);
+    if (sort === "oldest") return Date.parse(left.created_at) - Date.parse(right.created_at);
+    if (sort === "attention") {
+      const actionDifference = Number(orderNeedsCustomerAction(right)) - Number(orderNeedsCustomerAction(left));
+      return actionDifference || Date.parse(right.updated_at) - Date.parse(left.updated_at);
+    }
+    if (sort === "price_high" || sort === "price_low") {
+      if (left.agreed_price_cents == null) return 1;
+      if (right.agreed_price_cents == null) return -1;
+      const leftPrice = left.agreed_price_cents;
+      const rightPrice = right.agreed_price_cents;
+      return sort === "price_high" ? rightPrice - leftPrice : leftPrice - rightPrice;
+    }
+    return Date.parse(right.updated_at) - Date.parse(left.updated_at);
+  });
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
@@ -68,10 +87,23 @@ export default function OrdersPage() {
         </section>
       ) : null}
 
-      <div className="mt-7 flex gap-2 overflow-x-auto pb-1" aria-label="Filter orders">
-        {([['active', `Active (${active.length})`], ['action', `Needs attention (${actionable.length})`], ['complete', `Finished (${completed.length})`], ['all', `All (${orders.length})`]] as [Filter, string][]).map(([value, text]) => (
-          <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-full border px-4 py-2 text-sm transition ${filter === value ? "border-brand-primary bg-brand-primary/15 text-brand-primary" : "border-zinc-700 text-brand-textMuted hover:border-zinc-500 hover:text-brand-text"}`}>{text}</button>
-        ))}
+      <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Filter orders">
+          {([['active', `Active (${active.length})`], ['action', `Needs attention (${actionable.length})`], ['complete', `Finished (${completed.length})`], ['all', `All (${orders.length})`]] as [Filter, string][]).map(([value, text]) => (
+            <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-full border px-4 py-2 text-sm transition ${filter === value ? "border-brand-primary bg-brand-primary/15 text-brand-primary" : "border-zinc-700 text-brand-textMuted hover:border-zinc-500 hover:text-brand-text"}`}>{text}</button>
+          ))}
+        </div>
+        <label className="flex shrink-0 items-center gap-2 text-sm text-brand-textMuted">
+          <span>Sort by</span>
+          <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="rounded-xl border border-zinc-700 bg-black/30 px-3 py-2 text-brand-text outline-none focus:border-brand-primary" aria-label="Sort your orders">
+            <option value="updated">Recently updated</option>
+            <option value="newest">Newest request</option>
+            <option value="oldest">Oldest request</option>
+            <option value="attention">Needs attention first</option>
+            <option value="price_high">Price: high to low</option>
+            <option value="price_low">Price: low to high</option>
+          </select>
+        </label>
       </div>
 
       {loading ? <p className="mt-8 text-brand-textMuted">Loading your orders…</p> : null}
