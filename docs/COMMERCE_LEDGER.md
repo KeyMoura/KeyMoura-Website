@@ -12,21 +12,56 @@ the phase table as each phase lands.
 | # | Phase | State |
 |---|-------|-------|
 | 1 | Architecture and schema design | complete |
-| 2 | Additive migrations and category backfill | complete |
-| 3 | Staff category tools and purchase modes | pending |
+| 2 | Additive migrations and category backfill | complete — applied and verified |
+| 3 | Staff category tools and purchase modes | server API complete; staff UI pending |
 | 4 | Public catalog redesign | pending |
-| 5 | Canonical cart and pricing | pending |
+| 5 | Canonical cart and pricing | service complete; HTTP routes pending |
 | 6 | Cart drawer/page and sharing | pending |
 | 7 | Wishlist and sharing | pending |
-| 8 | Discount engine and staff management | pending |
-| 9 | Reviews and moderation | pending |
+| 8 | Discount engine and staff management | engine complete; staff UI pending |
+| 9 | Reviews and moderation | schema complete; API and UI pending |
 | 10 | Stripe checkout and direct orders | pending |
 | 11 | Search, navbar, Appearance integration | pending |
 | 12 | Security review | pending |
-| 13 | Tests and browser validation | pending |
+| 13 | Tests and browser validation | domain tests done; browser pending |
 | 14 | Preview validation | pending |
-| 15 | Migration application | pending |
-| 16 | Merge and production verification | pending |
+| 15 | Migration application | complete (applied ahead of the branch) |
+| 16 | Merge and production verification | **not started — do not merge yet** |
+
+## What exists on the branch right now
+
+Shipped and green (242 tests, typecheck clean, focused lint clean):
+
+- All five migrations, applied to the live project and verified: record
+  counts unchanged, backfill correct, hierarchy guards proven in the database.
+- `src/lib/commerce/purchaseModes.ts` — the three modes and their gates.
+- `src/lib/commerce/pricing.ts` — the pricing engine. Pure, no client input.
+- `src/lib/commerce/discounts.ts` — eligibility and amount. Pure.
+- `src/lib/commerce/categories.ts` — hierarchy, slugs, deletion safety.
+- `src/lib/commerce/cartService.ts` — the canonical cart: resolve, merge,
+  serialize. Every price comes from a live product row.
+- `src/app/api/staff/catalog/categories/**` — list, create, reorder, edit,
+  archive, move products, delete-with-guard. All behind
+  `catalog.categories.manage`.
+- Three new permission keys registered in the typed permission list and
+  seeded in the database.
+
+## Next steps, in order
+
+1. Cart HTTP routes (`/api/cart`) over `cartService`, plus the guest cookie.
+2. Product editor: purchase-mode field and the hierarchical category selector.
+3. Staff category management page.
+4. Catalog redesign with the category sidebar and category routes.
+5. Cart drawer, `/cart`, shared carts, wishlist.
+6. Discount and review staff tools; review submission and moderation.
+7. `/api/cart/checkout` creating a `direct_purchase` order, then the webhook
+   branch that settles it.
+8. Search, navbar, and Appearance integration.
+9. Security review, browser validation, preview, merge, production.
+
+**The branch must not be merged until at least the checkout path is complete
+and verified.** Half a commerce system in production is worse than none: the
+schema is additive and inert, but a partial cart would be reachable.
 
 ## Audit of what already existed
 

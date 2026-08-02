@@ -567,3 +567,73 @@ test("cart items carry no price columns, so prices cannot be tampered with", () 
     assert.ok(!cartItems.includes(field), `cart_items must not store ${field}`);
   }
 });
+
+// --- cart service invariants --------------------------------------------
+
+test("the cart service is the only place prices are decided", () => {
+  const service = read("src/lib/commerce/cartService.ts");
+
+  // Prices are read from live products, never from a request payload.
+  assert.match(service, /loadPricedProducts/);
+  assert.match(service, /priceCart\(products, lines\)/);
+  assert.ok(
+    !/body\.(unitPrice|price|subtotal|total|amount)/i.test(service),
+    "the cart service must not read a price from client input"
+  );
+
+  // The drawer, the cart page, and checkout all resolve through one function.
+  assert.match(service, /export async function resolveCart/);
+  assert.match(service, /export async function resolveLines/);
+});
+
+test("guest and share tokens use CSPRNG entropy", () => {
+  const service = read("src/lib/commerce/cartService.ts");
+  assert.match(service, /randomBytes\(32\)\.toString\("base64url"\)/);
+  assert.ok(!/Math\.random/.test(service), "tokens must not come from Math.random");
+});
+
+test("stored option payloads are bounded and string-only", () => {
+  const service = read("src/lib/commerce/cartService.ts");
+  const start = service.indexOf("function sanitizeOptions");
+  const body = service.slice(start, service.indexOf("\n}", start));
+  assert.match(body, /typeof entry !== "string"/);
+  assert.match(body, /\.slice\(0, 30\)/, "option count is capped");
+  assert.match(body, /\.slice\(0, 60\)/, "option keys are capped");
+  assert.match(body, /\.slice\(0, 120\)/, "option values are capped");
+});
+
+test("the serialized cart carries no owner identity", () => {
+  const service = read("src/lib/commerce/cartService.ts");
+  const start = service.indexOf("export function serializeCart");
+  const body = service.slice(start, service.indexOf("\nexport type SerializedCart", start));
+  for (const leak of ["customer_id", "customerId", "guest_token", "guestToken", "email", "created_by"]) {
+    assert.ok(!body.includes(leak), `serialized cart must not expose ${leak}`);
+  }
+});
+
+test("category management routes all require the category permission", () => {
+  for (const file of [
+    "src/app/api/staff/catalog/categories/route.ts",
+    "src/app/api/staff/catalog/categories/[id]/route.ts",
+  ]) {
+    const source = read(file);
+    const handlers = source.match(/export async function (GET|POST|PATCH|PUT|DELETE)/g) ?? [];
+    const guards = source.match(/requirePermission\(req, "catalog\.categories\.manage"\)/g) ?? [];
+    assert.ok(handlers.length > 0, `${file} defines no handlers`);
+    assert.equal(guards.length, handlers.length, `${file}: every handler must check the permission`);
+  }
+});
+
+test("deleting a category in use is refused with an archive alternative", () => {
+  const source = read("src/app/api/staff/catalog/categories/[id]/route.ts");
+  assert.match(source, /deletionProblem\(current, rows, productCount\)/);
+  assert.match(source, /canArchive: true/);
+  assert.match(source, /status: 409/);
+});
+
+test("the new commerce permissions are registered in the typed list", () => {
+  const permissions = read("src/lib/permissions.ts");
+  for (const key of ["catalog.categories.manage", "catalog.discounts.manage", "catalog.reviews.moderate"]) {
+    assert.ok(permissions.includes(`"${key}"`), `${key} is not registered`);
+  }
+});
