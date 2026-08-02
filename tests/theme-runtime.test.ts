@@ -48,3 +48,30 @@ test("legacy amber and yellow Tailwind utilities inherit the live accent palette
   assert.match(css, /--color-yellow-400:\s*var\(--color-amber-400\)/);
   assert.match(css, /--color-yellow-500:\s*var\(--color-amber-500\)/);
 });
+
+test("appearance controls the shared site shell and component families", () => {
+  const theme = normalizeSiteTheme({
+    primaryButtonStyle: "framed",
+    secondaryButtonStyle: "framed",
+    tabStyle: "underline",
+    cardStyle: "outline",
+    inputStyle: "soft",
+    navigationStyle: "minimal",
+    backgroundStyle: "solid",
+    contentWidth: "wide",
+  });
+
+  assert.equal(theme.primaryButtonStyle, "framed");
+  assert.equal(theme.secondaryButtonStyle, "framed");
+  assert.equal(theme.tabStyle, "underline");
+  assert.equal(theme.cardStyle, "outline");
+  assert.equal(theme.inputStyle, "soft");
+  assert.equal(theme.navigationStyle, "minimal");
+  assert.equal(theme.backgroundStyle, "solid");
+  assert.equal(theme.contentWidth, "wide");
+
+  const layout = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+  for (const attribute of ["data-tab-style", "data-card-style", "data-input-style", "data-navigation-style", "data-background-style", "data-content-width"]) {
+    assert.match(layout, new RegExp(attribute));
+  }
+});

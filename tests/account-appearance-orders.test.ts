@@ -48,4 +48,16 @@ test("appearance is organized into focused sections with explicit publishing", (
   assert.match(page, /Reset this section/);
   assert.match(page, /Publish appearance/);
   assert.match(page, /You have unpublished appearance changes/);
+  for (const label of ["Layout & type", "Components", "Tabs", "Cards & panels", "Inputs", "Navigation", "Content width"]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /"framed"/);
+});
+
+test("account tabs use the shared configurable tab system", () => {
+  const page = read("src/app/account/page.tsx");
+  assert.match(page, /className="ui-tabs/);
+  assert.match(page, /className=\{`ui-tab/);
+  assert.match(page, /role="tab"/);
+  assert.match(page, /aria-selected=/);
 });

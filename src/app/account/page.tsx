@@ -903,49 +903,32 @@ const loadMyReports = async (viewerId: string) => {
       <section className="mt-5 rounded-3xl border border-zinc-800 bg-black/25 p-4 sm:p-6">
         <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-brand-textMuted">Account settings</p><h2 className="mt-1 text-2xl font-semibold">Manage your account</h2></div>
 
-        {/* Tabs – same style as SortChip group, but not full width */}
-        <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-2 sm:grid-cols-4" role="tablist" aria-label="Account sections">
+        <div className="ui-tabs mt-6 grid w-full grid-cols-2 sm:grid-cols-4" role="tablist" aria-label="Account sections">
           <button
             type="button"
             onClick={() => setActiveTab("profile")}
-            className={
-              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
-              (activeTab === "profile"
-                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
-            }
+            role="tab" aria-selected={activeTab === "profile"} className={`ui-tab ${activeTab === "profile" ? "is-active" : ""}`}
           >
             Profile
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("security")}
-            className={
-              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
-              (activeTab === "security"
-                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
-            }
+            role="tab" aria-selected={activeTab === "security"} className={`ui-tab ${activeTab === "security" ? "is-active" : ""}`}
           >
             Security
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("reports")}
-            className={
-              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
-              (activeTab === "reports"
-                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
-            }
+            role="tab" aria-selected={activeTab === "reports"} className={`ui-tab ${activeTab === "reports" ? "is-active" : ""}`}
           >
             Reports
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("blocked")}
-            className={
-              "rounded-xl px-4 py-2.5 text-sm font-medium transition " +
-              (activeTab === "blocked"
-                ? "border border-brand-primary/70 bg-brand-primary/10 text-brand-primary shadow-[inset_0_-2px_0_rgba(245,158,11,.8)]" : "border border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900 hover:text-brand-text")
-            }
+            role="tab" aria-selected={activeTab === "blocked"} className={`ui-tab ${activeTab === "blocked" ? "is-active" : ""}`}
           >
             Blocked users
           </button>

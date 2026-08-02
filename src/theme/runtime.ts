@@ -5,8 +5,14 @@ export type SiteTheme = {
   radius: "soft" | "rounded" | "pill";
   density: "compact" | "comfortable";
   font: "system" | "modern" | "technical";
-  primaryButtonStyle: "solid" | "soft" | "outline";
-  secondaryButtonStyle: "solid" | "soft" | "outline" | "ghost";
+  primaryButtonStyle: "solid" | "soft" | "outline" | "framed";
+  secondaryButtonStyle: "solid" | "soft" | "outline" | "ghost" | "framed";
+  tabStyle: "soft" | "framed" | "underline";
+  cardStyle: "soft" | "solid" | "outline";
+  inputStyle: "soft" | "solid" | "outline";
+  navigationStyle: "soft" | "framed" | "minimal";
+  backgroundStyle: "gradient" | "solid";
+  contentWidth: "standard" | "wide";
 };
 
 export const defaultSiteTheme: SiteTheme = {
@@ -16,6 +22,8 @@ export const defaultSiteTheme: SiteTheme = {
   primaryButtonText: "#09090b", secondaryButtonText: "#f4f4f5",
   radius: "rounded", density: "comfortable", font: "modern",
   primaryButtonStyle: "solid", secondaryButtonStyle: "outline",
+  tabStyle: "framed", cardStyle: "soft", inputStyle: "solid",
+  navigationStyle: "soft", backgroundStyle: "gradient", contentWidth: "standard",
 };
 
 const hex = /^#[0-9a-f]{6}$/i;
@@ -33,7 +41,13 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     radius: oneOf(input.radius, ["soft", "rounded", "pill"] as const, defaultSiteTheme.radius),
     density: oneOf(input.density, ["compact", "comfortable"] as const, defaultSiteTheme.density),
     font: oneOf(input.font, ["system", "modern", "technical"] as const, defaultSiteTheme.font),
-    primaryButtonStyle: oneOf(input.primaryButtonStyle ?? input.buttonStyle, ["solid", "soft", "outline"] as const, defaultSiteTheme.primaryButtonStyle),
-    secondaryButtonStyle: oneOf(input.secondaryButtonStyle, ["solid", "soft", "outline", "ghost"] as const, defaultSiteTheme.secondaryButtonStyle),
+    primaryButtonStyle: oneOf(input.primaryButtonStyle ?? input.buttonStyle, ["solid", "soft", "outline", "framed"] as const, defaultSiteTheme.primaryButtonStyle),
+    secondaryButtonStyle: oneOf(input.secondaryButtonStyle, ["solid", "soft", "outline", "ghost", "framed"] as const, defaultSiteTheme.secondaryButtonStyle),
+    tabStyle: oneOf(input.tabStyle, ["soft", "framed", "underline"] as const, defaultSiteTheme.tabStyle),
+    cardStyle: oneOf(input.cardStyle, ["soft", "solid", "outline"] as const, defaultSiteTheme.cardStyle),
+    inputStyle: oneOf(input.inputStyle, ["soft", "solid", "outline"] as const, defaultSiteTheme.inputStyle),
+    navigationStyle: oneOf(input.navigationStyle, ["soft", "framed", "minimal"] as const, defaultSiteTheme.navigationStyle),
+    backgroundStyle: oneOf(input.backgroundStyle, ["gradient", "solid"] as const, defaultSiteTheme.backgroundStyle),
+    contentWidth: oneOf(input.contentWidth, ["standard", "wide"] as const, defaultSiteTheme.contentWidth),
   };
 }

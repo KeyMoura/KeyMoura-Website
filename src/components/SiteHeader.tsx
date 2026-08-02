@@ -1213,7 +1213,7 @@ export default function SiteHeader() {
   const isStaff = meAccess?.isStaff ?? ["admin", "moderator", "mod", "support"].includes(staffRole);
 
   const pillBase =
-    "rounded-full px-3 py-1 text-[14px] font-medium tracking-wide transition-colors";
+    "site-nav-link rounded-full px-3 py-1 text-[14px] font-medium tracking-wide transition-colors";
   const pillActive =
     "border border-brand-accent/70 bg-black/60 text-brand-accent";
   const pillIdle =
@@ -1250,7 +1250,7 @@ export default function SiteHeader() {
   );
 
   const desktopPillBase =
-    "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all duration-150 ease-out";
+    "site-nav-link inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all duration-150 ease-out";
 
   const accountPillClass = `${desktopPillBase} ${
     isAccountRoute

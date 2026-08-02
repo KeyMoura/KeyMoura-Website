@@ -52,7 +52,7 @@ export default async function RootLayout({
   } as CSSProperties;
 
   return (
-    <html lang="en" style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-primary-button-style={settings.theme.primaryButtonStyle} data-secondary-button-style={settings.theme.secondaryButtonStyle}>
+    <html lang="en" style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-primary-button-style={settings.theme.primaryButtonStyle} data-secondary-button-style={settings.theme.secondaryButtonStyle} data-tab-style={settings.theme.tabStyle} data-card-style={settings.theme.cardStyle} data-input-style={settings.theme.inputStyle} data-navigation-style={settings.theme.navigationStyle} data-background-style={settings.theme.backgroundStyle} data-content-width={settings.theme.contentWidth}>
       <body className="min-h-screen text-brand-text antialiased">
         <a className="skip-link" href="#main-content">
           Skip to main content
