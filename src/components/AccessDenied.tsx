@@ -13,7 +13,7 @@ type Props = {
 export function AccessDenied({
   title = "Access denied",
   description = "You do not have permission to view this page.",
-  backHref = "/staff/moderation/reports",
+  backHref = "/staff",
   backLabel = "Back to Staff",
 }: Props) {
   return (
@@ -28,7 +28,7 @@ export function AccessDenied({
           </h1>
           <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
           <div className="mt-4">
-            <Link className="ui-btn ui-btn-subtle" href={backHref}>
+            <Link className="ui-btn ui-btn-ghost" href={backHref}>
               {backLabel}
             </Link>
           </div>

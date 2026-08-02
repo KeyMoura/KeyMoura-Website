@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { AccessDenied } from "@/components/AccessDenied";
+import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { Badge, EmptyState, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import type { AnalyticsRange } from "@/lib/businessAnalytics";
@@ -79,7 +79,7 @@ export default function AnalyticsPage() {
   const maxPipeline = Math.max(1, ...(summary?.pipeline.map((stage) => stage.count) ?? [1]));
 
   if (accessLoading) return <div className="ui-card p-6 text-sm text-brand-textMuted">Loading analytics…</div>;
-  if (!canView) return <div className="mx-auto w-full max-w-6xl p-4"><AccessDenied backHref="/staff" backLabel="Back to staff" /></div>;
+  if (!canView) return <AccessDeniedCard />;
 
   return <main className="page-stack mx-auto w-full max-w-7xl">
     <div className="flex flex-wrap items-end justify-between gap-4">

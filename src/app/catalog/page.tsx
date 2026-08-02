@@ -73,6 +73,11 @@ export default function CatalogPage() {
       </div>
     </div> : null}
 
-    {visible.length ? <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{visible.map((product, index) => <ProductCard key={product.id} product={product} priority={index < 3} />)}</div> : null}
+    {visible.length ? <section className="mt-6" aria-labelledby="catalog-products">
+      {/* Product names are h3 inside the shared card, so the grid needs an h2
+          above them to keep the heading outline unbroken for screen readers. */}
+      <h2 id="catalog-products" className="sr-only">Products</h2>
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{visible.map((product, index) => <ProductCard key={product.id} product={product} priority={index < 3} />)}</div>
+    </section> : null}
   </main>;
 }

@@ -220,8 +220,8 @@ test("every search surface uses the shared help dialog", () => {
   for (const page of [
     "src/app/community/page.tsx",
     "src/app/community/[slug]/page.tsx",
-    "src/app/info/InfoIndexClient.tsx",
-    "src/app/info/category/[slug]/page.tsx",
+    "src/app/projects/ProjectsIndexClient.tsx",
+    "src/app/projects/category/[slug]/page.tsx",
   ]) {
     const source = read(page);
     assert.match(source, /SearchHelpDialog/, `${page} should use the shared dialog`);

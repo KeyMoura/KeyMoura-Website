@@ -260,6 +260,10 @@ export default function AppearancePage() {
     if (contrast(form.theme.mutedText, form.theme.background) < 3) return "Muted text needs more contrast against the background.";
     if (contrast(form.theme.navigationText, form.theme.navigationBackground) < 4.5) return "Navbar text needs more contrast against the navbar background.";
     if (contrast(form.theme.navigationActiveText, form.theme.navigationBackground) < 3) return "The active navbar link needs more contrast against the navbar background.";
+    // The brand colors are not only fills: eyebrows, prices, section links, and
+    // in-content links are drawn in them directly on the page background.
+    if (contrast(form.primaryColor, form.theme.background) < 4.5) return "The primary color needs more contrast against the page background — it is also used for small text like prices and section links.";
+    if (contrast(form.theme.linkText, form.theme.background) < 4.5) return "Link text needs more contrast against the page background.";
     if (form.theme.primaryButtonStyle === "solid" && contrast(form.theme.primaryButtonText, form.primaryColor) < 4.5) return "Primary button text needs more contrast against the primary color.";
     if (form.theme.secondaryButtonStyle === "solid" && contrast(form.theme.secondaryButtonText, form.accentColor) < 4.5) return "Secondary button text needs more contrast against the accent color.";
     return "";

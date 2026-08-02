@@ -248,7 +248,7 @@ type ClickAggRow = {
   position: number | null;
 };
 
-export default function InfoIndexClient() {
+export default function ProjectsIndexClient() {
   const siteSettings = useSiteSettings();
   const router = useRouter();
   const searchParams = useSearchParams();

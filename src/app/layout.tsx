@@ -15,17 +15,21 @@ import { SiteSettingsProvider } from "@/components/SiteSettingsProvider";
 
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSiteSettings();
+  // The default title follows the configured tagline rather than a hard-coded
+  // product line, so renaming the business in Appearance renames its metadata.
+  const defaultTitle = settings.tagline ? `${settings.name} — ${settings.tagline}` : settings.name;
   return {
-    title: { default: `${settings.name} | Custom CNC Parts`, template: `%s | ${settings.name}` },
+    title: { default: defaultTitle, template: `%s | ${settings.name}` },
     description: settings.description,
     metadataBase: new URL(settings.url),
+    applicationName: settings.name,
     icons: {
       icon: settings.faviconUrl,
       shortcut: settings.faviconUrl,
       apple: settings.appleIconUrl,
     },
-    openGraph: { type: "website", siteName: settings.name, title: `${settings.name} | Custom CNC Parts`, description: settings.description, url: settings.url, images: settings.logoUrl ? [{ url: settings.logoUrl }] : [] },
-    twitter: { card: "summary_large_image", title: `${settings.name} | Custom CNC Parts`, description: settings.description, images: settings.logoUrl ? [settings.logoUrl] : [] },
+    openGraph: { type: "website", siteName: settings.name, title: defaultTitle, description: settings.description, url: settings.url, images: settings.logoUrl ? [{ url: settings.logoUrl }] : [] },
+    twitter: { card: "summary_large_image", title: defaultTitle, description: settings.description, images: settings.logoUrl ? [settings.logoUrl] : [] },
   };
 }
 
