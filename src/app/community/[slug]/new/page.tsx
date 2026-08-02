@@ -230,7 +230,7 @@ export default function NewThreadPage() {
   const parsedTags = parseTags(tagsInput);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 text-sm text-brand-text">
+    <div className="page-container page-stack max-w-3xl text-sm text-brand-text">
       <section className="space-y-2">
         <div className="flex items-center gap-2 text-[11px] text-brand-textMuted">
           <button
@@ -276,7 +276,7 @@ export default function NewThreadPage() {
         </section>
       )}
       {state === "loaded" && category && (
-        <section className="rounded-xl border border-zinc-800/80 bg-black/40 p-4 text-[12px]">
+        <section className="ui-card text-[12px]">
           {isBanned && (
             <p className="mb-3 rounded-md border border-rose-500/60 bg-rose-950/40 px-3 py-2 text-[11px] text-rose-200">
               You are banned and cannot create new threads.
@@ -372,7 +372,7 @@ export default function NewThreadPage() {
                   isLoggedIn === false ||
                   category.is_archived
                 }
-                className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-4 py-1.5 text-[11px] font-medium text-amber-300 hover:bg-amber-500/25 disabled:opacity-60"
+                className="ui-btn ui-btn-primary text-[11px] disabled:opacity-60"
               >
                 {creating ? "Posting…" : "Create thread"}
               </button>

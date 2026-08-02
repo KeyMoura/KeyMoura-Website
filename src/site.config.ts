@@ -9,8 +9,8 @@ export const siteConfig = {
   identity: {
     name: "KeyMoura",
     shortName: "KeyMoura",
-    description: "A community-powered automotive knowledge base.",
-    tagline: "Automotive knowledge, builds, and community in one place.",
+    description: "Custom products, project builds, and a community for makers.",
+    tagline: "Ideas, builds, and custom work in one place.",
     url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
     logo: {
       src: "/brand/sca-logo.svg",
@@ -19,7 +19,7 @@ export const siteConfig = {
   },
   navigation: {
     primary: [
-      { label: "Knowledge Base", href: "/info", module: "knowledgeBase" },
+      { label: "Projects", href: "/projects", module: "knowledgeBase" },
       { label: "Community", href: "/community", module: "forum" },
       { label: "Garage", href: "/garage", module: "garage" },
       { label: "Trusted Shops", href: "/shops", module: "trustedVendors" },
@@ -31,7 +31,7 @@ export const siteConfig = {
   },
   terminology: {
     forum: "Community",
-    knowledgeBase: "Knowledge Base",
+    knowledgeBase: "Projects",
     thread: "Thread",
     post: "Post",
     trustedVendor: "Trusted Shop",

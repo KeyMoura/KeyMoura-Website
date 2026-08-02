@@ -64,7 +64,7 @@ export default function LogoutPage() {
         </Link>
         <span className="opacity-80"> or </span>
         <Link
-          href="/info"
+          href="/projects"
           className="font-medium text-brand-primary hover:text-brand-primarySoft"
         >
           browse info pages

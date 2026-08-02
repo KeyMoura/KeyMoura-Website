@@ -2076,7 +2076,7 @@ export default function UserProfilePage() {
                         return (
                           <Link
                             key={post.id}
-                            href={`/info/${post.slug}`}
+                            href={`/projects/${post.slug}`}
                             className="block rounded-lg border border-zinc-800/80 bg-black/40 p-4 text-sm text-brand-text transition hover:border-amber-400/80 hover:bg-black/60"
                           >
                             <div className="mb-1 flex items-start justify-between gap-2">

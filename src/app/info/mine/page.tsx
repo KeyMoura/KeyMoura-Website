@@ -139,7 +139,7 @@ export default function MyInfoSubmissionsPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8 text-brand-text">
+      <div className="page-container text-brand-text">
         <p>Loading your submissions...</p>
       </div>
     );
@@ -147,32 +147,32 @@ export default function MyInfoSubmissionsPage() {
 
   if (!userId) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8 text-brand-text">
+      <div className="page-container text-brand-text">
         <h1 className="mb-2 text-xl font-semibold">
-          My Info Submissions
+          My Project Submissions
         </h1>
         <p className="text-sm text-brand-textMuted">
           {error ||
-            "You must be logged in to view your info page submissions."}
+            "You must be logged in to view your project submissions."}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 text-brand-text">
+    <div className="page-container text-brand-text">
       <h1 className="mb-2 text-2xl font-semibold">
-        My Info Submissions
+        My Project Submissions
       </h1>
       <p className="mb-4 text-sm text-brand-textMuted">
-        These are info pages that you have submitted for review.
+        These are projects that you have submitted for review.
       </p>
       <div className="mt-2 mb-5 text-[11px] text-brand-textMuted">
           <Link
-            href="/info"
+            href="/projects"
             className="text-amber-300 hover:text-amber-200 underline underline-offset-2"
           >
-            ← Back to all info
+            ← Back to all projects
           </Link>
       </div>
 
@@ -182,7 +182,7 @@ export default function MyInfoSubmissionsPage() {
 
       {pages.length === 0 ? (
         <p className="text-sm text-brand-textMuted">
-          You haven&apos;t submitted any info pages yet.
+          You haven&apos;t submitted any projects yet.
         </p>
       ) : (
         <div className="space-y-4">
@@ -240,7 +240,7 @@ export default function MyInfoSubmissionsPage() {
                     </span>
                     {status === "rejected" && (
                       <Link
-                        href={`/info/submit?edit=${page.id}`}
+                        href={`/projects/submit?edit=${page.id}`}
                         className="text-[11px] text-amber-300 hover:text-amber-200 underline underline-offset-2"
                       >
                         Edit &amp; resubmit →
@@ -248,7 +248,7 @@ export default function MyInfoSubmissionsPage() {
                     )}
                     {status === "approved" && (
                       <a
-                        href={`/info/${page.slug}`}
+                        href={`/projects/${page.slug}`}
                         className="text-[11px] text-brand-primary hover:text-brand-accent"
                       >
                         View live page →

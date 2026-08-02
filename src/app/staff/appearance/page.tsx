@@ -31,7 +31,7 @@ type Appearance = {
   identity: Identity;
 };
 
-type Section = "brand" | "assets" | "wording" | "theme";
+type Section = "brand" | "assets" | "wording" | "navigation" | "theme";
 
 const defaultIdentity: Identity = {
   name: "KeyMoura",
@@ -47,7 +47,7 @@ const defaultIdentity: Identity = {
   supportEmail: "support@keymoura.com",
   copyrightText: "All rights reserved.",
   forumLabel: "Community",
-  knowledgeBaseLabel: "Knowledge Base",
+  knowledgeBaseLabel: "Projects",
   trustedVendorLabel: "Trusted Shop",
 };
 
@@ -76,6 +76,7 @@ const sectionCopy: Record<Section, { label: string; description: string }> = {
   brand: { label: "Brand & business", description: "Business name, public details, metadata, and support information." },
   assets: { label: "Logos & icons", description: "Header, footer, browser, and mobile brand artwork." },
   wording: { label: "Labels & wording", description: "Names customers see for the major areas of the site." },
+  navigation: { label: "Navbar", description: "Restore the classic header or customize its colors and behavior independently." },
   theme: { label: "Colors & controls", description: "One shared visual language for storefront, account, orders, and staff tools." },
 };
 
@@ -97,6 +98,17 @@ const choiceHelp: Record<string, string> = {
   ghost: "Quiet until hovered",
   underline: "Minimal editorial tabs",
   minimal: "Nearly borderless navigation",
+  classic: "The original KeyMoura black-pill navbar",
+  "auto-hide": "Slides away while scrolling down",
+  sticky: "Stays visible while scrolling",
+  elevated: "Raised panels with a soft shadow",
+  filled: "Stronger filled form controls",
+  spotlight: "A subtle brand glow behind the page",
+  full: "Use nearly all available screen width",
+  none: "Flat surfaces without shadows",
+  glow: "A restrained brand-tinted glow",
+  subtle: "Quieter borders between surfaces",
+  strong: "Higher-contrast borders",
 };
 
 function luminance(hex: string) {
@@ -135,6 +147,8 @@ export default function AppearancePage() {
     if (contrast(form.theme.text, form.theme.background) < 4.5) return "Body text needs more contrast against the background.";
     if (contrast(form.theme.headingText, form.theme.background) < 4.5) return "Heading text needs more contrast against the background.";
     if (contrast(form.theme.mutedText, form.theme.background) < 3) return "Muted text needs more contrast against the background.";
+    if (contrast(form.theme.navigationText, form.theme.navigationBackground) < 4.5) return "Navbar text needs more contrast against the navbar background.";
+    if (contrast(form.theme.navigationActiveText, form.theme.navigationBackground) < 3) return "The active navbar link needs more contrast against the navbar background.";
     if (form.theme.primaryButtonStyle === "solid" && contrast(form.theme.primaryButtonText, form.primaryColor) < 4.5) return "Primary button text needs more contrast against the primary color.";
     if (form.theme.secondaryButtonStyle === "solid" && contrast(form.theme.secondaryButtonText, form.accentColor) < 4.5) return "Secondary button text needs more contrast against the accent color.";
     return "";
@@ -154,6 +168,10 @@ export default function AppearancePage() {
     "--km-border": form.theme.border,
     "--km-primary-button-text": form.theme.primaryButtonText,
     "--km-secondary-button-text": form.theme.secondaryButtonText,
+    "--km-nav-bg": form.theme.navigationBackground,
+    "--km-nav-text": form.theme.navigationText,
+    "--km-nav-active": form.theme.navigationActiveText,
+    "--km-nav-border": form.theme.navigationBorder,
   } as CSSProperties;
 
   const setTheme = <Key extends keyof SiteTheme>(key: Key, value: SiteTheme[Key]) =>
@@ -163,6 +181,10 @@ export default function AppearancePage() {
 
   const resetSection = () => setForm((current) => {
     if (section === "theme") return { ...current, primaryColor: saved.primaryColor, accentColor: saved.accentColor, theme: saved.theme };
+    if (section === "navigation") {
+      const keys = ["publicNavigationStyle", "navigationBehavior", "navigationDensity", "navigationBackground", "navigationText", "navigationActiveText", "navigationBorder"] as const;
+      return { ...current, theme: { ...current.theme, ...Object.fromEntries(keys.map((key) => [key, saved.theme[key]])) } };
+    }
     const keys: Array<keyof Identity> = section === "brand"
       ? ["name", "shortName", "tagline", "description", "publicUrl", "supportEmail", "copyrightText"]
       : section === "assets"
@@ -201,8 +223,12 @@ export default function AppearancePage() {
       data-card-style={form.theme.cardStyle}
       data-input-style={form.theme.inputStyle}
       data-navigation-style={form.theme.navigationStyle}
+      data-public-navigation-style={form.theme.publicNavigationStyle}
+      data-navigation-density={form.theme.navigationDensity}
       data-background-style={form.theme.backgroundStyle}
       data-content-width={form.theme.contentWidth}
+      data-shadow-style={form.theme.shadowStyle}
+      data-border-strength={form.theme.borderStrength}
     >
       <header>
         <p className="ui-eyebrow">Site design & identity</p>
@@ -234,7 +260,19 @@ export default function AppearancePage() {
 
             {section === "brand" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Site name" value={form.identity.name} onChange={(value) => setIdentity("name", value)} /><TextField label="Short name" value={form.identity.shortName} onChange={(value) => setIdentity("shortName", value)} /><TextField label="Tagline" value={form.identity.tagline} onChange={(value) => setIdentity("tagline", value)} wide /><TextField label="SEO / site description" value={form.identity.description} onChange={(value) => setIdentity("description", value)} wide /><TextField label="Public site URL" value={form.identity.publicUrl} onChange={(value) => setIdentity("publicUrl", value)} /><TextField label="Support email" value={form.identity.supportEmail} onChange={(value) => setIdentity("supportEmail", value)} /><TextField label="Copyright text" value={form.identity.copyrightText} onChange={(value) => setIdentity("copyrightText", value)} wide /></div> : null}
             {section === "assets" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Header logo" value={form.identity.logoUrl} onChange={(value) => setIdentity("logoUrl", value)} /><TextField label="Wordmark (optional)" value={form.identity.wordmarkUrl} onChange={(value) => setIdentity("wordmarkUrl", value)} /><TextField label="Footer logo" value={form.identity.footerLogoUrl} onChange={(value) => setIdentity("footerLogoUrl", value)} /><TextField label="Browser favicon" value={form.identity.faviconUrl} onChange={(value) => setIdentity("faviconUrl", value)} /><TextField label="Apple / mobile icon" value={form.identity.appleIconUrl} onChange={(value) => setIdentity("appleIconUrl", value)} /></div> : null}
-            {section === "wording" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Community label" value={form.identity.forumLabel} onChange={(value) => setIdentity("forumLabel", value)} /><TextField label="Knowledge base label" value={form.identity.knowledgeBaseLabel} onChange={(value) => setIdentity("knowledgeBaseLabel", value)} /><TextField label="Trusted vendor label" value={form.identity.trustedVendorLabel} onChange={(value) => setIdentity("trustedVendorLabel", value)} /></div> : null}
+            {section === "wording" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Community label" value={form.identity.forumLabel} onChange={(value) => setIdentity("forumLabel", value)} /><TextField label="Projects label" value={form.identity.knowledgeBaseLabel} onChange={(value) => setIdentity("knowledgeBaseLabel", value)} /><TextField label="Trusted vendor label" value={form.identity.trustedVendorLabel} onChange={(value) => setIdentity("trustedVendorLabel", value)} /></div> : null}
+
+            {section === "navigation" ? <>
+              <AppearanceGroup title="Public navbar" description="Classic restores the original KeyMoura header. These controls are independent from the staff sidebar.">
+                <Choice label="Navbar style" value={form.theme.publicNavigationStyle} values={["classic", "soft", "framed", "minimal"]} onChange={(value) => setTheme("publicNavigationStyle", value as SiteTheme["publicNavigationStyle"])} />
+                <Choice label="Scroll behavior" value={form.theme.navigationBehavior} values={["auto-hide", "sticky"]} onChange={(value) => setTheme("navigationBehavior", value as SiteTheme["navigationBehavior"])} />
+                <Choice label="Navbar spacing" value={form.theme.navigationDensity} values={["compact", "comfortable"]} onChange={(value) => setTheme("navigationDensity", value as SiteTheme["navigationDensity"])} />
+              </AppearanceGroup>
+              <AppearanceGroup title="Navbar colors" description="Change the header without recoloring cards, buttons, or page content.">
+                <div className="grid gap-4 sm:grid-cols-2"><ColorField label="Navbar background" value={form.theme.navigationBackground} onChange={(value) => setTheme("navigationBackground", value)} /><ColorField label="Navbar text" value={form.theme.navigationText} onChange={(value) => setTheme("navigationText", value)} /><ColorField label="Active link" value={form.theme.navigationActiveText} onChange={(value) => setTheme("navigationActiveText", value)} /><ColorField label="Navbar border" value={form.theme.navigationBorder} onChange={(value) => setTheme("navigationBorder", value)} /></div>
+              </AppearanceGroup>
+              <NavbarPreview form={form} />
+            </> : null}
 
             {section === "theme" ? <>
               <AppearanceGroup title="Starting point" description="Apply a coordinated palette, then tune any component below.">
@@ -242,8 +280,8 @@ export default function AppearancePage() {
               </AppearanceGroup>
 
               <AppearanceGroup title="Layout & type" description="Set the overall density and silhouette used everywhere.">
-                <Choice label="Page background" value={form.theme.backgroundStyle} values={["gradient", "solid"]} onChange={(value) => setTheme("backgroundStyle", value as SiteTheme["backgroundStyle"])} />
-                <Choice label="Content width" value={form.theme.contentWidth} values={["standard", "wide"]} onChange={(value) => setTheme("contentWidth", value as SiteTheme["contentWidth"])} />
+                <Choice label="Page background" value={form.theme.backgroundStyle} values={["gradient", "solid", "spotlight"]} onChange={(value) => setTheme("backgroundStyle", value as SiteTheme["backgroundStyle"])} />
+                <Choice label="Content width" value={form.theme.contentWidth} values={["standard", "wide", "full"]} onChange={(value) => setTheme("contentWidth", value as SiteTheme["contentWidth"])} />
                 <Choice label="Spacing" value={form.theme.density} values={["compact", "comfortable"]} onChange={(value) => setTheme("density", value as SiteTheme["density"])} />
                 <Choice label="Typography" value={form.theme.font} values={["system", "modern", "technical"]} onChange={(value) => setTheme("font", value as SiteTheme["font"])} />
                 <Choice label="Corner shape" value={form.theme.radius} values={["soft", "rounded", "pill"]} onChange={(value) => setTheme("radius", value as SiteTheme["radius"])} />
@@ -253,9 +291,11 @@ export default function AppearancePage() {
                 <Choice label="Primary buttons" value={form.theme.primaryButtonStyle} values={["solid", "soft", "outline", "framed"]} onChange={(value) => setTheme("primaryButtonStyle", value as SiteTheme["primaryButtonStyle"])} />
                 <Choice label="Secondary buttons" value={form.theme.secondaryButtonStyle} values={["solid", "soft", "outline", "ghost", "framed"]} onChange={(value) => setTheme("secondaryButtonStyle", value as SiteTheme["secondaryButtonStyle"])} />
                 <Choice label="Tabs" value={form.theme.tabStyle} values={["soft", "framed", "underline"]} onChange={(value) => setTheme("tabStyle", value as SiteTheme["tabStyle"])} />
-                <Choice label="Cards & panels" value={form.theme.cardStyle} values={["soft", "solid", "outline"]} onChange={(value) => setTheme("cardStyle", value as SiteTheme["cardStyle"])} />
-                <Choice label="Inputs" value={form.theme.inputStyle} values={["soft", "solid", "outline"]} onChange={(value) => setTheme("inputStyle", value as SiteTheme["inputStyle"])} />
-                <Choice label="Navigation" value={form.theme.navigationStyle} values={["soft", "framed", "minimal"]} onChange={(value) => setTheme("navigationStyle", value as SiteTheme["navigationStyle"])} />
+                <Choice label="Cards & panels" value={form.theme.cardStyle} values={["soft", "solid", "outline", "elevated"]} onChange={(value) => setTheme("cardStyle", value as SiteTheme["cardStyle"])} />
+                <Choice label="Inputs" value={form.theme.inputStyle} values={["soft", "solid", "outline", "filled"]} onChange={(value) => setTheme("inputStyle", value as SiteTheme["inputStyle"])} />
+                <Choice label="Staff navigation" value={form.theme.navigationStyle} values={["soft", "framed", "minimal"]} onChange={(value) => setTheme("navigationStyle", value as SiteTheme["navigationStyle"])} />
+                <Choice label="Surface shadows" value={form.theme.shadowStyle} values={["none", "soft", "glow"]} onChange={(value) => setTheme("shadowStyle", value as SiteTheme["shadowStyle"])} />
+                <Choice label="Border contrast" value={form.theme.borderStrength} values={["subtle", "standard", "strong"]} onChange={(value) => setTheme("borderStrength", value as SiteTheme["borderStrength"])} />
               </AppearanceGroup>
 
               <AppearanceGroup title="Brand colors" description="The two colors used for actions, selections, links, and navigation.">
@@ -287,6 +327,10 @@ function AppearancePreview({ form }: { form: Appearance }) {
     <Notice tone="warning">One order needs your approval.</Notice>
     <div className="ui-card"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">Custom shift knob</p><p className="mt-1 text-xs text-brand-textMuted">Shared cards, labels, borders, and actions update immediately.</p></div><Badge tone="accent">In review</Badge></div><label className="mt-4 block"><span className="ui-label">Customer notes</span><input className="ui-input" placeholder="Add a note…" /></label><div className="ui-action-row mt-4"><button type="button" className="ui-btn ui-btn-primary">Primary action</button><button type="button" className="ui-btn ui-btn-secondary">Secondary action</button><button type="button" className="ui-btn ui-btn-ghost">Quiet action</button></div></div>
   </section>;
+}
+
+function NavbarPreview({ form }: { form: Appearance }) {
+  return <section className="space-y-3"><div><h3 className="text-sm font-semibold">Navbar preview</h3><p className="mt-1 text-xs text-brand-textMuted">Desktop link treatment and the independent navbar palette.</p></div><div className="site-header-shell rounded-[var(--control-radius)] border px-3 py-2"><div className="flex flex-wrap items-center justify-center gap-2"><span className="mr-2 font-semibold text-[var(--km-nav-active)]">{(form.identity.shortName || "KM").slice(0, 2).toUpperCase()}</span>{["About", "Projects", "Catalog", "Community"].map((label) => <span key={label} className={cx("site-nav-link inline-flex items-center border px-3 py-1.5 text-xs font-medium", label === "Projects" && "is-active")}>{label}</span>)}</div></div></section>;
 }
 
 function SectionTitle({ title, text }: { title: string; text: string }) {

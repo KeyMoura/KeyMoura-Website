@@ -451,7 +451,7 @@ export default function InfoIndexClient() {
 
         if (error) {
           console.error("Error loading initial info pages", error);
-          setSearchError("Failed to load info pages.");
+          setSearchError("Failed to load projects.");
         } else {
           const rows = (data ?? []) as RawInfoRow[];
           const summaries = rows.map(mapRowToSummary);
@@ -463,7 +463,7 @@ export default function InfoIndexClient() {
         }
       } catch (e) {
         console.error("Unexpected error loading initial info pages", e);
-        setSearchError("Unexpected error loading info pages.");
+        setSearchError("Unexpected error loading projects.");
       } finally {
         setSearching(false);
         setInitialLoaded(true);
@@ -601,7 +601,7 @@ export default function InfoIndexClient() {
 
             if (error) {
               console.error("Error searching info pages", error);
-              setSearchError("Failed to search info pages.");
+              setSearchError("Failed to search projects.");
               setResults([]);
               setLastMatchedCount(0);
               return;
@@ -850,7 +850,7 @@ export default function InfoIndexClient() {
           }
         } catch (e) {
           console.error("Unexpected error searching info pages", e);
-          setSearchError("Unexpected error searching info pages.");
+          setSearchError("Unexpected error searching projects.");
           setResults([]);
           setLastMatchedCount(0);
         } finally {
@@ -905,9 +905,9 @@ export default function InfoIndexClient() {
   );
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
+    <div className="content-hub">
       {/* Header + search */}
-      <section className="space-y-4">
+      <section className="content-hero space-y-4">
         {/* ✅ Title row with EXACT same ? button placement/style as /community */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -927,7 +927,7 @@ export default function InfoIndexClient() {
           <button
             type="button"
             onClick={() => setHelpOpen((v) => !v)}
-            className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-black/40 text-sm text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+            className="ui-btn ui-btn-ghost mt-0.5 h-9 w-9 shrink-0 !p-0 text-sm"
             aria-label="Search help"
             title="Search help"
           >
@@ -940,7 +940,7 @@ export default function InfoIndexClient() {
           <div className="flex-1 min-w-0">
             <div
               ref={chipContainerRef}
-              className="flex max-h-24 flex-wrap items-center gap-1 overflow-y-auto rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 cursor-text scrollbar-thin scrollbar-track-black/40 scrollbar-thumb-zinc-700/80"
+              className="content-search flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto scrollbar-thin scrollbar-track-black/40 scrollbar-thumb-zinc-700/80"
               onClick={() => {
                 const el = document.getElementById(
                   "infosearch-input"
@@ -1006,7 +1006,7 @@ export default function InfoIndexClient() {
                     scrollChipsToBottom();
                   }
                 }}
-                placeholder="s13, subframe bushings, how do i install"
+                placeholder="cnc enclosure, fixture, wiring, prototype"
                 className="min-w-[120px] no-zoom-input flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-zinc-500"
               />
             </div>
@@ -1069,14 +1069,14 @@ export default function InfoIndexClient() {
                       Submit a project (disabled)
                     </span>
                   ) : (
-                    <InfoCtaButton href="/info/submit" variant="primary">
+                    <InfoCtaButton href="/projects/submit" variant="primary">
                       Submit a project
                     </InfoCtaButton>
                   )
                 )}
 
                 {canSubmitInfo && (
-                  <InfoCtaButton href="/info/mine" variant="secondary">
+                  <InfoCtaButton href="/projects/mine" variant="secondary">
                     My project submissions
                   </InfoCtaButton>
                 )}
@@ -1101,7 +1101,7 @@ export default function InfoIndexClient() {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
           <div
-            className="relative w-full max-w-lg rounded-2xl border border-zinc-700 bg-black/90 p-4 text-sm text-brand-text shadow-xl"
+            className="ui-card relative w-full max-w-lg text-sm text-brand-text shadow-xl"
             onMouseDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -1118,7 +1118,7 @@ export default function InfoIndexClient() {
               <button
                 type="button"
                 onClick={() => setHelpOpen(false)}
-                className="inline-flex h-9 items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+                className="ui-btn ui-btn-ghost h-9 text-[12px]"
               >
                 Got it
               </button>
@@ -1142,19 +1142,19 @@ export default function InfoIndexClient() {
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    s14
+                    cnc
                   </span>
                   <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    subframe
+                    enclosure
                   </span>
                   <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    torque spec
+                    wiring
                   </span>
                 </div>
                 <div className="mt-2 text-[11px]">
                   Example:{" "}
                   <span className="rounded-md border border-zinc-700 bg-black/50 px-1.5 py-0.5 text-brand-text">
-                    s14, subframe, bushing
+                    cnc, enclosure, aluminum
                   </span>
                 </div>
               </div>
@@ -1169,7 +1169,7 @@ export default function InfoIndexClient() {
                   <span className="text-brand-text">tags</span>,{" "}
                   <span className="text-brand-text">slug</span>, and metadata fields like{" "}
                   <span className="text-brand-text">category</span> /{" "}
-                  <span className="text-brand-text">chassis</span>.
+                  <span className="text-brand-text">platform</span>.
                 </p>
               </div>
 
@@ -1190,8 +1190,8 @@ export default function InfoIndexClient() {
           {CATEGORIES.map((cat) => (
             <Link
               key={cat.slug}
-              href={`/info/category/${cat.slug}`}
-              className="group rounded-xl border border-zinc-800/80 bg-black/40 p-4 text-sm text-brand-text transition hover:border-amber-400/80 hover:bg-black/60"
+              href={`/projects/category/${cat.slug}`}
+              className="content-grid-card group text-sm text-brand-text"
             >
               <div className="mb-1 flex items-center justify-between gap-2">
                 <h3 className="text-[13px] font-semibold text-brand-text">
@@ -1250,7 +1250,7 @@ export default function InfoIndexClient() {
                 return (
                   <Link
                     key={page.id}
-                    href={`/info/${page.slug}`}
+                    href={`/projects/${page.slug}`}
                     onClick={() => {
                       const rawQuery = [...committedTerms, fragment]
                         .map((s) => s.trim())
@@ -1272,7 +1272,7 @@ export default function InfoIndexClient() {
                         },
                       });
                     }}
-                    className="rounded-lg border border-zinc-800/80 bg-black/40 p-4 text-sm text-brand-text transition hover:border-amber-400/80 hover:bg-black/60"
+                    className="content-grid-card text-sm text-brand-text"
                   >
                     <h3 className="mb-1 text-[13px] font-semibold text-brand-text">
                       {highlightText(page.title, searchTokens)}
@@ -1308,7 +1308,7 @@ export default function InfoIndexClient() {
                 <button
                   type="button"
                   onClick={() => setVisibleCount((prev) => prev + 6)}
-                  className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/60 px-4 py-1.5 text-[12px] text-brand-textMuted hover:border-amber-400/80 hover:text-brand-text"
+                  className="ui-btn ui-btn-secondary text-[12px]"
                 >
                   Show more ({Math.min(results.length - visibleCount, 6)} more)
                 </button>

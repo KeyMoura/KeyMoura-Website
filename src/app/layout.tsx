@@ -49,10 +49,14 @@ export default async function RootLayout({
     "--km-border": settings.theme.border,
     "--km-primary-button-text": settings.theme.primaryButtonText,
     "--km-secondary-button-text": settings.theme.secondaryButtonText,
+    "--km-nav-bg": settings.theme.navigationBackground,
+    "--km-nav-text": settings.theme.navigationText,
+    "--km-nav-active": settings.theme.navigationActiveText,
+    "--km-nav-border": settings.theme.navigationBorder,
   } as CSSProperties;
 
   return (
-    <html lang="en" style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-primary-button-style={settings.theme.primaryButtonStyle} data-secondary-button-style={settings.theme.secondaryButtonStyle} data-tab-style={settings.theme.tabStyle} data-card-style={settings.theme.cardStyle} data-input-style={settings.theme.inputStyle} data-navigation-style={settings.theme.navigationStyle} data-background-style={settings.theme.backgroundStyle} data-content-width={settings.theme.contentWidth}>
+    <html lang="en" style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-primary-button-style={settings.theme.primaryButtonStyle} data-secondary-button-style={settings.theme.secondaryButtonStyle} data-tab-style={settings.theme.tabStyle} data-card-style={settings.theme.cardStyle} data-input-style={settings.theme.inputStyle} data-navigation-style={settings.theme.navigationStyle} data-public-navigation-style={settings.theme.publicNavigationStyle} data-navigation-density={settings.theme.navigationDensity} data-background-style={settings.theme.backgroundStyle} data-content-width={settings.theme.contentWidth} data-shadow-style={settings.theme.shadowStyle} data-border-strength={settings.theme.borderStrength}>
       <body className="min-h-screen text-brand-text antialiased">
         <a className="skip-link" href="#main-content">
           Skip to main content

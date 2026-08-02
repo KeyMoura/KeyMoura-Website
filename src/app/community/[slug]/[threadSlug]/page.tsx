@@ -2307,7 +2307,7 @@ useEffect(() => {
   };
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 text-sm text-brand-text">
+    <div className="content-hub text-sm text-brand-text">
       {thread ? (
         <ReportModal
           open={reportThreadOpen}
@@ -2429,7 +2429,7 @@ useEffect(() => {
         )}
 
         {flagToast ? (
-          <div className="rounded-xl border border-zinc-800/70 bg-black/40 px-3 py-2 text-xs text-brand-textMuted">
+          <div className="ui-card !px-3 !py-2 text-xs text-brand-textMuted">
             {flagToast}
           </div>
         ) : null}
@@ -2656,7 +2656,7 @@ useEffect(() => {
           {/* Reply box */}
           <div
             ref={replyComposerRef}
-            className="mt-4 rounded-2xl border border-zinc-800/80 bg-black/35 p-4 text-[12px]"
+            className="ui-card mt-4 text-[12px]"
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold text-brand-text">
@@ -2722,7 +2722,7 @@ useEffect(() => {
                     <button
                       type="submit"
                       disabled={postingReply || isBanned || isLoggedIn === false}
-                      className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-5 py-2 text-[11px] font-medium text-amber-300 hover:bg-amber-500/25 disabled:opacity-60"
+                      className="ui-btn ui-btn-primary text-[11px] disabled:opacity-60"
                     >
                       {postingReply ? "Posting…" : "Post reply"}
                     </button>
@@ -4686,7 +4686,7 @@ function PostCard({
                       type="button"
                       onClick={onCancelInlineReply}
                       disabled={postingInlineReply}
-                      className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-5 py-2 text-[11px] font-medium text-brand-textMuted hover:border-zinc-500 hover:text-brand-text disabled:opacity-60"
+                      className="ui-btn ui-btn-secondary text-[11px] disabled:opacity-60"
                     >
                       Cancel
                     </button>
@@ -4695,7 +4695,7 @@ function PostCard({
                       type="button"
                       onClick={() => void onSubmitInlineReply(post.id)}
                       disabled={postingInlineReply}
-                      className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-5 py-2 text-[11px] font-medium text-amber-300 hover:bg-amber-500/25 disabled:opacity-60"
+                      className="ui-btn ui-btn-primary text-[11px] disabled:opacity-60"
                     >
                       {postingInlineReply ? "Posting…" : "Post reply"}
                     </button>

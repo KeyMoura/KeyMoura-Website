@@ -22,7 +22,7 @@ function resolveImageUrl(input: string): string {
   if (trimmed.startsWith("//")) return `https:${trimmed}`;
 
   // root-relative: point to your own site (so /public files can be fetched)
-  if (trimmed.startsWith("/")) return `https://www.schassis.info${trimmed}`;
+  if (trimmed.startsWith("/")) return `https://keymoura.com${trimmed}`;
 
   // fallback
   return trimmed;
@@ -87,7 +87,7 @@ export async function GET(
       .fontSize(9)
       .fillColor("gray")
       .text(
-        `schassis.info/info/${encodeURIComponent(page.slug)} • ${new Date(
+        `keymoura.com/projects/${encodeURIComponent(page.slug)} • ${new Date(
           page.updated_at || page.created_at
         ).toLocaleString()}`
       );

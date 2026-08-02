@@ -24,18 +24,20 @@ type StatusState = "idle" | "submitting" | "saving" | "success" | "error";
 type LoadState = "idle" | "loading" | "loaded" | "error";
 
 const CATEGORY_OPTIONS = [
-  { value: "chassis-suspension", label: "Chassis & Suspension" },
-  { value: "engine-drivetrain", label: "Engine & Drivetrain" },
-  { value: "wiring-electronics", label: "Wiring & Electronics" },
-  { value: "body-aero", label: "Body & Aero" },
-  { value: "maintenance-general", label: "Maintenance & General" },
+  { value: "cnc-machining", label: "CNC & Machining" },
+  { value: "product-design", label: "Product Design" },
+  { value: "automation-tools", label: "Automation & Tools" },
+  { value: "electronics-software", label: "Electronics & Software" },
+  { value: "automotive", label: "Automotive" },
+  { value: "business-brand", label: "KeyMoura Build Log" },
 ];
 
 const CHASSIS_OPTIONS = [
-  { value: "s13", label: "S13" },
-  { value: "s14", label: "S14" },
-  { value: "s15", label: "S15" },
-  { value: "general", label: "General / Any" },
+  { value: "general", label: "General / Not applicable" },
+  { value: "shop", label: "Shop / Manufacturing" },
+  { value: "software", label: "Software / Web" },
+  { value: "electronics", label: "Electronics" },
+  { value: "automotive", label: "Automotive / Vehicle" },
 ];
 
 type Snapshot = {
@@ -185,7 +187,7 @@ function InfoSubmitInner() {
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [content, setContent] = useState("");
-  const [category, setCategory] = useState<string>("maintenance-general");
+  const [category, setCategory] = useState<string>("product-design");
   const [chassis, setChassis] = useState<string>("general");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
@@ -256,7 +258,7 @@ function InfoSubmitInner() {
 
         if (userError || !user) {
           // Auth-required page: redirect to login instead of showing a dead-end screen
-          router.replace(`/login?next=${encodeURIComponent("/info/submit")}`);
+          router.replace(`/login?next=${encodeURIComponent("/projects/submit")}`);
           return;
         }
 
@@ -365,7 +367,7 @@ function InfoSubmitInner() {
     setTitle("");
     setSlug("");
     setContent("");
-    setCategory("maintenance-general");
+    setCategory("product-design");
     setChassis("general");
     setTags([]);
     setTagInput("");
@@ -411,7 +413,7 @@ function InfoSubmitInner() {
         setTitle(data.title ?? "");
         setSlug(data.slug ?? "");
         setContent(data.content_markdown ?? "");
-        setCategory(data.category ?? "maintenance-general");
+        setCategory(data.category ?? "product-design");
         setChassis(data.chassis ?? "general");
         setTags(data.tags ?? []);
         setTagInput("");
@@ -469,7 +471,7 @@ function InfoSubmitInner() {
       const normalizedTitle = title || "(Untitled)";
       const draftSlug = ensureDraftSlug();
       const normalizedContent = content;
-      const normalizedCategory = category || "maintenance-general";
+      const normalizedCategory = category || "product-design";
       const normalizedChassis = chassis || "general";
 
       const snapshot: Snapshot = {
@@ -697,7 +699,7 @@ function InfoSubmitInner() {
 
       if (sessionError || !session) {
         setStatus("error");
-        setMessage("You must be logged in to submit an info page.");
+        setMessage("You must be logged in to submit a project.");
         return;
       }
 
@@ -752,7 +754,7 @@ function InfoSubmitInner() {
     setTitle(draft.title === "(Untitled)" ? "" : draft.title);
     setSlug(draft.slug);
     setContent(draft.content_markdown);
-    setCategory(draft.category || "maintenance-general");
+    setCategory(draft.category || "product-design");
     setChassis(draft.chassis || "general");
     setTags(draft.tags ?? []);
     setTagInput("");
@@ -831,8 +833,8 @@ function InfoSubmitInner() {
     maintenanceMode || status === "submitting" || status === "saving";
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 text-brand-text">
-      <h1 className="mb-2 text-2xl font-semibold">Submit an Information Page</h1>
+    <div className="page-container text-brand-text">
+      <h1 className="mb-2 text-2xl font-semibold">Submit a Project</h1>
 
       {maintenanceMode && (
         <div className="mb-4 rounded-md border border-amber-400/70 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
@@ -842,30 +844,30 @@ function InfoSubmitInner() {
       )}
 
       <p className="mb-6 text-sm text-brand-textMuted">
-        This is for official-style guides and reference pages. Submissions are
+        Share a build, design, experiment, or finished project. Submissions are
         marked as <span className="font-semibold">pending</span> until an admin
         reviews and approves them.
       </p>
 
       <div className="mt-2 text-[11px] text-brand-textMuted">
         <Link
-          href="/info"
+          href="/projects"
           className="text-amber-300 hover:text-amber-200 underline underline-offset-2"
         >
-          ← Back to all info
+          ← Back to all projects
         </Link>
       </div>
 
       {/* Not logged in (should normally redirect) */}
       {loadState === "error" && !userId && (
         <div className="mt-4 rounded-md border border-rose-500/60 bg-rose-950/40 px-3 py-2 text-[12px] text-rose-200">
-          {authError ?? "You must be logged in to submit an info page."}
+          {authError ?? "You must be logged in to submit a project."}
         </div>
       )}
 
       {notVerified && (
         <div className="mt-4 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-          You do not have permission to submit new information pages.
+          You do not have permission to submit new projects.
         </div>
       )}
 
@@ -903,7 +905,7 @@ function InfoSubmitInner() {
                       {similarPages.map((page) => (
                         <li key={page.id} className="text-[11px]">
                           <a
-                            href={`/info/${page.slug}`}
+                            href={`/projects/${page.slug}`}
                             target="_blank"
                             className="text-amber-200 underline underline-offset-2 hover:text-amber-100"
                             rel="noreferrer"
@@ -931,7 +933,7 @@ function InfoSubmitInner() {
                 </label>
                 <input
                   className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/70"
-                  placeholder="s14-rear-subframe-bushing-replacement"
+                  placeholder="custom-cnc-enclosure-build"
                   value={slug}
                   onChange={(e) => setSlug(e.target.value)}
                   pattern="[a-z0-9\\-]+"
@@ -961,10 +963,10 @@ function InfoSubmitInner() {
 
                 <div>
                   <label className="mb-1 block text-[11px] font-medium text-brand-textMuted">
-                    Chassis
+                    Platform / vehicle
                   </label>
                   <MenuSelect
-                    ariaLabel="Chassis"
+                    ariaLabel="Platform or vehicle"
                     value={chassis as string}
                     onChange={(next) => setChassis(next)}
                     disabled={maintenanceMode}

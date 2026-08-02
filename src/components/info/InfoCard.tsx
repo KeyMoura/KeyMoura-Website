@@ -80,7 +80,7 @@ export function InfoCard({
 
   return (
     <Link
-      href={`/info/${item.slug}`}
+      href={`/projects/${item.slug}`}
       className="rounded-lg border border-zinc-800/80 bg-black/40 p-4 text-sm text-brand-text transition hover:border-amber-400/80 hover:bg-black/60"
     >
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -112,7 +112,7 @@ export function InfoCard({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(`/info?q=${encodeURIComponent(tag)}`);
+                router.push(`/projects?q=${encodeURIComponent(tag)}`);
               }}
               className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[10px] text-brand-textMuted hover:border-amber-400/80 hover:text-brand-text"
             >

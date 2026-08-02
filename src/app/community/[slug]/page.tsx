@@ -778,9 +778,9 @@ export default function CommunityCategoryPage() {
   const canShowMore = totalCount > visibleCount;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 text-sm text-brand-text">
+    <div className="content-hub text-sm text-brand-text">
       {/* Header */}
-      <section className="space-y-2">
+      <section className="content-hero space-y-4">
         {/* ✅ keep your existing top row (back + new thread) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-[11px] text-brand-textMuted">
@@ -814,14 +814,14 @@ export default function CommunityCategoryPage() {
                   {isLoggedIn ? (
                     <Link
                       href={newThreadHref}
-                      className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-3 py-1 text-[11px] font-medium text-amber-300 hover:bg-amber-500/25"
+                      className="ui-btn ui-btn-primary text-[11px]"
                     >
                       New thread
                     </Link>
                   ) : (
                     <Link
                       href={loginHref}
-                      className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-brand-primary/60 hover:text-brand-text"
+                      className="ui-btn ui-btn-secondary text-[11px]"
                     >
                       Log in to post
                     </Link>
@@ -874,7 +874,7 @@ export default function CommunityCategoryPage() {
           <button
             type="button"
             onClick={() => setHelpOpen((v) => !v)}
-            className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-black/40 text-sm text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+            className="ui-btn ui-btn-ghost mt-0.5 h-9 w-9 shrink-0 !p-0 text-sm"
             aria-label="Search help"
             title="Search help"
           >
@@ -887,7 +887,7 @@ export default function CommunityCategoryPage() {
           <div className="pt-2">
             <div
               ref={chipContainerRef}
-              className="flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5"
+              className="content-search flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto"
               onClick={() => {
                 const el = document.getElementById("communitythreadsearch-input") as
                   | HTMLInputElement
@@ -1010,7 +1010,7 @@ export default function CommunityCategoryPage() {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
           <div
-            className="relative w-full max-w-lg rounded-2xl border border-zinc-700 bg-black/90 p-4 text-sm text-brand-text shadow-xl"
+            className="ui-card relative w-full max-w-lg text-sm text-brand-text shadow-xl"
             onMouseDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -1025,7 +1025,7 @@ export default function CommunityCategoryPage() {
               <button
                 type="button"
                 onClick={() => setHelpOpen(false)}
-                className="inline-flex h-9 items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+                className="ui-btn ui-btn-ghost h-9 text-[12px]"
               >
                 Got it
               </button>
@@ -1105,7 +1105,7 @@ export default function CommunityCategoryPage() {
       )}
 
       {state === "loaded" && category && threads.length === 0 && (
-        <section className="rounded-xl border border-zinc-800/80 bg-black/40 p-4 text-[12px] text-brand-textMuted">
+        <section className="ui-empty-state text-[12px]">
           <p>No threads have been created in this category yet.</p>
         </section>
       )}
@@ -1113,7 +1113,7 @@ export default function CommunityCategoryPage() {
       {/* Threads list (always shown; ranked + highlighted if searching) */}
       {state === "loaded" && category && threads.length > 0 && (
         <section className="space-y-4">
-          <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-black/40">
+          <div className="content-list">
             <div className="divide-y divide-zinc-800/80">
               {visibleThreads.map((thread) => (
                 <ThreadRow
@@ -1137,7 +1137,7 @@ export default function CommunityCategoryPage() {
               <button
                 type="button"
                 onClick={() => setVisibleCount((c) => c + 6)}
-                className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/50 px-4 py-2 text-[12px] text-brand-textMuted hover:border-brand-primary/60 hover:text-brand-text"
+                className="ui-btn ui-btn-secondary text-[12px]"
               >
                 Show more
               </button>

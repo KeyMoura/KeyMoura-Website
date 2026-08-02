@@ -21,6 +21,12 @@ type InfoCategoryRow = {
 type InfoCategoryItem = InfoCardItem;
 
 const CATEGORY_META: Record<string, { name: string; description: string }> = {
+  "cnc-machining": { name: "CNC & Machining", description: "Machined parts, fixtures, tooling experiments, and production notes." },
+  "product-design": { name: "Product Design", description: "Concepts, prototypes, revisions, materials, and finished products." },
+  "automation-tools": { name: "Automation & Tools", description: "Custom machines, shop tools, controllers, and process improvements." },
+  "electronics-software": { name: "Electronics & Software", description: "Embedded systems, interfaces, websites, apps, and connected builds." },
+  automotive: { name: "Automotive", description: "Vehicle parts, modifications, research, and installation projects." },
+  "business-brand": { name: "KeyMoura Build Log", description: "Brand, business, shop, and behind-the-scenes development updates." },
   "chassis-suspension": {
     name: "Chassis & Suspension",
     description:
@@ -179,7 +185,7 @@ export default function InfoCategoryPage() {
     CATEGORY_META[slug] ?? {
       name: "Category",
       description:
-        "Info pages grouped by this category. More structure will be added as content grows.",
+        "Projects grouped by this category. More structure will be added as content grows.",
     };
 
   useEffect(() => {
@@ -439,11 +445,11 @@ export default function InfoCategoryPage() {
   };
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
+    <div className="content-hub">
       {/* Header */}
       <section className="space-y-3">
         <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-          Info pages • {slug}
+          Projects • {slug}
         </p>
 
         {/* ✅ Title row + ? button (matches the other pages) */}
@@ -460,7 +466,7 @@ export default function InfoCategoryPage() {
           <button
             type="button"
             onClick={() => setHelpOpen((v) => !v)}
-            className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-black/40 text-sm text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+            className="ui-btn ui-btn-ghost mt-0.5 h-9 w-9 shrink-0 !p-0 text-sm"
             aria-label="Search help"
             title="Search help"
           >
@@ -470,10 +476,10 @@ export default function InfoCategoryPage() {
 
         <div className="mt-2 text-[11px] text-brand-textMuted">
           <Link
-            href="/info"
+            href="/projects"
             className="text-amber-300 hover:text-amber-200 underline underline-offset-2"
           >
-            ← Back to all info
+            ← Back to all projects
           </Link>
         </div>
       </section>
@@ -543,7 +549,7 @@ export default function InfoCategoryPage() {
                     scrollChipsToBottom();
                   }
                 }}
-                placeholder="s14, subframe, install"
+                placeholder="cnc, enclosure, aluminum"
                 className="min-w-[120px] no-zoom-input flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-zinc-500"
               />
             </div>
@@ -597,7 +603,7 @@ export default function InfoCategoryPage() {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
           <div
-            className="relative w-full max-w-lg rounded-2xl border border-zinc-700 bg-black/90 p-4 text-sm text-brand-text shadow-xl"
+            className="ui-card relative w-full max-w-lg text-sm text-brand-text shadow-xl"
             onMouseDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -605,14 +611,14 @@ export default function InfoCategoryPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-                  Info search help
+                  Project search help
                 </div>
                 <div className="mt-1 text-base font-semibold">Search within this category</div>
               </div>
               <button
                 type="button"
                 onClick={() => setHelpOpen(false)}
-                className="inline-flex h-9 items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+                className="ui-btn ui-btn-ghost h-9 text-[12px]"
               >
                 Got it
               </button>
@@ -632,14 +638,14 @@ export default function InfoCategoryPage() {
                 </div>
                 <p className="mt-1">
                   Use chips to split your search into multiple ideas. It’s faster and helps the ranking pick up
-                  different angles (parts, symptoms, chassis, etc.).
+                  different angles (materials, processes, platforms, etc.).
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    s14
+                    cnc
                   </span>
                   <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    subframe
+                    enclosure
                   </span>
                   <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
                     bushing
@@ -648,7 +654,7 @@ export default function InfoCategoryPage() {
                 <div className="mt-2 text-[11px]">
                   Example:{" "}
                   <span className="rounded-md border border-zinc-700 bg-black/50 px-1.5 py-0.5 text-brand-text">
-                    s14, subframe, bushing
+                    cnc, enclosure, aluminum
                   </span>
                 </div>
               </div>
@@ -661,7 +667,7 @@ export default function InfoCategoryPage() {
                   Matches can appear in the <span className="text-brand-text">title</span>,{" "}
                   <span className="text-brand-text">tags</span>,{" "}
                   <span className="text-brand-text">slug</span>,{" "}
-                  <span className="text-brand-text">chassis</span>, and{" "}
+                  <span className="text-brand-text">platform</span>, and{" "}
                   <span className="text-brand-text">category</span> fields.
                 </p>
               </div>
@@ -685,7 +691,7 @@ export default function InfoCategoryPage() {
 
           {chassisOptions.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <span className="text-brand-textMuted">Filter by chassis:</span>
+              <span className="text-brand-textMuted">Filter by platform / vehicle:</span>
 
               <button
                 type="button"

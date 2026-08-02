@@ -20,18 +20,20 @@ type InfoPage = {
 };
 
 const CATEGORY_OPTIONS = [
-  { value: "chassis-suspension", label: "Chassis & Suspension" },
-  { value: "engine-drivetrain", label: "Engine & Drivetrain" },
-  { value: "wiring-electronics", label: "Wiring & Electronics" },
-  { value: "body-aero", label: "Body & Aero" },
-  { value: "maintenance-general", label: "Maintenance & General" },
+  { value: "cnc-machining", label: "CNC & Machining" },
+  { value: "product-design", label: "Product Design" },
+  { value: "automation-tools", label: "Automation & Tools" },
+  { value: "electronics-software", label: "Electronics & Software" },
+  { value: "automotive", label: "Automotive" },
+  { value: "business-brand", label: "KeyMoura Build Log" },
 ];
 
 const CHASSIS_OPTIONS = [
-  { value: "s13", label: "S13" },
-  { value: "s14", label: "S14" },
-  { value: "s15", label: "S15" },
-  { value: "general", label: "General / Any" },
+  { value: "general", label: "General / Not applicable" },
+  { value: "shop", label: "Shop / Manufacturing" },
+  { value: "software", label: "Software / Web" },
+  { value: "electronics", label: "Electronics" },
+  { value: "automotive", label: "Automotive / Vehicle" },
 ];
 
 function normalizeTag(raw: string): string {
@@ -50,7 +52,7 @@ export default function InfoUpdatePage() {
   const [error, setError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("maintenance-general");
+  const [category, setCategory] = useState("product-design");
   const [chassis, setChassis] = useState("general");
   const [tagsInput, setTagsInput] = useState("");
   const [content, setContent] = useState("");
@@ -67,7 +69,7 @@ export default function InfoUpdatePage() {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
         // For pages that require auth, redirect to login instead of showing a dead-end error
-        router.replace(`/login?next=${encodeURIComponent(`/info/${slug}/update`)}`);
+        router.replace(`/login?next=${encodeURIComponent(`/projects/${slug}/update`)}`);
         return;
       }
 
@@ -110,7 +112,7 @@ export default function InfoUpdatePage() {
 
       setPage(data);
       setTitle(data.title);
-      setCategory(data.category ?? "maintenance-general");
+      setCategory(data.category ?? "product-design");
       setChassis(data.chassis ?? "general");
       setContent(data.content_markdown ?? "");
       setTagsInput((data.tags ?? []).join(", "));
@@ -168,7 +170,7 @@ export default function InfoUpdatePage() {
       }
 
       setSubmitting(false);
-      router.push(`/info/${encodeURIComponent(page.slug)}?updateSubmitted=1`);
+      router.push(`/projects/${encodeURIComponent(page.slug)}?updateSubmitted=1`);
     } catch (e) {
       console.error(e);
       setMessage("Unexpected error submitting update.");
@@ -178,7 +180,7 @@ export default function InfoUpdatePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-8 text-brand-textMuted">
+      <div className="page-container text-brand-textMuted">
         Loading...
       </div>
     );
@@ -186,14 +188,14 @@ export default function InfoUpdatePage() {
 
   if (notVerified) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <div className="rounded-xl border border-zinc-800/80 bg-black/40 p-4">
+      <div className="page-container">
+        <div className="ui-card">
           <p className="text-sm text-amber-200">
-            You do not have permission to submit updates to info pages.
+            You do not have permission to submit project updates.
           </p>
           <div className="mt-3">
-            <Link href="/info" className="text-[12px] text-amber-300 underline underline-offset-2 hover:text-amber-200">
-              ← Back to Info
+            <Link href="/projects" className="text-[12px] text-amber-300 underline underline-offset-2 hover:text-amber-200">
+              ← Back to Projects
             </Link>
           </div>
         </div>
@@ -203,11 +205,11 @@ export default function InfoUpdatePage() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <div className="rounded-xl border border-zinc-800/80 bg-black/40 p-4">
+      <div className="page-container">
+        <div className="ui-card">
           <p className="text-sm text-rose-200">{error}</p>
           <div className="mt-3">
-            <Link href={`/info/${encodeURIComponent(slug)}`} className="text-[12px] text-amber-200 hover:underline">
+            <Link href={`/projects/${encodeURIComponent(slug)}`} className="text-[12px] text-amber-200 hover:underline">
               Back to page
             </Link>
           </div>
@@ -217,14 +219,14 @@ export default function InfoUpdatePage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="page-container">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">Suggest an update</p>
           <h1 className="text-2xl font-semibold text-brand-text">{page?.title}</h1>
           <div className="mt-2 text-[11px] text-brand-textMuted">
             <Link
-              href={`/info/${encodeURIComponent(page?.slug ?? slug)}`}
+              href={`/projects/${encodeURIComponent(page?.slug ?? slug)}`}
               className="underline underline-offset-2 text-amber-300 hover:text-amber-200"
             >
               ← Back to page
@@ -239,7 +241,7 @@ export default function InfoUpdatePage() {
         </div>
 
         <aside className="space-y-4">
-          <div className="rounded-xl border border-zinc-800/80 bg-black/40 p-4 space-y-3">
+          <div className="ui-card space-y-3">
             <div>
               <p className="text-[11px] text-brand-textMuted">Title</p>
               <input
@@ -262,9 +264,9 @@ export default function InfoUpdatePage() {
                 />
               </div>
               <div>
-                <p className="text-[11px] text-brand-textMuted">Chassis</p>
+                <p className="text-[11px] text-brand-textMuted">Platform / vehicle</p>
                 <MenuSelect
-                  ariaLabel="Chassis"
+                  ariaLabel="Platform or vehicle"
                   value={chassis as string}
                   onChange={(next) => setChassis(next)}
                   className="mt-1 flex h-10 w-full items-center gap-2 rounded-lg border border-zinc-700 bg-black/40 px-3 py-2 text-[12px] text-brand-text outline-none transition hover:border-zinc-500"
@@ -293,10 +295,10 @@ export default function InfoUpdatePage() {
               type="button"
               disabled={submitting}
               onClick={() => void submitUpdate()}
-              className={`w-full rounded-full border px-4 py-2 text-[12px] font-medium transition ${
+              className={`ui-btn ui-btn-primary w-full text-[12px] ${
                 submitting
-                  ? "cursor-not-allowed opacity-60 border-zinc-700 bg-black/30 text-brand-textMuted"
-                  : "border-amber-400/80 bg-amber-500/20 text-amber-200 hover:border-amber-300/90"
+                  ? "cursor-not-allowed opacity-60"
+                  : ""
               }`}
             >
               {submitting ? "Submitting..." : "Submit update for review"}

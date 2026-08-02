@@ -1178,6 +1178,9 @@ export default function SiteHeader() {
   }, []);
 
   useEffect(() => {
+    if (siteSettings.theme.navigationBehavior === "sticky") {
+      return;
+    }
     let lastY = typeof window !== "undefined" ? window.scrollY : 0;
 
     const onScroll = () => {
@@ -1197,7 +1200,7 @@ export default function SiteHeader() {
 
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [siteSettings.theme.navigationBehavior]);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -1215,9 +1218,9 @@ export default function SiteHeader() {
   const pillBase =
     "site-nav-link rounded-full px-3 py-1 text-[14px] font-medium tracking-wide transition-colors";
   const pillActive =
-    "border border-brand-accent/70 bg-black/60 text-brand-accent";
+    "is-active border";
   const pillIdle =
-    "border border-transparent text-brand-textMuted transition-all duration-150 ease-out hover:border-brand-accent/50 hover:bg-black/50 hover:text-brand-accent hover:-translate-y-[1px]";
+    "border border-transparent transition-all duration-150 ease-out hover:-translate-y-[1px]";
 
   const navLinkClasses = (href: string) =>
     `${pillBase} ${isActive(href) ? pillActive : pillIdle}`;
@@ -1236,7 +1239,7 @@ export default function SiteHeader() {
     () => [
       { href: "/about", label: "About" },
       { href: "/capabilities", label: "Capabilities" },
-      { href: "/info", label: "Projects" },
+      { href: "/projects", label: "Projects" },
     ],
     []
   );
@@ -1254,7 +1257,7 @@ export default function SiteHeader() {
 
   const accountPillClass = `${desktopPillBase} ${
     isAccountRoute
-      ? "border-brand-accent/80 bg-black/70 text-brand-accent"
+      ? "is-active border-brand-accent/80 bg-black/70 text-brand-accent"
       : "border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/70 hover:bg-black/70 hover:text-brand-accent hover:ring-1 hover:ring-brand-accent/30"
   }`;
 
@@ -1297,7 +1300,7 @@ export default function SiteHeader() {
   const mobileAccountPillClass = `${mobilePillBase} border-zinc-700 bg-black/40 text-brand-text hover:border-brand-accent/70 hover:bg-black/70 hover:text-brand-accent`;
   const mobileStaffPillClass = `${mobilePillBase} hover:brightness-110`;
 
-  const headerTheme = "border-b bg-black/55";
+  const headerTheme = "site-header-shell border-b";
 
   const headerStyle = isStaffRoute
     ? {
@@ -1305,14 +1308,13 @@ export default function SiteHeader() {
         boxShadow: `0 10px 30px ${hexToRgba(staffPalette.border, 0.12) ?? "rgba(0,0,0,0.12)"}`,
       }
     : {
-        borderColor: "color-mix(in srgb, var(--brand-accent) 25%, transparent)",
-        boxShadow: "0 10px 30px color-mix(in srgb, var(--brand-accent) 12%, transparent)",
+        borderColor: "var(--km-nav-border)",
       };
 
   return (
     <header
       className={`sticky top-0 z-60 border-b backdrop-blur-md transition-transform duration-200 ${
-        hidden ? "-translate-y-full" : "translate-y-0"
+        siteSettings.theme.navigationBehavior === "auto-hide" && hidden ? "-translate-y-full" : "translate-y-0"
       } ${headerTheme}`}
       style={headerStyle}
     >
@@ -1526,7 +1528,7 @@ export default function SiteHeader() {
           <Link href="/capabilities" className={navLinkClasses("/capabilities")} onClick={() => setIsMobileOpen(false)}>
             Capabilities
           </Link>
-          <Link href="/info" className={navLinkClasses("/info")} onClick={() => setIsMobileOpen(false)}>
+          <Link href="/projects" className={navLinkClasses("/projects")} onClick={() => setIsMobileOpen(false)}>
             Projects
           </Link>
           <Link href="/catalog" className={navLinkClasses("/catalog")} onClick={() => setIsMobileOpen(false)}>

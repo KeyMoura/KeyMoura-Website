@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (!token) {
       return NextResponse.json(
-        { ok: false, error: "You must be logged in to submit an info page." },
+        { ok: false, error: "You must be logged in to submit a project." },
         { status: 401 }
       );
     }
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     if (userError || !user || !(await isUserAdmitted(user.id))) {
       console.error("[info/submit] getUser error:", userError);
       return NextResponse.json(
-        { ok: false, error: "You must be logged in to submit an info page." },
+        { ok: false, error: "You must be logged in to submit a project." },
         { status: 401 }
       );
     }
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     const title = (body.title ?? "").trim();
     const slug = (body.slug ?? "").trim();
     const content = (body.content ?? "").trim();
-    const category = (body.category ?? "maintenance-general").trim();
+    const category = (body.category ?? "product-design").trim();
     const chassis = (body.chassis ?? "general").trim();
     const tags = Array.isArray(body.tags) ? body.tags : [];
     const draftId = body.draftId ?? null;
@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
             ok: false,
             error:
               insertError?.message ??
-              "Failed to submit info page. Please try again.",
+              "Failed to submit project. Please try again.",
           },
           { status: 500 }
         );
@@ -264,7 +264,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: "Unexpected error while submitting info page.",
+        error: "Unexpected error while submitting project.",
       },
       { status: 500 }
     );

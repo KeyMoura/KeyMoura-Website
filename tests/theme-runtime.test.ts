@@ -75,3 +75,35 @@ test("appearance controls the shared site shell and component families", () => {
     assert.match(layout, new RegExp(attribute));
   }
 });
+
+test("public navbar and expanded surface choices normalize independently", () => {
+  const theme = normalizeSiteTheme({
+    publicNavigationStyle: "framed",
+    navigationBehavior: "sticky",
+    navigationDensity: "comfortable",
+    navigationBackground: "#101010",
+    navigationText: "#eeeeee",
+    navigationActiveText: "#ffbb22",
+    navigationBorder: "#343434",
+    cardStyle: "elevated",
+    inputStyle: "filled",
+    backgroundStyle: "spotlight",
+    contentWidth: "full",
+    shadowStyle: "glow",
+    borderStrength: "strong",
+  });
+
+  assert.equal(theme.publicNavigationStyle, "framed");
+  assert.equal(theme.navigationBehavior, "sticky");
+  assert.equal(theme.navigationDensity, "comfortable");
+  assert.equal(theme.navigationBackground, "#101010");
+  assert.equal(theme.navigationActiveText, "#ffbb22");
+  assert.equal(theme.cardStyle, "elevated");
+  assert.equal(theme.inputStyle, "filled");
+  assert.equal(theme.backgroundStyle, "spotlight");
+  assert.equal(theme.contentWidth, "full");
+  assert.equal(theme.shadowStyle, "glow");
+  assert.equal(theme.borderStrength, "strong");
+
+  assert.equal(normalizeSiteTheme({}).publicNavigationStyle, "classic");
+});

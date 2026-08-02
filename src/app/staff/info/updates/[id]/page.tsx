@@ -1129,7 +1129,7 @@ export default function AdminInfoUpdateDetailPage() {
               </button>
 
               <Link
-                href={`/info/${encodeURIComponent(page.slug)}`}
+                href={`/projects/${encodeURIComponent(page.slug)}`}
                 className="ui-btn ui-btn-ghost ml-auto text-[12px]"
               >
                 View live

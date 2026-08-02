@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (pageErr || !page) {
-      return NextResponse.json({ ok: false, error: "Info page not found." }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Project not found." }, { status: 404 });
     }
 
     if (page.status !== "approved") {

@@ -1118,13 +1118,13 @@ const loadMyReports = async (viewerId: string) => {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Link
-                    href="/info/mine"
+                    href="/projects/mine"
                     className="ui-btn ui-btn-primary text-xs"
                   >
                     View my submissions
                   </Link>
                   <Link
-                    href="/info/submit"
+                    href="/projects/submit"
                     className="ui-btn ui-btn-ghost text-xs"
                   >
                     Submit info page

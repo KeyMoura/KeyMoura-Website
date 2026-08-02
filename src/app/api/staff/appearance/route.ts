@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       faviconUrl: branding.faviconUrl ?? "/favicon.ico", appleIconUrl: branding.appleIconUrl ?? "/apple-icon.png",
       supportEmail: branding.supportEmail ?? "", copyrightText: branding.copyrightText ?? "All rights reserved.",
       forumLabel: (data.terminology as Record<string, unknown> | null)?.forum ?? "Community",
-      knowledgeBaseLabel: (data.terminology as Record<string, unknown> | null)?.knowledgeBase ?? "Knowledge Base",
+      knowledgeBaseLabel: (data.terminology as Record<string, unknown> | null)?.knowledgeBase ?? "Projects",
       trustedVendorLabel: (data.terminology as Record<string, unknown> | null)?.trustedVendor ?? "Trusted Shop",
     }
   });
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest) {
   };
   const terminology = {
     forum: clean(identity?.forumLabel, 40) || "Community",
-    knowledgeBase: clean(identity?.knowledgeBaseLabel, 40) || "Knowledge Base",
+    knowledgeBase: clean(identity?.knowledgeBaseLabel, 40) || "Projects",
     trustedVendor: clean(identity?.trustedVendorLabel, 40) || "Trusted Shop",
   };
   const { error } = await routeServiceClient.from("site_settings").update({

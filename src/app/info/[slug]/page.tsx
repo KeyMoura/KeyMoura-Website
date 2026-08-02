@@ -375,7 +375,7 @@ export default function InfoSlugPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-8 text-brand-text">
+      <div className="page-container text-brand-text">
         <p>Loading page...</p>
       </div>
     );
@@ -383,10 +383,10 @@ export default function InfoSlugPage() {
 
   if (notFound) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-16 text-brand-text">
+      <div className="page-container text-brand-text">
         <h1 className="mb-2 text-2xl font-semibold">Page not found</h1>
         <p className="text-sm text-brand-textMuted">
-          This info page doesn&apos;t exist or hasn&apos;t been approved yet.
+          This project doesn&apos;t exist or hasn&apos;t been approved yet.
         </p>
       </div>
     );
@@ -394,7 +394,7 @@ export default function InfoSlugPage() {
 
   if (error || !page) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-16 text-brand-text">
+      <div className="page-container text-brand-text">
         <h1 className="mb-2 text-2xl font-semibold">Something went wrong</h1>
         <p className="text-sm text-brand-textMuted">
           {error || "Unable to load this page right now."}
@@ -430,29 +430,29 @@ export default function InfoSlugPage() {
     authorProfile?.username ? `@${authorProfile.username}` : null;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 text-brand-text md:flex-row">
+    <div className="page-container flex flex-col gap-6 text-brand-text md:flex-row">
       {/* Main content */}
-      <article className="w-full md:w-3/4">
+      <article className="ui-card w-full md:w-3/4">
         <header className="mb-4 flex flex-col gap-3 border-b border-zinc-800/80 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="mb-1 text-[11px] uppercase tracking-wide text-brand-textMuted">
-              Info Page
+              Project
             </p>
 
             {/* Breadcrumbs (Info › Category › Page) */}
             <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-brand-textMuted">
               <Link
-                href="/info"
+                href="/projects"
                 className="text-amber-300 underline underline-offset-2 hover:text-amber-200"
               >
-                Info
+                Projects
               </Link>
 
               {categorySlug ? (
                 <>
                   <span>›</span>
                   <Link
-                    href={`/info/category/${encodeURIComponent(categorySlug)}`}
+                    href={`/projects/category/${encodeURIComponent(categorySlug)}`}
                     className="text-amber-300 underline underline-offset-2 hover:text-amber-200"
                   >
                     {categoryLabel ?? "Category"}
@@ -478,7 +478,7 @@ export default function InfoSlugPage() {
                 {tags.map((tag) => (
                   <Link
                     key={tag}
-                    href={`/info?q=${encodeURIComponent(tag)}`}
+                    href={`/projects?q=${encodeURIComponent(tag)}`}
                     className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[11px] text-brand-textMuted hover:border-brand-primary/70 hover:text-brand-text"
                   >
                     {tag}
@@ -491,7 +491,7 @@ export default function InfoSlugPage() {
           {/* DOWNLOAD PDF BUTTON */}
           <a
             href={`/api/info/pdf/${encodeURIComponent(page.slug)}`}
-            className="inline-flex shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-[11px] font-medium text-brand-text transition hover:bg-zinc-900"
+            className="ui-btn ui-btn-secondary shrink-0 text-[11px]"
           >
             Download PDF
           </a>
@@ -572,7 +572,7 @@ export default function InfoSlugPage() {
               {moreForChassis.length > 0 && (
                 <div>
                   <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-brand-textMuted">
-                    More for this chassis
+                    Related projects on this platform
                   </h3>
                   <div className="grid gap-3 md:grid-cols-2">
                     {moreForChassis.map((item) => (
@@ -598,7 +598,7 @@ export default function InfoSlugPage() {
           {authorHref && (
             <Link
               href={authorHref}
-              className="block rounded-lg border border-zinc-800/80 bg-black/40 p-3 hover:border-zinc-700"
+              className="ui-card ui-card-hover block !p-3"
             >
               <div className="flex items-start gap-3">
                 <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
@@ -643,7 +643,7 @@ export default function InfoSlugPage() {
 
           {/* Contributors */}
           {contributors.length > 0 && (
-            <div className="rounded-lg border border-zinc-800/80 bg-black/40 p-3">
+            <div className="ui-card !p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-brand-textMuted">
                 Contributors
               </p>
@@ -698,7 +698,7 @@ export default function InfoSlugPage() {
             </div>
           )}
 
-          <div className="rounded-lg border border-zinc-800/80 bg-black/40 p-3 text-[12px]">
+          <div className="ui-card !p-3 text-[12px]">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-textMuted">
               Table of contents
             </h2>
@@ -737,7 +737,7 @@ export default function InfoSlugPage() {
               <p>
                 Found an issue?{" "}
                 <Link
-                  href={`/info/${encodeURIComponent(page.slug)}/update`}
+                  href={`/projects/${encodeURIComponent(page.slug)}/update`}
                   className="text-amber-300 underline underline-offset-2 hover:text-amber-200"
                 >
                   Submit an update

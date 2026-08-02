@@ -571,9 +571,9 @@ export default function CommunityPage() {
   }, [helpOpen]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 text-sm text-brand-text">
+    <div className="content-hub text-sm text-brand-text">
       {/* Header */}
-      <section className="space-y-2">
+      <section className="content-hero space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
@@ -591,7 +591,7 @@ export default function CommunityPage() {
           <button
             type="button"
             onClick={() => setHelpOpen((v) => !v)}
-            className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-black/40 text-sm text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+            className="ui-btn ui-btn-ghost mt-0.5 h-9 w-9 shrink-0 !p-0 text-sm"
             aria-label="Search help"
             title="Search help"
           >
@@ -603,7 +603,7 @@ export default function CommunityPage() {
         <div className="pt-2">
           <div
             ref={chipContainerRef}
-            className="flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5"
+            className="content-search flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto"
             onClick={() => {
               const el = document.getElementById(
                 "communitysearch-input"
@@ -700,7 +700,7 @@ export default function CommunityPage() {
                   }}
                   disabled={hasActiveQuery}
                   ariaLabel="Sort threads"
-                  className="flex h-8 items-center gap-2 rounded-full border border-zinc-700 bg-black/40 px-3 text-[11px] text-brand-textMuted outline-none transition hover:border-amber-400/70 disabled:opacity-50"
+                  className="ui-select-trigger !min-h-8 !w-auto text-[11px]"
                   options={[
                     { value: "hot", label: "Hot (7d)" },
                     { value: "active", label: "Active" },
@@ -722,7 +722,7 @@ export default function CommunityPage() {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
           <div
-            className="relative w-full max-w-lg rounded-2xl border border-zinc-700 bg-black/90 p-4 text-sm text-brand-text shadow-xl"
+            className="ui-card relative w-full max-w-lg text-sm text-brand-text shadow-xl"
             onMouseDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -739,7 +739,7 @@ export default function CommunityPage() {
               <button
                 type="button"
                 onClick={() => setHelpOpen(false)}
-                className="inline-flex h-9 items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+                className="ui-btn ui-btn-ghost h-9 text-[12px]"
               >
                 Got it
               </button>
@@ -831,7 +831,7 @@ export default function CommunityPage() {
                 {categoryGroups.map(({ parent, children }) => (
                   <div
                     key={parent.id}
-                    className="group rounded-xl border border-zinc-800/80 bg-black/40 p-4 text-sm transition-colors hover:border-brand-primary/70 hover:bg-black/70"
+                    className="content-grid-card group text-sm"
                   >
                     <Link
                       href={`/community/${parent.slug}`}
@@ -878,7 +878,7 @@ export default function CommunityPage() {
               </span>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-black/40">
+            <div className="content-list">
               <div className="divide-y divide-zinc-800/80">
                 {visibleThreads.map((t) => {
                   const cat = categoriesById.get(t.category_id);
@@ -1047,7 +1047,7 @@ export default function CommunityPage() {
                 <button
                   type="button"
                   onClick={() => setVisibleCount((v) => v + 6)}
-                  className="w-full rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 text-[12px] text-brand-textMuted transition hover:border-amber-400/70 hover:text-brand-text"
+                  className="ui-btn ui-btn-secondary w-full text-[12px]"
                 >
                   Show more (+6)
                 </button>

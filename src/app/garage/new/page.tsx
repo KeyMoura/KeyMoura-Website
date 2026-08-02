@@ -324,7 +324,7 @@ export default function GarageNewPage() {
           Add a car to your garage
         </h1>
         <p className="text-[12px] text-brand-textMuted sm:text-sm">
-          Share your S-chassis (or other builds), list mods, and choose how visible it should be.
+          Share your build, list modifications, and choose how visible it should be.
         </p>
         <div className="mt-1 text-[11px] text-brand-textMuted">
           <Link
