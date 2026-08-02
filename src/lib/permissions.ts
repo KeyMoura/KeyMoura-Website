@@ -11,6 +11,9 @@ export const PERMISSIONS = [
   "shops.view",
   "catalog.view",
   "catalog.manage",
+  "catalog.categories.manage",
+  "catalog.discounts.manage",
+  "catalog.reviews.moderate",
   "orders.view",
   "orders.manage",
   "appearance.manage",
@@ -133,6 +136,21 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       category: "Commerce",
       label: "Manage catalog",
       description: "Allows creating, editing, publishing, and archiving KeyMoura products.",
+    },
+    "catalog.categories.manage": {
+      category: "Commerce",
+      label: "Manage product categories",
+      description: "Allows creating, editing, reordering, and archiving catalog categories.",
+    },
+    "catalog.discounts.manage": {
+      category: "Commerce",
+      label: "Manage discount codes",
+      description: "Allows creating, editing, targeting, and archiving discount codes.",
+    },
+    "catalog.reviews.moderate": {
+      category: "Commerce",
+      label: "Moderate product reviews",
+      description: "Allows hiding, restoring, or removing product reviews and resolving reports.",
     },
     "orders.view": {
       category: "Commerce",
