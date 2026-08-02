@@ -8,11 +8,14 @@ import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
 import { RolePill } from "@/components/RolePill";
 import { useBlocks } from "@/components/BlocksProvider";
+import type { UserIdentity } from "@supabase/supabase-js";
 
 type SimpleUser = {
   id: string;
   email: string | null;
 };
+
+type AccountIdentity = UserIdentity;
 
 type ProfileRow = {
   username: string | null;
@@ -41,6 +44,7 @@ type BlockedUserRow = {
 };
 
 const AVATAR_MAX_SIZE_PX = 256;
+const prettyProvider = (provider: string) => provider === "google" ? "Google" : provider === "discord" ? "Discord" : provider.replace(/\b\w/g, character => character.toUpperCase());
 
 // Resize an image file down to maxSize (px) and convert to JPEG
 async function resizeImageToJpeg(file: File, maxSize: number): Promise<Blob> {
@@ -144,6 +148,9 @@ const [myReports, setMyReports] = useState<MyReportRow[]>([]);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [identities, setIdentities] = useState<AccountIdentity[]>([]);
+  const [identityBusy, setIdentityBusy] = useState<string | null>(null);
+  const [identityMessage, setIdentityMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -175,6 +182,12 @@ const [myReports, setMyReports] = useState<MyReportRow[]>([]);
           email: user.email ?? null,
         };
         setUser(simple);
+        const { data: identityData, error: identityError } = await supabase.auth.getUserIdentities();
+        if (identityError) {
+          setIdentityMessage("Connected sign-in methods could not be loaded.");
+        } else {
+          setIdentities((identityData?.identities ?? []) as AccountIdentity[]);
+        }
 
         // Load staff role (if any) for display.
         const { data: roleRow } = await supabase
@@ -354,6 +367,36 @@ useEffect(() => {
     setNewPassword("");
     setConfirmPassword("");
     setPasswordMessage("Password saved. You can now use email + password to log in.");
+  };
+
+  const handleLinkIdentity = async (provider: "google" | "discord") => {
+    setIdentityBusy(provider);
+    setIdentityMessage(null);
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(`/account?linked=${provider}`)}`;
+    const { error } = await supabase.auth.linkIdentity({ provider, options: { redirectTo } });
+    if (error) {
+      setIdentityMessage(error.message.includes("Manual linking is disabled")
+        ? "Account linking must be enabled in Supabase Auth settings before this provider can be connected."
+        : `Could not connect ${provider === "google" ? "Google" : "Discord"}. ${error.message}`);
+      setIdentityBusy(null);
+    }
+  };
+
+  const handleUnlinkIdentity = async (identity: AccountIdentity) => {
+    if (identities.length < 2) {
+      setIdentityMessage("Add another sign-in method before disconnecting this one.");
+      return;
+    }
+    setIdentityBusy(identity.provider);
+    setIdentityMessage(null);
+    const { error } = await supabase.auth.unlinkIdentity(identity);
+    if (error) {
+      setIdentityMessage(`Could not disconnect ${prettyProvider(identity.provider)}. ${error.message}`);
+    } else {
+      setIdentities(current => current.filter(item => item.id !== identity.id));
+      setIdentityMessage(`${prettyProvider(identity.provider)} disconnected.`);
+    }
+    setIdentityBusy(null);
   };
 
   const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1106,6 +1149,25 @@ const loadMyReports = async (viewerId: string) => {
                 </div>
               </div>
             ) : null}
+
+            <div>
+              <h2 className="mb-1 text-[13px] font-semibold text-brand-text">Connected sign-in methods</h2>
+              <p className="mb-3 text-[11px] text-brand-textMuted">
+                Sign in with any connected method and you will reach this same KeyMoura account. Supabase also safely combines verified provider accounts that use the same email.
+              </p>
+              <div className="space-y-2 sm:max-w-2xl">
+                {(["google", "discord"] as const).map(provider => {
+                  const identity = identities.find(item => item.provider === provider);
+                  const label = prettyProvider(provider);
+                  return <div key={provider} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-border bg-black/25 p-3">
+                    <div><div className="font-medium text-brand-text">{label}</div><div className="text-[11px] text-brand-textMuted">{identity ? identity.identity_data?.email || "Connected" : "Not connected"}</div></div>
+                    {identity ? <button type="button" className="ui-btn ui-btn-ghost text-xs" disabled={identityBusy !== null || identities.length < 2} title={identities.length < 2 ? "Connect another method first" : undefined} onClick={() => void handleUnlinkIdentity(identity)}>{identityBusy === provider ? "Disconnecting…" : "Disconnect"}</button> : <button type="button" className="ui-btn ui-btn-secondary text-xs" disabled={identityBusy !== null} onClick={() => void handleLinkIdentity(provider)}>{identityBusy === provider ? "Connecting…" : `Connect ${label}`}</button>}
+                  </div>;
+                })}
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-border bg-black/25 p-3"><div><div className="font-medium text-brand-text">Email</div><div className="text-[11px] text-brand-textMuted">{user.email || "No email on file"} · Email link always available</div></div><span className="rounded-full border border-emerald-500/40 px-2.5 py-1 text-[11px] text-emerald-300">Connected</span></div>
+              </div>
+              {identityMessage ? <p className="mt-3 text-[11px] text-brand-textMuted">{identityMessage}</p> : null}
+            </div>
 
             <div>
               <h2 className="mb-1 text-[13px] font-semibold text-brand-text">

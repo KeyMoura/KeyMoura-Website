@@ -26,6 +26,7 @@ type Profile = { id: string; username: string | null; display_name: string | nul
 type Workspace = { order_id:string; priority:"low"|"normal"|"high"|"urgent"; assigned_to:string|null; started_at:string|null };
 type View = "action" | "waiting" | "active" | "completed" | "all";
 type PriorityFilter = "all" | Workspace["priority"];
+type Sort = "updated_desc" | "created_desc" | "created_asc" | "priority" | "target_date" | "price_desc";
 
 const closedStatuses = new Set(["completed", "declined", "cancelled"]);
 const pretty = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
@@ -74,6 +75,7 @@ export default function StaffOrdersPage() {
   const [workspaces, setWorkspaces] = useState<Record<string, Workspace>>({});
   const [view, setView] = useState<View>("action");
   const [priority, setPriority] = useState<PriorityFilter>("all");
+  const [sort, setSort] = useState<Sort>("updated_desc");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -119,7 +121,21 @@ export default function StaffOrdersPage() {
     const profile = profiles[order.customer_id];
     const haystack = [order.order_number, order.product_name, profile?.display_name, profile?.username].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
-  }), [orders, priority, profiles, query, view, workspaces]);
+  }).toSorted((a, b) => {
+    if (sort === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    if (sort === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    if (sort === "priority") {
+      const rank = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
+      return rank[workspaces[a.id]?.priority ?? "normal"] - rank[workspaces[b.id]?.priority ?? "normal"] || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    }
+    if (sort === "target_date") {
+      const aDate = a.target_date ? new Date(`${a.target_date}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
+      const bDate = b.target_date ? new Date(`${b.target_date}T00:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
+      return aDate - bDate || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    }
+    if (sort === "price_desc") return (b.agreed_price_cents ?? -1) - (a.agreed_price_cents ?? -1);
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  }), [orders, priority, profiles, query, sort, view, workspaces]);
 
   if (isLoading) return <div className="ui-card">Loading…</div>;
   if (!canView) return <AccessDeniedCard message="You do not have access to orders." />;
@@ -127,7 +143,7 @@ export default function StaffOrdersPage() {
   return <main>
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs uppercase tracking-[.2em] text-brand-accent">Commerce</p><h1 className="mt-1 text-3xl font-semibold">Order cockpit</h1><p className="mt-2 text-sm text-brand-textMuted">See what needs attention and move every request through quoting, payment, production, and delivery.</p></div>
-      <div className="flex w-full flex-wrap gap-2 sm:w-auto"><Link href="/staff/orders/new" className="catalog-action-primary rounded-xl px-4 py-2.5 text-center text-sm font-semibold">Create proposal</Link><label className="min-w-0 flex-1 sm:w-72"><span className="sr-only">Search orders</span><input value={query} onChange={event => setQuery(event.target.value)} className="w-full rounded-xl border border-brand-border bg-black/30 px-4 py-2.5 text-sm outline-none focus:border-brand-accent" placeholder="Search order, product, customer…" /></label><label><span className="sr-only">Filter by priority</span><select value={priority} onChange={event=>setPriority(event.target.value as PriorityFilter)} className="h-full rounded-xl border border-brand-border bg-black/30 px-3 text-sm outline-none focus:border-brand-accent"><option value="all">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label></div>
+      <div className="flex w-full flex-wrap gap-2 sm:w-auto"><Link href="/staff/orders/new" className="catalog-action-primary rounded-xl px-4 py-2.5 text-center text-sm font-semibold">Create proposal</Link><label className="min-w-0 flex-1 sm:w-72"><span className="sr-only">Search orders</span><input value={query} onChange={event => setQuery(event.target.value)} className="w-full rounded-xl border border-brand-border bg-black/30 px-4 py-2.5 text-sm outline-none focus:border-brand-accent" placeholder="Search order, product, customer…" /></label><label><span className="sr-only">Filter by priority</span><select value={priority} onChange={event=>setPriority(event.target.value as PriorityFilter)} className="h-full rounded-xl border border-brand-border bg-black/30 px-3 text-sm outline-none focus:border-brand-accent"><option value="all">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label><label><span className="sr-only">Sort orders</span><select value={sort} onChange={event=>setSort(event.target.value as Sort)} className="h-full rounded-xl border border-brand-border bg-black/30 px-3 text-sm outline-none focus:border-brand-accent"><option value="updated_desc">Recently updated</option><option value="created_desc">Newest orders</option><option value="created_asc">Oldest orders</option><option value="priority">Highest priority</option><option value="target_date">Target date</option><option value="price_desc">Highest price</option></select></label></div>
     </div>
 
     <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

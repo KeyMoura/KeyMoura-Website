@@ -1,0 +1,33 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+
+test("staff order queue supports useful independent sort modes", () => {
+  const page = read("src/app/staff/orders/page.tsx");
+  for (const label of ["Recently updated", "Newest orders", "Oldest orders", "Highest priority", "Target date", "Highest price"]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /\.toSorted\(/);
+});
+
+test("account security exposes safe Supabase identity linking", () => {
+  const page = read("src/app/account/page.tsx");
+  assert.match(page, /getUserIdentities\(\)/);
+  assert.match(page, /linkIdentity\(/);
+  assert.match(page, /unlinkIdentity\(/);
+  assert.match(page, /identities\.length < 2/);
+  assert.match(page, /\["google", "discord"\]/);
+  assert.match(page, /`Connect \$\{label\}`/);
+});
+
+test("appearance is organized into focused sections with explicit publishing", () => {
+  const page = read("src/app/staff/appearance/page.tsx");
+  for (const label of ["Brand & business", "Logos & icons", "Labels & wording", "Colors & controls"]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /Reset this section/);
+  assert.match(page, /Publish appearance/);
+  assert.match(page, /You have unpublished appearance changes/);
+});
