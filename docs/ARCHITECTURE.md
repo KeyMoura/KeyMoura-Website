@@ -2,17 +2,17 @@
 
 ## Runtime shape
 
-S-Chassis Archive is a Next.js 16 App Router monolith. React client pages and server-rendered pages live under `src/app`; 96 route handlers form the application service layer. Supabase supplies Auth, PostgreSQL, RPCs, and object storage. Vercel hosts the Next.js runtime and Speed Insights integration.
+The KeyMoura website is a Next.js 16 App Router monolith. React client pages and server-rendered pages live under `src/app`; 96 route handlers form the application service layer. Supabase supplies Auth, PostgreSQL, RPCs, and object storage. Vercel hosts the Next.js runtime and Speed Insights integration.
 
 The root layout composes global authentication-adjacent UI (lockdown gate, block provider, last-seen updater), navigation, command palette, broadcasts, and footer. `middleware.ts` refreshes Supabase sessions and performs security checks. Browser access uses `src/lib/supabaseClient.ts`; privileged server access is split across `supabaseAdmin.ts`, `supabaseServer.ts`, `adminForumGuard.ts`, and the preferred `lib/api/routeAuth.ts` helpers.
 
 ## Functional areas
 
 - **Forum/community:** categories, threads, posts, voting, flags, blocking, accepted answers, moderation.
-- **Knowledge base:** published pages, draft review, update proposals, PDF generation, search analytics.
+- **Projects:** published project pages, draft review, update proposals, PDF generation, search analytics.
 - **Identity/community:** profiles, roles, permissions, restrictions, bans, notifications, direct messages.
 - **Moderation/security:** reports, recycle bin, audit log, security settings, login events, lockdown, staff role administration.
-- **S-Chassis instance modules:** Garage and trusted shops.
+- **Optional modules:** Garage and trusted shops.
 
 ## Data flow and trust boundaries
 

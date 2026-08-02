@@ -880,7 +880,7 @@ function InfoSubmitInner() {
               <label className="mb-1 block text-sm text-brand-text">Title</label>
               <input
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-brand-bgStart p-2 text-sm text-brand-text outline-none focus:border-brand-primary"
-                placeholder="Example: S14 Rear Subframe Bushing Replacement"
+                placeholder="Example: Machined Aluminum Enclosure for a Bench Supply"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required

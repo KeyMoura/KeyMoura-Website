@@ -1,14 +1,25 @@
-# S-Chassis Resource Archive
+# KeyMoura
 
-A configurable Next.js community application with a knowledge base, forum,
-moderation tools, direct messages, notifications, Garage, and trusted-vendor
-modules. Supabase provides authentication, PostgreSQL, RPCs, and object storage.
+The KeyMoura website: a product catalog, custom-order workflow, project library,
+and community, built on Next.js 16 (App Router). Supabase provides
+authentication, PostgreSQL, RPCs, and object storage. Stripe handles checkout and
+payment webhooks. Vercel hosts the runtime.
 
-> **Template status:** the application UI builds and its static tests pass, but
-> this repository is not yet a one-command fresh database install. The checked-in
-> migrations do not define every relation, RPC, storage bucket, and RLS policy
-> used by the application. Read [`docs/FINAL_QA.md`](docs/FINAL_QA.md) before
-> deploying a new instance.
+## What the site does
+
+- **Catalog** (`/catalog`) — published products with options, media, inventory,
+  and availability.
+- **Custom orders** (`/orders/new`) — a guided request, staff quote, customer
+  approval, payment, and fulfillment workflow with a per-order hub.
+- **Projects** (`/projects`) — the reviewed build and reference library, with
+  submissions, updates, categories, and staff moderation.
+- **Community** (`/community`) — categories, threads, replies, voting, and
+  moderation.
+- **Account and staff tools** — orders, messages, notifications, reports,
+  roles and permissions, security, audit, appearance, and catalog management.
+
+`/info` remains as a permanent redirecting alias for the older Projects URLs.
+`/projects` is canonical; link to it everywhere.
 
 ## Prerequisites
 
@@ -52,20 +63,25 @@ npm run build
 
 The browser regression in `e2e/header-layout.spec.js` additionally requires
 `@playwright/test` and a Playwright Chromium installation. It is intentionally
-not part of the locked dependencies yet; the final QA report records why it was
-not added during this pass.
+not part of the locked dependencies; see [`docs/FINAL_QA.md`](docs/FINAL_QA.md).
 
-## Configure a new site
+## Configuring identity and appearance
 
-1. Change identity, shared terminology, navigation, canonical URL, and module
-   visibility in [`src/site.config.ts`](src/site.config.ts).
-2. Replace instance artwork in `public/brand` and `public/hero-silvia.png`.
-3. Adjust centralized theme tokens in `src/app/globals.css` and
-   `tailwind.config.ts` rather than recoloring individual pages.
-4. Review editorial/legal content. S-Chassis examples inside content are
-   intentionally instance data and are not all derived from configuration.
-5. Keep authorization on every route even when a module is hidden. Current
-   feature switches control discoverability; they are not security controls.
+Most brand configuration is runtime data, not code. Staff with the
+`appearance.manage` permission change it from `/staff/appearance`:
+
+- business name, tagline, description, public URL, support email, copyright
+- logo, wordmark, footer logo, favicon, and Apple icon paths
+- section labels (Community, Projects, Trusted Shop)
+- colors, typography, spacing, radius, and shared component styles
+- the public navbar palette, including its independent utility-control colors
+- named **appearance templates** that can be saved, applied for preview, renamed,
+  and deleted without publishing
+
+[`src/site.config.ts`](src/site.config.ts) only supplies the build-time fallback
+used before the database is reachable. Shared component styling lives in
+`src/app/globals.css` and `tailwind.config.ts`; change tokens there rather than
+recoloring individual pages.
 
 ## Supabase and first administrator
 
@@ -75,14 +91,14 @@ server-side bootstrap and complete `/install`. Do not paste a database URL or
 service-role key into the browser.
 
 The core bootstrap is complete for identity, roles, permissions, installation
-state, module versions, settings, and avatar storage. Some legacy optional-module
+state, module versions, settings, and avatar storage. Some optional-module
 schemas still require the sanitized compatibility export identified in the
 installer guide. Never use production data to test bootstrap or destructive
 flows.
 
 ## Deployment and upgrades
 
-- Configure the three variables from `.env.example` in the hosting platform.
+- Configure the variables from `.env.example` in the hosting platform.
 - Build with `npm ci && npm run build`.
 - Apply migrations to staging in timestamp order, run the automated suite and
   [`docs/MANUAL_CHECKS.md`](docs/MANUAL_CHECKS.md), then promote the same build.

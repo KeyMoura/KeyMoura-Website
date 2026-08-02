@@ -380,7 +380,7 @@ export default function GarageNewPage() {
                     type="text"
                     value={make}
                     onChange={(e) => setMake(e.target.value)}
-                    placeholder="Nissan"
+                    placeholder="Make"
                     className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                     disabled={maintenanceMode}
                   />
@@ -391,7 +391,7 @@ export default function GarageNewPage() {
                     type="text"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    placeholder="240SX"
+                    placeholder="Model"
                     className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                     disabled={maintenanceMode}
                   />
@@ -405,7 +405,7 @@ export default function GarageNewPage() {
                     type="text"
                     value={chassis}
                     onChange={(e) => setChassis(e.target.value)}
-                    placeholder="S14, S13, S15..."
+                    placeholder="Platform or chassis code"
                     className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                     disabled={maintenanceMode}
                   />
@@ -416,7 +416,7 @@ export default function GarageNewPage() {
                     type="text"
                     value={trim}
                     onChange={(e) => setTrim(e.target.value)}
-                    placeholder="SE, Q's, Kouki..."
+                    placeholder="Trim level"
                     className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                     disabled={maintenanceMode}
                   />
@@ -427,7 +427,7 @@ export default function GarageNewPage() {
                     type="text"
                     value={color}
                     onChange={(e) => setColor(e.target.value)}
-                    placeholder="KH3 Super Black"
+                    placeholder="Color or paint code"
                     className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                     disabled={maintenanceMode}
                   />
@@ -440,7 +440,7 @@ export default function GarageNewPage() {
                   type="text"
                   value={engine}
                   onChange={(e) => setEngine(e.target.value)}
-                  placeholder="S13 SR20DET..."
+                  placeholder="Engine or drivetrain"
                   className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                   disabled={maintenanceMode}
                 />
@@ -502,7 +502,7 @@ export default function GarageNewPage() {
                   value={mods}
                   onChange={(e) => setMods(e.target.value)}
                   rows={5}
-                  placeholder="Coilovers, arms, brakes..."
+                  placeholder="Modifications and parts fitted…"
                   className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                   disabled={maintenanceMode}
                 />

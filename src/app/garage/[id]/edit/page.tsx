@@ -432,7 +432,7 @@ export default function EditGarageCarPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-                placeholder="My S14 time attack build"
+                placeholder="Name this build"
                 disabled={inputsDisabled}
               />
             </div>
@@ -460,7 +460,7 @@ export default function EditGarageCarPage() {
                 value={make}
                 onChange={(e) => setMake(e.target.value)}
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-                placeholder="Nissan"
+                placeholder="Make"
                 disabled={inputsDisabled}
               />
             </div>
@@ -474,7 +474,7 @@ export default function EditGarageCarPage() {
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-                placeholder="240SX"
+                placeholder="Model"
                 disabled={inputsDisabled}
               />
             </div>
@@ -488,7 +488,7 @@ export default function EditGarageCarPage() {
                 value={chassis}
                 onChange={(e) => setChassis(e.target.value)}
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-                placeholder="s14, s13, r33…"
+                placeholder="Platform or chassis code"
                 disabled={inputsDisabled}
               />
             </div>
@@ -502,7 +502,7 @@ export default function EditGarageCarPage() {
                 value={trim}
                 onChange={(e) => setTrim(e.target.value)}
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-                placeholder="SE, Type X, etc."
+                placeholder="Trim level"
                 disabled={inputsDisabled}
               />
             </div>
@@ -516,7 +516,7 @@ export default function EditGarageCarPage() {
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-                placeholder="Black, KH3, etc."
+                placeholder="Color or paint code"
                 disabled={inputsDisabled}
               />
             </div>
@@ -530,7 +530,7 @@ export default function EditGarageCarPage() {
                 value={engine}
                 onChange={(e) => setEngine(e.target.value)}
                 className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none placeholder:text-zinc-500 focus:border-brand-primary/70 disabled:opacity-60"
-                placeholder="SR20DET, 2JZ-GTE…"
+                placeholder="Engine or drivetrain"
                 disabled={inputsDisabled}
               />
             </div>

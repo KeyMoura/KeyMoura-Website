@@ -7,6 +7,7 @@ import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 
 type LoadState = "idle" | "loading" | "loaded" | "error";
 
@@ -560,15 +561,6 @@ export default function CommunityPage() {
 
   const canShowMore = totalCount > visibleCount;
 
-  // Help popup: ESC to close
-  useEffect(() => {
-    if (!helpOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setHelpOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [helpOpen]);
 
   return (
     <div className="content-hub text-sm text-brand-text">
@@ -672,7 +664,7 @@ export default function CommunityPage() {
                   scrollChipsToBottom();
                 }
               }}
-              placeholder="search posts… (ex: sr20, wiring, idle, alignment)"
+              placeholder="Search threads… (e.g. bracket, anodizing, tolerance)"
               className="no-zoom-input min-w-[120px] flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-zinc-500"
             />
           </div>
@@ -686,7 +678,7 @@ export default function CommunityPage() {
                     (ranked)
                   </>
                 ) : (
-                  <>Tip: use commas to add chips (ex: “sr20, turbo, oil”)</>
+                  <>Tip: type a comma to add a chip (e.g. “bracket, anodizing, tolerance”)</>
                 )}
               </div>
 
@@ -715,94 +707,18 @@ export default function CommunityPage() {
       </section>
 
       {/* Help popup */}
-      {helpOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          onMouseDown={() => setHelpOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
-          <div
-            className="ui-card relative w-full max-w-lg text-sm text-brand-text shadow-xl"
-            onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-                  Community search help
-                </div>
-                <div className="mt-1 text-base font-semibold">
-                  Search posts like a pro
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHelpOpen(false)}
-                className="ui-btn ui-btn-ghost h-9 text-[12px]"
-              >
-                Got it
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-3 text-[12px] text-brand-textMuted">
-              <p>
-                <span className="mr-2 inline-flex items-center rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[11px] text-brand-text">
-                  🔍 Type
-                </span>
-                to rank results by relevance. Posts never disappear—typing just
-                brings the best matches to the top.
-              </p>
-
-              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
-                <div className="text-[11px] font-semibold text-brand-text">
-                  Chips (comma-separated terms)
-                </div>
-                <p className="mt-1">
-                  Add multiple ideas quickly by typing a comma. Each chip acts
-                  like a “topic bucket” so the search can score posts across
-                  multiple angles.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    sr20
-                  </span>
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    idle
-                  </span>
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    wiring
-                  </span>
-                </div>
-                <div className="mt-2 text-[11px]">
-                  Example:{" "}
-                  <span className="rounded-md border border-zinc-700 bg-black/50 px-1.5 py-0.5 text-brand-text">
-                    sr20, idle, tps
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
-                <div className="text-[11px] font-semibold text-brand-text">
-                  What gets highlighted
-                </div>
-                <p className="mt-1">
-                  Highlights show exact text hits across{" "}
-                  <span className="text-brand-text">title</span>,{" "}
-                  <span className="text-brand-text">category</span>,{" "}
-                  <span className="text-brand-text">slug</span>, and author
-                  fields (who posted / last replied).
-                </p>
-              </div>
-
-              <p className="text-[11px]">
-                Tip: press <span className="text-brand-text">Enter</span> to
-                turn your current text into a chip.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {helpOpen ? (
+        <SearchHelpDialog
+          open={helpOpen}
+          onClose={() => setHelpOpen(false)}
+          eyebrow="Community search help"
+          title="Search threads across the community"
+          intro=" to rank threads by relevance. Nothing is filtered away — the closest matches simply move to the top."
+          examples={["bracket", "anodizing", "tolerance"]}
+          exampleQuery="bracket, anodizing, tolerance"
+          matchFields={["thread title", "category", "slug", "author"]}
+        />
+      ) : null}
 
       {/* Error / loading states */}
       {state === "error" && (

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { InfoCard, InfoCardItem } from "@/components/info/InfoCard";
+import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 
 type InfoCategoryRow = {
   id: string;
@@ -171,15 +172,6 @@ export default function InfoCategoryPage() {
   // ✅ help popup (same behavior/style as other pages)
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // ESC closes help
-  useEffect(() => {
-    if (!helpOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setHelpOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [helpOpen]);
 
   const meta =
     CATEGORY_META[slug] ?? {
@@ -549,7 +541,7 @@ export default function InfoCategoryPage() {
                     scrollChipsToBottom();
                   }
                 }}
-                placeholder="cnc, enclosure, aluminum"
+                placeholder="Search this category… (e.g. cnc, enclosure, aluminum)"
                 className="min-w-[120px] no-zoom-input flex-1 bg-transparent text-sm text-brand-text outline-none placeholder:text-zinc-500"
               />
             </div>
@@ -596,89 +588,18 @@ export default function InfoCategoryPage() {
       </section>
 
       {/* ✅ Help popup (same wrapper/styles/behavior as other pages) */}
-      {helpOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          onMouseDown={() => setHelpOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
-          <div
-            className="ui-card relative w-full max-w-lg text-sm text-brand-text shadow-xl"
-            onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">
-                  Project search help
-                </div>
-                <div className="mt-1 text-base font-semibold">Search within this category</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHelpOpen(false)}
-                className="ui-btn ui-btn-ghost h-9 text-[12px]"
-              >
-                Got it
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-3 text-[12px] text-brand-textMuted">
-              <p>
-                <span className="mr-2 inline-flex items-center rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[11px] text-brand-text">
-                  🔍 Type
-                </span>
-                to rank pages inside this category by relevance.
-              </p>
-
-              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
-                <div className="text-[11px] font-semibold text-brand-text">
-                  Chips (comma-separated terms)
-                </div>
-                <p className="mt-1">
-                  Use chips to split your search into multiple ideas. It’s faster and helps the ranking pick up
-                  different angles (materials, processes, platforms, etc.).
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    cnc
-                  </span>
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    enclosure
-                  </span>
-                  <span className="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
-                    bushing
-                  </span>
-                </div>
-                <div className="mt-2 text-[11px]">
-                  Example:{" "}
-                  <span className="rounded-md border border-zinc-700 bg-black/50 px-1.5 py-0.5 text-brand-text">
-                    cnc, enclosure, aluminum
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-zinc-800 bg-black/40 p-3">
-                <div className="text-[11px] font-semibold text-brand-text">
-                  What gets highlighted
-                </div>
-                <p className="mt-1">
-                  Matches can appear in the <span className="text-brand-text">title</span>,{" "}
-                  <span className="text-brand-text">tags</span>,{" "}
-                  <span className="text-brand-text">slug</span>,{" "}
-                  <span className="text-brand-text">platform</span>, and{" "}
-                  <span className="text-brand-text">category</span> fields.
-                </p>
-              </div>
-
-              <p className="text-[11px]">
-                Tip: press <span className="text-brand-text">Enter</span> to turn your current text into a chip.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {helpOpen ? (
+        <SearchHelpDialog
+          open={helpOpen}
+          onClose={() => setHelpOpen(false)}
+          eyebrow="Project search help"
+          title="Search within this category"
+          intro=" to rank the projects in this category by relevance."
+          examples={["cnc", "enclosure", "aluminum"]}
+          exampleQuery="cnc, enclosure, aluminum"
+          matchFields={["project title", "tags", "slug", "category", "platform"]}
+        />
+      ) : null}
 
       {/* Filters */}
       <section className="space-y-3">

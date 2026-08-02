@@ -306,7 +306,7 @@ export default function NewThreadPage() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Thread title (e.g. “Best coilover setup for time attack S14?”)"
+                placeholder="Thread title (e.g. “Best finish for outdoor aluminum brackets?”)"
                 className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                 disabled={creating || isBanned}
               />
@@ -320,7 +320,7 @@ export default function NewThreadPage() {
                 type="text"
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
-                placeholder="e.g. turbo, suspension, wiring"
+                placeholder="e.g. aluminum, anodizing, tolerance"
                 className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
                 disabled={creating || isBanned}
               />
