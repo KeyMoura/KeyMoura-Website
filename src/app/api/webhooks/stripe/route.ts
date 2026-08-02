@@ -3,7 +3,7 @@ import type Stripe from "stripe";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
-import { notifyOrderUser } from "@/lib/orderNotifications";
+import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
 import { netCollectedCents } from "@/lib/paymentMath";
 
 export const runtime = "nodejs";
@@ -61,13 +61,16 @@ export async function POST(req: NextRequest) {
   const { data: authUser } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
   const config = await getCommerceEmailConfig();
   if (config.sendPaymentUpdates) await sendCommerceEmail({ to:authUser.user?.email, orderId, templateKey:"payment_received", eventKey:`stripe-paid-${event.id}`, variables:{ customer_name:authUser.user?.user_metadata?.display_name || authUser.user?.email?.split("@")[0] || "Customer", product_name:order.product_name, order_label:order.order_number || "your KeyMoura order", status:fullyPaid ? "paid in full" : "deposit received", price:`$${(session.amount_total/100).toFixed(2)}` } });
-  await notifyOrderUser({
-    orderId,
-    actorUserId: null,
-    recipientUserId: order.customer_id,
-    title: "Payment received",
-    message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received.${fullyPaid ? " Your order is paid in full." : ` $${((order.agreed_price_cents-newNetCollected)/100).toFixed(2)} remains.`}`,
-  });
+  await Promise.all([
+    notifyOrderUser({
+      orderId,
+      actorUserId: null,
+      recipientUserId: order.customer_id,
+      title: "Payment received",
+      message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received.${fullyPaid ? " Your order is paid in full." : ` $${((order.agreed_price_cents-newNetCollected)/100).toFixed(2)} remains.`}`,
+    }),
+    notifyOrderStaff({ orderId, actorUserId:null, title:fullyPaid ? "Order paid in full" : "Deposit received", message:`$${(session.amount_total/100).toFixed(2)} was received for ${order.product_name}. Production is ready to continue.` }),
+  ]);
   await routeServiceClient.from("stripe_webhook_events").update({ processed_at: new Date().toISOString() }).eq("stripe_event_id", event.id);
   return NextResponse.json({ received: true });
 }

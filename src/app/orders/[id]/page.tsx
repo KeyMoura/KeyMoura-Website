@@ -48,6 +48,10 @@ type Order = {
   delivered_at: string | null;
   final_review_note: string | null;
   final_review_asset_paths: string[];
+  initiated_by_staff: boolean;
+  proposal_sent_at: string | null;
+  proposal_decided_at: string | null;
+  proposal_decline_reason: string | null;
 };
 type Message = {
   id: number;
@@ -74,6 +78,7 @@ export default function OrderDetailPage() {
   const [busy, setBusy] = useState(false);
   const [quoteExpired, setQuoteExpired] = useState(false);
   const [revisionNote, setRevisionNote] = useState("");
+  const [proposalDeclineReason, setProposalDeclineReason] = useState("");
   const load = useCallback(async () => {
     const auth = await supabase.auth.getUser();
     setUserId(auth.data.user?.id ?? "");
@@ -187,13 +192,26 @@ export default function OrderDetailPage() {
     if (!response.ok) setError(result.error || "Could not approve quote."); else await load();
     setBusy(false);
   }
+  async function decideProposal(action:"accept"|"decline") {
+    const reason = proposalDeclineReason.trim();
+    if (action === "decline" && reason.length < 3) { setError("Please explain why you are declining."); return; }
+    const prompt = action === "accept" ? "Accept this proposal and continue to payment?" : "Decline this proposal? This will close it.";
+    if (!window.confirm(prompt)) return;
+    setBusy(true); setError("");
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch(`/api/orders/${id}/proposal`, { method:"POST", headers:{ "Content-Type":"application/json", ...(data.session?.access_token ? { Authorization:`Bearer ${data.session.access_token}` } : {}) }, body:JSON.stringify({ action, reason }) });
+    const result = await response.json();
+    if (!response.ok) setError(result.error || "Could not update proposal."); else { setProposalDeclineReason(""); await load(); }
+    setBusy(false);
+  }
   if (!order)
     return (
       <main className="mx-auto max-w-4xl px-4 py-10 text-brand-textMuted">
         {error || "Loading order…"}
       </main>
     );
-  const needsAction = orderNeedsCustomerAction(order);
+  const isPendingProposal = order.initiated_by_staff && order.status === "requested";
+  const needsAction = isPendingProposal || orderNeedsCustomerAction(order);
   const customerStage = customerStageIndex(order.status);
   const isClosed = ["declined", "cancelled"].includes(order.status);
   const checkoutAmount = checkoutAmountCents(order);
@@ -215,7 +233,7 @@ export default function OrderDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
         <p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-textMuted">{needsAction ? "Your next step" : "What happens next"}</p>
-        <p className={`mt-2 text-lg font-semibold ${needsAction ? "text-brand-primary" : "text-brand-text"}`}>{orderNextStep(order)}</p>
+        <p className={`mt-2 text-lg font-semibold ${needsAction ? "text-brand-primary" : "text-brand-text"}`}>{isPendingProposal ? "Review KeyMoura's proposal" : orderNextStep(order)}</p>
         {order.status === "needs_information" ? <p className="mt-1 text-sm text-brand-textMuted">Send the missing details in order chat below so work can continue.</p> : null}
         </div>
         {needsAction ? <a href="#customer-action" className="rounded-xl border border-brand-primary/70 bg-zinc-950 px-4 py-2 text-sm font-semibold text-brand-primary transition hover:bg-zinc-900">Complete this step ↓</a> : null}
@@ -251,6 +269,7 @@ export default function OrderDetailPage() {
       </div>
       </details>
       <div id="customer-action" className="scroll-mt-24">
+      {isPendingProposal ? <section className="mt-4 rounded-2xl border border-brand-primary/50 bg-brand-primary/10 p-5"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Order proposal</p><h2 className="mt-2 text-xl font-semibold">Accept, decline, or ask a question</h2><p className="mt-2 text-sm text-brand-textMuted">KeyMoura is offering {order.quantity > 1 ? `${order.quantity} × ` : ""}{order.product_name} for {order.agreed_price_cents != null ? moneyFromCents(order.agreed_price_cents) : "a price to be confirmed"}. Accepting moves it into secure payment and the normal production workflow.</p>{order.customer_notes ? <div className="mt-4 rounded-xl border border-zinc-700 bg-black/25 p-4 whitespace-pre-wrap text-sm">{order.customer_notes}</div> : null}<div className="mt-5 rounded-xl border border-zinc-700 bg-black/25 p-4"><label className="block text-sm font-medium">Decline reason<textarea value={proposalDeclineReason} onChange={event=>setProposalDeclineReason(event.target.value)} maxLength={1000} placeholder="Tell KeyMoura why this proposal does not work for you…" className="mt-2 min-h-20 w-full rounded-xl border border-zinc-700 bg-black/40 p-3 outline-none focus:border-brand-primary" /></label></div><div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={busy || proposalDeclineReason.trim().length < 3} onClick={()=>void decideProposal("decline")} className="rounded-xl border border-rose-400/60 px-5 py-2.5 font-semibold text-rose-200 disabled:opacity-40">Decline proposal</button><button type="button" disabled={busy} onClick={()=>void decideProposal("accept")} className="catalog-action-primary rounded-xl px-5 py-2.5 font-semibold disabled:opacity-50">{busy ? "Saving…" : "Accept proposal"}</button><a href="#order-conversation" className="rounded-xl border border-zinc-600 px-5 py-2.5 font-semibold text-brand-text">Message KeyMoura</a></div></section> : null}
       {order.status === "customer_review" && !order.quote_accepted_at && order.agreed_price_cents ? <section className={`mt-4 rounded-2xl border p-5 ${quoteExpired ? "border-amber-500/50 bg-amber-500/10" : "border-brand-primary/50 bg-brand-primary/10"}`}><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Quote revision {order.quote_revision}</p><h2 className="mt-2 text-xl font-semibold">{quoteExpired ? "This quote has expired" : `Review and approve ${moneyFromCents(order.agreed_price_cents)}`}</h2><p className="mt-2 text-sm text-brand-textMuted">{quoteExpired ? "Send a message below to request an updated price and schedule." : <>Approve this quote to unlock secure payment. {order.deposit_amount_cents ? `${moneyFromCents(order.deposit_amount_cents)} is due first; the remaining balance is collected later.` : "The full amount will be due."}{order.quote_expires_at ? ` Valid through ${new Date(order.quote_expires_at).toLocaleDateString()}.` : ""}</>}</p>{!quoteExpired ? <button type="button" disabled={busy} onClick={()=>void approveQuote()} className="catalog-action-primary mt-4 rounded-xl px-5 py-2.5 font-semibold disabled:opacity-50">{busy?"Approving…":"Approve quote"}</button> : null}</section> : null}
       {order.status === "final_review" ? <section className="mt-4 rounded-2xl border border-brand-accent/50 bg-brand-accent/10 p-5"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-accent">Finished-product review</p><h2 className="mt-2 text-xl font-semibold">Your order is ready for approval</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : <p className="mt-2 text-sm text-brand-textMuted">Review the finished work below. Approving confirms it and sends the order to fulfillment.</p>}<OrderReviewGallery paths={order.final_review_asset_paths || []} /><div className="mt-5 rounded-xl border border-zinc-700 bg-black/25 p-4"><label className="block text-sm font-medium">Need something changed?<textarea value={revisionNote} onChange={event=>setRevisionNote(event.target.value)} maxLength={2000} placeholder="Explain exactly what needs to be revised…" className="mt-2 min-h-24 w-full rounded-xl border border-zinc-700 bg-black/40 p-3 outline-none focus:border-brand-accent" /></label><p className="mt-2 text-xs text-brand-textMuted">Your note will be sent to KeyMoura and the order will return to production.</p></div><div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={busy || revisionNote.trim().length < 3} onClick={()=>void requestRevisions()} className="rounded-xl border border-rose-400/60 px-5 py-2.5 font-semibold text-rose-200 disabled:opacity-40">{busy?"Sending…":"Needs revisions"}</button><button type="button" disabled={busy} onClick={()=>void approveFinishedOrder()} className="rounded-xl border border-brand-accent/70 bg-zinc-950 px-5 py-2.5 font-semibold text-brand-accent disabled:opacity-50">{busy?"Approving…":"Approve finished order"}</button></div></section> : null}
       {order.status === "cancelled" ? <section className="mt-4 rounded-2xl border border-zinc-700 bg-zinc-900/40 p-5"><h2 className="font-semibold">Order cancelled</h2><p className="mt-1 text-sm text-brand-textMuted">{order.cancellation_reason || "Contact KeyMoura through order chat if you have questions."}</p>{order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <p className="mt-2 text-sm text-amber-200">Cancellation does not automatically mean a refund. Any approved refund will appear in the payment summary.</p> : null}</section> : null}
@@ -291,7 +310,7 @@ export default function OrderDetailPage() {
       </details>
       {(order.fulfillment_method === "pickup" || order.tracking_number || order.shipped_at) ? <section className="mt-6 rounded-2xl border border-zinc-800 bg-black/30 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">Fulfillment</h2><p className="mt-1 text-sm text-brand-textMuted">{order.delivered_at ? order.fulfillment_method === "pickup" ? "Pickup complete" : "Delivered" : order.shipped_at ? order.fulfillment_method === "pickup" ? "Ready for pickup" : "Shipped" : order.fulfillment_method === "pickup" ? "Customer pickup" : "Shipping details"}</p></div>{order.tracking_url ? <a className="ui-btn ui-btn-primary" href={order.tracking_url} target="_blank" rel="noreferrer">Track shipment</a> : null}</div>{order.tracking_number ? <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-brand-textMuted">Carrier</dt><dd>{order.shipping_carrier || "Carrier"}</dd></div><div><dt className="text-brand-textMuted">Tracking number</dt><dd className="break-all">{order.tracking_number}</dd></div></dl> : null}</section> : null}
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1.4fr_.8fr]">
-      <section className="rounded-2xl border border-zinc-800 bg-black/30 p-5">
+      <section id="order-conversation" className="scroll-mt-24 rounded-2xl border border-zinc-800 bg-black/30 p-5">
         <h2 className="text-xl font-semibold">Order chat</h2>
         <p className="mt-1 text-sm text-brand-textMuted">Messages here stay connected to this order.</p>
         <div className="mt-3 space-y-3">

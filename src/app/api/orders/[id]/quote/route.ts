@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, routeServiceClient } from "@/lib/api/routeAuth";
+import { notifyOrderStaff } from "@/lib/orderNotifications";
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await requireUser(req);
@@ -13,5 +14,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   if (error) return NextResponse.json({ error: "Could not approve quote." }, { status: 500 });
   await routeServiceClient.from("order_quotes").update({ accepted_at:acceptedAt }).eq("order_id", id).eq("revision", order.quote_revision);
   await routeServiceClient.from("order_status_history").insert({ order_id:id, from_status:"customer_review", to_status:"awaiting_payment", changed_by:user.id, note:`Quote revision ${order.quote_revision} approved by customer` });
+  await notifyOrderStaff({ orderId:id, actorUserId:user.id, title:"Quote approved", message:`The customer approved quote revision ${order.quote_revision} and can now pay.` });
   return NextResponse.json({ ok:true });
 }
