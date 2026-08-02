@@ -1,72 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
+import { buildBusinessAnalytics, type AnalyticsOrder, type AnalyticsPayment, type AnalyticsProduct, type AnalyticsRange, type AnalyticsRefund } from "@/lib/businessAnalytics";
 
-type SearchEventRow = {
-  id: string;
-  created_at: string;
-  source: string | null;
-  raw_query: string | null;
-  tokens: string[] | null;
-  results_count: number | null;
-  top_result_id: string | null;
-  top_result_slug: string | null;
-  meta: Record<string, unknown> | null;
-};
-
-type ClickEventRow = {
-  id: string;
-  created_at: string;
-  source: string | null;
-  search_event_id: string | null;
-  raw_query: string | null;
-  tokens: string[] | null;
-  clicked_page_id: string | null;
-  clicked_page_slug: string | null;
-  position: number | null;
-  results_count: number | null;
-  meta: Record<string, unknown> | null;
-};
-
-/**
- * Returns staff-only analytics for the Info search feature.
- *
- * This uses the service-role client so it does not depend on client-side RLS policies.
- */
 export async function GET(req: NextRequest) {
   const actor = await requirePermission(req, "analytics.view");
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const [searchRes, clickRes] = await Promise.all([
+  const requestedRange = req.nextUrl.searchParams.get("range");
+  const range: AnalyticsRange = requestedRange === "90d" || requestedRange === "all" ? requestedRange : "30d";
+  const [ordersResult, productsResult, paymentsResult, refundsResult, searchesResult] = await Promise.all([
+    routeServiceClient
+      .from("orders")
+      .select("id,customer_id,product_id,product_name,status,quantity,agreed_price_cents,amount_paid_cents,amount_refunded_cents,payment_status,target_date,accepted_at,completed_at,created_at,updated_at")
+      .returns<AnalyticsOrder[]>(),
+    routeServiceClient
+      .from("products")
+      .select("id,name,is_published,inventory_policy,inventory_quantity,low_stock_threshold,archived_at")
+      .returns<AnalyticsProduct[]>(),
+    routeServiceClient.from("order_payments").select("order_id,amount_cents,received_at").returns<AnalyticsPayment[]>(),
+    routeServiceClient.from("order_refunds").select("order_id,amount_cents,created_at").returns<AnalyticsRefund[]>(),
     routeServiceClient
       .from("info_search_events")
-      .select("id, created_at, source, raw_query, tokens, results_count, top_result_id, top_result_slug, meta")
+      .select("raw_query,results_count,created_at")
       .order("created_at", { ascending: false })
-      .limit(200)
-      .returns<SearchEventRow[]>(),
-    routeServiceClient
-      .from("info_search_click_events")
-      .select(
-        "id, created_at, source, search_event_id, raw_query, tokens, clicked_page_id, clicked_page_slug, position, results_count, meta"
-      )
-      .order("created_at", { ascending: false })
-      .limit(200)
-      .returns<ClickEventRow[]>(),
+      .limit(200),
   ]);
 
-  if (searchRes.error) {
-    return NextResponse.json({ error: searchRes.error.message }, { status: 500 });
-  }
-  if (clickRes.error) {
-    return NextResponse.json({ error: clickRes.error.message }, { status: 500 });
+  if (ordersResult.error || productsResult.error || paymentsResult.error || refundsResult.error) {
+    return NextResponse.json({ error: ordersResult.error?.message ?? productsResult.error?.message ?? paymentsResult.error?.message ?? refundsResult.error?.message ?? "Analytics could not be loaded." }, { status: 500 });
   }
 
-  return NextResponse.json(
-    {
-      ok: true,
-      searchEvents: searchRes.data ?? [],
-      clickEvents: clickRes.data ?? [],
+  const searches = searchesResult.error ? [] : searchesResult.data ?? [];
+  const noResultTerms = new Map<string, number>();
+  for (const search of searches) {
+    const query = typeof search.raw_query === "string" ? search.raw_query.trim() : "";
+    if (!query || search.results_count !== 0) continue;
+    noResultTerms.set(query.toLowerCase(), (noResultTerms.get(query.toLowerCase()) ?? 0) + 1);
+  }
+
+  return NextResponse.json({
+    ok: true,
+    range,
+    generatedAt: new Date().toISOString(),
+    summary: buildBusinessAnalytics(ordersResult.data ?? [], productsResult.data ?? [], paymentsResult.data ?? [], refundsResult.data ?? [], range, new Date()),
+    searchInsights: {
+      searchesRecorded: searches.length,
+      noResultTerms: [...noResultTerms.entries()].map(([query, count]) => ({ query, count })).sort((a, b) => b.count - a.count).slice(0, 8),
     },
-    { status: 200 }
-  );
+  });
 }
