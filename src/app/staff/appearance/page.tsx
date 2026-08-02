@@ -1,10 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { Badge, MetricCard, Notice, cx } from "@/components/ui/DesignSystem";
 import { defaultSiteTheme, type SiteTheme } from "@/theme/runtime";
+import {
+  BUILT_IN_PRESETS,
+  normalizeAppearanceTemplateConfig,
+  normalizeTemplateName,
+  TEMPLATE_NAME_MAX,
+  templateNameError,
+  type AppearanceTemplate,
+  type AppearanceTemplateConfig,
+} from "@/theme/templates";
 
 type Identity = {
   name: string;
@@ -31,7 +40,7 @@ type Appearance = {
   identity: Identity;
 };
 
-type Section = "brand" | "assets" | "wording" | "navigation" | "theme";
+type Section = "brand" | "assets" | "wording" | "navigation" | "theme" | "templates";
 
 const defaultIdentity: Identity = {
   name: "KeyMoura",
@@ -58,27 +67,42 @@ const defaults: Appearance = {
   identity: defaultIdentity,
 };
 
-const presets: Record<string, Pick<Appearance, "primaryColor" | "accentColor" | "theme">> = {
-  KeyMoura: defaults,
-  Ember: {
-    primaryColor: "#fb923c",
-    accentColor: "#facc15",
-    theme: { ...defaultSiteTheme, background: "#110c08", backgroundEnd: "#070504", surface: "#21140d", surfaceStrong: "#2b1a10" },
-  },
-  Graphite: {
-    primaryColor: "#e4e4e7",
-    accentColor: "#fbbf24",
-    theme: { ...defaultSiteTheme, background: "#09090b", backgroundEnd: "#030303", surface: "#18181b", surfaceStrong: "#27272a" },
-  },
-};
-
 const sectionCopy: Record<Section, { label: string; description: string }> = {
   brand: { label: "Brand & business", description: "Business name, public details, metadata, and support information." },
   assets: { label: "Logos & icons", description: "Header, footer, browser, and mobile brand artwork." },
   wording: { label: "Labels & wording", description: "Names customers see for the major areas of the site." },
   navigation: { label: "Navbar", description: "Restore the classic header or customize its colors and behavior independently." },
   theme: { label: "Colors & controls", description: "One shared visual language for storefront, account, orders, and staff tools." },
+  templates: { label: "Templates", description: "Save a complete look, try saved looks before publishing, and manage them." },
 };
+
+/** The part of the form a template captures. */
+function templateConfigFrom(form: Appearance): AppearanceTemplateConfig {
+  return {
+    primaryColor: form.primaryColor,
+    accentColor: form.accentColor,
+    theme: form.theme,
+    assets: {
+      logoUrl: form.identity.logoUrl,
+      wordmarkUrl: form.identity.wordmarkUrl,
+      footerLogoUrl: form.identity.footerLogoUrl,
+      faviconUrl: form.identity.faviconUrl,
+      appleIconUrl: form.identity.appleIconUrl,
+    },
+  };
+}
+
+/** Applies a template to the working form. Publishing stays a separate step. */
+function applyTemplateToForm(form: Appearance, config: AppearanceTemplateConfig): Appearance {
+  const normalized = normalizeAppearanceTemplateConfig(config);
+  return {
+    ...form,
+    primaryColor: normalized.primaryColor,
+    accentColor: normalized.accentColor,
+    theme: normalized.theme,
+    identity: { ...form.identity, ...normalized.assets },
+  };
+}
 
 const choiceHelp: Record<string, string> = {
   gradient: "Subtle depth from top to bottom",
@@ -129,6 +153,14 @@ export default function AppearancePage() {
   const [section, setSection] = useState<Section>("brand");
   const [state, setState] = useState("Loading appearance…");
 
+  const [templates, setTemplates] = useState<AppearanceTemplate[]>([]);
+  const [templatesError, setTemplatesError] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<AppearanceTemplate | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const [templateNotice, setTemplateNotice] = useState("");
+
   useEffect(() => {
     fetch("/api/staff/appearance")
       .then(async (response) => ({ ok: response.ok, body: await response.json() }))
@@ -141,6 +173,85 @@ export default function AppearancePage() {
       })
       .catch((error: Error) => setState(error.message || "Could not load appearance."));
   }, []);
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      const response = await fetch("/api/staff/appearance/templates");
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Could not load templates.");
+      setTemplates(body.templates as AppearanceTemplate[]);
+      setTemplatesError("");
+    } catch (error) {
+      setTemplatesError(error instanceof Error ? error.message : "Could not load templates.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadTemplates();
+  }, [loadTemplates]);
+
+  const savedNameConflict = templateNameError(templateName, templates.map((template) => template.name));
+  const canSaveTemplate = Boolean(normalizeTemplateName(templateName)) && !savedNameConflict && !templateBusy;
+
+  async function templateRequest(input: RequestInfo, init: RequestInit, success: string) {
+    setTemplateBusy(true);
+    setTemplateNotice("");
+    try {
+      const response = await fetch(input, init);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "That did not work.");
+      await loadTemplates();
+      setTemplateNotice(success);
+      return true;
+    } catch (error) {
+      setTemplateNotice(error instanceof Error ? error.message : "That did not work.");
+      return false;
+    } finally {
+      setTemplateBusy(false);
+    }
+  }
+
+  const saveTemplate = async () => {
+    const name = normalizeTemplateName(templateName);
+    const ok = await templateRequest(
+      "/api/staff/appearance/templates",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, config: templateConfigFrom(form) }),
+      },
+      `Saved “${name}”.`
+    );
+    if (ok) setTemplateName("");
+  };
+
+  const renameTemplate = async () => {
+    if (!renaming) return;
+    const name = normalizeTemplateName(renaming.name);
+    const ok = await templateRequest(
+      `/api/staff/appearance/templates/${renaming.id}`,
+      { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) },
+      `Renamed to “${name}”.`
+    );
+    if (ok) setRenaming(null);
+  };
+
+  const deleteTemplate = async () => {
+    if (!confirmDelete) return;
+    const ok = await templateRequest(
+      `/api/staff/appearance/templates/${confirmDelete.id}`,
+      { method: "DELETE" },
+      `Deleted “${confirmDelete.name}”.`
+    );
+    if (ok) setConfirmDelete(null);
+  };
+
+  // Applying only edits the working form. Publishing stays a deliberate,
+  // separate action on the bar at the bottom of the page.
+  const applyTemplate = (name: string, config: AppearanceTemplateConfig) => {
+    setForm((current) => applyTemplateToForm(current, config));
+    setTemplateNotice(`Applied “${name}” to the preview. Publish to make it live.`);
+  };
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
   const warning = useMemo(() => {
@@ -290,9 +401,99 @@ export default function AppearancePage() {
               <NavbarPreview form={form} />
             </> : null}
 
+            {section === "templates" ? <>
+              {templatesError ? <Notice tone="danger" role="alert">{templatesError}</Notice> : null}
+              {templateNotice ? <Notice role="status">{templateNotice}</Notice> : null}
+
+              <AppearanceGroup title="Save the current look" description="Captures the brand colors, every component and navbar setting, and the brand artwork. Business details and labels are not included, so applying a template never renames the site.">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="min-w-56 flex-1">
+                    <span className="ui-label">Template name</span>
+                    <input
+                      value={templateName}
+                      onChange={(event) => setTemplateName(event.target.value)}
+                      maxLength={TEMPLATE_NAME_MAX}
+                      placeholder="Winter storefront"
+                      aria-invalid={Boolean(templateName && savedNameConflict)}
+                      aria-describedby={templateName && savedNameConflict ? "template-name-error" : undefined}
+                      className="ui-input"
+                    />
+                  </label>
+                  <button type="button" onClick={() => void saveTemplate()} disabled={!canSaveTemplate} className="ui-btn ui-btn-primary disabled:opacity-50">
+                    Save as template
+                  </button>
+                </div>
+                {templateName && savedNameConflict ? <p id="template-name-error" className="text-xs text-rose-300">{savedNameConflict}</p> : null}
+              </AppearanceGroup>
+
+              <AppearanceGroup title="Built-in presets" description="Shipped with the site. They can be applied but not renamed or deleted.">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {Object.entries(BUILT_IN_PRESETS).map(([name, preset]) => (
+                    <div key={name} className="ui-card">
+                      <TemplateSwatch primary={preset.primaryColor} accent={preset.accentColor} />
+                      <p className="mt-3 flex items-center gap-2 text-sm font-semibold">{name}<Badge>Built in</Badge></p>
+                      <button type="button" onClick={() => applyTemplate(name, preset)} className="ui-btn ui-btn-secondary mt-3 w-full !py-1.5 text-xs">
+                        Apply to preview
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </AppearanceGroup>
+
+              <AppearanceGroup title="Your templates" description="Applying loads a template into the editor so you can preview it. Nothing goes live until you publish.">
+                {templates.length === 0 ? (
+                  <p className="ui-empty-state">No saved templates yet. Set up a look above, then save it here.</p>
+                ) : (
+                  <ul className="grid gap-3 sm:grid-cols-2">
+                    {templates.map((template) => (
+                      <li key={template.id} className="ui-card">
+                        {renaming?.id === template.id ? (
+                          <div className="space-y-2">
+                            <label className="block">
+                              <span className="ui-label">Rename template</span>
+                              <input
+                                autoFocus
+                                value={renaming.name}
+                                maxLength={TEMPLATE_NAME_MAX}
+                                onChange={(event) => setRenaming({ id: template.id, name: event.target.value })}
+                                onKeyDown={(event) => { if (event.key === "Escape") setRenaming(null); }}
+                                className="ui-input"
+                              />
+                            </label>
+                            <div className="ui-action-row">
+                              <button
+                                type="button"
+                                onClick={() => void renameTemplate()}
+                                disabled={templateBusy || Boolean(templateNameError(renaming.name, templates.filter((other) => other.id !== template.id).map((other) => other.name)))}
+                                className="ui-btn ui-btn-primary !py-1.5 text-xs disabled:opacity-50"
+                              >
+                                Save name
+                              </button>
+                              <button type="button" onClick={() => setRenaming(null)} className="ui-btn ui-btn-ghost !py-1.5 text-xs">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <TemplateSwatch primary={template.primaryColor} accent={template.accentColor} />
+                            <p className="mt-3 text-sm font-semibold">{template.name}</p>
+                            {template.updatedAt ? <p className="mt-1 text-xs text-brand-textMuted">Updated {new Date(template.updatedAt).toLocaleDateString()}</p> : null}
+                            <div className="ui-action-row mt-3">
+                              <button type="button" onClick={() => applyTemplate(template.name, template)} className="ui-btn ui-btn-secondary !py-1.5 text-xs">Apply to preview</button>
+                              <button type="button" onClick={() => setRenaming({ id: template.id, name: template.name })} className="ui-btn ui-btn-ghost !py-1.5 text-xs">Rename</button>
+                              <button type="button" onClick={() => setConfirmDelete(template)} className="ui-btn ui-btn-danger !py-1.5 text-xs">Delete</button>
+                            </div>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </AppearanceGroup>
+            </> : null}
+
             {section === "theme" ? <>
-              <AppearanceGroup title="Starting point" description="Apply a coordinated palette, then tune any component below.">
-                <div className="grid gap-3 sm:grid-cols-3">{Object.entries(presets).map(([name, preset]) => <button key={name} type="button" onClick={() => setForm((current) => ({ ...current, ...preset }))} className="ui-card ui-card-hover text-left"><span className="flex gap-1.5"><span className="size-5 rounded-full border border-white/20" style={{ background: preset.primaryColor }} /><span className="size-5 rounded-full border border-white/20" style={{ background: preset.accentColor }} /></span><span className="mt-3 block text-sm font-semibold">{name}</span><span className="mt-1 block text-xs text-brand-textMuted">Apply palette</span></button>)}</div>
+              <AppearanceGroup title="Starting point" description="Apply a coordinated palette, then tune any component below. Save your own in Templates.">
+                <div className="grid gap-3 sm:grid-cols-3">{Object.entries(BUILT_IN_PRESETS).map(([name, preset]) => <button key={name} type="button" onClick={() => applyTemplate(name, preset)} className="ui-card ui-card-hover text-left"><TemplateSwatch primary={preset.primaryColor} accent={preset.accentColor} /><span className="mt-3 block text-sm font-semibold">{name}</span><span className="mt-1 block text-xs text-brand-textMuted">Apply palette</span></button>)}</div>
               </AppearanceGroup>
 
               <AppearanceGroup title="Layout & type" description="Set the overall density and silhouette used everywhere.">
@@ -327,10 +528,34 @@ export default function AppearancePage() {
         <AppearancePreview form={form} />
       </div>
 
+      {confirmDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-template-title" className="ui-card w-full max-w-md">
+            <h2 id="delete-template-title" className="text-lg font-semibold">Delete “{confirmDelete.name}”?</h2>
+            <p className="mt-2 text-sm text-brand-textMuted">
+              This removes the saved template. The appearance currently published to the site is not affected.
+            </p>
+            <div className="ui-action-row mt-5 justify-end">
+              <button type="button" autoFocus onClick={() => setConfirmDelete(null)} className="ui-btn ui-btn-ghost">Keep it</button>
+              <button type="button" onClick={() => void deleteTemplate()} disabled={templateBusy} className="ui-btn ui-btn-danger disabled:opacity-50">Delete template</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-brand-border bg-black/90 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4"><p className="text-sm text-brand-textMuted">{dirty ? "You have unpublished appearance changes." : "Appearance is up to date."}</p><div className="ui-action-row"><button type="button" onClick={() => setForm(saved)} disabled={!dirty} className="ui-btn ui-btn-ghost">Discard changes</button><button type="button" onClick={() => void save()} disabled={!dirty} className="ui-btn ui-btn-primary">Publish appearance</button></div></div>
       </div>
     </main>
+  );
+}
+
+function TemplateSwatch({ primary, accent }: { primary: string; accent: string }) {
+  return (
+    <span className="flex gap-1.5" aria-hidden="true">
+      <span className="size-5 rounded-full border border-white/20" style={{ background: primary }} />
+      <span className="size-5 rounded-full border border-white/20" style={{ background: accent }} />
+    </span>
   );
 }
 
