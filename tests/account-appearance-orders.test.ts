@@ -12,6 +12,15 @@ test("staff order queue supports useful independent sort modes", () => {
   assert.match(page, /\.toSorted\(/);
 });
 
+test("customer order hub supports customer-safe sort modes", () => {
+  const page = read("src/app/orders/page.tsx");
+  for (const label of ["Recently updated", "Newest request", "Oldest request", "Needs attention first", "Price: high to low", "Price: low to high"]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.doesNotMatch(page, /Highest priority/);
+  assert.match(page, /created_at,updated_at/);
+});
+
 test("account security exposes safe Supabase identity linking", () => {
   const page = read("src/app/account/page.tsx");
   assert.match(page, /getUserIdentities\(\)/);
