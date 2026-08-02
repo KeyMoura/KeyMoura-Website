@@ -36,7 +36,11 @@ test("backordered products are not labeled out of stock", async () => {
 });
 
 test("storefront and order API enforce catalog availability", () => {
-  assert.match(storefront, /productCanBeRequested/);
+  // Availability now renders through the shared product card.
+  const card = readFileSync("src/components/ProductCard.tsx", "utf8");
+  assert.match(card, /productCanBeRequested/);
+  assert.match(card, /availabilityLabel/);
+  assert.match(storefront, /ProductCard/);
   assert.match(storefront, /\.is\("archived_at", null\)/);
   assert.match(orderRoute, /inventory_quantity < quantity/);
   assert.match(orderRoute, /product\.archived_at/);

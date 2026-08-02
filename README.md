@@ -61,6 +61,14 @@ npm test
 npm run build
 ```
 
+`npm test` runs the suite through Node's built-in test runner with
+`--experimental-strip-types`, which needs **Node 22.6 or later**. On Node 20 the
+same suite runs unchanged through a TypeScript loader:
+
+```bash
+npx tsx --test tests/*.test.ts
+```
+
 The browser regression in `e2e/header-layout.spec.js` additionally requires
 `@playwright/test` and a Playwright Chromium installation. It is intentionally
 not part of the locked dependencies; see [`docs/FINAL_QA.md`](docs/FINAL_QA.md).

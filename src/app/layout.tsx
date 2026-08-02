@@ -64,6 +64,18 @@ export default async function RootLayout({
   return (
     <html lang="en" style={brandStyles} data-radius={settings.theme.radius} data-density={settings.theme.density} data-font={settings.theme.font} data-primary-button-style={settings.theme.primaryButtonStyle} data-secondary-button-style={settings.theme.secondaryButtonStyle} data-tab-style={settings.theme.tabStyle} data-card-style={settings.theme.cardStyle} data-input-style={settings.theme.inputStyle} data-navigation-style={settings.theme.navigationStyle} data-public-navigation-style={settings.theme.publicNavigationStyle} data-navigation-density={settings.theme.navigationDensity} data-background-style={settings.theme.backgroundStyle} data-content-width={settings.theme.contentWidth} data-shadow-style={settings.theme.shadowStyle} data-border-strength={settings.theme.borderStrength}>
       <body className="min-h-screen text-brand-text antialiased">
+        {/*
+          Enables scroll reveals before first paint, so revealed content never
+          flashes in and then hides itself. If this never runs — no scripting,
+          a thrown error, or reduced motion — the attribute stays absent and
+          every .reveal element renders in its final visible state.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(!matchMedia('(prefers-reduced-motion: reduce)').matches){document.documentElement.dataset.motion='on'}}catch(e){}",
+          }}
+        />
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
