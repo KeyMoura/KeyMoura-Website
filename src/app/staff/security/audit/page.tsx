@@ -385,7 +385,7 @@ export default function StaffSecurityAuditPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search audit…"
-            className="no-zoom-input h-8 w-full max-w-xs rounded-md border border-zinc-700 bg-black/60 px-2 text-[12px] text-brand-text outline-none placeholder:text-zinc-500 focus:border-amber-400"
+            className="ui-input no-zoom-input h-8 max-w-xs text-[12px]"
           />
 
           <MenuSelect
@@ -413,7 +413,7 @@ export default function StaffSecurityAuditPage() {
           <button
             type="button"
             onClick={() => setSortDir((p) => (p === "desc" ? "asc" : "desc"))}
-            className="inline-flex h-8 items-center rounded-md border border-zinc-700 bg-black/60 px-3 text-[11px] text-brand-textMuted hover:border-amber-400 hover:text-brand-text"
+            className="ui-btn ui-btn-ghost h-8 !px-3 text-[11px]"
           >
             {sortDir === "desc" ? "Newest" : "Oldest"}
           </button>
@@ -483,7 +483,7 @@ export default function StaffSecurityAuditPage() {
                       <button
                         type="button"
                         onClick={() => setExpandedId((p) => (p === r.id ? null : r.id))}
-                        className="rounded-md border border-zinc-700 bg-zinc-900/60 px-2 py-1 text-[12px] text-amber-200 hover:bg-zinc-900"
+                          className="ui-btn ui-btn-ghost !px-2 !py-1 text-[12px]"
                       >
                         {isExpanded ? "Hide" : "View"}
                       </button>
@@ -513,7 +513,7 @@ export default function StaffSecurityAuditPage() {
             type="button"
             disabled={loadingMore}
             onClick={loadMore}
-            className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-black/60 px-4 text-[12px] text-brand-text hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="ui-btn ui-btn-ghost h-9 text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loadingMore ? "Loading…" : `Load ${PAGE_SIZE} more`}
           </button>

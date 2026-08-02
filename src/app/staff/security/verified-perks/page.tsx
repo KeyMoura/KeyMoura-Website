@@ -155,7 +155,7 @@ export default function VerifiedPerksPage() {
           <button
             onClick={save}
             disabled={saving}
-            className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-200 hover:border-amber-400/50 hover:bg-amber-500/15 disabled:opacity-60"
+            className="ui-btn ui-btn-primary text-sm disabled:opacity-60"
           >
             {saving ? "Saving..." : "Save"}
           </button>

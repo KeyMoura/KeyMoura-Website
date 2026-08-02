@@ -644,7 +644,7 @@ export default function AdminSecurityPage() {
           <div className="flex flex-wrap items-center gap-3 text-[11px]">
             <Link
               href="/staff/security/audit"
-              className="rounded-full border border-zinc-700 bg-black/50 px-3 py-1 text-[11px] text-brand-text hover:border-amber-400/80 hover:text-amber-200"
+              className="ui-btn ui-btn-ghost !px-3 !py-1 text-[11px]"
             >
               View audit logs →
             </Link>
@@ -703,7 +703,7 @@ export default function AdminSecurityPage() {
               value={lockdownMessage}
               onChange={(e) => setLockdownMessage(e.target.value)}
               rows={3}
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
               placeholder="Example: We're doing emergency maintenance after a security issue. The site will be back soon."
             />
           </div>
@@ -716,7 +716,7 @@ export default function AdminSecurityPage() {
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
               placeholder="Leave blank to keep current password"
             />
           </div>
@@ -725,7 +725,7 @@ export default function AdminSecurityPage() {
             type="button"
             onClick={handleSaveSettings}
             disabled={saving}
-            className="mt-1 inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-4 py-1.5 text-[12px] font-medium text-amber-200 shadow-sm shadow-black/60 hover:bg-amber-500/30 disabled:opacity-60"
+            className="ui-btn ui-btn-primary mt-1 text-[12px] disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save security settings"}
           </button>
@@ -766,7 +766,7 @@ export default function AdminSecurityPage() {
             type="button"
             onClick={handleForceLogout}
             disabled={saving}
-            className="inline-flex items-center justify-center rounded-full border border-red-500/80 bg-red-500/20 px-4 py-1.5 text-[12px] font-medium text-red-100 shadow-sm shadow-black/60 hover:bg-red-500/30 disabled:opacity-60"
+            className="ui-btn ui-btn-danger text-[12px] disabled:opacity-60"
           >
             {saving ? "Sending…" : "Log out all users"}
           </button>
@@ -799,7 +799,7 @@ export default function AdminSecurityPage() {
               ariaLabel="Severity"
               value={bannerLevel}
               onChange={(next) => setBannerLevel(next as BannerLevel)}
-              className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/60 px-2 text-[12px] text-brand-text outline-none transition hover:border-amber-400/70"
+              className="ui-select-trigger h-8 text-[12px]"
               options={[
                 { value: "info", label: "Info" },
                 { value: "warning", label: "Warning" },
@@ -818,7 +818,7 @@ export default function AdminSecurityPage() {
             onChange={(e) => setBannerText(e.target.value)}
             rows={3}
             placeholder="Example: We’re investigating issues with logins. Some users may be unable to sign in."
-            className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+            className="ui-input no-zoom-input text-[12px]"
           />
         </div>
 
@@ -833,7 +833,7 @@ export default function AdminSecurityPage() {
             type="button"
             onClick={handleSaveSettings}
             disabled={saving}
-            className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-4 py-1.5 text-[12px] font-medium text-amber-200 shadow-sm shadow-black/60 hover:bg-amber-500/30 disabled:opacity-60 whitespace-nowrap"
+            className="ui-btn ui-btn-primary whitespace-nowrap text-[12px] disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save banner"}
           </button>
@@ -903,7 +903,7 @@ export default function AdminSecurityPage() {
                     setTimeout(() => closeUserAc(), 120);
                   }}
                   placeholder="@user1, @user2, @user3..."
-                  className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+                  className="ui-input no-zoom-input text-[12px]"
                 />
 
                 {userAcOpen && (
@@ -966,7 +966,7 @@ export default function AdminSecurityPage() {
               value={broadcastTitle}
               onChange={(e) => setBroadcastTitle(e.target.value)}
               placeholder="Example: Scheduled maintenance"
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
             />
           </div>
 
@@ -979,7 +979,7 @@ export default function AdminSecurityPage() {
               onChange={(e) => setBroadcastMessage(e.target.value)}
               rows={3}
               placeholder="What should users know?"
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
             />
           </div>
 
@@ -992,7 +992,7 @@ export default function AdminSecurityPage() {
               value={broadcastHref}
               onChange={(e) => setBroadcastHref(e.target.value)}
               placeholder="/info/status or https://..."
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
             />
           </div>
 
@@ -1011,7 +1011,7 @@ export default function AdminSecurityPage() {
               type="button"
               onClick={handleSendBroadcastNotification}
               disabled={broadcastSending}
-              className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-4 py-1.5 text-[12px] font-medium text-amber-200 shadow-sm shadow-black/60 hover:bg-amber-500/30 disabled:opacity-60"
+              className="ui-btn ui-btn-primary text-[12px] disabled:opacity-60"
             >
               {broadcastSending ? "Sending…" : "Send notification"}
             </button>
@@ -1040,20 +1040,20 @@ export default function AdminSecurityPage() {
               value={newIp}
               onChange={(e) => setNewIp(e.target.value)}
               placeholder="IP address (e.g. 203.0.113.42)"
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
             />
             <input
               type="text"
               value={newIpReason}
               onChange={(e) => setNewIpReason(e.target.value)}
               placeholder="Reason (optional, admin only)"
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
             />
             <button
               type="button"
               onClick={handleAddIpBan}
               disabled={ipSaving}
-              className="inline-flex items-center justify-center rounded-full border border-red-500/70 bg-red-500/15 px-4 py-1.5 text-[12px] font-medium text-red-200 shadow-sm shadow-black/60 hover:bg-red-500/25 disabled:opacity-60"
+              className="ui-btn ui-btn-danger text-[12px] disabled:opacity-60"
             >
               {ipSaving ? "Adding…" : "Ban IP"}
             </button>
@@ -1098,7 +1098,7 @@ export default function AdminSecurityPage() {
                       type="button"
                       onClick={() => handleRemoveIpBan(ban.id)}
                       disabled={ipSaving}
-                      className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/60 px-3 py-1 text-[11px] font-medium text-zinc-200 hover:border-red-500/70 hover:bg-red-500/20 hover:text-red-100 disabled:opacity-60"
+                      className="ui-btn ui-btn-danger !px-3 !py-1 text-[11px] disabled:opacity-60"
                     >
                       Remove
                     </button>

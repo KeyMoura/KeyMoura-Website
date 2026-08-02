@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 const read = (path: string) => readFileSync(path, "utf8");
+
+function tsxFiles(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    return entry.isDirectory() ? tsxFiles(path) : entry.name.endsWith(".tsx") ? [path] : [];
+  });
+}
 
 test("dashboard analytics and staff navigation use shared themed controls", () => {
   const dashboard = read("src/app/staff/page.tsx");
@@ -46,4 +54,29 @@ test("appearance offers visual choices and previews the complete component syste
   }
   assert.doesNotMatch(appearance, /<MenuSelect/);
   assert.match(appearance, /aria-pressed=\{value === item\}/);
+});
+
+test("every tab list and the linked info queues use the shared themed tab system", () => {
+  const sources = tsxFiles("src").map((path) => ({ path, source: read(path) }));
+  const tabLists = sources.filter(({ source }) => source.includes('role="tablist"'));
+
+  assert.ok(tabLists.length > 0);
+  for (const { path, source } of tabLists) {
+    assert.match(source, /ui-tabs/, `${path} contains a one-off tab list`);
+    assert.match(source, /ui-tab/, `${path} contains a one-off tab item`);
+  }
+
+  for (const path of ["src/app/staff/info/pending/page.tsx", "src/app/staff/info/updates/page.tsx"]) {
+    const source = read(path);
+    assert.match(source, /LinkTabs/);
+    assert.doesNotMatch(source, /rounded-full border border-amber-400\/40/);
+  }
+});
+
+test("staff action buttons no longer use the old amber mini-theme", () => {
+  for (const path of tsxFiles("src/app/staff")) {
+    const source = read(path);
+    assert.doesNotMatch(source, /bg-amber-500\/20/, `${path} still contains a legacy amber action`);
+    assert.doesNotMatch(source, /bg-brand-primary\/20/, `${path} still contains a legacy brand action`);
+  }
 });

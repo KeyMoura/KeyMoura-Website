@@ -925,7 +925,7 @@ return (
             onChange={(e) => setReviewNotes(e.target.value)}
             rows={3}
             disabled={actionLoading !== null || editLoading || undoLoadingId !== null}
-            className="mt-2 w-full rounded-lg border border-zinc-700 bg-black/40 p-3 text-sm text-brand-text outline-none"
+            className="ui-input mt-2 text-sm"
             placeholder="Why did you approve/deny/forward this?"
           />
 
@@ -934,12 +934,7 @@ return (
               type="button"
               disabled={actionDisabled}
               onClick={() => void handleAction("note")}
-              className={
-                "rounded-full border px-4 py-2 text-[12px] font-medium transition " +
-                (actionDisabled
-                  ? "cursor-not-allowed opacity-60 border-zinc-700 bg-black/30 text-brand-textMuted"
-                  : "border-zinc-700 bg-black/30 text-brand-textMuted hover:border-zinc-500 hover:text-brand-text")
-              }
+              className="ui-btn ui-btn-ghost text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {actionLoading === "note" ? "Saving note..." : "Save note"}
             </button>
@@ -948,14 +943,7 @@ return (
               type="button"
               disabled={actionDisabled}
               onClick={() => (isEditing ? handleCancelEdit() : handleStartEdit())}
-              className={
-                "rounded-full border px-4 py-2 text-[12px] font-medium transition " +
-                (actionDisabled
-                  ? "cursor-not-allowed opacity-60 border-zinc-700 bg-black/30 text-brand-textMuted"
-                  : isEditing
-                    ? "border-brand-primary/60 bg-brand-primary/10 text-brand-text hover:border-brand-primary"
-                    : "border-zinc-700 bg-black/30 text-brand-textMuted hover:border-zinc-500 hover:text-brand-text")
-              }
+              className={`ui-btn text-[12px] disabled:cursor-not-allowed disabled:opacity-60 ${isEditing ? "ui-btn-secondary" : "ui-btn-ghost"}`}
             >
               {isEditing ? "Close editor" : "Edit content / meta"}
             </button>
@@ -968,7 +956,7 @@ return (
                 <input
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none"
+                  className="ui-input text-sm"
                 />
               </label>
               <label className="space-y-1">
@@ -976,7 +964,7 @@ return (
                 <input
                   value={editSlug}
                   onChange={(e) => setEditSlug(e.target.value)}
-                  className="w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none"
+                  className="ui-input text-sm"
                 />
               </label>
 
@@ -987,7 +975,7 @@ return (
                     ariaLabel="Category"
                     value={editCategory}
                     onChange={(next) => setEditCategory(next)}
-                    className="flex h-10 w-full items-center gap-2 rounded-md border border-zinc-700 bg-black/40 px-3 text-sm text-brand-text outline-none transition hover:border-amber-400/70"
+                    className="ui-select-trigger h-10 text-sm"
                     options={CATEGORY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
                   />
                 </label>
@@ -997,7 +985,7 @@ return (
                     ariaLabel="Chassis"
                     value={editChassis}
                     onChange={(next) => setEditChassis(next)}
-                    className="flex h-10 w-full items-center gap-2 rounded-md border border-zinc-700 bg-black/40 px-3 text-sm text-brand-text outline-none transition hover:border-amber-400/70"
+                    className="ui-select-trigger h-10 text-sm"
                     options={CHASSIS_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
                   />
                 </label>
@@ -1008,7 +996,7 @@ return (
                 <input
                   value={editTagsInput}
                   onChange={(e) => setEditTagsInput(e.target.value)}
-                  className="w-full rounded-md border border-zinc-700 bg-black/40 px-3 py-2 text-sm text-brand-text outline-none"
+                  className="ui-input text-sm"
                 />
               </label>
 
@@ -1031,12 +1019,7 @@ return (
                   type="button"
                   disabled={editLoading}
                   onClick={() => void handleSaveEdit()}
-                  className={
-                    "rounded-full border px-4 py-2 text-[12px] font-medium transition " +
-                    (editLoading
-                      ? "cursor-not-allowed opacity-60 border-zinc-700 bg-black/30 text-brand-textMuted"
-                      : "border-brand-primary/50 bg-brand-primary/15 text-brand-text hover:border-brand-primary")
-                  }
+                  className="ui-btn ui-btn-primary text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {editLoading ? "Saving..." : "Save edits"}
                 </button>
@@ -1049,12 +1032,7 @@ return (
               type="button"
               disabled={actionDisabled}
               onClick={() => void handleAction("approve")}
-              className={
-                "rounded-full border px-4 py-2 text-[12px] font-medium transition " +
-                (actionDisabled
-                  ? "cursor-not-allowed opacity-60 border-zinc-700 bg-black/30 text-brand-textMuted"
-                  : "border-emerald-400/40 bg-emerald-500/10 text-emerald-200 hover:border-emerald-300/70")
-              }
+              className="ui-btn ui-btn-primary text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {actionLoading === "approve" ? "Approving..." : "Approve"}
             </button>
@@ -1063,12 +1041,7 @@ return (
               type="button"
               disabled={actionDisabled}
               onClick={() => void handleAction("deny")}
-              className={
-                "rounded-full border px-4 py-2 text-[12px] font-medium transition " +
-                (actionDisabled
-                  ? "cursor-not-allowed opacity-60 border-zinc-700 bg-black/30 text-brand-textMuted"
-                  : "border-rose-400/40 bg-rose-500/10 text-rose-200 hover:border-rose-300/70")
-              }
+              className="ui-btn ui-btn-danger text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {actionLoading === "deny" ? "Denying..." : "Deny"}
             </button>
@@ -1077,19 +1050,14 @@ return (
               type="button"
               disabled={actionDisabled}
               onClick={() => void handleAction("forward")}
-              className={
-                "rounded-full border px-4 py-2 text-[12px] font-medium transition " +
-                (actionDisabled
-                  ? "cursor-not-allowed opacity-60 border-zinc-700 bg-black/30 text-brand-textMuted"
-                  : "border-amber-400/40 bg-amber-500/10 text-amber-200 hover:border-amber-300/70")
-              }
+              className="ui-btn ui-btn-secondary text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {actionLoading === "forward" ? "Submitting..." : "Submit for further review"}
             </button>
 
             <Link
               href={`/info/${encodeURIComponent(page.slug)}`}
-              className="ml-auto rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-[12px] text-brand-textMuted hover:border-amber-400/80 hover:text-brand-text"
+              className="ui-btn ui-btn-ghost ml-auto text-[12px]"
             >
               View live
             </Link>

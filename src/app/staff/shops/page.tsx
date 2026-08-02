@@ -79,17 +79,10 @@ function CtaButton({
   disabled?: boolean;
   variant?: "primary" | "secondary" | "danger";
 }) {
-  const base =
-    "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-medium transition";
-
-  const primary =
-    "border border-amber-400/80 bg-amber-500/20 text-amber-200 shadow-sm shadow-black/60 hover:bg-amber-500/30 hover:border-amber-300/90";
-
-  const secondary =
-    "border border-zinc-700 bg-black/40 text-brand-textMuted hover:border-amber-400/80 hover:text-brand-text";
-
-  const danger =
-    "border border-zinc-700 bg-black/40 text-brand-textMuted hover:border-rose-400/70 hover:text-rose-200";
+  const base = "ui-btn !px-3 !py-1.5 text-[12px]";
+  const primary = "ui-btn-primary";
+  const secondary = "ui-btn-ghost";
+  const danger = "ui-btn-danger";
 
   const cls = variant === "primary" ? primary : variant === "danger" ? danger : secondary;
 
@@ -479,7 +472,7 @@ export default function AdminShopsPage() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+              className="ui-input no-zoom-input text-sm"
               placeholder="Enjuku Racing"
             />
           </div>
@@ -489,7 +482,7 @@ export default function AdminShopsPage() {
             <input
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
-              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+              className="ui-input no-zoom-input text-sm"
               placeholder="enjuku-racing"
             />
           </div>
@@ -499,7 +492,7 @@ export default function AdminShopsPage() {
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+              className="ui-input no-zoom-input text-sm"
               placeholder="https://example.com"
             />
           </div>
@@ -509,7 +502,7 @@ export default function AdminShopsPage() {
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+              className="ui-input no-zoom-input text-sm"
               placeholder="What they sell / why they’re recommended"
             />
           </div>
@@ -519,7 +512,7 @@ export default function AdminShopsPage() {
             <input
               value={tagsText}
               onChange={(e) => setTagsText(e.target.value)}
-              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+              className="ui-input no-zoom-input text-sm"
               placeholder="parts, aero, tuning"
             />
           </div>
@@ -532,7 +525,7 @@ export default function AdminShopsPage() {
             <input
               value={createSortOrderText}
               onChange={(e) => setCreateSortOrderText(e.target.value)}
-              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+              className="ui-input no-zoom-input text-sm"
               placeholder="Leave blank for auto (e.g. -10, 0, 10, 20...)"
               inputMode="numeric"
             />
@@ -569,8 +562,7 @@ export default function AdminShopsPage() {
                 value={trustStatus}
                 onChange={(v) => setTrustStatus(v as TrustStatus)}
                 options={trustOptions as any}
-                className="flex h-9 items-center gap-2 rounded-xl border border-zinc-800 bg-black/40 px-3 text-xs text-brand-text outline-none transition-all hover:border-amber-400/80"
-                menuClassName="mt-2 w-56 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+                className="ui-select-trigger h-9 text-xs"
               />
             </div>
           </div>
@@ -582,8 +574,8 @@ export default function AdminShopsPage() {
               onChange={(e) => setWarningText(e.target.value)}
               className={
                 trustStatus === "untrusted"
-                  ? "no-zoom-input w-full rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 outline-none focus:border-rose-300/60"
-                  : "no-zoom-input w-full rounded-lg border border-amber-400/25 bg-amber-500/5 px-3 py-2 text-sm text-amber-100/90 outline-none focus:border-amber-300/40"
+                  ? "ui-input no-zoom-input border-rose-400/30 text-sm text-rose-100"
+                  : "ui-input no-zoom-input text-sm"
               }
               placeholder="Known scam reports / counterfeit risk / proceed at your own risk"
             />
@@ -604,7 +596,7 @@ export default function AdminShopsPage() {
               value={shopSearch}
               onChange={(e) => setShopSearch(e.target.value)}
               placeholder="Search shops..."
-              className="no-zoom-input w-[240px] rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500 focus:border-amber-400/80"
+              className="ui-input no-zoom-input w-[240px] text-[12px]"
             />
           )}
         </div>
@@ -721,7 +713,7 @@ export default function AdminShopsPage() {
                               aria-label="Shop name"
                               value={editName}
                               onChange={(e) => setEditName(e.target.value)}
-                              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                              className="ui-input no-zoom-input text-sm"
                             />
                           </div>
 
@@ -731,7 +723,7 @@ export default function AdminShopsPage() {
                               aria-label="Shop slug"
                               value={editSlug}
                               onChange={(e) => setEditSlug(e.target.value)}
-                              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                              className="ui-input no-zoom-input text-sm"
                             />
                           </div>
 
@@ -741,7 +733,7 @@ export default function AdminShopsPage() {
                               aria-label="Shop URL"
                               value={editUrl}
                               onChange={(e) => setEditUrl(e.target.value)}
-                              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                              className="ui-input no-zoom-input text-sm"
                             />
                           </div>
 
@@ -751,7 +743,7 @@ export default function AdminShopsPage() {
                               aria-label="Shop description"
                               value={editDescription}
                               onChange={(e) => setEditDescription(e.target.value)}
-                              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                              className="ui-input no-zoom-input text-sm"
                             />
                           </div>
 
@@ -761,7 +753,7 @@ export default function AdminShopsPage() {
                               aria-label="Shop tags"
                               value={editTagsText}
                               onChange={(e) => setEditTagsText(e.target.value)}
-                              className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                              className="ui-input no-zoom-input text-sm"
                             />
                           </div>
 
@@ -773,8 +765,7 @@ export default function AdminShopsPage() {
                                 value={editTrustStatus}
                                 onChange={(v) => setEditTrustStatus(v as TrustStatus)}
                                 options={trustOptions as any}
-                                className="flex h-9 items-center gap-2 rounded-xl border border-zinc-800 bg-black/40 px-3 text-xs text-brand-text outline-none transition-all hover:border-amber-400/80"
-                                menuClassName="mt-2 w-56 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+                                className="ui-select-trigger h-9 text-xs"
                               />
                             </div>
 
@@ -783,8 +774,8 @@ export default function AdminShopsPage() {
                               onChange={(e) => setEditWarningText(e.target.value)}
                               className={
                                 editTrustStatus === "untrusted"
-                                  ? "no-zoom-input flex-1 min-w-[240px] rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 outline-none focus:border-rose-300/60"
-                                  : "no-zoom-input flex-1 min-w-[240px] rounded-lg border border-amber-400/25 bg-amber-500/5 px-3 py-2 text-sm text-amber-100/90 outline-none focus:border-amber-300/40"
+                                  ? "ui-input no-zoom-input min-w-[240px] flex-1 border-rose-400/30 text-sm text-rose-100"
+                                  : "ui-input no-zoom-input min-w-[240px] flex-1 text-sm"
                               }
                               placeholder="Caution text shown publicly"
                             />

@@ -427,7 +427,7 @@ export default function InfoAdminTodoPage() {
                 <input
                   value={editingTitle}
                   onChange={(e) => setEditingTitle(e.target.value)}
-                  className="h-8 w-full max-w-[520px] rounded-lg border border-zinc-800 bg-black/40 px-3 text-[13px] font-semibold text-brand-text outline-none focus:border-amber-400"
+              className="ui-input h-8 max-w-[520px] text-[13px] font-semibold"
                   placeholder="Title"
                 />
               ) : (
@@ -475,7 +475,7 @@ export default function InfoAdminTodoPage() {
                   value={editingDescription}
                   onChange={(e) => setEditingDescription(e.target.value)}
                   rows={4}
-                  className="w-full rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-[12px] text-brand-text outline-none focus:border-amber-400"
+              className="ui-input text-[12px]"
                   placeholder="Description"
                 />
                 <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
@@ -496,7 +496,7 @@ export default function InfoAdminTodoPage() {
                     <input
                       value={editingRelatedSlug}
                       onChange={(e) => setEditingRelatedSlug(e.target.value)}
-                      className="h-9 rounded-lg border border-zinc-800 bg-black/40 px-3 text-[12px] text-brand-text outline-none focus:border-amber-400"
+              className="ui-input h-9 text-[12px]"
                       placeholder="example-page-slug"
                     />
                   </div>
@@ -510,7 +510,7 @@ export default function InfoAdminTodoPage() {
             {todo.related_info_page_slug && (
               <Link
                 href={`/${todo.related_info_page_slug}`}
-                className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-brand-textMuted hover:text-brand-text"
+                className="ui-btn ui-btn-ghost !px-2 !py-0.5 text-[11px]"
               >
                 View page
               </Link>
@@ -523,14 +523,14 @@ export default function InfoAdminTodoPage() {
                     <button
                       type="button"
                       onClick={() => saveTaskEdits(todo)}
-                      className="rounded-full border border-amber-400/70 bg-amber-500/15 px-2 py-0.5 text-amber-200 hover:bg-amber-500/25"
+                      className="ui-btn ui-btn-primary !px-2 !py-0.5 text-[11px]"
                     >
                       Save
                     </button>
                     <button
                       type="button"
                       onClick={() => cancelEditingTask()}
-                      className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-brand-textMuted hover:text-brand-text"
+                      className="ui-btn ui-btn-ghost !px-2 !py-0.5 text-[11px]"
                     >
                       Cancel
                     </button>
@@ -539,7 +539,7 @@ export default function InfoAdminTodoPage() {
                   <button
                     type="button"
                     onClick={() => startEditingTask(todo)}
-                    className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-amber-200 hover:bg-amber-500/20"
+                    className="ui-btn ui-btn-ghost !px-2 !py-0.5 text-[11px]"
                   >
                     Edit task
                   </button>
@@ -552,7 +552,7 @@ export default function InfoAdminTodoPage() {
                   <button
                     type="button"
                     onClick={() => updateTodoStatus(todo, "in_progress")}
-                    className="rounded-full border border-sky-400/70 bg-sky-500/15 px-2 py-0.5 text-sky-200 hover:bg-sky-500/25"
+                    className="ui-btn ui-btn-secondary !px-2 !py-0.5 text-[11px]"
                   >
                     Mark in progress
                   </button>
@@ -560,7 +560,7 @@ export default function InfoAdminTodoPage() {
                 <button
                   type="button"
                   onClick={() => updateTodoStatus(todo, "done")}
-                  className="rounded-full border border-emerald-500/70 bg-emerald-500/15 px-2 py-0.5 text-emerald-200 hover:bg-emerald-500/25"
+                  className="ui-btn ui-btn-primary !px-2 !py-0.5 text-[11px]"
                 >
                   Mark done
                 </button>
@@ -570,7 +570,7 @@ export default function InfoAdminTodoPage() {
               <button
                 type="button"
                 onClick={() => updateTodoStatus(todo, "open")}
-                className="rounded-full border border-amber-400/70 bg-amber-500/15 px-2 py-0.5 text-amber-200 hover:bg-amber-500/25"
+                className="ui-btn ui-btn-secondary !px-2 !py-0.5 text-[11px]"
               >
                 Reopen
               </button>
@@ -595,7 +595,7 @@ export default function InfoAdminTodoPage() {
               value={editingNotesText}
               onChange={(e) => setEditingNotesText(e.target.value)}
               rows={3}
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1 text-[11px] text-brand-text outline-none"
+              className="ui-input no-zoom-input text-[11px]"
               placeholder="Add resolution notes / extra context..."
             />
             <div className="flex justify-end gap-2 text-[11px]">
@@ -603,14 +603,14 @@ export default function InfoAdminTodoPage() {
                 type="button"
                 onClick={() => saveNotes(todo)}
                 disabled={!canEditTask}
-                className="rounded-full border border-emerald-500/70 bg-emerald-500/15 px-3 py-0.5 text-emerald-200 hover:bg-emerald-500/25"
+                className="ui-btn ui-btn-primary !px-3 !py-0.5 text-[11px]"
               >
                 Save notes
               </button>
               <button
                 type="button"
                 onClick={cancelEditingNotes}
-                className="rounded-full border border-zinc-700 bg-black/40 px-3 py-0.5 text-brand-textMuted hover:text-brand-text"
+                className="ui-btn ui-btn-ghost !px-3 !py-0.5 text-[11px]"
               >
                 Cancel
               </button>
@@ -631,7 +631,7 @@ export default function InfoAdminTodoPage() {
               <button
                 type="button"
                 onClick={() => startEditingNotes(todo)}
-                className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[10px] text-brand-textMuted hover:text-brand-text"
+                className="ui-btn ui-btn-ghost !px-2 !py-0.5 text-[10px]"
               >
                 {todo.resolution_notes ? "Edit notes" : "Add notes"}
               </button>
@@ -714,7 +714,7 @@ export default function InfoAdminTodoPage() {
                 onChange={(e) => setNewTitle(e.target.value)}
                 disabled={!canCreateTask}
                 placeholder="Write new S14 rear subframe install guide"
-                className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
               />
             </div>
 
@@ -746,7 +746,7 @@ export default function InfoAdminTodoPage() {
               disabled={!canCreateTask}
               rows={3}
               placeholder="What needs to be done, any context, links, etc."
-              className="no-zoom-input w-full rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
             />
           </div>
 
@@ -759,7 +759,7 @@ export default function InfoAdminTodoPage() {
               onChange={(e) => setNewRelatedSlug(e.target.value)}
               disabled={!canCreateTask}
               placeholder="info/s14-subframe-bushings"
-              className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/60 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+              className="ui-input no-zoom-input text-[12px]"
             />
             {newRelatedSlug.trim() && (
               <p className="mt-1 text-[10px] text-brand-textMuted">
@@ -780,7 +780,7 @@ export default function InfoAdminTodoPage() {
               type="button"
               onClick={handleCreateTodo}
               disabled={!canCreateTask || !newTitle.trim()}
-              className="inline-flex items-center justify-center rounded-full border border-amber-400/80 bg-amber-500/20 px-4 py-1.5 text-[12px] font-medium text-amber-200 shadow-sm shadow-black/60 hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-black/40 disabled:text-zinc-500"
+              className="ui-btn ui-btn-primary text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Add task
             </button>

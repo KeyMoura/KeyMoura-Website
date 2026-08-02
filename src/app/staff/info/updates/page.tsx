@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import { LinkTabs } from "@/components/ui/LinkTabs";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
@@ -30,10 +32,6 @@ type InfoUpdate = {
   info_pages: InfoPageLite | null;
 };
 
-type RoleResult = {
-  role: string;
-};
-
 type ReviewMeta = {
   notesCount: number;
   revisionsCount: number;
@@ -42,12 +40,12 @@ type ReviewMeta = {
   lastEditedBy: string | null;
 };
 
-type ReviewEventRow = {
-  info_page_id: string;
-  action: string;
-  notes: string | null;
-  performed_by: string | null;
-  created_at: string;
+type UpdatesResponse = {
+  error?: string;
+  updates?: InfoUpdate[];
+  metaByPageId?: Record<string, ReviewMeta>;
+  pendingCount?: number;
+  updatesPendingCount?: number;
 };
 
 type SortMode = "created_newest" | "created_oldest" | "revisions_desc" | "notes_desc";
@@ -146,14 +144,14 @@ export default function AdminInfoUpdatesListPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const j = (await res.json().catch(() => null)) as any;
+      const j = (await res.json().catch(() => null)) as UpdatesResponse | null;
       if (!res.ok) {
         setError((j && typeof j.error === "string" && j.error) || "Failed to load updates.");
         setLoading(false);
         return;
       }
 
-      setUpdates((j?.updates ?? []) as unknown as InfoUpdate[]);
+      setUpdates(j?.updates ?? []);
       setMetaByPageId((j?.metaByPageId ?? {}) as Record<string, ReviewMeta>);
       setPendingCount(typeof j?.pendingCount === "number" ? j.pendingCount : 0);
       setUpdatesPendingCount(typeof j?.updatesPendingCount === "number" ? j.updatesPendingCount : 0);
@@ -162,13 +160,7 @@ export default function AdminInfoUpdatesListPage() {
     };
 
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, accessLoading, canView]);
-
-  // Reset pagination when filters/search change (matches pending behavior)
-  useEffect(() => {
-    setVisibleCount(10);
-  }, [searchTerm, showForwardedOnly, sortMode, categoryFilter, statusFilter]);
 
   const normalizedQuery = searchTerm.trim().toLowerCase();
 
@@ -285,22 +277,14 @@ export default function AdminInfoUpdatesListPage() {
           </Link>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Link
-            href="/staff/info/pending"
-            className="rounded-full border border-zinc-700 bg-black/30 px-4 py-2 text-xs text-brand-textMuted hover:border-zinc-500 hover:text-brand-text"
-          >
-            Pending ({pendingCount})
-          </Link>
-
-          <Link
-            href="/staff/info/updates"
-            className="rounded-full border border-amber-400/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-200"
-            aria-current="page"
-          >
-            Updates ({updatesPendingCount})
-          </Link>
-        </div>
+        <LinkTabs
+          className="mt-3"
+          ariaLabel="Info moderation queues"
+          tabs={[
+            { href: "/staff/info/pending", label: `Pending (${pendingCount})` },
+            { href: "/staff/info/updates", label: `Updates (${updatesPendingCount})`, active: true },
+          ]}
+        />
       </section>
 
       {/* Filters & search */}
@@ -314,7 +298,7 @@ export default function AdminInfoUpdatesListPage() {
               setVisibleCount(10);
             }}
             placeholder="Search by page title, slug, proposal content, or tags…"
-            className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400 md:w-72"
+            className="ui-input no-zoom-input text-xs md:w-72"
           />
 
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -325,7 +309,7 @@ export default function AdminInfoUpdatesListPage() {
                 setStatusFilter(next as StatusFilter);
                 setVisibleCount(10);
               }}
-              className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/40 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400/70"
+              className="ui-select-trigger h-8 text-[11px]"
               options={[
                 { value: "pending", label: "Pending" },
                 { value: "approved", label: "Approved" },
@@ -341,7 +325,7 @@ export default function AdminInfoUpdatesListPage() {
                 setCategoryFilter(next);
                 setVisibleCount(10);
               }}
-              className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/40 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400/70"
+              className="ui-select-trigger h-8 text-[11px]"
               options={[
                 { value: "all", label: "All categories" },
                 ...CATEGORY_FILTER_OPTIONS.map((c) => ({ value: c.value, label: c.label })),
@@ -354,54 +338,23 @@ export default function AdminInfoUpdatesListPage() {
                 setShowForwardedOnly((prev) => !prev);
                 setVisibleCount(10);
               }}
-              className={
-                "rounded-full border px-2 py-0.5 " +
-                (showForwardedOnly
-                  ? "border-amber-400 bg-amber-500/20 text-amber-300 shadow-sm shadow-black/40"
-                  : "border-zinc-700 bg-black/40 text-brand-textMuted hover:border-amber-400/60 hover:text-brand-text")
-              }
+              aria-pressed={showForwardedOnly}
+              className={`ui-chip ${showForwardedOnly ? "is-active" : ""}`}
             >
               Needs further review
             </button>
 
-            <div className="flex h-8 items-center gap-1 rounded-full border border-zinc-700 bg-black/40 p-0.5">
-              <SortChip
-                active={sortMode === "created_newest"}
-                onClick={() => {
-                  setSortMode("created_newest");
-                  setVisibleCount(10);
-                }}
-              >
-                Newest
-              </SortChip>
-              <SortChip
-                active={sortMode === "created_oldest"}
-                onClick={() => {
-                  setSortMode("created_oldest");
-                  setVisibleCount(10);
-                }}
-              >
-                Oldest
-              </SortChip>
-              <SortChip
-                active={sortMode === "revisions_desc"}
-                onClick={() => {
-                  setSortMode("revisions_desc");
-                  setVisibleCount(10);
-                }}
-              >
-                Revisions
-              </SortChip>
-              <SortChip
-                active={sortMode === "notes_desc"}
-                onClick={() => {
-                  setSortMode("notes_desc");
-                  setVisibleCount(10);
-                }}
-              >
-                Notes
-              </SortChip>
-            </div>
+            <SegmentedControl
+              value={sortMode}
+              onChange={(next) => { setSortMode(next); setVisibleCount(10); }}
+              ariaLabel="Sort updates"
+              options={[
+                { value: "created_newest", label: "Newest" },
+                { value: "created_oldest", label: "Oldest" },
+                { value: "revisions_desc", label: "Revisions" },
+                { value: "notes_desc", label: "Notes" },
+              ]}
+            />
           </div>
         </div>
 
@@ -566,7 +519,7 @@ export default function AdminInfoUpdatesListPage() {
                 <button
                   type="button"
                   onClick={() => setVisibleCount((prev) => prev + 20)}
-                  className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/60 px-4 py-1.5 text-[12px] text-brand-textMuted hover:border-brand-primary/70 hover:text-brand-text"
+                  className="ui-btn ui-btn-ghost text-[12px]"
                 >
                   Show more ({Math.min(filtered.length - visibleCount, 20)} more)
                 </button>
@@ -577,31 +530,6 @@ export default function AdminInfoUpdatesListPage() {
       </section>
 
     </div>
-  );
-}
-
-function SortChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "inline-flex h-7 items-center rounded-full px-3 text-[11px] " +
-        (active
-          ? "bg-amber-500/20 text-amber-300 border border-amber-400/80"
-          : "text-brand-textMuted hover:text-brand-text")
-      }
-    >
-      {children}
-    </button>
   );
 }
 

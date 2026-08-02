@@ -7,6 +7,8 @@ import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import { LinkTabs } from "@/components/ui/LinkTabs";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
 type InfoPage = {
   id: string;
@@ -20,10 +22,6 @@ type InfoPage = {
   tags: string[] | null;
 };
 
-type RoleResult = {
-  role: string;
-};
-
 type ReviewMeta = {
   notesCount: number;
   revisionsCount: number;
@@ -32,12 +30,12 @@ type ReviewMeta = {
   lastEditedBy: string | null;
 };
 
-type ReviewEventRow = {
-  info_page_id: string;
-  action: string;
-  notes: string | null;
-  performed_by: string | null;
-  created_at: string;
+type PendingResponse = {
+  error?: string;
+  pages?: InfoPage[];
+  metaById?: Record<string, ReviewMeta>;
+  pendingCount?: number;
+  updatesPendingCount?: number;
 };
 
 type SortMode =
@@ -148,7 +146,7 @@ export default function AdminInfoPendingListPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const j = (await res.json().catch(() => null)) as any;
+      const j = (await res.json().catch(() => null)) as PendingResponse | null;
       if (!res.ok) {
         setError((j && typeof j.error === "string" && j.error) || "Failed to load submissions.");
         setLoading(false);
@@ -327,22 +325,14 @@ export default function AdminInfoPendingListPage() {
           </Link>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Link
-            href="/staff/info/pending"
-            className="rounded-full border border-amber-400/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-200"
-            aria-current="page"
-          >
-            Pending ({pendingCount})
-          </Link>
-
-          <Link
-            href="/staff/info/updates"
-            className="rounded-full border border-zinc-700 bg-black/30 px-4 py-2 text-xs text-brand-textMuted hover:border-zinc-500 hover:text-brand-text"
-          >
-            Updates ({updatesPendingCount})
-          </Link>
-        </div>
+        <LinkTabs
+          className="mt-3"
+          ariaLabel="Info moderation queues"
+          tabs={[
+            { href: "/staff/info/pending", label: `Pending (${pendingCount})`, active: true },
+            { href: "/staff/info/updates", label: `Updates (${updatesPendingCount})` },
+          ]}
+        />
 
         {/* Keep this header minimal so /staff/info/pending and /staff/info/updates match. */}
       </section>
@@ -357,36 +347,34 @@ export default function AdminInfoPendingListPage() {
               setVisibleCount(10);
             }}
             placeholder="Search by title, slug, content, tag, or chassis..."
-            className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400 md:w-72"
+            className="ui-input no-zoom-input text-xs md:w-72"
           />
 
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <MenuSelect
               ariaLabel="Status"
-              value={statusFilter as any}
+              value={statusFilter}
               onChange={(v) => {
-                setStatusFilter(v as StatusFilter);
+                setStatusFilter(v);
                 setVisibleCount(10);
               }}
-              options={STATUS_FILTER_OPTIONS as any}
-              className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/40 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400"
-              menuClassName="mt-2 w-56 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+              options={[...STATUS_FILTER_OPTIONS]}
+              className="ui-select-trigger h-8 text-[11px]"
               align="left"
             />
 
             <MenuSelect
               ariaLabel="Category"
-              value={categoryFilter as any}
+              value={categoryFilter}
               onChange={(v) => {
                 setCategoryFilter(v as string);
                 setVisibleCount(10);
               }}
-              options={([
+              options={[
                 { value: "all", label: "All categories (pending)" },
                 ...CATEGORY_FILTER_OPTIONS.map((c) => ({ value: c.value, label: c.label })),
-              ] as const) as any}
-              className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/40 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400"
-              menuClassName="mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+              ]}
+              className="ui-select-trigger h-8 text-[11px]"
               align="left"
             />
 
@@ -396,54 +384,23 @@ export default function AdminInfoPendingListPage() {
                 setShowForwardedOnly((prev) => !prev);
                 setVisibleCount(10);
               }}
-              className={
-                "rounded-full border px-2 py-0.5 " +
-                (showForwardedOnly
-                  ? "border-amber-400 bg-amber-500/20 text-amber-300 shadow-sm shadow-black/40"
-                  : "border-zinc-700 bg-black/40 text-brand-textMuted hover:border-amber-400/60 hover:text-brand-text")
-              }
+              aria-pressed={showForwardedOnly}
+              className={`ui-chip ${showForwardedOnly ? "is-active" : ""}`}
             >
               Needs further review
             </button>
 
-            <div className="flex h-8 items-center gap-1 rounded-full border border-zinc-700 bg-black/40 p-0.5">
-              <SortChip
-                active={sortMode === "created_newest"}
-                onClick={() => {
-                  setSortMode("created_newest");
-                  setVisibleCount(10);
-                }}
-              >
-                Newest
-              </SortChip>
-              <SortChip
-                active={sortMode === "created_oldest"}
-                onClick={() => {
-                  setSortMode("created_oldest");
-                  setVisibleCount(10);
-                }}
-              >
-                Oldest
-              </SortChip>
-              <SortChip
-                active={sortMode === "revisions_desc"}
-                onClick={() => {
-                  setSortMode("revisions_desc");
-                  setVisibleCount(10);
-                }}
-              >
-                Most revisions
-              </SortChip>
-              <SortChip
-                active={sortMode === "notes_desc"}
-                onClick={() => {
-                  setSortMode("notes_desc");
-                  setVisibleCount(10);
-                }}
-              >
-                Most notes
-              </SortChip>
-            </div>
+            <SegmentedControl
+              value={sortMode}
+              onChange={(next) => { setSortMode(next); setVisibleCount(10); }}
+              ariaLabel="Sort submissions"
+              options={[
+                { value: "created_newest", label: "Newest" },
+                { value: "created_oldest", label: "Oldest" },
+                { value: "revisions_desc", label: "Most revisions" },
+                { value: "notes_desc", label: "Most notes" },
+              ]}
+            />
           </div>
         </div>
 
@@ -619,7 +576,7 @@ export default function AdminInfoPendingListPage() {
                   onClick={() =>
                     setVisibleCount((prev) => prev + 20)
                   }
-                  className="inline-flex items-center justify-center rounded-full border border-zinc-700 bg-black/60 px-4 py-1.5 text-[12px] text-brand-textMuted hover:border-brand-primary/70 hover:text-brand-text"
+                  className="ui-btn ui-btn-ghost text-[12px]"
                 >
                   Show more (
                   {Math.min(sorted.length - visibleCount, 20)} more)
@@ -630,31 +587,6 @@ export default function AdminInfoPendingListPage() {
         )}
       </section>
     </div>
-  );
-}
-
-function SortChip({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "inline-flex h-7 items-center rounded-full px-3 text-[11px] " +
-        (active
-          ? "bg-amber-500/20 text-amber-300 border border-amber-400/80"
-          : "text-brand-textMuted hover:text-brand-text")
-      }
-    >
-      {children}
-    </button>
   );
 }
 

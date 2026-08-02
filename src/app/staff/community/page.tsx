@@ -41,18 +41,10 @@ function CtaButton({
   disabled?: boolean;
   variant?: CtaVariant;
 }) {
-  // Match /staff/shops CTA buttons exactly.
-  const base =
-    "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-medium transition";
-
-  const primary =
-    "border border-amber-400/80 bg-amber-500/20 text-amber-200 shadow-sm shadow-black/60 hover:bg-amber-500/30 hover:border-amber-300/90";
-
-  const secondary =
-    "border border-zinc-700 bg-black/40 text-brand-textMuted hover:border-amber-400/80 hover:text-brand-text";
-
-  const danger =
-    "border border-zinc-700 bg-black/40 text-brand-textMuted hover:border-rose-400/70 hover:text-rose-200";
+  const base = "ui-btn !px-3 !py-1.5 text-[12px]";
+  const primary = "ui-btn-primary";
+  const secondary = "ui-btn-ghost";
+  const danger = "ui-btn-danger";
 
   const cls = variant === "primary" ? primary : variant === "danger" ? danger : secondary;
   return (
@@ -677,7 +669,7 @@ export default function AdminCommunityPage() {
               value={flagQuery}
               onChange={(e) => setFlagQuery(e.target.value)}
               placeholder="Search flags (user/reason)…"
-              className="w-full max-w-sm rounded-lg border border-zinc-700 bg-black/40 px-3 py-2 text-[12px] text-brand-text outline-none placeholder:text-zinc-500"
+          className="ui-input max-w-sm text-[12px]"
             />
             <MenuSelect
               ariaLabel="Filter flags by status"
@@ -736,7 +728,7 @@ export default function AdminCommunityPage() {
                           {f.target_href ? (
                             <Link
                               href={f.target_href}
-                              className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-brand-textMuted hover:border-zinc-500 hover:text-brand-text"
+                              className="ui-btn ui-btn-ghost !px-2 !py-0.5 text-[10px]"
                             >
                               View
                             </Link>
@@ -747,7 +739,7 @@ export default function AdminCommunityPage() {
                               type="button"
                               onClick={() => handleUpdateFlagStatus(f.id, "resolved")}
                               disabled={!canModerateFlags || busyKey === `flag:${f.id}`}
-                              className="rounded-full border border-emerald-500/70 bg-emerald-500/15 px-2 py-0.5 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-60"
+                              className="ui-btn ui-btn-primary !px-2 !py-0.5 text-[10px] disabled:opacity-60"
                             >
                               Resolve
                             </button>
@@ -756,7 +748,7 @@ export default function AdminCommunityPage() {
                               type="button"
                               onClick={() => handleUpdateFlagStatus(f.id, "open")}
                               disabled={!canModerateFlags || busyKey === `flag:${f.id}`}
-                              className="rounded-full border border-amber-500/70 bg-amber-500/15 px-2 py-0.5 text-amber-200 hover:bg-amber-500/25 disabled:opacity-60"
+                              className="ui-btn ui-btn-secondary !px-2 !py-0.5 text-[10px] disabled:opacity-60"
                             >
                               Reopen
                             </button>
@@ -766,7 +758,7 @@ export default function AdminCommunityPage() {
                             type="button"
                             onClick={() => void handleDeleteFlag(f.id)}
                             disabled={!canModerateFlags || busyKey === `flag:${f.id}`}
-                            className="rounded-full border border-red-500/60 bg-red-500/10 px-2 py-0.5 text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+                            className="ui-btn ui-btn-danger !px-2 !py-0.5 text-[10px] disabled:opacity-60"
                             title="Delete flag"
                           >
                             Delete
@@ -796,7 +788,7 @@ export default function AdminCommunityPage() {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="e.g. Engine & Drivetrain"
-              className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
+              className="ui-input no-zoom-input text-[12px]"
               disabled={busyKey === "create-category"}
             />
           </div>
@@ -809,7 +801,7 @@ export default function AdminCommunityPage() {
               value={newSlug}
               onChange={(e) => setNewSlug(e.target.value)}
               placeholder="auto-from-name if blank"
-              className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
+              className="ui-input no-zoom-input text-[12px]"
               disabled={busyKey === "create-category"}
             />
           </div>
@@ -822,7 +814,7 @@ export default function AdminCommunityPage() {
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
               placeholder="Short description"
-              className="w-full no-zoom-input rounded-md border border-zinc-700 bg-black/40 px-2 py-1.5 text-[12px] text-brand-text outline-none placeholder:text-brand-textMuted focus:border-amber-400"
+              className="ui-input no-zoom-input text-[12px]"
               disabled={busyKey === "create-category"}
             />
           </div>
@@ -908,7 +900,7 @@ export default function AdminCommunityPage() {
                           <input
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
-                            className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                className="ui-input no-zoom-input text-sm"
                             disabled={busyKey === `edit-${c.id}` || !canEditCategories}
                           />
                         </div>
@@ -917,7 +909,7 @@ export default function AdminCommunityPage() {
                           <input
                             value={editSlug}
                             onChange={(e) => setEditSlug(e.target.value)}
-                            className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                className="ui-input no-zoom-input text-sm"
                             disabled={busyKey === `edit-${c.id}` || !canEditCategories}
                           />
                         </div>
@@ -926,7 +918,7 @@ export default function AdminCommunityPage() {
                           <input
                             value={editDescription}
                             onChange={(e) => setEditDescription(e.target.value)}
-                            className="no-zoom-input w-full rounded-lg border border-zinc-700 bg-black/60 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+                className="ui-input no-zoom-input text-sm"
                             disabled={busyKey === `edit-${c.id}` || !canEditCategories}
                           />
                         </div>

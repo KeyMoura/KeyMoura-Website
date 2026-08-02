@@ -999,17 +999,14 @@ export default function StaffSecurityUsersPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search username, display name, or user ID…"
-              className="no-zoom-input w-full rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-amber-400/80"
+              className="ui-input no-zoom-input text-sm"
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setVerifiedOnly((v) => !v)}
-                className={
-                  verifiedOnly
-                    ? "flex h-9 items-center rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 text-[12px] font-medium text-emerald-100"
-                    : "flex h-9 items-center rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] font-medium text-brand-textMuted transition hover:border-amber-400/70"
-                }
+                aria-pressed={verifiedOnly}
+                className={`ui-chip h-9 px-3 text-[12px] ${verifiedOnly ? "is-active" : ""}`}
               >
                 Verified only
               </button>
@@ -1019,8 +1016,7 @@ export default function StaffSecurityUsersPage() {
                 value={donationFilter as any}
                 onChange={(v) => setDonationFilter(v as any)}
                 options={donationFilterOptions as any}
-                className="flex h-9 items-center gap-2 rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-text outline-none transition hover:border-amber-400/80"
-                menuClassName="mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+                className="ui-select-trigger h-9 text-[12px]"
               />
 
               <MenuSelect
@@ -1028,8 +1024,7 @@ export default function StaffSecurityUsersPage() {
                 value={sortMode as any}
                 onChange={(v) => setSortMode(v as any)}
                 options={sortOptions as any}
-                className="flex h-9 items-center gap-2 rounded-full border border-zinc-700 bg-black/40 px-3 text-[12px] text-brand-text outline-none transition hover:border-amber-400/80"
-                menuClassName="mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+                className="ui-select-trigger h-9 text-[12px]"
               />
 
               {searching ? <span className="text-[11px] text-brand-textMuted">Searching…</span> : null}
@@ -1049,8 +1044,7 @@ export default function StaffSecurityUsersPage() {
                   .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
                   .map((r) => ({ value: r.key.toLowerCase(), label: r.label ?? r.key })),
               ]}
-              className="flex h-9 items-center gap-2 rounded-xl border border-zinc-800 bg-black/40 px-3 text-xs text-brand-text outline-none transition-all hover:border-amber-400/80"
-              menuClassName="mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-800 bg-black/95 shadow-2xl"
+              className="ui-select-trigger h-9 text-xs"
               renderValue={(opt) =>
                 !opt || opt.value === "all" ? <span>All roles</span> : <RolePill role={opt.value} />
               }
@@ -1081,10 +1075,10 @@ export default function StaffSecurityUsersPage() {
                   key={u.id}
                   type="button"
                   onClick={() => setSelectedUserId(u.id)}
-                  className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-all ${
+                  className={`ui-card ui-card-hover w-full !p-3 text-left text-sm ${
                     active
-                      ? "border-brand-primary/60 bg-black/60 text-brand-primary"
-                      : "border-zinc-800 bg-black/40 text-brand-text hover:border-zinc-700 hover:bg-black/55"
+                      ? "!border-brand-primary !bg-brand-primary/10 text-brand-primary"
+                      : "text-brand-text"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -1124,7 +1118,7 @@ export default function StaffSecurityUsersPage() {
               type="button"
               onClick={() => void loadMore()}
               disabled={!canSearch || loadingMore}
-              className="mt-3 w-full rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 text-sm font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+              className="ui-btn ui-btn-ghost mt-3 w-full text-sm disabled:opacity-60"
             >
               {loadingMore ? "Loading…" : "Load more"}
             </button>
@@ -1267,7 +1261,7 @@ export default function StaffSecurityUsersPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <a
                     href={`/user/${encodeURIComponent(selectedUser.id)}`}
-                    className="whitespace-nowrap rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                    className="ui-btn ui-btn-ghost whitespace-nowrap text-xs"
                   >
                     View profile
                   </a>
@@ -1275,7 +1269,7 @@ export default function StaffSecurityUsersPage() {
                     type="button"
                     onClick={() => void startDmWithUser()}
                     disabled={!canDm}
-                    className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary"
+                    className="ui-btn ui-btn-ghost text-xs disabled:opacity-60"
                   >
                     DM
                   </button>
@@ -1291,7 +1285,7 @@ export default function StaffSecurityUsersPage() {
                     value={selectedRole as string}
                     onChange={(next) => setSelectedRole(next)}
                     disabled={!canAssignRole}
-                    className="flex h-10 w-full max-w-[360px] items-center gap-2 rounded-xl border border-zinc-800 bg-black/45 px-3 text-sm text-brand-text outline-none transition hover:border-brand-primary/70 disabled:opacity-60"
+                    className="ui-select-trigger h-10 max-w-[360px] text-sm"
                     options={roles
                       .slice()
                       .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
@@ -1309,7 +1303,7 @@ export default function StaffSecurityUsersPage() {
                     type="button"
                     onClick={() => void saveRole()}
                     disabled={!canAssignRole}
-                    className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200 transition-all hover:border-amber-300/50 hover:bg-amber-500/15 disabled:opacity-60"
+                    className="ui-btn ui-btn-primary mt-3 w-full text-sm disabled:opacity-60"
                   >
                     Save Role
                   </button>
@@ -1323,11 +1317,7 @@ export default function StaffSecurityUsersPage() {
                       type="button"
                       onClick={() => void setVerified(!selectedUser.is_verified)}
                       disabled={!canVerify || savingVerify}
-                      className={`min-w-[92px] whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-60 ${
-                        selectedUser.is_verified
-                          ? "border-zinc-700 bg-black/40 text-brand-text hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary"
-                          : "border-sky-400/30 bg-sky-500/10 text-sky-200 hover:border-sky-300/50 hover:bg-sky-500/15"
-                      }`}
+                      className={`ui-btn min-w-[92px] whitespace-nowrap text-xs disabled:opacity-60 ${selectedUser.is_verified ? "ui-btn-ghost" : "ui-btn-secondary"}`}
                     >
                       {selectedUser.is_verified ? "Unverify" : "Verify user"}
                     </button>
@@ -1341,7 +1331,7 @@ export default function StaffSecurityUsersPage() {
                       value={selectedDonationRank as string}
                       onChange={(next) => setSelectedDonationRank(next)}
                       disabled={!canSetDonation || savingDonation}
-                      className="flex h-10 w-full max-w-[360px] items-center gap-2 rounded-xl border border-zinc-800 bg-black/45 px-3 text-sm text-brand-text outline-none transition hover:border-brand-primary/70 disabled:opacity-60"
+                      className="ui-select-trigger h-10 max-w-[360px] text-sm"
                       options={[{ value: "", label: "None" }, ...donationRankOptions.map((o) => ({ value: o.value, label: o.label }))]}
                     />
                     </div>
@@ -1356,7 +1346,7 @@ export default function StaffSecurityUsersPage() {
                         )
                       }
                       disabled={!canSetDonation || savingDonation}
-                      className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200 transition-all hover:border-amber-300/50 hover:bg-amber-500/15 disabled:opacity-60"
+                      className="ui-btn ui-btn-primary mt-3 w-full text-sm disabled:opacity-60"
                     >
                       Save Donation Rank
                     </button>
@@ -1372,7 +1362,7 @@ export default function StaffSecurityUsersPage() {
                         value={editUsername}
                         onChange={(e) => setEditUsername(e.target.value)}
                         disabled={!canEditProfile || savingProfile}
-                        className="mt-1 w-full rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                        className="ui-input mt-1 text-sm disabled:opacity-60"
                       />
                     </label>
                     <label className="text-[11px] text-brand-textMuted">
@@ -1381,7 +1371,7 @@ export default function StaffSecurityUsersPage() {
                         value={editDisplayName}
                         onChange={(e) => setEditDisplayName(e.target.value)}
                         disabled={!canEditProfile || savingProfile}
-                        className="mt-1 w-full rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                        className="ui-input mt-1 text-sm disabled:opacity-60"
                       />
                     </label>
                     <label className="text-[11px] text-brand-textMuted">
@@ -1390,7 +1380,7 @@ export default function StaffSecurityUsersPage() {
                         value={editLocation}
                         onChange={(e) => setEditLocation(e.target.value)}
                         disabled={!canEditProfile || savingProfile}
-                        className="mt-1 w-full rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                        className="ui-input mt-1 text-sm disabled:opacity-60"
                       />
                     </label>
                     <label className="text-[11px] text-brand-textMuted">
@@ -1399,7 +1389,7 @@ export default function StaffSecurityUsersPage() {
                         value={editAvatarUrl}
                         onChange={(e) => setEditAvatarUrl(e.target.value)}
                         disabled={!canEditProfile || savingProfile}
-                        className="mt-1 w-full rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                        className="ui-input mt-1 text-sm disabled:opacity-60"
                       />
                     </label>
 
@@ -1434,7 +1424,7 @@ export default function StaffSecurityUsersPage() {
                           type="button"
                           onClick={() => avatarFileInputRef.current?.click()}
                           disabled={!canEditProfile || avatarUploading}
-                          className="rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 text-xs font-semibold text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                          className="ui-btn ui-btn-ghost text-xs disabled:opacity-60"
                         >
                           {avatarUploading ? "Uploading…" : "Upload"}
                         </button>
@@ -1449,7 +1439,7 @@ export default function StaffSecurityUsersPage() {
                         onChange={(e) => setEditBio(e.target.value)}
                         disabled={!canEditProfile || savingProfile}
                         rows={3}
-                        className="mt-1 w-full resize-y rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                        className="ui-input mt-1 resize-y text-sm disabled:opacity-60"
                       />
                     </label>
                   </div>
@@ -1458,7 +1448,7 @@ export default function StaffSecurityUsersPage() {
                     type="button"
                     onClick={() => void saveProfile()}
                     disabled={!canEditProfile || savingProfile}
-                    className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200 transition-all hover:border-amber-300/50 hover:bg-amber-500/15 disabled:opacity-60"
+                    className="ui-btn ui-btn-primary mt-3 w-full text-sm disabled:opacity-60"
                   >
                     Save Profile
                   </button>
@@ -1485,7 +1475,7 @@ export default function StaffSecurityUsersPage() {
                         onChange={(e) => setRestrictionReason(e.target.value)}
                         placeholder="Reason (optional)"
                         disabled={!canRestrictAny}
-                        className="w-full rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                    className="ui-input text-sm disabled:opacity-60"
                       />
                     </div>
 
@@ -1509,7 +1499,7 @@ export default function StaffSecurityUsersPage() {
                             value={tempbanHours}
                             onChange={(e) => setTempbanHours(Number(e.target.value))}
                             disabled={!canActOnSiteRestriction}
-                            className="w-28 rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                            className="ui-input w-28 text-sm disabled:opacity-60"
                           />
                           <span className="text-xs text-brand-textMuted">hours</span>
                         </div>
@@ -1519,7 +1509,7 @@ export default function StaffSecurityUsersPage() {
                               type="button"
                               onClick={() => void setRestriction({ kind: "site", action: "set", durationHours: tempbanHours })}
                               disabled={savingModeration || !canActOnSiteRestriction}
-                              className="whitespace-nowrap rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                              className="ui-btn ui-btn-ghost whitespace-nowrap text-xs disabled:opacity-60"
                             >
                               {canRestrictSite ? "Timeout" : "Request temp restrict"}
                             </button>
@@ -1529,13 +1519,7 @@ export default function StaffSecurityUsersPage() {
                                 if (!userStatus?.ban_active) void toggleBan();
                               }}
                               disabled={savingModeration || !userStatus || userStatus.ban_active || (!canBanDirect && !canBanRequest)}
-                              className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-60 ${
-                                userStatus?.ban_active
-                                  ? "border-red-400/25 bg-red-500/5 text-red-200"
-                                  : canBanDirect
-                                    ? "border-red-400/30 bg-red-500/10 text-red-200 hover:border-red-300/50 hover:bg-red-500/15"
-                                    : "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:border-amber-300/50 hover:bg-amber-500/15"
-                              }`}
+                              className={`ui-btn whitespace-nowrap text-xs disabled:opacity-60 ${canBanDirect ? "ui-btn-danger" : "ui-btn-secondary"}`}
                             >
                               {userStatus?.ban_active ? "Banned" : canBanDirect ? "Ban" : "Request ban"}
                             </button>
@@ -1555,7 +1539,7 @@ export default function StaffSecurityUsersPage() {
                               (!userStatus.ban_active && !userStatus.site_restriction_active) ||
                               (!canActOnSiteRestriction && !canBanDirect && !canBanRequest)
                             }
-                            className="w-full rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                            className="ui-btn ui-btn-ghost w-full text-xs disabled:opacity-60"
                           >
                             Clear
                           </button>
@@ -1585,7 +1569,7 @@ export default function StaffSecurityUsersPage() {
                             value={communityBanHours}
                             onChange={(e) => setCommunityBanHours(Number(e.target.value))}
                             disabled={!canActOnCommunityRestriction}
-                            className="w-28 rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                            className="ui-input w-28 text-sm disabled:opacity-60"
                           />
                           <span className="text-xs text-brand-textMuted">hours</span>
                         </div>
@@ -1597,7 +1581,7 @@ export default function StaffSecurityUsersPage() {
                               void setRestriction({ kind: "community", action: "set", durationHours: communityBanHours })
                             }
                             disabled={savingModeration || !canActOnCommunityRestriction}
-                            className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                            className="ui-btn ui-btn-ghost text-xs disabled:opacity-60"
                           >
                             {canRestrictCommunity ? "Timeout" : "Request temp ban"}
                             </button>
@@ -1605,11 +1589,7 @@ export default function StaffSecurityUsersPage() {
                             type="button"
                             onClick={() => void setRestriction({ kind: "community", action: "set", durationHours: null })}
                             disabled={savingModeration || !canActOnCommunityRestriction}
-                            className={`min-w-[86px] whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-60 ${
-                              canRestrictCommunity
-                                ? "border-red-400/30 bg-red-500/10 text-red-200 hover:border-red-300/50 hover:bg-red-500/15"
-                                : "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:border-amber-300/50 hover:bg-amber-500/15"
-                            }`}
+                            className={`ui-btn min-w-[86px] whitespace-nowrap text-xs disabled:opacity-60 ${canRestrictCommunity ? "ui-btn-danger" : "ui-btn-secondary"}`}
                           >
                             {canRestrictCommunity ? "Ban" : "Request ban"}
                             </button>
@@ -1618,7 +1598,7 @@ export default function StaffSecurityUsersPage() {
                             type="button"
                             onClick={() => void setRestriction({ kind: "community", action: "clear" })}
                             disabled={savingModeration || !canActOnCommunityRestriction || !userStatus?.community_restriction_active}
-                            className="w-full rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                            className="ui-btn ui-btn-ghost w-full text-xs disabled:opacity-60"
                           >
                             Clear
                           </button>
@@ -1644,7 +1624,7 @@ export default function StaffSecurityUsersPage() {
                             value={dmBanHours}
                             onChange={(e) => setDmBanHours(Number(e.target.value))}
                             disabled={!canActOnDmRestriction}
-                            className="w-28 rounded-xl border border-zinc-800 bg-black/45 px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-primary/60 disabled:opacity-60"
+                            className="ui-input w-28 text-sm disabled:opacity-60"
                           />
                           <span className="text-xs text-brand-textMuted">hours</span>
                         </div>
@@ -1654,7 +1634,7 @@ export default function StaffSecurityUsersPage() {
                             type="button"
                             onClick={() => void setRestriction({ kind: "dm", action: "set", durationHours: dmBanHours })}
                             disabled={savingModeration || !canActOnDmRestriction}
-                            className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                            className="ui-btn ui-btn-ghost text-xs disabled:opacity-60"
                           >
                             {canRestrictDm ? "Timeout" : "Request temp ban"}
                             </button>
@@ -1662,11 +1642,7 @@ export default function StaffSecurityUsersPage() {
                             type="button"
                             onClick={() => void setRestriction({ kind: "dm", action: "set", durationHours: null })}
                             disabled={savingModeration || !canActOnDmRestriction}
-                            className={`min-w-[86px] whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-60 ${
-                              canRestrictDm
-                                ? "border-red-400/30 bg-red-500/10 text-red-200 hover:border-red-300/50 hover:bg-red-500/15"
-                                : "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:border-amber-300/50 hover:bg-amber-500/15"
-                            }`}
+                            className={`ui-btn min-w-[86px] whitespace-nowrap text-xs disabled:opacity-60 ${canRestrictDm ? "ui-btn-danger" : "ui-btn-secondary"}`}
                           >
                             {canRestrictDm ? "Ban" : "Request ban"}
                             </button>
@@ -1675,7 +1651,7 @@ export default function StaffSecurityUsersPage() {
                             type="button"
                             onClick={() => void setRestriction({ kind: "dm", action: "clear" })}
                             disabled={savingModeration || !canActOnDmRestriction || !userStatus?.dm_restriction_active}
-                            className="w-full rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs font-medium text-brand-text transition-all hover:border-brand-primary/70 hover:bg-black/65 hover:text-brand-primary disabled:opacity-60"
+                            className="ui-btn ui-btn-ghost w-full text-xs disabled:opacity-60"
                           >
                             Clear
                           </button>
@@ -1701,7 +1677,7 @@ export default function StaffSecurityUsersPage() {
                     value={permissionQuery}
                     onChange={(e) => setPermissionQuery(e.target.value)}
                     placeholder="Search permissions..."
-                    className="h-10 w-full rounded-xl border border-zinc-800 bg-black/40 px-3 text-sm text-brand-text outline-none placeholder:text-brand-textMuted focus:border-zinc-600"
+                  className="ui-input h-10 text-sm"
                   />
                 </div>
 
@@ -1751,7 +1727,7 @@ export default function StaffSecurityUsersPage() {
                   type="button"
                   onClick={() => void saveUserPermissions()}
                   disabled={!canGrantPerms}
-                  className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200 transition-all hover:border-amber-300/50 hover:bg-amber-500/15 disabled:opacity-60"
+                  className="ui-btn ui-btn-primary mt-3 w-full text-sm disabled:opacity-60"
                 >
                   Save Permissions
                 </button>

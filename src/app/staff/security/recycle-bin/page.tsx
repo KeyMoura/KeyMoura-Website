@@ -469,13 +469,13 @@ export default function StaffRecycleBinPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search recycle bin…"
-            className="no-zoom-input h-8 w-full max-w-xs rounded-md border border-zinc-700 bg-black/60 px-2 text-[12px] text-brand-text outline-none placeholder:text-zinc-500 focus:border-amber-400"
+            className="ui-input no-zoom-input h-8 max-w-xs text-[12px]"
           />
           <MenuSelect
             ariaLabel="Sort by"
             value={sortKey}
             onChange={(next) => setSortKey(next as SortKey)}
-            className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/60 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400/70"
+            className="ui-select-trigger h-8 text-[11px]"
             options={[
               { value: "deleted_at", label: "Sort: Deleted" },
               { value: "expires_at", label: "Sort: Expires" },
@@ -485,7 +485,7 @@ export default function StaffRecycleBinPage() {
           <button
             type="button"
             onClick={() => setSortDir((p) => (p === "desc" ? "asc" : "desc"))}
-            className="inline-flex h-8 items-center rounded-md border border-zinc-700 bg-black/60 px-3 text-[11px] text-brand-textMuted hover:border-amber-400 hover:text-brand-text"
+            className="ui-btn ui-btn-ghost h-8 !px-3 text-[11px]"
           >
             {sortDir === "desc" ? "Newest" : "Oldest"}
           </button>
@@ -593,7 +593,7 @@ export default function StaffRecycleBinPage() {
                         <button
                           onClick={() => void handleRestore(i.id)}
                           disabled={restoringId === i.id}
-                          className="rounded-md border border-zinc-700 bg-zinc-900/60 px-2 py-1 text-[12px] text-amber-200 hover:bg-zinc-900 disabled:opacity-50"
+                          className="ui-btn ui-btn-primary !px-2 !py-1 text-[12px] disabled:opacity-50"
                         >
                           {restoringId === i.id ? "Restoring…" : "Undo"}
                         </button>
@@ -615,7 +615,7 @@ export default function StaffRecycleBinPage() {
                             onClick={() =>
                               setRawOpenById((prev) => ({ ...prev, [i.id]: !prev[i.id] }))
                             }
-                            className="inline-flex items-center gap-2 rounded-md border border-zinc-800 bg-black/60 px-3 py-2 text-[12px] text-zinc-200 hover:border-amber-400/60"
+                            className="ui-btn ui-btn-ghost text-[12px]"
                           >
                             <span className="font-mono">{rawOpenById[i.id] ? "−" : "+"}</span>
                             View raw snapshot JSON
@@ -643,7 +643,7 @@ export default function StaffRecycleBinPage() {
             type="button"
             disabled={loadingMore}
             onClick={loadMore}
-            className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-black/60 px-4 text-[12px] text-brand-text hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="ui-btn ui-btn-ghost h-9 text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loadingMore ? "Loading…" : `Load ${PAGE_SIZE} more`}
           </button>

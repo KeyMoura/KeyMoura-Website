@@ -329,12 +329,7 @@ export default function StaffSecurityRolesPage() {
                 key={r.key}
                 type="button"
                 onClick={() => void selectRole(r.key)}
-                className={
-                  "w-full rounded-xl border px-3 py-2 text-left text-sm transition " +
-                  (selectedRoleKey === r.key
-                    ? "border-amber-400/40 bg-amber-500/10 text-amber-100"
-                    : "border-zinc-800 bg-black/30 text-brand-text hover:border-zinc-700")
-                }
+                className={`ui-card ui-card-hover w-full !p-3 text-left text-sm ${selectedRoleKey === r.key ? "!border-brand-primary !bg-brand-primary/10" : ""}`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -353,18 +348,18 @@ export default function StaffSecurityRolesPage() {
                 value={creatingKey}
                 onChange={(e) => setCreatingKey(e.target.value)}
                 placeholder="key (e.g. organizer)"
-                className="w-full rounded-xl border border-zinc-800 bg-black/40 px-3 py-2 text-sm text-brand-text placeholder:text-brand-textMuted"
+                className="ui-input text-sm"
               />
               <input
                 value={creatingLabel}
                 onChange={(e) => setCreatingLabel(e.target.value)}
                 placeholder="label (e.g. Organizer)"
-                className="w-full rounded-xl border border-zinc-800 bg-black/40 px-3 py-2 text-sm text-brand-text placeholder:text-brand-textMuted"
+                className="ui-input text-sm"
               />
               <button
                 type="button"
                 onClick={() => void createRole()}
-                className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:border-amber-400/50"
+                className="ui-btn ui-btn-primary w-full text-sm"
               >
                 Create
               </button>
@@ -411,7 +406,7 @@ export default function StaffSecurityRolesPage() {
                       const next = labelDraft.trim();
                       if (next && next !== selectedRole.label) void updateRole({ label: next });
                     }}
-                    className="mt-1 w-full rounded-xl border border-zinc-800 bg-black/40 px-3 py-2 text-sm text-brand-text"
+                    className="ui-input mt-1 text-sm"
                   />
 
                   <label className="mt-3 block text-xs text-brand-textMuted">Icon</label>
@@ -425,7 +420,7 @@ export default function StaffSecurityRolesPage() {
                       if (normalized !== (selectedRole.badge_icon ?? null)) void updateRole({ badge_icon: normalized });
                     }}
                     placeholder="gavel / chess-rook / book / shield-heart …"
-                    className="mt-1 w-full rounded-xl border border-zinc-800 bg-black/40 px-3 py-2 text-sm text-brand-text placeholder:text-brand-textMuted"
+                    className="ui-input mt-1 text-sm"
                   />
 
                   <div className="mt-3 grid grid-cols-3 gap-2">
@@ -454,7 +449,7 @@ export default function StaffSecurityRolesPage() {
                             }
                             if (next !== (selectedRole.badge_bg ?? "")) void updateRole({ badge_bg: next });
                           }}
-                          className="w-24 rounded-md border border-zinc-800 bg-black/40 px-2 py-1 text-[11px] text-brand-text outline-none focus:border-amber-400"
+                          className="ui-input w-24 text-[11px]"
                           placeholder="#RRGGBB"
                         />
                       </div>
@@ -484,7 +479,7 @@ export default function StaffSecurityRolesPage() {
                             }
                             if (next !== (selectedRole.badge_border ?? "")) void updateRole({ badge_border: next });
                           }}
-                          className="w-24 rounded-md border border-zinc-800 bg-black/40 px-2 py-1 text-[11px] text-brand-text outline-none focus:border-amber-400"
+                          className="ui-input w-24 text-[11px]"
                           placeholder="#RRGGBB"
                         />
                       </div>
@@ -514,7 +509,7 @@ export default function StaffSecurityRolesPage() {
                             }
                             if (next !== (selectedRole.badge_text ?? "")) void updateRole({ badge_text: next });
                           }}
-                          className="w-24 rounded-md border border-zinc-800 bg-black/40 px-2 py-1 text-[11px] text-brand-text outline-none focus:border-amber-400"
+                          className="ui-input w-24 text-[11px]"
                           placeholder="#RRGGBB"
                         />
                       </div>
@@ -529,7 +524,7 @@ export default function StaffSecurityRolesPage() {
                       ariaLabel="Permission category"
                       value={permissionCategory}
                       onChange={(next) => setPermissionCategory(next)}
-                      className="flex h-10 w-full items-center gap-2 rounded-xl border border-zinc-800 bg-black/40 px-3 text-sm text-brand-text outline-none transition hover:border-zinc-600 sm:w-56"
+                      className="ui-select-trigger h-10 text-sm sm:w-56"
                       options={[{ value: "all", label: "All categories" }, ...permissionCategories.map((c) => ({ value: c, label: c }))]}
                     />
 
@@ -537,7 +532,7 @@ export default function StaffSecurityRolesPage() {
                       value={permissionQuery}
                       onChange={(e) => setPermissionQuery(e.target.value)}
                       placeholder="Search permissions..."
-                      className="h-10 w-full rounded-xl border border-zinc-800 bg-black/40 px-3 text-sm text-brand-text outline-none placeholder:text-brand-textMuted focus:border-zinc-600"
+                      className="ui-input h-10 text-sm"
                     />
                   </div>
 
@@ -578,7 +573,7 @@ export default function StaffSecurityRolesPage() {
                   <button
                     type="button"
                     onClick={() => void saveRolePermissions()}
-                    className="mt-3 w-full rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-400/50 hover:bg-amber-500/15"
+                    className="ui-btn ui-btn-primary mt-3 w-full text-sm"
                   >
                     Save permissions
                   </button>
