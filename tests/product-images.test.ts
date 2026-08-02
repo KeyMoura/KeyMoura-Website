@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   groupMediaByProduct,
+  isOptimizableImageUrl,
   normalizeImageUrl,
   primaryProductImage,
   productImageCandidates,
@@ -155,6 +156,27 @@ test("the product image box is reserved so a missing image cannot shift layout",
 
 test("a broken image steps to the next candidate before the brand fallback", () => {
   const image = read("src/components/ProductImage.tsx");
-  assert.match(image, /onError=\{\(\) => setIndex\(\(current\) => current \+ 1\)\}/);
+  assert.match(image, /const nextCandidate = \(\) => setIndex\(\(current\) => current \+ 1\);/);
+  assert.equal((image.match(/onError=\{nextCandidate\}/g) ?? []).length, 2, "both image paths must recover");
   assert.match(image, /product-image-fallback/);
+});
+
+test("only allow-listed hosts go through the image optimizer", () => {
+  withSupabaseUrl(() => {
+    assert.equal(isOptimizableImageUrl(`${SUPABASE_URL}/storage/v1/object/public/product-assets/a.png`), true);
+    assert.equal(isOptimizableImageUrl("/brand/keymoura-colored.png"), true);
+    // Operator URLs on unknown hosts must not be handed to next/image, which
+    // would throw instead of rendering the picture.
+    assert.equal(isOptimizableImageUrl("https://cdn.example.com/a.png"), false);
+    assert.equal(isOptimizableImageUrl(`${SUPABASE_URL}/rest/v1/not-storage.png`), false);
+    assert.equal(isOptimizableImageUrl("data:image/png;base64,AAAA"), false);
+  });
+});
+
+test("the optimizer allow-list is limited to public Supabase Storage objects", () => {
+  const config = read("next.config.ts");
+  assert.match(config, /remotePatterns/);
+  assert.match(config, /pathname: "\/storage\/v1\/object\/public\/\*\*"/);
+  assert.match(config, /protocol: "https"/);
+  assert.match(config, /NEXT_PUBLIC_SUPABASE_URL/);
 });

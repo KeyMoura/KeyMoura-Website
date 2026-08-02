@@ -101,6 +101,28 @@ export function primaryProductImage(product: ProductImageSource | null | undefin
 }
 
 /**
+ * True when Next.js is configured to optimize this URL.
+ *
+ * next.config.ts allows exactly one remote host — this project's Supabase
+ * Storage — plus same-origin paths. Anything else is an operator-supplied URL
+ * on an unknown host and must be rendered without the optimizer.
+ */
+export function isOptimizableImageUrl(url: string): boolean {
+  if (url.startsWith("/")) return true;
+
+  const base = supabasePublicBase();
+  if (!base) return false;
+
+  try {
+    const target = new URL(url);
+    if (target.protocol !== "https:") return false;
+    return target.hostname === new URL(base).hostname && target.pathname.startsWith(STORAGE_PREFIX);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Groups media rows by product id so a list query can be resolved in one pass.
  */
 export function groupMediaByProduct<T extends ProductMediaRef & { product_id?: string | null }>(
