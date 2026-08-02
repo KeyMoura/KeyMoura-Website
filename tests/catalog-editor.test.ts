@@ -21,6 +21,11 @@ test("staff editor includes inventory, lifecycle, duplication, and search tools"
   assert.match(editor, /disabled=\{Boolean\(draft\.archived_at\) \|\| \(!draft\.is_published && !readyToPublish\)\}/);
 });
 
+test("backordered products are not labeled out of stock", async () => {
+  const { inventoryLabel } = await import("../src/lib/commerceTypes.ts");
+  assert.equal(inventoryLabel({ inventory_policy:"track", inventory_quantity:0, low_stock_threshold:2, continue_selling_when_out_of_stock:true }), "Available to order");
+});
+
 test("storefront and order API enforce catalog availability", () => {
   assert.match(storefront, /productCanBeRequested/);
   assert.match(storefront, /\.is\("archived_at", null\)/);

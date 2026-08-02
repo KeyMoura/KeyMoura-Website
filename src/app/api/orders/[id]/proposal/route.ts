@@ -23,8 +23,13 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     ]);
     return NextResponse.json({ ok: true, action });
   }
-  const { data: updated, error } = await routeServiceClient.from("orders").update({ status: "accepted", proposal_decided_at: now, proposal_decline_reason: null, payment_status: "unpaid" }).eq("id", id).eq("status", "requested").select("id").maybeSingle();
-  if (error || !updated) return NextResponse.json({ error: "The proposal changed. Refresh and try again." }, { status: 409 });
+  const { data: accepted, error } = await routeServiceClient.rpc("accept_staff_order_proposal", { p_order_id:id, p_customer_id:user.id });
+  if (error) {
+    if (error.message.includes("insufficient_inventory")) return NextResponse.json({ error: "This item no longer has enough stock for the proposal. Message KeyMoura to update it." }, { status: 409 });
+    if (error.message.includes("product_unavailable")) return NextResponse.json({ error: "This item is no longer available. Message KeyMoura to update the proposal." }, { status: 409 });
+    return NextResponse.json({ error: "Could not accept the proposal. Refresh and try again." }, { status: 500 });
+  }
+  if (!accepted) return NextResponse.json({ error: "The proposal changed. Refresh and try again." }, { status: 409 });
   await Promise.all([
     routeServiceClient.from("order_status_history").insert({ order_id:id, from_status:"requested", to_status:"accepted", changed_by:user.id, note:"Customer accepted staff proposal" }),
     notifyOrderStaff({ orderId:id, actorUserId:user.id, title:"Proposal accepted", message:`The customer accepted ${order.product_name}. It is ready for payment and production.` }),

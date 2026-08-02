@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const [{ data: customers, error: customerError }, { data: products, error: productError }] = await Promise.all([
     routeServiceClient.from("profiles").select("id,username,display_name").order("display_name", { ascending: true }),
-    routeServiceClient.from("products").select("id,name,starting_price_cents,is_published,archived_at").is("archived_at", null).order("name"),
+    routeServiceClient.from("products").select("id,name,starting_price_cents,is_published,availability_status,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock,archived_at").is("archived_at", null).order("name"),
   ]);
   if (customerError || productError) return NextResponse.json({ error: "Could not load proposal choices." }, { status: 500 });
   return NextResponse.json({ customers: customers ?? [], products: products ?? [] });
@@ -34,8 +34,10 @@ export async function POST(req: NextRequest) {
   if (!customer) return NextResponse.json({ error: "Customer not found." }, { status: 404 });
   let productName = clean(body.product_name, 120);
   if (productId) {
-    const { data: product } = await routeServiceClient.from("products").select("id,name").eq("id", productId).maybeSingle();
+    const { data: product } = await routeServiceClient.from("products").select("id,name,availability_status,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock,archived_at").eq("id", productId).maybeSingle();
     if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
+    if (product.archived_at || product.availability_status === "unavailable") return NextResponse.json({ error: "This product is not accepting proposals right now." }, { status: 409 });
+    if (product.inventory_policy === "track" && product.inventory_quantity < quantity && !product.continue_selling_when_out_of_stock) return NextResponse.json({ error: product.inventory_quantity > 0 ? `Only ${product.inventory_quantity} available.` : "This product is out of stock." }, { status: 409 });
     productName = product.name;
   }
   if (productName.length < 2) return NextResponse.json({ error: "Enter an item name." }, { status: 400 });

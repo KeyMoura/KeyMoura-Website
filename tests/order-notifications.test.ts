@@ -18,6 +18,12 @@ test("customer status changes use specific order notifications", () => {
   ]) assert.match(route, new RegExp(title));
 });
 
+test("notification center presents customer order updates as KeyMoura activity", () => {
+  const page = readFileSync("src/app/notifications/page.tsx", "utf8");
+  assert.match(page, /Order updates, messages, and activity across KeyMoura/);
+  assert.match(page, /isCustomerOrderUpdate/);
+});
+
 test("shipping and pickup notifications use distinct customer language", () => {
   const route = read("src/app/api/staff/orders/[id]/route.ts");
   assert.match(route, /title: delivered \? \(pickup \? "Pickup completed" : "Order delivered"\)/);

@@ -10,6 +10,8 @@ test("staff can compose and send an order proposal", () => {
   assert.match(page, /Create an order for a customer/);
   assert.match(page, /Customer preview/);
   assert.match(page, /Send proposal/);
+  assert.match(page, /starting_price_cents \* count/);
+  assert.match(page, /stockConflict/);
   assert.match(route, /requirePermission\(req, "orders\.manage"\)/);
   assert.match(route, /initiated_by_staff: true/);
   assert.match(route, /New order proposal/);
@@ -24,6 +26,17 @@ test("customer can accept or decline a staff proposal", () => {
   assert.match(route, /Customer accepted staff proposal/);
   assert.match(route, /Customer declined proposal/);
   assert.match(route, /notifyOrderStaff/);
+  assert.match(route, /accept_staff_order_proposal/);
+});
+
+test("catalog proposals validate and atomically reserve inventory on acceptance", () => {
+  const createRoute = read("src/app/api/staff/orders/proposals/route.ts");
+  const migration = read("supabase/migrations/20260801040000_staff_proposal_inventory.sql");
+  assert.match(createRoute, /inventory_quantity < quantity/);
+  assert.match(migration, /for update/);
+  assert.match(migration, /inventory_quantity = inventory_quantity - reserved_quantity/);
+  assert.match(migration, /inventory_reserved_quantity = reserved_quantity/);
+  assert.match(migration, /grant execute .* to service_role/);
 });
 
 test("proposal schema distinguishes staff proposals from customer requests", () => {

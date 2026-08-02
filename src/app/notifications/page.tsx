@@ -415,7 +415,7 @@ export default function NotificationsPage() {
         <div>
           <h1 className="text-[18px] font-semibold text-brand-text">Notifications</h1>
           <p className="mt-1 text-[12px] text-brand-textMuted">
-            Your latest activity across the community.
+            Order updates, messages, and activity across KeyMoura.
           </p>
         </div>
 
@@ -472,7 +472,10 @@ export default function NotificationsPage() {
           {visible.map((n) => {
             const isRead = !!n.is_read;
             const actor = n.actor_user_id ? actorMap.get(n.actor_user_id) : null;
-            const isSystem = !n.actor_user_id;
+            const parsedPayload = parsePayload(n.payload);
+            const payloadHref = typeof parsedPayload["href"] === "string" ? parsedPayload["href"] : "";
+            const isCustomerOrderUpdate = n.type === "order" && !payloadHref.startsWith("/staff/");
+            const isSystem = !n.actor_user_id || isCustomerOrderUpdate;
             const actorName = isSystem
               ? siteSettings.shortName
               : actor?.display_name || actor?.username || "Someone";
@@ -485,9 +488,6 @@ export default function NotificationsPage() {
 
             const postId =
               fromPayload?.postId ?? (typeof n.post_id === "number" ? n.post_id : null);
-
-            const parsedPayload = parsePayload(n.payload);
-            const payloadHref = typeof parsedPayload["href"] === "string" ? parsedPayload["href"] : "";
 
             const base = fromPayload?.base ?? mappedBase ?? "/notifications";
             const href =
