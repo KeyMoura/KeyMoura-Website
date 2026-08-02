@@ -8,6 +8,22 @@ const allowedStatuses = new Set(["requested","needs_information","accepted","awa
 const allowedFulfillmentMethods = new Set(["shipping", "pickup"]);
 const optionalText = (value: unknown, max: number) => value === null ? null : typeof value === "string" ? value.trim().slice(0, max) || null : undefined;
 
+function customerStatusNotification(status: string, productName: string) {
+  const notifications: Record<string, { title: string; message: string }> = {
+    needs_information: { title: "More information needed", message: `KeyMoura needs more information before work can continue on ${productName}. Open the order and reply in chat.` },
+    accepted: { title: "Order request accepted", message: `KeyMoura accepted your ${productName} request. The quote and payment details will appear on your order page when ready.` },
+    awaiting_payment: { title: "Payment ready", message: `Payment is ready for ${productName}. Open the order to review the amount and pay securely.` },
+    in_progress: { title: "Production started", message: `Work has started on ${productName}. KeyMoura will notify you when it is ready for review.` },
+    customer_review: { title: "Quote ready for review", message: `A quote for ${productName} is ready. Open the order to review and approve it.` },
+    final_review: { title: "Finished product ready for review", message: `Your ${productName} is ready to review. View the photos and note, then approve it or request revisions.` },
+    ready: { title: "Order ready for fulfillment", message: `${productName} is approved and moving to fulfillment.` },
+    completed: { title: "Order completed", message: `${productName} has been marked complete.` },
+    declined: { title: "Order request declined", message: `KeyMoura declined the ${productName} request. Open the order for details or to send a message.` },
+    cancelled: { title: "Order cancelled", message: `${productName} was cancelled. Open the order for the cancellation details and refund status.` },
+  };
+  return notifications[status] ?? { title: "Order status updated", message: `Your order status changed to ${status.replaceAll("_", " ")}.` };
+}
+
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const actor = await requirePermission(req, "orders.manage");
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -106,7 +122,8 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   const statusChanged = typeof update.status === "string" && update.status !== existing.status;
   if (priceBecamePayable || (statusChanged && !shipmentAction)) {
     const finalStatus = String(update.status || existing.status).replaceAll("_", " ");
-    const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : update.status === "final_review" ? "Your finished product is ready to review. View the photos and note, then approve it from your order page." : `Your order status changed to ${finalStatus}.`;
+    const statusNotification = customerStatusNotification(String(update.status || existing.status), existing.product_name);
+    const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : statusNotification.message;
     const config = await getCommerceEmailConfig();
     const templateKey: CommerceEmailTemplateKey = priceBecamePayable ? "quote_ready" : update.status === "needs_information" ? "needs_information" : "status_update";
     if ((priceBecamePayable || update.status === "awaiting_payment") ? config.sendPaymentUpdates : config.sendStatusUpdates) await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-update-${id}-${historyId}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your request", status:finalStatus, price:typeof update.agreed_price_cents === "number" ? `$${(update.agreed_price_cents/100).toFixed(2)}` : "Price pending" } });
@@ -114,17 +131,28 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       orderId: id,
       actorUserId: actor.userId,
       recipientUserId: existing.customer_id,
-      title: priceBecamePayable ? "Quote ready for review" : update.status === "final_review" ? "Finished product ready for review" : "Order status updated",
+      title: priceBecamePayable ? "Quote ready for review" : statusNotification.title,
       message,
     });
   }
   if ((shipmentAction === "mark_shipped" && !existing.shipped_at) || (shipmentAction === "mark_delivered" && !existing.delivered_at)) {
     const delivered = shipmentAction === "mark_delivered";
+    const pickup = (update.fulfillment_method || existing.fulfillment_method) === "pickup";
     const templateKey: CommerceEmailTemplateKey = delivered ? "order_delivered" : "order_shipped";
     const carrier = String(update.shipping_carrier || existing.shipping_carrier || (update.fulfillment_method === "pickup" || existing.fulfillment_method === "pickup" ? "KeyMoura pickup" : "Carrier"));
     const trackingNumber = String(update.tracking_number || existing.tracking_number || "Not applicable");
     await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-fulfillment-${id}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your order", status:delivered ? "delivered" : "shipped", price:"", carrier, tracking_number:trackingNumber }, href:!delivered && String(update.tracking_url || existing.tracking_url || "").startsWith("https://") ? String(update.tracking_url || existing.tracking_url) : `/orders/${id}` });
-    await notifyOrderUser({ orderId:id, actorUserId:actor.userId, recipientUserId:existing.customer_id, title:delivered ? "Order delivered" : "Order shipped", message:delivered ? `${existing.product_name} was marked delivered.` : `${existing.product_name} has shipped. Tracking: ${trackingNumber}` });
+    await notifyOrderUser({
+      orderId:id,
+      actorUserId:actor.userId,
+      recipientUserId:existing.customer_id,
+      title: delivered ? (pickup ? "Pickup completed" : "Order delivered") : (pickup ? "Ready for pickup" : "Order shipped"),
+      message: delivered
+        ? `${existing.product_name} was marked ${pickup ? "picked up" : "delivered"}.`
+        : pickup
+          ? `${existing.product_name} is ready for pickup. Open the order for details.`
+          : `${existing.product_name} has shipped. Tracking: ${trackingNumber}`,
+    });
   }
   return NextResponse.json({ ok: true });
 }
