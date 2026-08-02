@@ -9,19 +9,23 @@ const quoteRoute = readFileSync("src/app/api/orders/[id]/quote/route.ts", "utf8"
 const webhook = readFileSync("src/app/api/webhooks/stripe/route.ts", "utf8");
 const staffPage = readFileSync("src/app/staff/orders/[id]/page.tsx", "utf8");
 const footer = readFileSync("src/components/SiteFooter.tsx", "utf8");
+const accountingMigration = readFileSync("supabase/migrations/20260801080000_atomic_payment_accounting.sql", "utf8");
 
 test("payments and refunds have protected, itemized records", () => {
   assert.match(migration, /create table if not exists public\.order_payments/);
   assert.match(migration, /create table if not exists public\.order_refunds/);
   assert.match(migration, /stripe_payment_intent_id text not null unique/);
   assert.match(migration, /enable row level security/);
-  assert.match(webhook, /from\("order_payments"\)\.insert/);
+  assert.match(webhook, /record_stripe_order_payment/);
+  assert.match(accountingMigration, /insert into public\.order_payments/);
+  assert.match(accountingMigration, /on conflict \(stripe_payment_intent_id\) do nothing/);
 });
 
 test("staff refunds are permission checked, bounded, confirmed, and idempotent", () => {
   assert.match(refundRoute, /requirePermission\(req, "orders\.manage"\)/);
   assert.match(refundRoute, /Refund exceeds the refundable amount/);
   assert.match(refundRoute, /idempotencyKey/);
+  assert.match(refundRoute, /record_stripe_order_refund/);
   assert.match(staffPage, /This cannot be undone/);
   assert.match(staffPage, /Cancelling an order does not move money/);
 });

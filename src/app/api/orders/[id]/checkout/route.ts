@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser, routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { checkoutAmountCents, netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
+import { captureCommerceException } from "@/lib/monitoring";
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await requireUser(req);
@@ -33,16 +34,21 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     }
   }
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://keymoura.com").replace(/\/$/, "");
+  const collectedBeforeCheckout = netCollectedCents(order);
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     customer_email: user.email,
     client_reference_id: order.id,
-    metadata: { order_id: order.id, customer_id: user.id, payment_kind: netCollectedCents(order) > 0 ? "balance" : amountDue < remaining ? "deposit" : "full" },
+    metadata: { order_id: order.id, customer_id: user.id, payment_kind: collectedBeforeCheckout > 0 ? "balance" : amountDue < remaining ? "deposit" : "full" },
     payment_intent_data: { metadata: { order_id: order.id, customer_id: user.id } },
-    line_items: [{ quantity: 1, price_data: { currency: "usd", unit_amount: amountDue, product_data: { name: `${order.order_number || "KeyMoura order"} · ${order.product_name} · ${netCollectedCents(order) > 0 ? "remaining balance" : amountDue < remaining ? "deposit" : "payment"}` } } }],
+    line_items: [{ quantity: 1, price_data: { currency: "usd", unit_amount: amountDue, product_data: { name: `${order.order_number || "KeyMoura order"} · ${order.product_name} · ${collectedBeforeCheckout > 0 ? "remaining balance" : amountDue < remaining ? "deposit" : "payment"}` } } }],
     success_url: `${siteUrl}/orders/${order.id}?payment=success`,
     cancel_url: `${siteUrl}/orders/${order.id}?payment=cancelled`,
-  });
-  await routeServiceClient.from("orders").update({ stripe_checkout_session_id: session.id, payment_status: "unpaid", status: "awaiting_payment" }).eq("id", order.id).eq("customer_id", user.id);
+  }, { idempotencyKey: `checkout-${order.id}-${amountDue}-${collectedBeforeCheckout}` });
+  const update = await routeServiceClient.from("orders").update({ stripe_checkout_session_id: session.id, payment_status: "unpaid", status: "awaiting_payment" }).eq("id", order.id).eq("customer_id", user.id);
+  if (update.error) {
+    captureCommerceException(update.error, { operation: "save_checkout_session", orderId: order.id });
+    return NextResponse.json({ error: "Could not prepare checkout. Please try again." }, { status: 500 });
+  }
   return NextResponse.json({ url: session.url });
 }

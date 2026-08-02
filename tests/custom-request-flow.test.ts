@@ -8,6 +8,7 @@ const quoteRoute = readFileSync("src/app/api/orders/[id]/quote/route.ts", "utf8"
 const checkout = readFileSync("src/app/api/orders/[id]/checkout/route.ts", "utf8");
 const webhook = readFileSync("src/app/api/webhooks/stripe/route.ts", "utf8");
 const migration = readFileSync("supabase/migrations/20260801010000_custom_request_quotes_payments.sql", "utf8");
+const accountingMigration = readFileSync("supabase/migrations/20260801080000_atomic_payment_accounting.sql", "utf8");
 
 test("custom request is a guided draftable review flow", () => {
   for (const label of ["Project", "Specs & files", "Delivery", "Review", "Save draft", "Submit request — no charge"]) assert.match(page, new RegExp(label));
@@ -30,10 +31,11 @@ test("quote approval is customer-owned and revision-specific", () => {
 test("stripe supports deposit then remaining balance without overpayment", () => {
   assert.match(checkout, /amountDue/);
   assert.match(checkout, /payment_kind/);
-  assert.match(webhook, /newNetCollected > order\.agreed_price_cents/);
-  assert.match(webhook, /payment_status: fullyPaid \? "paid" : "partial"/);
-  assert.match(webhook, /from\("order_status_history"\)\.insert/);
-  assert.match(webhook, /Deposit received; production started/);
+  assert.match(webhook, /record_stripe_order_payment/);
+  assert.match(accountingMigration, /new_net > selected_order\.agreed_price_cents/);
+  assert.match(accountingMigration, /when fully_paid then 'paid' else 'partial'/);
+  assert.match(accountingMigration, /insert into public\.order_status_history/);
+  assert.match(accountingMigration, /Deposit received; production started/);
 });
 
 test("drafts and quotes have explicit RLS boundaries", () => {

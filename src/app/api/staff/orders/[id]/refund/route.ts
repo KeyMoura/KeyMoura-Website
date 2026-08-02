@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { notifyOrderUser } from "@/lib/orderNotifications";
+import { captureCommerceException } from "@/lib/monitoring";
 
 export const runtime = "nodejs";
 
@@ -42,23 +43,23 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       reason: "requested_by_customer",
       metadata: { order_id: id, staff_user_id: actor.userId, internal_reason: reason.slice(0, 450) },
     }, { idempotencyKey: `order-${id}-payment-${payment.id}-refunded-${payment.amount_refunded_cents}-amount-${refundAmount}` });
-    const { error: refundError } = await routeServiceClient.from("order_refunds").insert({
-      order_id: id, order_payment_id: payment.id, stripe_refund_id: refund.id,
-      amount_cents: refundAmount, reason, created_by: actor.userId,
+    const { data: accounting, error: refundError } = await routeServiceClient.rpc("record_stripe_order_refund", {
+      p_order_id: id,
+      p_order_payment_id: payment.id,
+      p_stripe_refund_id: refund.id,
+      p_amount_cents: refundAmount,
+      p_reason: reason,
+      p_created_by: actor.userId,
     });
-    if (refundError) return NextResponse.json({ error: "Stripe accepted the refund, but its local record needs attention." }, { status: 500 });
-    await routeServiceClient.from("order_payments")
-      .update({ amount_refunded_cents: payment.amount_refunded_cents + refundAmount }).eq("id", payment.id);
-    totalRefunded += refundAmount;
-    await routeServiceClient.from("orders").update({ amount_refunded_cents:totalRefunded }).eq("id", id);
+    if (refundError) {
+      captureCommerceException(refundError, { operation: "record_refund", orderId: id });
+      return NextResponse.json({ error: "Stripe accepted the refund, but its local record needs attention." }, { status: 500 });
+    }
+    const result = accounting as { amount_refunded_cents?: number } | null;
+    totalRefunded = Number(result?.amount_refunded_cents ?? totalRefunded + refundAmount);
     remaining -= refundAmount;
   }
 
-  const fullyRefunded = totalRefunded >= (order.amount_paid_cents || 0);
-  await routeServiceClient.from("orders").update({
-    amount_refunded_cents: totalRefunded,
-    payment_status: fullyRefunded ? "refunded" : order.payment_status,
-  }).eq("id", id).eq("amount_refunded_cents", totalRefunded);
   await notifyOrderUser({ orderId:id, actorUserId:actor.userId, recipientUserId:order.customer_id,
     title:"Refund issued", message:`A $${(Number(amount) / 100).toFixed(2)} refund was issued. Your bank may take several business days to post it.` });
   return NextResponse.json({ ok: true, amount_refunded_cents: totalRefunded });
