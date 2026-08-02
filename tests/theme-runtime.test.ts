@@ -107,3 +107,40 @@ test("public navbar and expanded surface choices normalize independently", () =>
 
   assert.equal(normalizeSiteTheme({}).publicNavigationStyle, "classic");
 });
+
+test("navbar utility control colors normalize independently of the shared navbar palette", () => {
+  const theme = normalizeSiteTheme({
+    navigationBackground: "#101010",
+    navigationUtilityBackground: "#202020",
+    navigationUtilityBorder: "#303030",
+    navigationUtilityText: "#e0e0e0",
+    navigationUtilityHoverBackground: "#404040",
+    navigationUtilityHoverBorder: "#505050",
+    navigationUtilityHoverText: "#f0f0f0",
+  });
+
+  assert.equal(theme.navigationBackground, "#101010");
+  assert.equal(theme.navigationUtilityBackground, "#202020");
+  assert.equal(theme.navigationUtilityBorder, "#303030");
+  assert.equal(theme.navigationUtilityText, "#e0e0e0");
+  assert.equal(theme.navigationUtilityHoverBackground, "#404040");
+  assert.equal(theme.navigationUtilityHoverBorder, "#505050");
+  assert.equal(theme.navigationUtilityHoverText, "#f0f0f0");
+});
+
+test("missing saved navbar utility values normalize to their neutral defaults", () => {
+  const theme = normalizeSiteTheme({});
+  assert.equal(theme.navigationUtilityBackground, defaultSiteTheme.navigationUtilityBackground);
+  assert.equal(theme.navigationUtilityBorder, defaultSiteTheme.navigationUtilityBorder);
+  assert.equal(theme.navigationUtilityText, defaultSiteTheme.navigationUtilityText);
+  assert.equal(theme.navigationUtilityHoverBackground, defaultSiteTheme.navigationUtilityHoverBackground);
+  assert.equal(theme.navigationUtilityHoverBorder, defaultSiteTheme.navigationUtilityHoverBorder);
+  assert.equal(theme.navigationUtilityHoverText, defaultSiteTheme.navigationUtilityHoverText);
+
+  // A pre-existing saved theme_config from before these fields existed (only unrelated
+  // keys set) must still normalize cleanly to the same neutral defaults.
+  const legacy = normalizeSiteTheme({ radius: "pill", navigationBackground: "#111111" });
+  assert.equal(legacy.navigationUtilityBackground, defaultSiteTheme.navigationUtilityBackground);
+  assert.equal(legacy.navigationUtilityBorder, defaultSiteTheme.navigationUtilityBorder);
+  assert.equal(legacy.navigationUtilityText, defaultSiteTheme.navigationUtilityText);
+});

@@ -172,6 +172,12 @@ export default function AppearancePage() {
     "--km-nav-text": form.theme.navigationText,
     "--km-nav-active": form.theme.navigationActiveText,
     "--km-nav-border": form.theme.navigationBorder,
+    "--km-nav-util-bg": form.theme.navigationUtilityBackground,
+    "--km-nav-util-border": form.theme.navigationUtilityBorder,
+    "--km-nav-util-text": form.theme.navigationUtilityText,
+    "--km-nav-util-hover-bg": form.theme.navigationUtilityHoverBackground,
+    "--km-nav-util-hover-border": form.theme.navigationUtilityHoverBorder,
+    "--km-nav-util-hover-text": form.theme.navigationUtilityHoverText,
   } as CSSProperties;
 
   const setTheme = <Key extends keyof SiteTheme>(key: Key, value: SiteTheme[Key]) =>
@@ -182,7 +188,7 @@ export default function AppearancePage() {
   const resetSection = () => setForm((current) => {
     if (section === "theme") return { ...current, primaryColor: saved.primaryColor, accentColor: saved.accentColor, theme: saved.theme };
     if (section === "navigation") {
-      const keys = ["publicNavigationStyle", "navigationBehavior", "navigationDensity", "navigationBackground", "navigationText", "navigationActiveText", "navigationBorder"] as const;
+      const keys = ["publicNavigationStyle", "navigationBehavior", "navigationDensity", "navigationBackground", "navigationText", "navigationActiveText", "navigationBorder", "navigationUtilityBackground", "navigationUtilityBorder", "navigationUtilityText", "navigationUtilityHoverBackground", "navigationUtilityHoverBorder", "navigationUtilityHoverText"] as const;
       return { ...current, theme: { ...current.theme, ...Object.fromEntries(keys.map((key) => [key, saved.theme[key]])) } };
     }
     const keys: Array<keyof Identity> = section === "brand"
@@ -271,6 +277,16 @@ export default function AppearancePage() {
               <AppearanceGroup title="Navbar colors" description="Change the header without recoloring cards, buttons, or page content.">
                 <div className="grid gap-4 sm:grid-cols-2"><ColorField label="Navbar background" value={form.theme.navigationBackground} onChange={(value) => setTheme("navigationBackground", value)} /><ColorField label="Navbar text" value={form.theme.navigationText} onChange={(value) => setTheme("navigationText", value)} /><ColorField label="Active link" value={form.theme.navigationActiveText} onChange={(value) => setTheme("navigationActiveText", value)} /><ColorField label="Navbar border" value={form.theme.navigationBorder} onChange={(value) => setTheme("navigationBorder", value)} /></div>
               </AppearanceGroup>
+              <AppearanceGroup title="Navbar utility controls" description="Search, messages, notifications, the account pill, and the staff pill keep their own colors here — they no longer follow the site's primary or secondary/accent colors.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ColorField label="Utility background" value={form.theme.navigationUtilityBackground} onChange={(value) => setTheme("navigationUtilityBackground", value)} />
+                  <ColorField label="Utility border" value={form.theme.navigationUtilityBorder} onChange={(value) => setTheme("navigationUtilityBorder", value)} />
+                  <ColorField label="Utility text" value={form.theme.navigationUtilityText} onChange={(value) => setTheme("navigationUtilityText", value)} />
+                  <ColorField label="Utility hover background" value={form.theme.navigationUtilityHoverBackground} onChange={(value) => setTheme("navigationUtilityHoverBackground", value)} />
+                  <ColorField label="Utility hover border" value={form.theme.navigationUtilityHoverBorder} onChange={(value) => setTheme("navigationUtilityHoverBorder", value)} />
+                  <ColorField label="Utility hover text" value={form.theme.navigationUtilityHoverText} onChange={(value) => setTheme("navigationUtilityHoverText", value)} />
+                </div>
+              </AppearanceGroup>
               <NavbarPreview form={form} />
             </> : null}
 
@@ -330,7 +346,7 @@ function AppearancePreview({ form }: { form: Appearance }) {
 }
 
 function NavbarPreview({ form }: { form: Appearance }) {
-  return <section className="space-y-3"><div><h3 className="text-sm font-semibold">Navbar preview</h3><p className="mt-1 text-xs text-brand-textMuted">Desktop link treatment and the independent navbar palette.</p></div><div className="site-header-shell rounded-[var(--control-radius)] border px-3 py-2"><div className="flex flex-wrap items-center justify-center gap-2"><span className="mr-2 font-semibold text-[var(--km-nav-active)]">{(form.identity.shortName || "KM").slice(0, 2).toUpperCase()}</span>{["About", "Projects", "Catalog", "Community"].map((label) => <span key={label} className={cx("site-nav-link inline-flex items-center border px-3 py-1.5 text-xs font-medium", label === "Projects" && "is-active")}>{label}</span>)}</div></div></section>;
+  return <section className="space-y-3"><div><h3 className="text-sm font-semibold">Navbar preview</h3><p className="mt-1 text-xs text-brand-textMuted">Desktop link treatment, the independent navbar palette, and the utility controls on the right.</p></div><div className="site-header-shell rounded-[var(--control-radius)] border px-3 py-2"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap items-center gap-2"><span className="mr-2 font-semibold text-[var(--km-nav-active)]">{(form.identity.shortName || "KM").slice(0, 2).toUpperCase()}</span>{["About", "Projects", "Catalog", "Community"].map((label) => <span key={label} className={cx("site-nav-link inline-flex items-center border px-3 py-1.5 text-xs font-medium", label === "Projects" && "is-active")}>{label}</span>)}</div><div className="flex flex-wrap items-center gap-2">{["Search", "Messages", "Notifications", "Account", "Staff"].map((label, index) => <span key={label} className={cx("site-nav-utility inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium", index === 2 && "is-highlighted")}>{label}</span>)}</div></div></div></section>;
 }
 
 function SectionTitle({ title, text }: { title: string; text: string }) {
