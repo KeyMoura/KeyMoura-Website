@@ -7,6 +7,7 @@ import { MenuSelect } from "@/components/ui/MenuSelect";
 import { availabilityLabel, CatalogProduct, inventoryLabel, money, productCanBeRequested, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { allowsRequest, normalizePurchaseMode } from "@/lib/commerce/purchaseModes";
 import AddToCartButton from "@/components/commerce/AddToCartButton";
+import WishlistButton from "@/components/commerce/WishlistButton";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { emptyShippingAddress, type FulfillmentMethod, type ShippingAddress, validateUpload } from "@/lib/checkout";
 
@@ -67,6 +68,17 @@ export default function ProductRequestPage() {
     return total + (chosen?.price_adjustment_cents ?? 0);
   }, 0), [groups, selections]);
   const estimated = product?.starting_price_cents == null ? null : (product.starting_price_cents + choicePrice) * quantity;
+
+  // A wishlist entry stores string option values only. Checkbox and file
+  // selections are request-wizard state, not a saveable configuration, so they
+  // are dropped rather than coerced into something the server would reject.
+  const savedOptions = useMemo(() => {
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(selections)) {
+      if (typeof value === "string" && value) result[key] = value;
+    }
+    return result;
+  }, [selections]);
 
   function validateStep(target: 1 | 2) {
     if (target === 1) {
@@ -191,6 +203,16 @@ export default function ProductRequestPage() {
               startingPriceCents={product.starting_price_cents}
               available={canRequest}
               requestHref="#request-form"
+            />
+            {/* Saving is offered for every product, including request-only ones:
+                a wishlist records intent, not purchasability. The chosen options
+                ride along so the saved entry is this configuration, not just the
+                product. */}
+            <WishlistButton
+              productId={product.id}
+              productName={product.name}
+              selectedOptions={savedOptions}
+              className="mt-3"
             />
           </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">

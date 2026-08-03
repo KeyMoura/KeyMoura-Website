@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import CartSharePanel from "@/components/commerce/CartSharePanel";
 import { formatCents, useCart, useCartMutations } from "@/lib/hooks/useCart";
 
 /**
@@ -117,21 +118,31 @@ export default function CartPage() {
       ) : null}
 
       {!items.length ? (
-        <div className="ui-empty-state mt-8 !p-10">
-          <h2 className="text-xl font-semibold text-brand-text">Your cart is empty.</h2>
-          <p className="mt-2">Browse the catalog, or start a custom request if you need something made to order.</p>
-          <div className="ui-action-row mt-5 justify-center">
-            <Link href="/catalog" className="ui-btn ui-btn-primary">
-              Browse the catalog
-            </Link>
-            <Link href="/orders/new" className="ui-btn ui-btn-secondary">
-              Start a custom request
-            </Link>
+        <>
+          <div className="ui-empty-state mt-8 !p-10">
+            <h2 className="text-xl font-semibold text-brand-text">Your cart is empty.</h2>
+            <p className="mt-2">Browse the catalog, or start a custom request if you need something made to order.</p>
+            <div className="ui-action-row mt-5 justify-center">
+              <Link href="/catalog" className="ui-btn ui-btn-primary">
+                Browse the catalog
+              </Link>
+              <Link href="/orders/new" className="ui-btn ui-btn-secondary">
+                Start a custom request
+              </Link>
+            </div>
           </div>
-        </div>
+
+          {/* Still rendered with an empty cart, because a link shared earlier
+              outlives the cart it came from. Hiding this here would make an
+              already-public snapshot unrevocable the moment its owner checked
+              out or cleared the cart. */}
+          <div className="mt-6 max-w-md">
+            <CartSharePanel canShare={false} />
+          </div>
+        </>
       ) : (
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
-          <section aria-labelledby="cart-items" className="ui-card">
+          <section aria-labelledby="cart-items" className="ui-card lg:col-start-1">
             <h2 id="cart-items" className="sr-only">
               Items in your cart
             </h2>
@@ -203,7 +214,11 @@ export default function CartPage() {
             </div>
           </section>
 
-          <aside aria-labelledby="cart-summary" className="ui-card lg:sticky lg:top-24">
+          {/* The summary and the share panel travel together in the second
+              column, so the pair sticks as one block rather than the share
+              controls scrolling out from under the totals. */}
+          <div className="grid gap-6 lg:sticky lg:top-24">
+          <aside aria-labelledby="cart-summary" className="ui-card">
             <h2 id="cart-summary" className="text-lg font-semibold">
               Summary
             </h2>
@@ -287,6 +302,9 @@ export default function CartPage() {
               You will be asked to sign in before paying.
             </p>
           </aside>
+
+          <CartSharePanel canShare={items.length > 0} />
+          </div>
         </div>
       )}
     </main>
