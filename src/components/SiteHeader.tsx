@@ -1467,6 +1467,11 @@ export default function SiteHeader() {
               🔍
             </button>
 
+            {/* The mobile bar carries the cart too. The desktop utilities row
+                is hidden below lg, so without this a phone user could fill a
+                cart and have no way back to it. */}
+            <CartIndicator />
+
             {user ? (
               <>
                 <MessageBell

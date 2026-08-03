@@ -90,3 +90,19 @@ test("clearing the cart also drops the stored discount code", () => {
   const body = cartService.slice(cartService.indexOf("export async function clearCart"));
   assert.match(body.slice(0, body.indexOf("\n}")), /discount_code: null/);
 });
+
+test("the cart indicator is reachable on mobile as well as desktop", () => {
+  const header = readFileSync(new URL("../src/components/SiteHeader.tsx", import.meta.url), "utf8");
+  // The desktop utilities row is hidden below lg, so a single mount would
+  // leave a phone user with a full cart and no way back to it.
+  const mounts = header.match(/<CartIndicator \/>/g) ?? [];
+  assert.equal(mounts.length, 2, "CartIndicator must be mounted in both the desktop and mobile bars");
+});
+
+test("the cart drawer is a dialog that returns focus and closes on Escape", () => {
+  const indicator = readFileSync(new URL("../src/components/commerce/CartIndicator.tsx", import.meta.url), "utf8");
+  assert.match(indicator, /role="dialog"/);
+  assert.match(indicator, /aria-expanded=\{open\}/);
+  assert.match(indicator, /event\.key === "Escape"/);
+  assert.match(indicator, /buttonRef\.current\?\.focus\(\)/);
+});
