@@ -8,11 +8,13 @@ import {
   type CatalogProduct,
 } from "@/lib/commerceTypes";
 import type { ProductMediaRef } from "@/lib/productImages";
+import { normalizePurchaseMode, type PurchaseMode } from "@/lib/commerce/purchaseModes";
 
 export type ProductCardProduct = Pick<
   CatalogProduct,
   "id" | "name" | "slug" | "short_description" | "image_url" | "category" | "starting_price_cents" | "is_custom"
 > &
+  Partial<Pick<CatalogProduct, "purchase_mode">> &
   Partial<
     Pick<
       CatalogProduct,
@@ -22,6 +24,23 @@ export type ProductCardProduct = Pick<
 
 export function productPrice(cents: number | null | undefined): string {
   return cents == null ? "Price after review" : `From $${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * A directly purchasable product has a real price, not a starting point, so
+ * "From $40" would understate what the customer is actually committing to.
+ */
+export function priceLabel(mode: PurchaseMode, cents: number | null | undefined): string {
+  if (cents == null) return "Price after review";
+  if (mode === "direct_purchase") return `$${(cents / 100).toFixed(2)}`;
+  return `From $${(cents / 100).toFixed(2)}`;
+}
+
+export function cardAction(mode: PurchaseMode, available: boolean): string {
+  if (!available) return "View";
+  if (mode === "direct_purchase") return "Buy now";
+  if (mode === "direct_or_request") return "Buy or customize";
+  return "Customize";
 }
 
 type ProductCardProps = {
@@ -42,6 +61,7 @@ type ProductCardProps = {
  */
 export default function ProductCard({ product, showAvailability = true, priority = false }: ProductCardProps) {
   const href = `/catalog/${product.slug}`;
+  const mode = normalizePurchaseMode(product.purchase_mode);
   const canRequest =
     product.availability_status == null
       ? true
@@ -82,8 +102,8 @@ export default function ProductCard({ product, showAvailability = true, priority
         ) : null}
 
         <div className="product-card-footer">
-          <p className="text-sm font-semibold text-brand-primary">{productPrice(product.starting_price_cents)}</p>
-          <span className="product-card-action">{canRequest ? "Customize" : "View"}</span>
+          <p className="text-sm font-semibold text-brand-primary">{priceLabel(mode, product.starting_price_cents)}</p>
+          <span className="product-card-action">{cardAction(mode, canRequest)}</span>
         </div>
       </div>
     </article>

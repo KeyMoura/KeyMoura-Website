@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   if (inserted.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
   if (inserted.error) return NextResponse.json({ error: "Could not record event" }, { status: 500 });
 
-  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,agreed_price_cents").eq("id", orderId).maybeSingle();
+  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,agreed_price_cents,order_kind").eq("id", orderId).maybeSingle();
   if (!order || !order.agreed_price_cents || session.metadata?.customer_id !== order.customer_id) {
     await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
     return NextResponse.json({ error: "Order amount mismatch" }, { status: 409 });
@@ -73,6 +73,49 @@ export async function POST(req: NextRequest) {
   }
   const fullyPaid = Boolean(result.fully_paid);
   const newNetCollected = Number(result.amount_paid_cents || 0);
+
+  // A direct purchase empties its cart only now, once payment is confirmed.
+  // Clearing it at session creation would lose the customer's items if they
+  // abandoned Stripe; clearing it on the success redirect would trust a URL.
+  if (order.order_kind === "direct_purchase") {
+    const { data: convertedCart } = await routeServiceClient
+      .from("carts")
+      .select("id")
+      .eq("converted_order_id", orderId)
+      .maybeSingle();
+
+    if (convertedCart) {
+      await routeServiceClient.from("cart_items").delete().eq("cart_id", convertedCart.id);
+      await routeServiceClient
+        .from("carts")
+        .update({ status: "converted", discount_code: null, updated_at: new Date().toISOString() })
+        .eq("id", convertedCart.id);
+    }
+
+    // The redemption is recorded against the paid order, so per-customer and
+    // total-use limits count real purchases rather than attempts. The RPC locks
+    // the code row and is a no-op on repeat, so a replayed webhook cannot
+    // double-count a use or race another checkout past the limit.
+    const { data: paidOrder } = await routeServiceClient
+      .from("orders")
+      .select("discount_code_id,discount_cents")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (paidOrder?.discount_code_id && Number(paidOrder.discount_cents) > 0) {
+      const { error: redeemError } = await routeServiceClient.rpc("redeem_discount_code", {
+        p_code_id: paidOrder.discount_code_id,
+        p_order_id: orderId,
+        p_customer_id: order.customer_id,
+        p_amount_cents: Number(paidOrder.discount_cents),
+      });
+      // A failed redemption must not fail the payment: the money is already
+      // taken and the order is settled. Surface it instead of throwing.
+      if (redeemError) {
+        captureCommerceException(redeemError, { operation: "redeem_discount", orderId, stripeEventId: event.id });
+      }
+    }
+  }
   const { data: authUser } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
   const config = await getCommerceEmailConfig();
   if (config.sendPaymentUpdates) await sendCommerceEmail({ to:authUser.user?.email, orderId, templateKey:"payment_received", eventKey:`stripe-paid-${event.id}`, variables:{ customer_name:authUser.user?.user_metadata?.display_name || authUser.user?.email?.split("@")[0] || "Customer", product_name:order.product_name, order_label:order.order_number || "your KeyMoura order", status:fullyPaid ? "paid in full" : "deposit received", price:`$${(session.amount_total/100).toFixed(2)}` } });

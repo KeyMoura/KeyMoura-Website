@@ -31,7 +31,7 @@ async function loadFeaturedProducts(): Promise<ProductCardProduct[]> {
     const { data } = await client
       .from("products")
       .select(
-        "id,name,slug,short_description,image_url,category,starting_price_cents,is_custom,availability_status,lead_time_text,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock"
+        "id,name,slug,short_description,image_url,category,category_id,purchase_mode,starting_price_cents,is_custom,availability_status,lead_time_text,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock"
       )
       .eq("is_published", true)
       .is("archived_at", null)

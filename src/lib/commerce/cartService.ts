@@ -455,8 +455,6 @@ export async function addCartItem(
   return { ok: true };
 }
 
-export const MAX_CART_LINES = 50;
-
 /** Changes a line's quantity. Scoped to the caller's own cart. */
 export async function updateCartItemQuantity(
   owner: CartOwner,
