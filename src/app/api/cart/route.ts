@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { consumeRateLimit, rateLimitMessage, RATE_LIMITS } from "@/lib/commerce/rateLimit";
 import {
   addCartItem,
   clearCart,
@@ -82,6 +83,20 @@ export async function PATCH(req: NextRequest) {
   const resolved = await resolveOwnerForWrite(req);
   if (!resolved.owner) return NextResponse.json({ error: "Your cart is empty." }, { status: 404 });
   await settleGuestMerge(resolved);
+
+  const isDiscountAttempt = typeof body.discountCode === "string" && body.discountCode.trim() !== "";
+
+  // Submitting codes is how a discount list gets enumerated: the reply
+  // distinguishes "not recognized" from "expired", which is exactly the oracle
+  // a guessing loop needs. Clearing a code is not an attempt and is not counted.
+  if (isDiscountAttempt) {
+    const identity =
+      "customerId" in resolved.owner ? `user:${resolved.owner.customerId}` : `guest:${resolved.owner.guestToken}`;
+    const verdict = await consumeRateLimit(RATE_LIMITS.discountAttempt, identity);
+    if (!verdict.allowed) {
+      return respondWithCart(resolved, { error: rateLimitMessage(verdict), status: 429 });
+    }
+  }
 
   const result =
     typeof body.discountCode === "string" || body.discountCode === null
