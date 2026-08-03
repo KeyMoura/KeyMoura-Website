@@ -3,7 +3,12 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 import {
+  clampQuantity,
+  isRejected,
+  lineSignature,
+  MAX_LINE_QUANTITY,
   priceCart,
+  priceLine,
   type PricedCart,
   type PricedOptionGroup,
   type PricedOptionValue,
@@ -60,9 +65,8 @@ export type ResolvedCart = {
   priced: PricedCart;
   totals: CartTotals;
   discount: DiscountResult | null;
-  /** Items in storage that map to a priced line, keyed by cart_item id. */
-  itemIds: Map<string, string>;
 };
+
 
 const PRODUCT_COLUMNS =
   "id,name,slug,is_published,archived_at,purchase_mode,starting_price_cents,availability_status,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock,category_id";
@@ -101,18 +105,27 @@ export async function loadPricedProducts(productIds: readonly string[]): Promise
   const unique = Array.from(new Set(productIds)).filter(Boolean);
   if (!unique.length) return new Map();
 
-  const [{ data: products }, { data: groups }, { data: values }] = await Promise.all([
+  const [{ data: products }, { data: groups }] = await Promise.all([
     routeServiceClient.from("products").select(PRODUCT_COLUMNS).in("id", unique),
     routeServiceClient
       .from("product_option_groups")
       .select("id,product_id,name,option_key,input_type,is_required,sort_order")
       .in("product_id", unique)
       .order("sort_order"),
-    routeServiceClient
-      .from("product_option_values")
-      .select("id,option_group_id,label,value,price_adjustment_cents,is_active,requires_request,sort_order")
-      .order("sort_order"),
   ]);
+
+  // Option values must be fetched *after* the groups and scoped to them. An
+  // unfiltered read returns every option value on the site and silently stops
+  // at PostgREST's row cap, which would drop real values and make a required
+  // option unresolvable — rejecting a line the customer legitimately chose.
+  const groupIds = (groups ?? []).map((group) => group.id as string);
+  const { data: values } = groupIds.length
+    ? await routeServiceClient
+        .from("product_option_values")
+        .select("id,option_group_id,label,value,price_adjustment_cents,is_active,requires_request,sort_order")
+        .in("option_group_id", groupIds)
+        .order("sort_order")
+    : { data: [] as Record<string, unknown>[] };
 
   const valuesByGroup = new Map<string, PricedOptionValue[]>();
   for (const value of values ?? []) {
@@ -264,7 +277,7 @@ export async function loadCartItems(cartId: string): Promise<StoredCartItem[]> {
  */
 export async function resolveLines(
   lines: readonly RequestedLine[],
-  options: { discountCode?: string | null; customerId?: string | null; itemIds?: Map<string, string> } = {}
+  options: { discountCode?: string | null; customerId?: string | null } = {}
 ): Promise<ResolvedCart> {
   const products = await loadPricedProducts(lines.map((line) => line.productId));
   const priced = priceCart(products, lines);
@@ -293,7 +306,6 @@ export async function resolveLines(
     priced,
     totals: cartTotals(priced.subtotalCents, discountCents),
     discount,
-    itemIds: options.itemIds ?? new Map(),
   };
 }
 
@@ -304,7 +316,6 @@ export async function resolveCart(owner: CartOwner | null): Promise<ResolvedCart
     priced: { lines: [], rejected: [], subtotalCents: 0, itemCount: 0 },
     totals: cartTotals(0, 0),
     discount: null,
-    itemIds: new Map(),
   };
 
   if (!owner) return empty;
@@ -314,17 +325,16 @@ export async function resolveCart(owner: CartOwner | null): Promise<ResolvedCart
   const items = await loadCartItems(cart.id);
   if (!items.length) return { ...empty, cartId: cart.id };
 
-  const itemIds = new Map(items.map((item) => [item.product_id, item.id]));
   const resolved = await resolveLines(
     items.map((item) => ({
       productId: item.product_id,
       quantity: item.quantity,
       selectedOptions: item.selected_options,
+      lineId: item.id,
     })),
     {
       discountCode: cart.discount_code,
       customerId: cart.customer_id,
-      itemIds,
     }
   );
 
@@ -345,10 +355,12 @@ export async function mergeGuestCart(guestToken: string, customerId: string): Pr
   if (guestItems.length) {
     const target = await findOrCreateCart({ customerId });
     const existing = await loadCartItems(target.id);
-    const byProduct = new Map(existing.map((item) => [item.product_id, item]));
+    // Keyed by product *and* options: the same product configured two ways is
+    // two distinct lines, and summing them would silently change the order.
+    const byLine = new Map(existing.map((item) => [lineSignature(item.product_id, item.selected_options), item]));
 
     for (const item of guestItems) {
-      const match = byProduct.get(item.product_id);
+      const match = byLine.get(lineSignature(item.product_id, item.selected_options));
       if (match) {
         await routeServiceClient
           .from("cart_items")
@@ -375,6 +387,142 @@ export async function mergeGuestCart(guestToken: string, customerId: string): Pr
     .eq("id", guestCart.id);
 }
 
+/**
+ * A cart is an operator-visible surface; an unbounded one is a denial of
+ * service against the customer's own cart page as much as against us.
+ */
+export const MAX_CART_LINES = 50;
+
+export type CartMutationError = { error: string; status: number };
+
+const isError = (value: unknown): value is CartMutationError =>
+  Boolean(value) && typeof value === "object" && "error" in (value as object);
+
+export { isError as isCartMutationError };
+
+/**
+ * Adds a line to a cart after proving the product may actually be bought.
+ *
+ * The purchase-mode, availability, price, and option checks all run here
+ * against live product rows, so a request-only product cannot be talked into a
+ * cart by a hand-written payload. The same rules run again at display and once
+ * more at checkout.
+ */
+export async function addCartItem(
+  owner: CartOwner,
+  input: { productId: string; quantity: unknown; selectedOptions: unknown }
+): Promise<CartMutationError | { ok: true }> {
+  const productId = typeof input.productId === "string" ? input.productId.trim() : "";
+  if (!productId) return { error: "Choose a product first.", status: 400 };
+
+  const selectedOptions = sanitizeOptions(input.selectedOptions);
+  const quantity = clampQuantity(input.quantity);
+
+  const products = await loadPricedProducts([productId]);
+  const product = products.get(productId);
+  if (!product) return { error: "That product is no longer available.", status: 404 };
+
+  const priced = priceLine(product, { productId, quantity, selectedOptions });
+  if (isRejected(priced)) return { error: priced.blocker.message, status: 409 };
+
+  const cart = await findOrCreateCart(owner);
+  const existing = await loadCartItems(cart.id);
+  const signature = lineSignature(productId, priced.selectedOptions);
+  const match = existing.find((item) => lineSignature(item.product_id, item.selected_options) === signature);
+
+  if (match) {
+    const combined = Math.min(match.quantity + priced.quantity, MAX_LINE_QUANTITY);
+    const { error } = await routeServiceClient
+      .from("cart_items")
+      .update({ quantity: combined, updated_at: new Date().toISOString() })
+      .eq("id", match.id)
+      .eq("cart_id", cart.id);
+    if (error) return { error: "Could not update the cart.", status: 500 };
+    return { ok: true };
+  }
+
+  if (existing.length >= MAX_CART_LINES) {
+    return { error: `A cart holds up to ${MAX_CART_LINES} different items.`, status: 409 };
+  }
+
+  const { error } = await routeServiceClient.from("cart_items").insert({
+    cart_id: cart.id,
+    product_id: productId,
+    quantity: priced.quantity,
+    selected_options: priced.selectedOptions,
+  });
+  if (error) return { error: "Could not add that to the cart.", status: 500 };
+  return { ok: true };
+}
+
+export const MAX_CART_LINES = 50;
+
+/** Changes a line's quantity. Scoped to the caller's own cart. */
+export async function updateCartItemQuantity(
+  owner: CartOwner,
+  itemId: string,
+  quantity: unknown
+): Promise<CartMutationError | { ok: true }> {
+  const cart = await findCart(owner);
+  if (!cart) return { error: "Your cart is empty.", status: 404 };
+
+  const next = clampQuantity(quantity);
+  const { data, error } = await routeServiceClient
+    .from("cart_items")
+    .update({ quantity: next, updated_at: new Date().toISOString() })
+    .eq("id", itemId)
+    // Scoping the update by cart_id is the ownership check: an id belonging to
+    // someone else's cart matches nothing rather than being edited.
+    .eq("cart_id", cart.id)
+    .select("id");
+
+  if (error) return { error: "Could not update that item.", status: 500 };
+  if (!data?.length) return { error: "That item is no longer in your cart.", status: 404 };
+  return { ok: true };
+}
+
+export async function removeCartItem(owner: CartOwner, itemId: string): Promise<CartMutationError | { ok: true }> {
+  const cart = await findCart(owner);
+  if (!cart) return { error: "Your cart is empty.", status: 404 };
+
+  const { error } = await routeServiceClient.from("cart_items").delete().eq("id", itemId).eq("cart_id", cart.id);
+  if (error) return { error: "Could not remove that item.", status: 500 };
+  return { ok: true };
+}
+
+export async function clearCart(owner: CartOwner): Promise<CartMutationError | { ok: true }> {
+  const cart = await findCart(owner);
+  if (!cart) return { ok: true };
+
+  const { error } = await routeServiceClient.from("cart_items").delete().eq("cart_id", cart.id);
+  if (error) return { error: "Could not clear the cart.", status: 500 };
+  await routeServiceClient.from("carts").update({ discount_code: null }).eq("id", cart.id);
+  return { ok: true };
+}
+
+/**
+ * Stores an attempted discount code on the cart.
+ *
+ * The code is only remembered here — whether it is valid, and what it is
+ * worth, is recomputed from live data on every resolve and again at checkout.
+ * Storing an invalid code is harmless and lets the cart explain the problem.
+ */
+export async function setCartDiscountCode(
+  owner: CartOwner,
+  code: unknown
+): Promise<CartMutationError | { ok: true }> {
+  const normalized = normalizeDiscountCodeInput(typeof code === "string" ? code : "");
+  const cart = await findOrCreateCart(owner);
+
+  const { error } = await routeServiceClient
+    .from("carts")
+    .update({ discount_code: normalized || null, updated_at: new Date().toISOString() })
+    .eq("id", cart.id);
+
+  if (error) return { error: "Could not apply that code.", status: 500 };
+  return { ok: true };
+}
+
 /** The wire shape sent to the browser. Deliberately carries no owner identity. */
 export function serializeCart(resolved: ResolvedCart) {
   return {
@@ -389,7 +537,7 @@ export function serializeCart(resolved: ResolvedCart) {
         : { ok: false as const, reason: resolved.discount.reason, message: resolved.discount.message }
       : null,
     items: resolved.priced.lines.map((line) => ({
-      itemId: resolved.itemIds.get(line.productId) ?? null,
+      itemId: line.lineId,
       productId: line.productId,
       name: line.product.name,
       slug: line.product.slug,
@@ -400,6 +548,7 @@ export function serializeCart(resolved: ResolvedCart) {
       optionLabels: line.optionLabels,
     })),
     unavailable: resolved.priced.rejected.map((entry) => ({
+      itemId: entry.lineId,
       productId: entry.productId,
       name: entry.productName,
       reason: entry.blocker.reason,

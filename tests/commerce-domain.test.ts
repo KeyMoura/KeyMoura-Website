@@ -11,6 +11,7 @@ import {
 import {
   clampQuantity,
   isRejected,
+  lineSignature,
   priceCart,
   priceLine,
   purchasableQuantity,
@@ -271,6 +272,7 @@ const cartOf = (subtotal: number, productId = "p1") => ({
   lines: [
     {
       productId,
+      lineId: `line-${productId}`,
       product: product({ id: productId }),
       quantity: 1,
       selectedOptions: {},
@@ -636,4 +638,70 @@ test("the new commerce permissions are registered in the typed list", () => {
   for (const key of ["catalog.categories.manage", "catalog.discounts.manage", "catalog.reviews.moderate"]) {
     assert.ok(permissions.includes(`"${key}"`), `${key} is not registered`);
   }
+});
+
+// --- Regression tests for defects found in the phase 1-3 foundation ---
+
+test("option values are fetched scoped to the loaded groups, never table-wide", () => {
+  const source = read("src/lib/commerce/cartService.ts");
+  const valuesQuery = source.slice(source.indexOf('from("product_option_values")'));
+  // An unfiltered read returns every option value on the site and stops at
+  // PostgREST's row cap, which silently drops real values and makes a required
+  // option unresolvable — rejecting a line the customer legitimately chose.
+  assert.match(
+    valuesQuery.slice(0, 400),
+    /\.in\("option_group_id", groupIds\)/,
+    "product_option_values must be filtered by the option groups actually loaded"
+  );
+});
+
+test("a priced line carries the storage row it came from", () => {
+  const line = priceLine(product({ id: "p1", starting_price_cents: 1000 }), {
+    productId: "p1",
+    quantity: 1,
+    selectedOptions: {},
+    lineId: "cart-item-7",
+  });
+  assert.ok(!isRejected(line));
+  assert.equal(line.lineId, "cart-item-7");
+});
+
+test("a rejected line also carries its storage row so the cart can point at it", () => {
+  const line = priceLine(product({ id: "p1", purchase_mode: "request_only" }), {
+    productId: "p1",
+    quantity: 1,
+    selectedOptions: {},
+    lineId: "cart-item-8",
+  });
+  assert.ok(isRejected(line));
+  assert.equal(line.lineId, "cart-item-8");
+});
+
+test("line identity distinguishes the same product configured two ways", () => {
+  const walnut = lineSignature("p1", { wood: "walnut" });
+  const maple = lineSignature("p1", { wood: "maple" });
+  assert.notEqual(walnut, maple);
+
+  // Key order must not change identity, or a merge would duplicate a line.
+  assert.equal(
+    lineSignature("p1", { wood: "walnut", size: "large" }),
+    lineSignature("p1", { size: "large", wood: "walnut" })
+  );
+});
+
+test("the guest cart merge keys on product and options, not product alone", () => {
+  const source = read("src/lib/commerce/cartService.ts");
+  assert.match(source, /lineSignature\(item\.product_id, item\.selected_options\)/);
+  assert.doesNotMatch(
+    source,
+    /new Map\(existing\.map\(\(item\) => \[item\.product_id, item\]\)\)/,
+    "merging by product id alone sums two different configurations into one line"
+  );
+});
+
+test("staff commerce actions are actually written to the audit log", () => {
+  const source = read("src/lib/audit.ts");
+  // Category, catalog, and pricing events are logged under a `staff.` prefix.
+  // Without it they were dropped for every staff role except admin.
+  assert.match(source, /type\.startsWith\("staff\."\)/);
 });
