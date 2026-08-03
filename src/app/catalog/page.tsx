@@ -14,7 +14,7 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [query, setQuery] = useState(""), [category, setCategory] = useState("all"), [availability, setAvailability] = useState("all"), [customOnly, setCustomOnly] = useState(false), [sort, setSort] = useState<Sort>("featured");
   useEffect(() => { void (async () => {
-    const { data, error: productError } = await supabase.from("products").select("id,name,slug,short_description,image_url,category,starting_price_cents,is_custom,availability_status,lead_time_text,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock").eq("is_published", true).is("archived_at", null).order("sort_order").order("created_at", { ascending: false });
+    const { data, error: productError } = await supabase.from("products").select("id,name,slug,short_description,image_url,category,category_id,purchase_mode,starting_price_cents,is_custom,availability_status,lead_time_text,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock").eq("is_published", true).is("archived_at", null).order("sort_order").order("created_at", { ascending: false });
     if (productError) { setError(productError.message); setLoading(false); return; }
     const items = (data ?? []) as Product[];
     const ids = items.map(product => product.id);

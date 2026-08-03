@@ -5,6 +5,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ProductModelViewer } from "@/components/ProductModelViewer";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { availabilityLabel, CatalogProduct, inventoryLabel, money, productCanBeRequested, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
+import { allowsRequest, normalizePurchaseMode } from "@/lib/commerce/purchaseModes";
+import AddToCartButton from "@/components/commerce/AddToCartButton";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { emptyShippingAddress, type FulfillmentMethod, type ShippingAddress, validateUpload } from "@/lib/checkout";
 
@@ -157,6 +159,7 @@ export default function ProductRequestPage() {
   };
   const modelUrl = media.find(asset => asset.kind === "model")?.url ?? product.model_url;
   const canRequest = productCanBeRequested(product);
+  const purchaseMode = normalizePurchaseMode(product.purchase_mode);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
@@ -179,6 +182,17 @@ export default function ProductRequestPage() {
           <div className="mt-5 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-3 py-1 text-xs ${canRequest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>{availabilityLabel(product.availability_status)}</span>{product.inventory_policy === "track" ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{inventoryLabel(product)}</span> : null}{product.lead_time_text ? <span className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-brand-textMuted">{product.lead_time_text}</span> : null}</div>
           <h1 className="mt-3 text-3xl font-semibold">{product.name}</h1>
           <p className="mt-3 whitespace-pre-wrap text-brand-textMuted">{product.description}</p>
+          {/* The buy actions sit above the fold; the request wizard below is
+              rendered only for products whose mode actually allows a request. */}
+          <div className="mt-6">
+            <AddToCartButton
+              productId={product.id}
+              purchaseMode={purchaseMode}
+              startingPriceCents={product.starting_price_cents}
+              available={canRequest}
+              requestHref="#request-form"
+            />
+          </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs uppercase tracking-wide text-brand-textMuted">Lead time</p><p className="mt-2 font-medium">{product.lead_time_text || "Confirmed with your quote"}</p></div>
             <div className="rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs uppercase tracking-wide text-brand-textMuted">Pricing basis</p><p className="mt-2 font-medium">{product.starting_price_cents == null ? "Quoted after design review" : `Starts at $${(product.starting_price_cents / 100).toFixed(2)}`}</p></div>
@@ -188,7 +202,18 @@ export default function ProductRequestPage() {
           <p className="mt-4 text-sm leading-6 text-brand-textMuted">Need help choosing a material or tolerance? Read the <a href="/design-guide" className="font-medium text-brand-primary hover:underline">design guide</a> or <a href="/contact" className="font-medium text-brand-primary hover:underline">contact us</a>.</p>
         </section>
 
-        <form onSubmit={submit} className="h-fit rounded-2xl border border-zinc-700 bg-zinc-950/70 p-5 shadow-xl sm:p-6 lg:sticky lg:top-24">
+        {!allowsRequest(purchaseMode) ? (
+          <aside className="h-fit rounded-2xl border border-zinc-700 bg-zinc-950/70 p-5 shadow-xl sm:p-6 lg:sticky lg:top-24">
+            <h2 className="text-xl font-semibold">Ready to ship</h2>
+            <p className="mt-2 text-sm leading-6 text-brand-textMuted">
+              This product is sold in the configuration shown. Add it to your cart to check out.
+            </p>
+            <p className="mt-4 text-sm leading-6 text-brand-textMuted">
+              Need something different? <a href="/orders/new" className="font-medium text-brand-primary hover:underline">Start a custom request</a> and we will price it for you.
+            </p>
+          </aside>
+        ) : (
+        <form id="request-form" onSubmit={submit} className="h-fit rounded-2xl border border-zinc-700 bg-zinc-950/70 p-5 shadow-xl sm:p-6 lg:sticky lg:top-24">
           <div className="mb-6 grid grid-cols-3 gap-2" aria-label="Checkout progress">{["Customize", "Delivery", "Review"].map((label, index) => <div key={label} className={`rounded-lg border px-2 py-2 text-center text-xs font-medium ${step === index + 1 ? "border-brand-primary bg-brand-primary/10 text-brand-primary" : step > index + 1 ? "border-emerald-500/40 text-emerald-200" : "border-zinc-800 text-brand-textMuted"}`}>{index + 1}. {label}</div>)}</div>
           <h2 className="text-xl font-semibold">{step === 1 ? "Customize your item" : step === 2 ? "Delivery details" : "Review your request"}</h2>
           <p className="mt-1 text-sm text-brand-textMuted">{step === 1 ? "Choose your options and see the estimated price update instantly." : step === 2 ? "Tell us where this order should go and when you need it." : "Confirm everything below. You will not be charged yet."}</p>
@@ -236,6 +261,7 @@ export default function ProductRequestPage() {
           {!canRequest ? <p className="mt-5 rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 text-sm text-rose-100">This item is not accepting requests right now. Check back soon.</p> : null}
           <div className="mt-5 flex gap-3">{step > 1 ? <button type="button" onClick={() => setStep(step === 3 ? 2 : 1)} className="rounded-xl border border-zinc-700 px-4 py-3 font-medium">Back</button> : null}{step === 1 ? <button type="button" disabled={!canRequest} onClick={() => advance(2)} className="catalog-action-primary flex-1 rounded-xl px-4 py-3 transition disabled:opacity-50">Continue to delivery</button> : step === 2 ? <button type="button" onClick={() => advance(3)} className="catalog-action-primary flex-1 rounded-xl px-4 py-3 transition">Review request</button> : <button disabled={busy || !canRequest} className="catalog-action-primary flex-1 rounded-xl px-4 py-3 transition disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Reserving…" : canRequest ? "Submit request — no charge" : "Requests paused"}</button>}</div>
         </form>
+        )}
       </div>
     </main>
   );

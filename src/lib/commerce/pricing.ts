@@ -54,10 +54,17 @@ export type RequestedLine = {
   productId: string;
   quantity: number;
   selectedOptions: Record<string, string>;
+  /**
+   * Opaque identifier for the row this line came from, carried straight
+   * through to the priced result. The same product can sit in a cart twice
+   * with different options, so lines cannot be identified by product id.
+   */
+  lineId?: string | null;
 };
 
 export type PricedLine = {
   productId: string;
+  lineId: string | null;
   product: PricedProduct;
   quantity: number;
   /** Only the options that resolved to a real, active value. */
@@ -69,6 +76,7 @@ export type PricedLine = {
 
 export type RejectedLine = {
   productId: string;
+  lineId: string | null;
   quantity: number;
   productName: string | null;
   blocker: DirectPurchaseBlocker;
@@ -82,6 +90,22 @@ export type PricedCart = {
 };
 
 export const MAX_LINE_QUANTITY = 99;
+
+/**
+ * Stable identity for a cart line: the product plus the exact options chosen.
+ *
+ * The same product can sit in a cart twice configured two different ways, and
+ * those are two distinct lines. Merging and de-duplication key on this instead
+ * of on the product id alone, so combining carts never silently collapses two
+ * configurations into one.
+ */
+export function lineSignature(productId: string, selectedOptions: Record<string, string>): string {
+  const options = Object.keys(selectedOptions)
+    .sort()
+    .map((key) => `${key}=${selectedOptions[key]}`)
+    .join("&");
+  return `${productId}|${options}`;
+}
 
 export function clampQuantity(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
@@ -107,6 +131,7 @@ export function priceLine(product: PricedProduct, line: RequestedLine): PricedLi
   const mode = normalizePurchaseMode(product.purchase_mode);
   const reject = (blocker: DirectPurchaseBlocker): RejectedLine => ({
     productId: product.id,
+    lineId: line.lineId ?? null,
     quantity: line.quantity,
     productName: product.name,
     blocker,
@@ -175,6 +200,7 @@ export function priceLine(product: PricedProduct, line: RequestedLine): PricedLi
 
   return {
     productId: product.id,
+    lineId: line.lineId ?? null,
     product,
     quantity,
     selectedOptions: resolved,
@@ -198,6 +224,7 @@ export function priceCart(products: Map<string, PricedProduct>, lines: readonly 
     if (!product) {
       rejected.push({
         productId: line.productId,
+        lineId: line.lineId ?? null,
         quantity: line.quantity,
         productName: null,
         blocker: { reason: "unavailable", message: "This product is no longer available." },

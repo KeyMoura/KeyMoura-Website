@@ -26,7 +26,12 @@ export async function logAuditEvent(event: AuditEvent): Promise<void> {
       type.startsWith("admin.") ||
       type.startsWith("security.") ||
       type.startsWith("approvals.") ||
-      type.startsWith("moderation.");
+      type.startsWith("moderation.") ||
+      // Staff commerce actions (categories, catalog, discounts, order money)
+      // are audited regardless of which staff role performed them. Without
+      // this prefix a non-admin staff member's category and pricing changes
+      // were silently dropped instead of recorded.
+      type.startsWith("staff.");
 
     if (!isStaffActor && !isAdminEvent) return;
 

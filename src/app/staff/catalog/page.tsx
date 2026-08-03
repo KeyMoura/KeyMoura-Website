@@ -9,6 +9,9 @@ import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { CatalogProduct, optionKey, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { EmptyState, Notice } from "@/components/ui/DesignSystem";
+import { CategorySelect } from "@/components/staff/CategorySelect";
+import { visibleCategories, type CategoryRow } from "@/lib/commerce/categories";
+import { allowsDirectPurchase, PURCHASE_MODE_COPY, PURCHASE_MODES, type PurchaseMode } from "@/lib/commerce/purchaseModes";
 
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const input = "ui-input";
@@ -33,6 +36,7 @@ export default function StaffCatalogPage() {
   const [statusFilter, setStatusFilter] = useState<"active" | "draft" | "published" | "archived" | "all">("active");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
 
   const filteredProducts = useMemo(() => products.filter(product => {
     const term = search.trim().toLowerCase();
@@ -45,18 +49,33 @@ export default function StaffCatalogPage() {
     return matchesSearch && matchesStatus;
   }), [products, search, statusFilter]);
   const imageCount = media.filter(item => item.kind === "image").length;
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of products) {
+      if (!product.category_id || product.archived_at) continue;
+      counts.set(product.category_id, (counts.get(product.category_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [products]);
   const publishChecks = [
     { label: "Product name", complete: Boolean(draft.name?.trim()) },
     { label: "Short description", complete: Boolean(draft.short_description?.trim()) },
     { label: "Starting price", complete: draft.starting_price_cents != null },
     { label: "Product image", complete: imageCount > 0 || Boolean(draft.image_url) },
     { label: "Customization choices", complete: !draft.is_custom || groups.length > 0 },
+    // A directly purchasable product with no fixed price silently falls back to
+    // the request path, which is not what the staff member chose.
+    { label: "Purchase mode", complete: !allowsDirectPurchase(draft.purchase_mode ?? "request_only") || draft.starting_price_cents != null },
   ];
   const readyToPublish = publishChecks.every(check => check.complete);
 
   const loadProducts = useCallback(async () => {
-    const { data, error: queryError } = await supabase.from("products").select("*").order("sort_order").order("created_at", { ascending: false });
+    const [{ data, error: queryError }, { data: categoryRows }] = await Promise.all([
+      supabase.from("products").select("*").order("sort_order").order("created_at", { ascending: false }),
+      supabase.from("product_categories").select("id,name,slug,description,parent_id,image_url,display_order,is_active,archived_at").order("display_order"),
+    ]);
     setProducts((data ?? []) as CatalogProduct[]);
+    setCategories(visibleCategories((categoryRows ?? []) as CategoryRow[]));
     setError(queryError?.message ?? "");
   }, [supabase]);
 
@@ -111,9 +130,14 @@ export default function StaffCatalogPage() {
     setBusy(true); setError("");
     const payload = {
       name: draft.name?.trim(), slug: slugify(draft.slug || draft.name || ""),
-      category: draft.category?.trim() || null, short_description: draft.short_description?.trim() || null,
+      short_description: draft.short_description?.trim() || null,
       description: draft.description?.trim() || null,
       starting_price_cents: draft.starting_price_cents ?? null, is_custom: Boolean(draft.is_custom),
+      category_id: draft.category_id ?? null,
+      // The legacy free-text column is written from the structured category so
+      // anything still reading `category` stays correct while it is retired.
+      category: categories.find(row => row.id === draft.category_id)?.name ?? null,
+      purchase_mode: draft.purchase_mode ?? "request_only",
       is_published: Boolean(draft.is_published), sort_order: Number(draft.sort_order || 0),
       availability_status: draft.availability_status || "made_to_order", lead_time_text: draft.lead_time_text?.trim() || null,
       image_url: draft.image_url || null, model_url: draft.model_url || null, model_poster_url: draft.model_poster_url || null,
@@ -270,7 +294,8 @@ export default function StaffCatalogPage() {
     const name = `${draft.name || "Product"} copy`;
     const { data: copy, error: copyError } = await supabase.from("products").insert({
       name, slug: `${slugify(name)}-${crypto.randomUUID().slice(0, 6)}`, sku: null,
-      category: draft.category || null, short_description: draft.short_description || null, description: draft.description || null,
+      category: draft.category || null, category_id: draft.category_id ?? null, purchase_mode: draft.purchase_mode ?? "request_only",
+      short_description: draft.short_description || null, description: draft.description || null,
       starting_price_cents: draft.starting_price_cents ?? null, is_custom: Boolean(draft.is_custom), is_published: false,
       sort_order: draft.sort_order || 0, availability_status: draft.availability_status || "made_to_order", lead_time_text: draft.lead_time_text || null,
       image_url: draft.image_url || null, model_url: draft.model_url || null, model_poster_url: draft.model_poster_url || null,
@@ -367,13 +392,18 @@ export default function StaffCatalogPage() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">Name<input className={`${input} mt-1`} value={draft.name ?? ""} onChange={e => setDraft(current => ({ ...current, name: e.target.value }))} /></label>
               <label className="text-sm">Slug<input className={`${input} mt-1`} value={draft.slug ?? ""} onChange={e => setDraft(current => ({ ...current, slug: e.target.value }))} /></label>
-              <label className="text-sm">Category<input className={`${input} mt-1`} value={draft.category ?? ""} onChange={e => setDraft(current => ({ ...current, category: e.target.value }))} /></label>
+              <CategorySelect value={draft.category_id ?? null} onChange={categoryId => setDraft(current => ({ ...current, category_id: categoryId }))} categories={categories} productCounts={categoryCounts} disabled={!canManage} />
               <label className="text-sm">SKU<input className={`${input} mt-1`} value={draft.sku ?? ""} onChange={e => setDraft(current => ({ ...current, sku: e.target.value }))} placeholder="Example: KM-SHIFT-001" /></label>
               <label className="text-sm">Starting price ($)<input className={`${input} mt-1`} type="number" min="0" step=".01" value={draft.starting_price_cents == null ? "" : draft.starting_price_cents / 100} onChange={e => setDraft(current => ({ ...current, starting_price_cents: e.target.value ? Math.round(Number(e.target.value) * 100) : null }))} /></label>
               <label className="text-sm">Availability<MenuSelect className="ui-select-trigger mt-1" value={draft.availability_status ?? "made_to_order"} onChange={value => setDraft(current => ({ ...current, availability_status: value as CatalogProduct["availability_status"] }))} options={[{value:"available",label:"Available"},{value:"limited",label:"Limited availability"},{value:"made_to_order",label:"Made to order"},{value:"unavailable",label:"Currently unavailable"}]} /></label>
               <label className="text-sm">Lead time<input className={`${input} mt-1`} value={draft.lead_time_text ?? ""} onChange={e => setDraft(current => ({ ...current, lead_time_text: e.target.value }))} placeholder="Example: Usually 1–2 weeks" /></label>
               <label className="text-sm sm:col-span-2">Short description<input className={`${input} mt-1`} value={draft.short_description ?? ""} onChange={e => setDraft(current => ({ ...current, short_description: e.target.value }))} /></label>
               <label className="text-sm sm:col-span-2">Full description<textarea className={`${input} mt-1 min-h-32`} value={draft.description ?? ""} onChange={e => setDraft(current => ({ ...current, description: e.target.value }))} /></label>
+              <label className="text-sm sm:col-span-2">How customers buy this
+                <MenuSelect className="ui-select-trigger mt-1" value={draft.purchase_mode ?? "request_only"} onChange={value => setDraft(current => ({ ...current, purchase_mode: value as PurchaseMode }))} options={PURCHASE_MODES.map(mode => ({ value: mode, label: PURCHASE_MODE_COPY[mode].staffLabel }))} />
+                <span className="mt-1 block text-xs text-brand-textMuted">{PURCHASE_MODE_COPY[draft.purchase_mode ?? "request_only"].help}</span>
+                {allowsDirectPurchase(draft.purchase_mode ?? "request_only") && draft.starting_price_cents == null ? <span className="mt-1 block text-xs text-amber-200">A directly purchasable product needs a starting price, or customers will be sent to a request instead.</span> : null}
+              </label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(draft.is_custom)} onChange={e => setDraft(current => ({ ...current, is_custom: e.target.checked }))} /> Customer can customize this product</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={Boolean(draft.archived_at) || (!draft.is_published && !readyToPublish)} checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
             </div>

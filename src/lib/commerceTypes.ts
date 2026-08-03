@@ -1,3 +1,5 @@
+import type { PurchaseMode } from "@/lib/commerce/purchaseModes";
+
 export type ProductMedia = {
   id: string;
   product_id: string;
@@ -40,7 +42,14 @@ export type CatalogProduct = {
   image_url: string | null;
   model_url: string | null;
   model_poster_url: string | null;
+  /**
+   * Legacy free-text category. Structured categories replaced it as the
+   * catalog's organization, but the column is kept in sync so anything still
+   * reading it keeps working.
+   */
   category: string | null;
+  category_id: string | null;
+  purchase_mode: PurchaseMode;
   starting_price_cents: number | null;
   is_custom: boolean;
   is_published: boolean;

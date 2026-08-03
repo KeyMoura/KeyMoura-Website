@@ -10,6 +10,7 @@ import { useSiteSettings } from "@/components/SiteSettingsProvider";
 import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
 import { RolePill } from "@/components/RolePill";
+import CartIndicator from "@/components/commerce/CartIndicator";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faBell,
@@ -1370,6 +1371,9 @@ export default function SiteHeader() {
 
           {/* Right utilities */}
           <div className="flex min-w-0 items-center justify-end gap-2 xl:gap-3" data-testid="header-utilities">
+            {/* Outside the signed-in branch: guests build carts too, and hiding
+                the indicator from them loses the cart they just filled. */}
+            <CartIndicator />
             {user ? (
               <>
                 <MessageBell userId={user.id} desktopPillBase={desktopPillBase} />
@@ -1462,6 +1466,11 @@ export default function SiteHeader() {
             >
               🔍
             </button>
+
+            {/* The mobile bar carries the cart too. The desktop utilities row
+                is hidden below lg, so without this a phone user could fill a
+                cart and have no way back to it. */}
+            <CartIndicator />
 
             {user ? (
               <>
