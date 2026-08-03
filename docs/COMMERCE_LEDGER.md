@@ -1,6 +1,7 @@
 # Commerce transformation — implementation ledger
 
-Branch: `commerce-catalog-transformation`
+Pass 1: `commerce-catalog-transformation` → PR #5, merged as `706919e`.
+Pass 2: `commerce-completion-20260803` → PR #6, merged as `c4b98d1`, in production.
 Base: `3d51665` (final-quality pass, production verified)
 
 This file is the running record of the catalog and commerce build. It exists so
@@ -13,20 +14,66 @@ the phase table as each phase lands.
 |---|-------|-------|
 | 1 | Architecture and schema design | complete |
 | 2 | Additive migrations and category backfill | complete — applied and verified |
-| 3 | Staff category tools and purchase modes | server API complete; staff UI pending |
-| 4 | Public catalog redesign | pending |
-| 5 | Canonical cart and pricing | service complete; HTTP routes pending |
-| 6 | Cart drawer/page and sharing | pending |
+| 3 | Staff category tools and purchase modes | purchase modes complete; category *management page* still pending |
+| 4 | Public catalog redesign | purchase-mode actions complete; category sidebar/routes pending |
+| 5 | Canonical cart and pricing | complete — service and `/api/cart` |
+| 6 | Cart drawer/page | complete. Shared carts pending |
 | 7 | Wishlist and sharing | pending |
-| 8 | Discount engine and staff management | engine complete; staff UI pending |
+| 8 | Discount engine and staff management | engine + checkout redemption complete; staff UI pending |
 | 9 | Reviews and moderation | schema complete; API and UI pending |
-| 10 | Stripe checkout and direct orders | pending |
-| 11 | Search, navbar, Appearance integration | pending |
-| 12 | Security review | pending |
-| 13 | Tests and browser validation | domain tests done; browser pending |
-| 14 | Preview validation | pending |
-| 15 | Migration application | complete (applied ahead of the branch) |
-| 16 | Merge and production verification | **not started — do not merge yet** |
+| 10 | Stripe checkout and direct orders | complete |
+| 11 | Search, navbar, Appearance integration | navbar complete; search/category integration pending |
+| 12 | Security review | purchase path reviewed and probed in production; rest pending |
+| 13 | Tests and browser validation | 275 tests; cart UI browser-verified |
+| 14 | Preview validation | build verified; deeper preview validation blocked by Vercel SSO |
+| 15 | Migration application | complete — no new migrations in pass 2 |
+| 16 | Merge and production verification | complete — `c4b98d1` live and smoke-tested |
+
+## Pass 2 — what shipped
+
+The direct-purchase path is complete and live, but **inert**: both production
+products are still `request_only`, so nothing can enter a cart until staff
+deliberately opt a product in from the product editor.
+
+Three defects in the pass-1 foundation were found and fixed:
+
+1. `loadPricedProducts` read the entire `product_option_values` table with no
+   `option_group_id` filter. Past PostgREST's row cap it truncated silently,
+   making a required option unresolvable and rejecting valid cart lines.
+2. Cart lines were keyed by product id, but `cart_items` has no unique
+   constraint on `(cart_id, product_id)` — one product configured two ways is
+   two rows. The storage row id is now threaded through pricing as `lineId`,
+   and merging keys on product *and* options.
+3. `logAuditEvent` silently dropped every `staff.*` event unless the actor was
+   admin/support/moderator, discarding the category API's audit trail.
+
+Production probes confirming enforcement (run against keymoura.com after merge):
+
+- A `request_only` product posted straight to `/api/cart` → 409 with a reason.
+- The same with `unitPriceCents`/`totalCents` forged in the body → still 409;
+  client prices are not read at all.
+- `POST /api/cart/checkout` unauthenticated → 401 `requiresSignIn`, no session.
+- A refused add creates no cart row: validation runs before `findOrCreateCart`.
+
+## Still to build
+
+Wishlist, shared carts, reviews, cancellations, returns/refunds, shipping, tax,
+inventory UI, the transactional email lifecycle, support tickets, Facebook auth
+and connected accounts, Vercel Web Analytics, Turnstile and rate limiting,
+staff audit-log surfacing, SEO structured data, and the policy pages.
+
+Also outstanding, and independent of this work:
+
+- **Migration ledger drift.** `supabase_migrations.schema_migrations` records
+  versions (`20260802172246`…) that do not match the repo filenames
+  (`20260802020000`…), several repo migrations are absent from the ledger, and
+  a `complete_order_notifications_schema` is recorded that has no repo file.
+  The *schema itself* is correct — it was verified column by column — but
+  `supabase db push` would misbehave until the ledger is reconciled.
+- **Guest checkout is unrepresentable**, not merely unimplemented:
+  `orders.customer_id` is `NOT NULL` and the webhook refuses a session whose
+  `customer_id` does not match the order. Supporting it would need a schema
+  change and a second look at the webhook's identity check.
 
 ## What exists on the branch right now
 
