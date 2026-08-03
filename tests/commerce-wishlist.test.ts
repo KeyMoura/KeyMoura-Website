@@ -296,6 +296,21 @@ test("the wishlist toggle announces its state rather than just showing a heart",
   assert.match(wishlistButton, /focus-visible:outline/);
 });
 
+test("a refused save on a product card is never silent", () => {
+  // The icon variant has nowhere to put a sentence, but swallowing the error
+  // means the customer clicks, nothing moves, and they have no idea why.
+  const icon = wishlistButton.slice(wishlistButton.indexOf('if (variant === "icon")'));
+  const body = icon.slice(0, icon.indexOf("\n  return ("));
+
+  assert.match(body, /title=\{error \|\|/, "a pointer user needs the reason in the tooltip");
+  // aria-invalid is a form-field property with no meaning on a button, so the
+  // refusal is attached by description instead.
+  assert.match(body, /aria-describedby=\{error \? errorId : undefined\}/);
+  assert.doesNotMatch(body, /aria-invalid=/, "not as an attribute; the comment explaining why may mention it");
+  assert.match(body, /id=\{errorId\} role="alert" aria-live="assertive" className="sr-only"/, "a screen reader needs it announced");
+  assert.match(body, /error \? "border-amber-400\/70/, "and it needs to be visible without a hover");
+});
+
 test("the wishlist indicator is reachable on mobile as well as desktop", () => {
   const header = read("src/components/SiteHeader.tsx");
   const mounts = header.match(/<WishlistIndicator \/>/g) ?? [];

@@ -146,6 +146,18 @@ test("the share panel tells the owner it is a snapshot", () => {
   assert.match(panel, /never your name or account/);
 });
 
+test("an already-shared link stays revocable after the cart is emptied", () => {
+  // A snapshot outlives the cart it came from. Rendering the panel only
+  // alongside items would make a public link unrevocable the moment its owner
+  // checked out or cleared the cart.
+  const cartPage = read("src/app/cart/page.tsx");
+  assert.equal((cartPage.match(/<CartSharePanel/g) ?? []).length, 2, "the panel must render in both cart states");
+  assert.match(cartPage, /<CartSharePanel canShare=\{false\} \/>/);
+
+  // And it hides itself only when there is genuinely nothing to show.
+  assert.match(panel, /if \(!canShare && !live\.length && !isLoading\) return null/);
+});
+
 test("the shared cart migration is additive", () => {
   assert.match(migration, /add column if not exists owner_hash text/);
   assert.match(migration, /add column if not exists snapshot_subtotal_cents integer/);

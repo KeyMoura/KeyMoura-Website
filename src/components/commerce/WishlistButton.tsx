@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faHeart as faHeartSolid } from "@fortawesome/free-solid-svg-icons";
 import { faHeart as faHeartOutline } from "@fortawesome/free-regular-svg-icons";
@@ -37,6 +37,7 @@ export default function WishlistButton({
   const saved = useIsWishlisted(productId);
   const { add, remove } = useWishlistMutations();
   const [error, setError] = useState("");
+  const errorId = useId();
 
   const pending = add.isPending || remove.isPending;
 
@@ -52,20 +53,34 @@ export default function WishlistButton({
   const label = saved ? `Remove ${productName} from your wishlist` : `Save ${productName} to your wishlist`;
 
   if (variant === "icon") {
+    // An icon in a card grid has nowhere to put a sentence, but failing in
+    // silence is worse than an awkward layout: the customer clicks, nothing
+    // moves, and they have no idea why. The refusal reaches a pointer user
+    // through the tooltip and the amber ring, and a screen reader through the
+    // live region below.
     return (
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={pending}
-        aria-pressed={saved}
-        aria-label={label}
-        title={saved ? "Saved to your wishlist" : "Save to your wishlist"}
-        className={`inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)]/80 text-sm transition hover:border-brand-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:opacity-50 ${
-          saved ? "text-brand-primary" : "text-brand-textMuted"
-        } ${className}`}
-      >
-        <FontAwesomeIcon icon={saved ? faHeartSolid : faHeartOutline} className="text-[15px]" />
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={pending}
+          aria-pressed={saved}
+          aria-label={label}
+          // aria-invalid is a form-field property and is not supported on a
+          // button, so the refusal is attached by description instead.
+          aria-describedby={error ? errorId : undefined}
+          title={error || (saved ? "Saved to your wishlist" : "Save to your wishlist")}
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-full border bg-[var(--surface)]/80 text-sm transition hover:border-brand-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:opacity-50 ${
+            error ? "border-amber-400/70 text-amber-200" : "border-[var(--border)]"
+          } ${!error && saved ? "text-brand-primary" : !error ? "text-brand-textMuted" : ""} ${className}`}
+        >
+          <FontAwesomeIcon icon={saved ? faHeartSolid : faHeartOutline} className="text-[15px]" />
+        </button>
+
+        <span id={errorId} role="alert" aria-live="assertive" className="sr-only">
+          {error}
+        </span>
+      </>
     );
   }
 

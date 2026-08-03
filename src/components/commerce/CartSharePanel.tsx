@@ -91,6 +91,10 @@ export default function CartSharePanel({ canShare }: { canShare: boolean }) {
   const live = shares.filter((share) => !share.revokedAt);
   const error = create.error?.message || revoke.error?.message || "";
 
+  // With an empty cart and nothing shared there is nothing to say, so the panel
+  // stays out of the way. It reappears the moment there is a link to revoke.
+  if (!canShare && !live.length && !isLoading) return null;
+
   return (
     <section aria-labelledby="cart-share" className="ui-card">
       <h2 id="cart-share" className="text-lg font-semibold">

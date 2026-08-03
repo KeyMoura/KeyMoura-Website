@@ -118,18 +118,28 @@ export default function CartPage() {
       ) : null}
 
       {!items.length ? (
-        <div className="ui-empty-state mt-8 !p-10">
-          <h2 className="text-xl font-semibold text-brand-text">Your cart is empty.</h2>
-          <p className="mt-2">Browse the catalog, or start a custom request if you need something made to order.</p>
-          <div className="ui-action-row mt-5 justify-center">
-            <Link href="/catalog" className="ui-btn ui-btn-primary">
-              Browse the catalog
-            </Link>
-            <Link href="/orders/new" className="ui-btn ui-btn-secondary">
-              Start a custom request
-            </Link>
+        <>
+          <div className="ui-empty-state mt-8 !p-10">
+            <h2 className="text-xl font-semibold text-brand-text">Your cart is empty.</h2>
+            <p className="mt-2">Browse the catalog, or start a custom request if you need something made to order.</p>
+            <div className="ui-action-row mt-5 justify-center">
+              <Link href="/catalog" className="ui-btn ui-btn-primary">
+                Browse the catalog
+              </Link>
+              <Link href="/orders/new" className="ui-btn ui-btn-secondary">
+                Start a custom request
+              </Link>
+            </div>
           </div>
-        </div>
+
+          {/* Still rendered with an empty cart, because a link shared earlier
+              outlives the cart it came from. Hiding this here would make an
+              already-public snapshot unrevocable the moment its owner checked
+              out or cleared the cart. */}
+          <div className="mt-6 max-w-md">
+            <CartSharePanel canShare={false} />
+          </div>
+        </>
       ) : (
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
           <section aria-labelledby="cart-items" className="ui-card lg:col-start-1">
