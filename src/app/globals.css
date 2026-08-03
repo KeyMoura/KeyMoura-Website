@@ -1103,6 +1103,19 @@
     letter-spacing: .06em;
   }
 
+  /* The same ProductImage, sized for a wishlist or cart line rather than a
+     card. Reusing the component keeps one set of image-resolution rules; only
+     the box changes. */
+  .wishlist-thumb {
+    aspect-ratio: 1 / 1;
+    width: 5rem;
+    flex: 0 0 auto;
+    border-radius: var(--control-radius);
+    border: 1px solid var(--border);
+  }
+
+  .wishlist-thumb .product-image-fallback { font-size: 1.125rem; }
+
   /* Customer content hubs: Community and Projects share this page language. */
   .content-hub { width: 100%; max-width: 72rem; margin-inline: auto; padding: 1.5rem 1rem 2.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
   .content-hero { border-radius: var(--control-radius); border: 1px solid var(--border); background: linear-gradient(135deg, color-mix(in srgb, var(--panel-strong) 92%, transparent), color-mix(in srgb, var(--brand-primary) 7%, var(--panel))); padding: clamp(1rem, 3vw, 1.75rem); }

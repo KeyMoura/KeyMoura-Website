@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
+import WishlistButton from "@/components/commerce/WishlistButton";
 import {
   availabilityLabel,
   productCanBeRequested,
@@ -47,6 +48,7 @@ type ProductCardProps = {
   product: ProductCardProduct;
   /** Availability and stock chips are meaningful in the catalog, noise on the homepage. */
   showAvailability?: boolean;
+  showWishlist?: boolean;
   priority?: boolean;
 };
 
@@ -58,8 +60,17 @@ type ProductCardProps = {
  * The card exposes exactly one link. The product name carries it and stretches
  * over the whole card, so the entire card is clickable without giving keyboard
  * and screen-reader users three redundant stops on the same destination.
+ *
+ * The wishlist toggle is the one exception, and it has to be lifted above that
+ * stretched link's `::after` overlay to stay clickable — hence the explicit
+ * stacking context rather than plain absolute positioning.
  */
-export default function ProductCard({ product, showAvailability = true, priority = false }: ProductCardProps) {
+export default function ProductCard({
+  product,
+  showAvailability = true,
+  showWishlist = true,
+  priority = false,
+}: ProductCardProps) {
   const href = `/catalog/${product.slug}`;
   const mode = normalizePurchaseMode(product.purchase_mode);
   const canRequest =
@@ -74,6 +85,12 @@ export default function ProductCard({ product, showAvailability = true, priority
 
   return (
     <article className="product-card">
+      {showWishlist ? (
+        <div className="absolute right-3 top-3 z-10">
+          <WishlistButton productId={product.id} productName={product.name} variant="icon" />
+        </div>
+      ) : null}
+
       <ProductImage product={product} alt={product.name} priority={priority} />
 
       <div className="product-card-body">

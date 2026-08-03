@@ -55,7 +55,10 @@ test("staff and customer activity timelines show each recorded refund", () => {
 });
 
 test("finished-product review is distinct from quote review and customer approval is recorded", () => {
-  const migration = read("supabase/migrations/20260801010000_order_final_review.sql");
+  // Renamed from 20260801010000 when the migration ledger was reconciled: that
+  // version was used by two files, and schema_migrations keys on version, so
+  // one of them could never have been recorded.
+  const migration = read("supabase/migrations/20260801015000_order_final_review.sql");
   const staffRoute = read("src/app/api/staff/orders/[id]/route.ts");
   const approvalRoute = read("src/app/api/orders/[id]/final-review/route.ts");
   const customer = read("src/app/orders/[id]/page.tsx");
