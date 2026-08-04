@@ -1,35 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import * as React from "react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
-import { badgeCount } from "@/lib/navBadge";
+import { useNavUnread } from "@/lib/hooks/useNavUnread";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
-import { VerifiedBadge } from "@/components/VerifiedBadge";
-import { DonationBadge } from "@/components/DonationBadge";
-import { RolePill } from "@/components/RolePill";
 import CartIndicator from "@/components/commerce/CartIndicator";
 import WishlistIndicator from "@/components/commerce/WishlistIndicator";
+import NavMenu from "@/components/nav/NavMenu";
+import AccountMenu from "@/components/nav/AccountMenu";
+import NotificationBell from "@/components/nav/NotificationBell";
+import MobileNavDrawer from "@/components/nav/MobileNavDrawer";
+import { isNavItemActive, primaryNav, secondaryNav } from "@/lib/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faBell,
-  faBellSlash,
-  faEnvelope,
-  faEnvelopeOpen,
-  faScrewdriverWrench,
-  faChessRook,
-  faBook,
-  faMagnifyingGlass,
-  faChevronDown,
-} from "@fortawesome/free-solid-svg-icons";
+import { faBars, faMagnifyingGlass, faChevronDown } from "@fortawesome/free-solid-svg-icons";
 
-type SimpleUser = {
-  id: string;
-  email: string | null;
-};
+type SimpleUser = { id: string; email: string | null };
 
 type SimpleProfile = {
   username: string | null;
@@ -39,1209 +27,98 @@ type SimpleProfile = {
   donation_rank?: string | null;
 };
 
-type NotificationRow = {
-  id: number;
-  user_id: string;
-  type: string;
-  actor_user_id: string | null;
-  thread_id: number | null;
-  post_id: number | null;
-  payload: unknown | null;
-  is_read: boolean | null;
-  created_at: string;
-  read_at: string | null;
-};
-
-type ActorProfile = {
-  id: string;
-  username: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
-};
-
-type DmInboxRow = {
-  thread_id: string;
-  other_user_id: string;
-  other_username: string | null;
-  other_display_name: string | null;
-  other_avatar_url: string | null;
-  other_is_verified?: boolean | null;
-  other_donation_rank?: string | null;
-  other_role?: string | null;
-  last_message_body: string | null;
-  last_message_at: string | null;
-  unread_count: number | null;
-};
-
-function formatTimeAgo(iso: string): string {
-  try {
-    const t = new Date(iso).getTime();
-    const now = Date.now();
-    const s = Math.max(1, Math.floor((now - t) / 1000));
-    if (s < 60) return `${s}s ago`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    const d = Math.floor(h / 24);
-    return `${d}d ago`;
-  } catch {
-    return "";
-  }
-}
-
-function safeString(v: unknown): string {
-  return typeof v === "string" ? v : "";
-}
-
-function parsePayload(payload: unknown): Record<string, unknown> {
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    return payload as Record<string, unknown>;
-  }
-  return {};
-}
-
-function formatRank(role: string | null | undefined): string {
-  const r = (role ?? "member").toLowerCase();
-  if (r === "admin") return "Admin";
-  if (r === "support") return "Support";
-  if (r === "staff") return "Staff";
-  return "Member";
-}
-
-function rankChipClasses(role: string | null | undefined): string {
-  const r = (role ?? "member").toLowerCase();
-  if (r === "admin") return "border-rose-400/40 bg-rose-500/10 text-rose-200";
-  if (r === "support") return "border-sky-400/40 bg-sky-500/10 text-sky-200";
-  if (r === "staff") return "border-amber-400/40 bg-amber-500/10 text-amber-200";
-  return "border-zinc-700 bg-black/40 text-brand-textMuted";
-}
-
-function notifTitle(n: NotificationRow): string {
-  const t = (n.type ?? "").toLowerCase();
-
-  if (t === "reply") return "New reply";
-  if (t === "mention") return "Mentioned you";
-  if (t === "accepted" || t === "accepted_answer") {
-    return "Accepted your answer";
-  }
-
-  if (t === "broadcast") {
-    const p = parsePayload(n.payload);
-    const title = safeString(p["title"]);
-    return title || "Announcement";
-  }
-
-  if (t === "admin_approval") {
-    return "Admin approval requested";
-  }
-
-  if (t === "report_update") {
-    const p = parsePayload(n.payload);
-    const title = safeString(p["title"]);
-    return title || "Report update";
-  }
-
-  if (t === "moderation") {
-    const p = parsePayload(n.payload);
-    const title = safeString(p["title"]);
-    return title || "Moderation update";
-  }
-
-  if (t === "vote") {
-    const payload = n.payload as {
-      milestone?: number;
-      is_thread_post?: boolean;
-    } | null;
-
-    const milestone = payload?.milestone;
-
-    if (typeof milestone === "number" && milestone > 0) {
-      const isThreadPost = payload?.is_thread_post === true;
-      return isThreadPost
-        ? `Your post hit ${milestone} upvotes`
-        : `Your comment hit ${milestone} upvotes`;
-    }
-
-    return "New vote";
-  }
-
-  if (t === "garage_like") {
-    const payload = n.payload as { milestone?: number } | null;
-    const milestone = payload?.milestone;
-    if (typeof milestone === "number" && milestone > 0) {
-      return `Your build hit ${milestone} likes`;
-    }
-    return "New like";
-  }
-
-  // Universal fallback: prefer payload.title if present, otherwise prettify the type.
-  const p = parsePayload(n.payload);
-  const payloadTitle = safeString(p["title"]);
-  if (payloadTitle) return payloadTitle;
-
-  const raw = (n.type ?? "").trim();
-  if (!raw) return "Notification";
-  return raw
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function notifSubtitle(n: NotificationRow): string {
-  const p = parsePayload(n.payload);
-
-  const t = (n.type ?? "").toLowerCase();
-  if (t === "admin_approval") {
-    const actionType = safeString(p["actionType"]);
-    return actionType ? `Action: ${actionType}` : "Open approvals to review";
-  }
-
-  return (
-    safeString(p["message"]) ||
-    safeString(p["preview"]) ||
-    safeString(p["text"]) ||
-    ""
-  );
-}
-
-function payloadThreadBase(
-  n: NotificationRow
-): { base: string; postId: number | null } | null {
-  const p = parsePayload(n.payload);
-  const category = safeString(p["category_slug"]);
-  const thread = safeString(p["thread_slug"]);
-  const postIdFromPayload =
-    typeof p["post_id"] === "number" ? (p["post_id"] as number) : null;
-
-  const postId =
-    postIdFromPayload ?? (typeof n.post_id === "number" ? n.post_id : null);
-
-  if (category && thread) {
-    const base = `/community/${encodeURIComponent(category)}/${encodeURIComponent(
-      thread
-    )}`;
-    return { base, postId };
-  }
-  return null;
-}
-
-function useOutsideClick(
-  ref: React.RefObject<HTMLElement | null>,
-  onClose: () => void
-) {
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const el = ref.current;
-      if (!el) return;
-      if (e.target instanceof Node && !el.contains(e.target)) onClose();
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [ref, onClose]);
-}
-
 /**
- * The desktop overflow menu.
+ * The storefront header.
  *
- * Holds the navigation links that step off the bar below `xl`, so the bar runs
- * out of *links* rather than running out of room and letting the utility
- * cluster land on top of them.
+ * ## What changed, and why the composition is what it is
  *
- * A real menu, not a hover card: `aria-expanded` and `aria-haspopup` describe
- * it, Escape closes it and returns focus to the trigger, an outside click
- * dismisses it, and the items are reachable with a keyboard in the order they
- * appear. Focus returns to the trigger on close because a keyboard user who
- * escapes a menu should land where they opened it, not at the top of the page.
+ * The previous bar was a three-column grid with the logo *centred* between two
+ * halves of the navigation — About / Capabilities / Projects · KM · Catalog /
+ * Contact / Community — plus a utility cluster carrying search, wishlist, cart,
+ * a message bell, a notification bell, an account pill and a role-coloured
+ * staff pill. That is a forum masthead. It reads as a community with a shop
+ * attached, which is the opposite of the business.
+ *
+ * Three structural decisions:
+ *
+ * 1. **Logo left, not centred.** A centred logo forces the navigation to be
+ *    split around it, which is what made the header symmetric and fragile — the
+ *    pass-4 overlap came from two side columns being forced to equal widths.
+ *    Logo-left gives one flexible column (the navigation) between two
+ *    content-sized ones, so the thing that gives when space runs short is the
+ *    part with a More menu to give into.
+ *
+ * 2. **Four customer links, in shopping order.** Products, Custom Projects,
+ *    Gallery, About. Capabilities, the design guide, Contact and Community moved
+ *    into More — they are pages a customer reads once, not places they shop.
+ *    Community keeps every route it had; it is reachable from More, the account
+ *    menu's neighbourhood in the mobile drawer, and the footer.
+ *
+ * 3. **Utilities are Search, Wishlist, Cart, Notifications, Account.** Messages
+ *    and staff access moved inside the account menu. Both are still one click
+ *    away and the account trigger carries an unread dot, so nothing became
+ *    undiscoverable — but neither competes with the cart for a customer's
+ *    attention any more.
+ *
+ * Every destination is read from `@/lib/navigation`, which the mobile drawer
+ * reads too. The old header hard-coded the mobile list separately and the two
+ * had already drifted apart.
+ *
+ * The desktop/More split is still pure CSS at a breakpoint rather than measured,
+ * for the reason recorded in pass 4: a measured overflow has to guess a width
+ * during server rendering and correct it after mount, which is a hydration
+ * mismatch and a visible reflow on every page load.
  */
-function NavOverflowMenu({
-  items,
-  triggerClass,
-  isActive,
-}: {
-  items: ReadonlyArray<{ href: string; label: string }>;
-  triggerClass: string;
-  isActive: (href: string) => boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const menuId = useId();
-
-  useOutsideClick(wrapRef, () => setOpen(false));
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
-
-  if (!items.length) return null;
-  const containsCurrent = items.some((item) => isActive(item.href));
-
-  return (
-    <div ref={wrapRef} className="relative xl:hidden">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-controls={open ? menuId : undefined}
-        className={`${triggerClass}${containsCurrent ? " is-highlighted" : ""}`}
-      >
-        More
-        <FontAwesomeIcon icon={faChevronDown} className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
-      </button>
-
-      {open ? (
-        <div
-          id={menuId}
-          role="menu"
-          aria-label="More navigation"
-          className="absolute right-0 top-full z-50 mt-2 min-w-44 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/95 py-1 shadow-2xl backdrop-blur"
-        >
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              aria-current={isActive(item.href) ? "page" : undefined}
-              className="block px-3 py-2 text-[12px] font-medium text-brand-text hover:bg-white/5 aria-[current=page]:text-brand-primary"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function NotificationBell({
-  userId,
-  desktopPillBase,
-}: {
-  userId: string;
-  desktopPillBase: string;
-}) {
-  const pathname = usePathname();
-  const isNotificationsRoute = pathname.startsWith("/notifications");
-  const [open, setOpen] = useState(false);
-  const popRef = useRef<HTMLDivElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
-
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [items, setItems] = useState<NotificationRow[]>([]);
-  const [actorMap, setActorMap] = useState<Map<string, ActorProfile>>(
-    () => new Map()
-  );
-
-  const [limit, setLimit] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [loadingCount, setLoadingCount] = useState(false);
-
-  const [hasMore, setHasMore] = useState(false);
-  const [threadHrefMap, setThreadHrefMap] = useState<Map<number, string>>(
-    () => new Map()
-  );
-
-  // ✅ cache: only load list once until user manually refreshes
-  const didLoadOnceRef = useRef(false);
-
-  useOutsideClick(popRef, () => setOpen(false));
-
-  const bellClass = `${desktopPillBase} justify-center w-9 px-0 site-nav-utility${
-    isNotificationsRoute || unreadCount > 0 ? " is-highlighted" : ""
-  }`;
-
-  const loadUnreadCount = async () => {
-    setLoadingCount(true);
-    try {
-      const supabase = supabaseBrowser();
-      const { count, error } = await supabase
-        .from("notifications")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("is_read", false);
-
-      if (error) {
-        console.error("notif count failed", error);
-        setUnreadCount(0);
-      } else {
-        setUnreadCount(count ?? 0);
-      }
-    } catch (e) {
-      console.error("notif count unexpected", e);
-      setUnreadCount(0);
-    } finally {
-      setLoadingCount(false);
-    }
-  };
-
-  const resolveThreadHrefs = async (rows: NotificationRow[]) => {
-    const supabase = supabaseBrowser();
-
-    const needIds = Array.from(
-      new Set(
-        rows
-          .filter((r) => r.thread_id != null)
-          .filter((r) => payloadThreadBase(r) == null)
-          .map((r) => r.thread_id as number)
-      )
-    );
-
-    if (needIds.length === 0) return;
-
-    const { data, error } = await supabase
-      .from("forum_threads")
-      .select("id, slug, forum_categories!inner(slug)")
-      .in("id", needIds);
-
-    if (error) {
-      console.error("thread slug resolve failed", error);
-      return;
-    }
-
-    type ThreadJoinRow = {
-      id: number;
-      slug: string;
-      forum_categories: { slug: string };
-    };
-
-    const rowsJoin = (data ?? []) as unknown as ThreadJoinRow[];
-
-    setThreadHrefMap((prev) => {
-      const next = new Map(prev);
-      for (const t of rowsJoin) {
-        const catSlug = String(t.forum_categories?.slug ?? "");
-        const thrSlug = String(t.slug ?? "");
-        if (catSlug && thrSlug) {
-          next.set(
-            Number(t.id),
-            `/community/${encodeURIComponent(catSlug)}/${encodeURIComponent(
-              thrSlug
-            )}`
-          );
-        }
-      }
-      return next;
-    });
-  };
-
-  const loadItems = async (take: number) => {
-    setLoading(true);
-    try {
-      const supabase = supabaseBrowser();
-      const { data, error } = await supabase
-        .from("notifications")
-        .select(
-          "id,user_id,type,actor_user_id,thread_id,post_id,payload,is_read,created_at,read_at"
-        )
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(take + 1);
-
-      if (error) {
-        console.error("notif list failed", error);
-        setItems([]);
-        setActorMap(new Map());
-        setHasMore(false);
-        return;
-      }
-
-      const raw = (data ?? []) as NotificationRow[];
-      const more = raw.length > take;
-      const rows = more ? raw.slice(0, take) : raw;
-
-      setHasMore(more);
-      setItems(rows);
-
-      await resolveThreadHrefs(rows);
-
-      const actorIds = Array.from(
-        new Set(
-          rows.map((r) => r.actor_user_id).filter((x): x is string => !!x)
-        )
-      );
-
-      if (actorIds.length) {
-        const { data: actors, error: aErr } = await supabase
-          .from("profiles")
-          .select("id, username, display_name, avatar_url")
-          .in("id", actorIds);
-
-        if (!aErr) {
-          const map = new Map<string, ActorProfile>();
-          for (const a of (actors ?? []) as ActorProfile[])
-            map.set(String(a.id), a);
-          setActorMap(map);
-        } else {
-          setActorMap(new Map());
-        }
-      } else {
-        setActorMap(new Map());
-      }
-    } catch (e) {
-      console.error("notif list unexpected", e);
-      setItems([]);
-      setActorMap(new Map());
-      setHasMore(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!userId) return;
-    void loadUnreadCount();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  const onToggle = async () => {
-    const next = !open;
-    setOpen(next);
-
-    if (!next) return;
-
-    // always refresh count when opening
-    await loadUnreadCount();
-
-    // only load list once until manual refresh
-    if (!didLoadOnceRef.current) {
-      didLoadOnceRef.current = true;
-      await loadItems(limit);
-    }
-  };
-
-  const refreshNow = async () => {
-    didLoadOnceRef.current = false;
-    await loadUnreadCount();
-    didLoadOnceRef.current = true;
-    await loadItems(limit);
-  };
-
-  const markOneRead = async (id: number) => {
-    try {
-      const supabase = supabaseBrowser();
-      const nowIso = new Date().toISOString();
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true, read_at: nowIso })
-        .eq("user_id", userId)
-        .eq("id", id);
-
-      if (error) {
-        console.error("mark read failed", error);
-        return;
-      }
-
-      setItems((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, is_read: true, read_at: nowIso } : n
-        )
-      );
-      setUnreadCount((c) => Math.max(0, c - 1));
-    } catch (e) {
-      console.error("mark read unexpected", e);
-    }
-  };
-
-  const markAllRead = async () => {
-    try {
-      const supabase = supabaseBrowser();
-      const nowIso = new Date().toISOString();
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true, read_at: nowIso })
-        .eq("user_id", userId)
-        .eq("is_read", false);
-
-      if (error) {
-        console.error("mark all read failed", error);
-        return;
-      }
-
-      setItems((prev) => prev.map((n) => ({ ...n, is_read: true, read_at: nowIso })));
-      setUnreadCount(0);
-    } catch (e) {
-      console.error("mark all read unexpected", e);
-    }
-  };
-
-  const showMore = async () => {
-    const prevScrollTop = listRef.current?.scrollTop ?? 0;
-    const next = Math.min(limit + 5, 50);
-    setLimit(next);
-    // this is a manual action => allow refresh even if cached
-    didLoadOnceRef.current = true;
-    await loadItems(next);
-    requestAnimationFrame(() => {
-      if (listRef.current) listRef.current.scrollTop = prevScrollTop;
-    });
-  };
-
-  const badgeText = badgeCount(unreadCount);
-
-  return (
-    <div className="relative" ref={popRef}>
-      <button
-        type="button"
-        className={bellClass}
-        onClick={onToggle}
-        // The real count, not the capped bubble text.
-        aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
-      >
-        <FontAwesomeIcon
-          icon={unreadCount > 0 ? faBell : faBellSlash}
-          className="text-[14px]"
-        />
-        {unreadCount > 0 && (
-          <span className="site-nav-utility-badge site-nav-badge" aria-hidden="true">
-            {badgeText}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div className="fixed left-2 right-2 mt-2 w-auto overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur md:absolute md:right-0 md:left-auto md:mt-2 md:w-[360px]">
-          <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
-            <div className="text-[12px] font-semibold text-brand-text">
-              Notifications
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void refreshNow()}
-                className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
-                title="Refresh"
-              >
-                Refresh
-              </button>
-
-              {unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={markAllRead}
-                  className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
-                  title="Mark all as read"
-                >
-                  Mark all read
-                </button>
-              )}
-
-              <Link
-                href="/notifications"
-                className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
-                onClick={() => setOpen(false)}
-              >
-                View all
-              </Link>
-            </div>
-          </div>
-
-          <div ref={listRef} className="max-h-[420px] overflow-auto">
-            {loading && (
-              <div className="px-3 py-3 text-[11px] text-brand-textMuted">
-                Loading…
-              </div>
-            )}
-
-            {!loading && items.length === 0 && (
-              <div className="px-3 py-6 text-center text-[11px] text-brand-textMuted">
-                No notifications yet.
-              </div>
-            )}
-
-            {!loading &&
-              items.map((n) => {
-                const isRead = !!n.is_read;
-                const actor = n.actor_user_id ? actorMap.get(n.actor_user_id) : null;
-                const actorName =
-                  actor?.display_name ||
-                  actor?.username ||
-                  (n.actor_user_id ? "Someone" : "");
-                const sub = notifSubtitle(n);
-
-                const fromPayload = payloadThreadBase(n);
-                const mappedBase =
-                  n.thread_id != null ? threadHrefMap.get(n.thread_id) ?? null : null;
-
-                const postId =
-                  fromPayload?.postId ??
-                  (typeof n.post_id === "number" ? n.post_id : null);
-
-                const parsedPayload = parsePayload(n.payload);
-                const payloadHref = safeString(parsedPayload["href"]);
-
-                const base = fromPayload?.base ?? mappedBase ?? "/notifications";
-                const href =
-                  payloadHref ||
-                  (postId && base.startsWith("/community/")
-                    ? `${base}#post-${postId}`
-                    : base);
-
-                return (
-                  <div
-                    key={n.id}
-                    className={[
-                      "group border-b border-zinc-900 px-3 py-2",
-                      isRead ? "bg-transparent" : "bg-amber-500/5",
-                    ].join(" ")}
-                  >
-                    <Link
-                      href={href}
-                      className="block rounded-xl p-2 transition hover:bg-white/5"
-                      onClick={() => {
-                        if (!isRead) void markOneRead(n.id);
-                        setOpen(false);
-                      }}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="mt-0.5 h-7 w-7 shrink-0 overflow-hidden rounded-full border border-zinc-800 bg-black/30">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          {actor?.avatar_url ? (
-                            <img
-                              src={actor.avatar_url}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-500">
-                              {actorName ? actorName[0]?.toUpperCase() : "•"}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="truncate text-[12px] font-semibold text-brand-text">
-                              {actorName ? `${actorName} • ` : ""}
-                              {notifTitle(n)}
-                            </div>
-                            <div className="shrink-0 text-[10px] text-zinc-500">
-                              {formatTimeAgo(n.created_at)}
-                            </div>
-                          </div>
-
-                          {sub ? (
-                            <div className="mt-0.5 line-clamp-2 text-[11px] text-brand-textMuted">
-                              {sub}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </Link>
-
-                    <div className="mt-1 flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => void markOneRead(n.id)}
-                        disabled={isRead}
-                        className="rounded-full border border-zinc-800 bg-black/30 px-3 py-1 text-[10px] text-brand-textMuted opacity-0 transition group-hover:opacity-100 hover:border-amber-400/60 hover:text-brand-text disabled:opacity-30"
-                      >
-                        Mark read
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-
-          <div className="flex items-center justify-between gap-2 border-t border-zinc-800 px-3 py-2">
-            <div className="text-[10px] text-zinc-500">
-              {loadingCount
-                ? "…"
-                : unreadCount > 0
-                  ? `${unreadCount} unread`
-                  : "All caught up"}
-            </div>
-
-            {hasMore && (
-              <button
-                type="button"
-                onClick={showMore}
-                className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
-                disabled={loading}
-                title="Show more"
-              >
-                Show more
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MessageBell({
-  userId,
-  desktopPillBase,
-}: {
-  userId: string;
-  desktopPillBase: string;
-}) {
-  const pathname = usePathname();
-  const isMessagesRoute = pathname.startsWith("/messages");
-  const [open, setOpen] = useState(false);
-  const popRef = useRef<HTMLDivElement | null>(null);
-
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [items, setItems] = useState<DmInboxRow[]>([]);
-  const [limit, setLimit] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [loadingCount, setLoadingCount] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [markingAllRead, setMarkingAllRead] = useState(false);
-
-  // ✅ cache: only load list once until user manually refreshes
-  const didLoadOnceRef = useRef(false);
-
-  useOutsideClick(popRef, () => setOpen(false));
-
-  const pillClass = `${desktopPillBase} justify-center w-9 px-0 site-nav-utility${
-    isMessagesRoute || unreadCount > 0 ? " is-highlighted" : ""
-  }`;
-
-  const loadUnreadCount = async () => {
-    setLoadingCount(true);
-    try {
-      const supabase = supabaseBrowser();
-      const { data, error } = await supabase.rpc("dm_unread_thread_count");
-      if (error) {
-        console.error("dm unread count failed", error);
-        setUnreadCount(0);
-      } else {
-        setUnreadCount(typeof data === "number" ? data : 0);
-      }
-    } catch (e: unknown) {
-      console.error("dm unread count unexpected", e);
-      setUnreadCount(0);
-    } finally {
-      setLoadingCount(false);
-    }
-  };
-
-  const loadItems = async (take: number) => {
-    setLoading(true);
-    try {
-      const supabase = supabaseBrowser();
-      const { data, error } = await supabase.rpc("dm_list_threads", {
-        p_limit: take + 1,
-        p_offset: 0,
-      });
-
-      if (error) {
-        console.error("dm inbox list failed", error);
-        setItems([]);
-        setHasMore(false);
-        return;
-      }
-
-      const raw = (Array.isArray(data) ? data : []) as DmInboxRow[];
-      const more = raw.length > take;
-      const rows = more ? raw.slice(0, take) : raw;
-
-      // Enrich with verified + role for the message preview list.
-      const ids = Array.from(
-        new Set(rows.map((r) => r.other_user_id).filter(Boolean))
-      );
-
-      const verifiedById: Record<string, boolean | null> = {};
-      const donationRankById: Record<string, string | null> = {};
-      const roleById: Record<string, string | null> = {};
-
-      if (ids.length > 0) {
-        const [{ data: profs }, { data: roles }] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("id,is_verified,donation_rank")
-            .in("id", ids),
-          supabase
-            .from("user_roles")
-            .select("user_id,role")
-            .in("user_id", ids),
-        ]);
-
-        (profs ?? []).forEach((p) => {
-          const row = p as {
-            id: string;
-            is_verified?: boolean | null;
-            donation_rank?: string | null;
-          };
-          verifiedById[row.id] = row.is_verified ?? null;
-          donationRankById[row.id] = row.donation_rank ?? null;
-        });
-
-        (roles ?? []).forEach((r) => {
-          const row = r as { user_id: string; role: string | null };
-          roleById[row.user_id] = row.role ?? null;
-        });
-      }
-
-      const enriched = rows.map((r) => ({
-        ...r,
-        other_is_verified: verifiedById[r.other_user_id] ?? null,
-        other_donation_rank: donationRankById[r.other_user_id] ?? null,
-        other_role: roleById[r.other_user_id] ?? null,
-      }));
-
-      setHasMore(more);
-      setItems(enriched);
-    } catch (e: unknown) {
-      console.error("dm inbox list unexpected", e);
-      setItems([]);
-      setHasMore(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const markAllRead = async () => {
-    if (markingAllRead) return;
-
-    setMarkingAllRead(true);
-    try {
-      const supabase = supabaseBrowser();
-      const { error } = await supabase.rpc("dm_mark_all_read");
-      if (error) {
-        console.error("dm_mark_all_read failed", error);
-        return;
-      }
-
-      setUnreadCount(0);
-      setItems((prev) => prev.map((t) => ({ ...t, unread_count: 0 })));
-    } catch (e: unknown) {
-      console.error("dm_mark_all_read unexpected", e);
-    } finally {
-      setMarkingAllRead(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!userId) return;
-    void loadUnreadCount();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  const onToggle = async () => {
-    const next = !open;
-    setOpen(next);
-
-    if (!next) return;
-
-    // always refresh count when opening
-    await loadUnreadCount();
-
-    // only load list once until manual refresh
-    if (!didLoadOnceRef.current) {
-      didLoadOnceRef.current = true;
-      await loadItems(limit);
-    }
-  };
-
-  const refreshNow = async () => {
-    didLoadOnceRef.current = false;
-    await loadUnreadCount();
-    didLoadOnceRef.current = true;
-    await loadItems(limit);
-  };
-
-  const showMore = async () => {
-    const next = Math.min(limit + 5, 50);
-    setLimit(next);
-    didLoadOnceRef.current = true;
-    await loadItems(next);
-  };
-
-  const optimisticMarkThreadRead = (threadId: string, unread: number) => {
-    if (unread <= 0) return;
-
-    setItems((prev) =>
-      prev.map((t) =>
-        t.thread_id === threadId ? { ...t, unread_count: 0 } : t
-      )
-    );
-    setUnreadCount((c) => Math.max(0, c - unread));
-  };
-
-  const badgeText = badgeCount(unreadCount);
-
-  return (
-    <div className="relative" ref={popRef}>
-      <button
-        type="button"
-        className={pillClass}
-        onClick={onToggle}
-        aria-label={unreadCount ? `Messages, ${unreadCount} unread` : "Messages"}
-      >
-        <FontAwesomeIcon
-          icon={unreadCount > 0 ? faEnvelope : faEnvelopeOpen}
-          className="text-[14px]"
-        />
-        {unreadCount > 0 && (
-          <span className="site-nav-utility-badge site-nav-badge" aria-hidden="true">
-            {badgeText}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div className="fixed left-2 right-2 mt-2 w-auto overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur md:absolute md:right-0 md:left-auto md:mt-2 md:w-[360px]">
-          <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
-            <div className="text-[12px] font-semibold text-brand-text">
-              Messages
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void refreshNow()}
-                className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
-                title="Refresh"
-              >
-                Refresh
-              </button>
-
-              {unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void markAllRead()}
-                  disabled={markingAllRead}
-                  className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text disabled:opacity-60"
-                  title="Mark all as read"
-                >
-                  {markingAllRead ? "Marking…" : "Mark all read"}
-                </button>
-              )}
-
-              <Link
-                href="/messages"
-                className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
-                onClick={() => setOpen(false)}
-              >
-                View all
-              </Link>
-            </div>
-          </div>
-
-          <div className="max-h-[420px] overflow-auto">
-            {loading && (
-              <div className="px-3 py-3 text-[11px] text-brand-textMuted">
-                Loading…
-              </div>
-            )}
-
-            {!loading && items.length === 0 && (
-              <div className="px-3 py-6 text-center text-[11px] text-brand-textMuted">
-                No messages yet.
-              </div>
-            )}
-
-            {!loading &&
-              items.map((it) => {
-                const name = it.other_display_name || it.other_username || "User";
-                const preview = (it.last_message_body ?? "").trim();
-                const time = it.last_message_at ? formatTimeAgo(it.last_message_at) : "";
-                const unread = Number(it.unread_count ?? 0);
-                const href = `/messages/${encodeURIComponent(it.thread_id)}`;
-
-                return (
-                  <div
-                    key={it.thread_id}
-                    className={[
-                      "group border-b border-zinc-900 px-3 py-2",
-                      unread > 0 ? "bg-amber-500/5" : "bg-transparent",
-                    ].join(" ")}
-                  >
-                    <Link
-                      href={href}
-                      className="block rounded-xl p-2 transition hover:bg-white/5"
-                      onClick={() => {
-                        if (unread > 0) optimisticMarkThreadRead(it.thread_id, unread);
-                        setOpen(false);
-                      }}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="mt-0.5 h-7 w-7 shrink-0 overflow-hidden rounded-full border border-zinc-800 bg-black/30">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          {it.other_avatar_url ? (
-                            <img
-                              src={it.other_avatar_url}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-500">
-                              {name ? name[0]?.toUpperCase() : "•"}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <div className="truncate text-[12px] font-semibold text-brand-text">
-                                {name}
-                                {it.other_is_verified ? (
-                                  <VerifiedBadge className="ml-0.5 h-3 w-3" />
-                                ) : null}
-                                {it.other_donation_rank ? (
-                                  <DonationBadge
-                                    rank={it.other_donation_rank}
-                                    className="ml-0.5 h-3 w-3"
-                                  />
-                                ) : null}
-                                {unread > 0 ? (
-                                  <span className="ml-2 rounded-full border border-amber-400/70 bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-200">
-                                    {unread}
-                                  </span>
-                                ) : null}
-                              </div>
-
-                              <RolePill role={it.other_role} />
-                            </div>
-                            <div className="shrink-0 text-[10px] text-zinc-500">
-                              {time}
-                            </div>
-                          </div>
-
-                          {preview ? (
-                            <div className="mt-0.5 line-clamp-2 text-[11px] text-brand-textMuted">
-                              {preview}
-                            </div>
-                          ) : (
-                            <div className="mt-0.5 text-[11px] text-brand-textMuted">
-                              (No message)
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  </div>
-                );
-              })}
-          </div>
-
-          <div className="flex items-center justify-between gap-2 border-t border-zinc-800 px-3 py-2">
-            <div className="text-[10px] text-zinc-500">
-              {loadingCount
-                ? "…"
-                : unreadCount > 0
-                  ? `${unreadCount} unread`
-                  : "All caught up"}
-            </div>
-
-            {hasMore && (
-              <button
-                type="button"
-                onClick={showMore}
-                className="rounded-full border border-zinc-700 bg-black/40 px-3 py-1 text-[11px] text-brand-textMuted hover:border-amber-400/70 hover:text-brand-text"
-                disabled={loading}
-                title="Show more"
-              >
-                Show more
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function SiteHeader() {
   const pathname = usePathname();
   const siteSettings = useSiteSettings();
 
   const [user, setUser] = useState<SimpleUser | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [myRole, setMyRole] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string>("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [myIsVerified, setMyIsVerified] = useState(false);
+  const [myDonationRank, setMyDonationRank] = useState<string | null>(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
 
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [myIsVerified, setMyIsVerified] = useState<boolean>(false);
-  const [myDonationRank, setMyDonationRank] = useState<string | null>(null);
-  const [isVerified, setIsVerified] = useState<boolean>(false);
-  const [donationRank, setDonationRank] = useState<string | null>(null);
+  const mobileTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-  const loadUserState = async (
-    authUser: { id: string; email?: string | null } | null
-  ) => {
-    const supabase = supabaseBrowser();
+  const { data: meAccess } = useMeAccess();
+  const { data: unread } = useNavUnread(user?.id ?? null);
 
-    if (!authUser) {
-      setUser(null);
-      setIsAdmin(false);
-      setMyRole(null);
-      setDisplayName(null);
-      setAvatarUrl(null);
-      setMyIsVerified(false);
-      setMyDonationRank(null);
-      return;
-    }
-
-    setUser({ id: authUser.id, email: authUser.email ?? null });
-
-    // Permission-based staff gate (no role checks)
-    try {
-      const res = await fetch("/api/me/access", { method: "GET" });
-      const json = (await res.json().catch(() => null)) as { permissions?: string[] | null } | null;
-      const perms = new Set(Array.isArray(json?.permissions) ? json!.permissions!.map(String) : []);
-      const staffViewPerms = [
-        "security.view",
-        "community.view",
-        "analytics.view",
-        "audit.view",
-        "shops.view",
-        "info.pending.view",
-        "info.updates.view",
-      ];
-      const canSeeStaff = staffViewPerms.some((p) => perms.has(p));
-      setIsAdmin(canSeeStaff);
-    } catch {
-      setIsAdmin(false);
-    }
-
-    // Keep role value for display only (never for gating)
-    const { data: roleRow } = await supabase.from("user_roles").select("role").eq("user_id", authUser.id).maybeSingle();
-    setMyRole(roleRow?.role ?? null);
-
-    try {
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("username, display_name, avatar_url, is_verified, donation_rank")
-        .eq("id", authUser.id)
-        .maybeSingle<SimpleProfile>();
-
-      if (!profileError && profile) {
-        setDisplayName(profile.display_name || profile.username || null);
-        setAvatarUrl(profile.avatar_url ?? null);
-        setMyIsVerified(!!profile.is_verified);
-        setMyDonationRank(profile.donation_rank ?? null);
-      } else {
-        setDisplayName(null);
-        setAvatarUrl(null);
-        setMyIsVerified(false);
-        setMyDonationRank(null);
-      }
-    } catch (e) {
-      console.error("Error loading profile for header", e);
-    }
-  };
+  const unreadMessages = unread?.messages ?? 0;
+  const unreadNotifications = unread?.notifications ?? 0;
 
   useEffect(() => {
     const supabase = supabaseBrowser();
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      void loadUserState(user);
+    const loadUserState = async (nextUser: { id: string; email?: string | null } | null) => {
+      if (!nextUser) {
+        setUser(null);
+        setDisplayName("");
+        setAvatarUrl(null);
+        setMyIsVerified(false);
+        setMyDonationRank(null);
+        return;
+      }
+
+      setUser({ id: nextUser.id, email: nextUser.email ?? null });
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("username,display_name,avatar_url,is_verified,donation_rank")
+        .eq("id", nextUser.id)
+        .maybeSingle();
+
+      const profile = (data ?? null) as SimpleProfile | null;
+      setDisplayName(profile?.display_name || profile?.username || "");
+      setAvatarUrl(profile?.avatar_url ?? null);
+      setMyIsVerified(Boolean(profile?.is_verified));
+      setMyDonationRank(profile?.donation_rank ?? null);
+    };
+
+    supabase.auth.getUser().then(({ data: { user: current } }) => {
+      void loadUserState(current);
     });
 
     const {
@@ -1253,24 +130,20 @@ export default function SiteHeader() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Auto-hide on scroll, when the operator has chosen it.
   useEffect(() => {
-    if (siteSettings.theme.navigationBehavior === "sticky") {
-      return;
-    }
+    if (siteSettings.theme.navigationBehavior === "sticky") return;
     let lastY = typeof window !== "undefined" ? window.scrollY : 0;
 
     const onScroll = () => {
       const currentY = window.scrollY;
       const delta = currentY - lastY;
-
       if (Math.abs(delta) < 8) {
         lastY = currentY;
         return;
       }
-
       if (currentY > 80 && delta > 0) setHidden(true);
       else if (delta < 0) setHidden(false);
-
       lastY = currentY;
     };
 
@@ -1278,482 +151,244 @@ export default function SiteHeader() {
     return () => window.removeEventListener("scroll", onScroll);
   }, [siteSettings.theme.navigationBehavior]);
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  /**
+   * Opening the drawer un-hides the bar.
+   *
+   * The render already refuses to translate the header while the drawer is
+   * open, so this is not about the open state — it is about the moment it
+   * closes. Without it, a customer who scrolls down (bar hides), opens the
+   * menu, and dismisses it gets the header sliding away underneath them,
+   * taking the button they just pressed with it.
+   */
+  const toggleMobile = () =>
+    setIsMobileOpen((value) => {
+      if (!value) setHidden(false);
+      return !value;
+    });
 
-  const isHome = pathname === "/";
-  const homeLogoSrc = siteSettings.logoUrl;
-  const isStaffRoute = pathname.startsWith("/staff");
-  const isAccountRoute = pathname.startsWith("/account");
+  // Route changes close the drawer. Next's client navigation keeps this
+  // component mounted, so without it the panel survives the navigation — which
+  // matters most for a back-button press, where no link inside the drawer was
+  // clicked to close it.
+  //
+  // Adjusted during render rather than in an effect. React re-runs the render
+  // immediately with the new state and never commits the stale open panel, so
+  // there is no flash of the drawer over the new page; an effect would paint it
+  // once first. This is React's documented pattern for deriving state from a
+  // changed prop.
+  const [lastPath, setLastPath] = useState(pathname);
+  if (lastPath !== pathname) {
+    setLastPath(pathname);
+    if (isMobileOpen) setIsMobileOpen(false);
+  }
 
-  const { data: meAccess } = useMeAccess();
-
-  const staffRole = String((meAccess?.role ?? myRole ?? "")).toLowerCase();
+  const staffRole = String(meAccess?.role ?? "").toLowerCase();
   const isStaff = meAccess?.isStaff ?? ["admin", "moderator", "mod", "support"].includes(staffRole);
 
-  const pillBase =
-    "site-nav-link rounded-full px-3 py-1 text-[14px] font-medium tracking-wide transition-colors";
-  const pillActive =
-    "is-active border";
-  const pillIdle =
-    "border border-transparent transition-all duration-150 ease-out hover:-translate-y-[1px]";
+  const isHome = pathname === "/";
+  const isStaffRoute = pathname.startsWith("/staff");
 
-  const navLinkClasses = (href: string) =>
-    `${pillBase} ${isActive(href) ? pillActive : pillIdle}`;
-
-  const avatarInitial = (displayName?.[0] || user?.email?.[0] || "U").toUpperCase();
-
-  const handleToggleMobile = () => setIsMobileOpen((v) => !v);
-
-  const handleOpenCommandPalette = () => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("open-command-palette"));
-    }
+  const openSearch = () => {
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("open-command-palette"));
   };
 
-  /**
-   * Navigation priority.
-   *
-   * `primary: true` means the link stays on the bar at every desktop width.
-   * Everything else is inline from `xl` up and collapses into the More menu
-   * below it, where the utility cluster is at its widest relative to the space
-   * available.
-   *
-   * Catalog and Projects are the two that stay: one is where you buy, the
-   * other is the portfolio that makes you want to. The rest are reference
-   * pages that a customer visits once.
-   *
-   * The split is by CSS breakpoint rather than by measuring, deliberately. A
-   * measured overflow has to guess a width during server rendering and correct
-   * it after mount, which is a hydration mismatch and a visible reflow on every
-   * page load. The same `xl` breakpoint drives both the inline links and the
-   * More menu, so exactly one of the two is ever showing a given link.
-   */
-  const leftLinks = useMemo(
-    () => [
-      { href: "/about", label: "About", primary: false },
-      { href: "/capabilities", label: "Capabilities", primary: false },
-      { href: "/projects", label: "Projects", primary: true },
-    ],
-    []
+  const navLinkClass = (href: string) =>
+    `site-nav-link site-nav-primary-link${isNavItemActive({ href }, pathname) ? " is-active" : ""}`;
+
+  const utilityClass = "site-nav-utility site-nav-control";
+
+  const moreContainsCurrent = useMemo(
+    () => secondaryNav.some((item) => isNavItemActive(item, pathname)),
+    [pathname]
   );
 
-  const rightLinks = useMemo(
-    () => [
-      { href: "/catalog", label: "Catalog", primary: true },
-      { href: "/contact", label: "Contact", primary: false },
-      { href: "/community", label: "Community", primary: false },
-    ],
-    []
-  );
-
-  /** Exactly the links hidden inline below `xl`, in bar order. */
-  const overflowLinks = useMemo(
-    () => [...leftLinks, ...rightLinks].filter((link) => !link.primary),
-    [leftLinks, rightLinks]
-  );
-
-  const desktopPillBase =
-    "site-nav-link inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all duration-150 ease-out";
-
-  const accountPillClass = `${desktopPillBase} site-nav-utility${isAccountRoute ? " is-highlighted" : ""}`;
-
-  const hexToRgba = (hex: string, alpha: number) => {
-    const h = hex.trim().replace(/^#/, "");
-    if (!(h.length === 3 || h.length === 6)) return null;
-    const full = h.length === 3 ? h.split("").map((c) => `${c}${c}`).join("") : h;
-    const n = Number.parseInt(full, 16);
-    if (!Number.isFinite(n)) return null;
-    const r = (n >> 16) & 255;
-    const g = (n >> 8) & 255;
-    const b = n & 255;
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-
-  const getStaffPalette = () => {
-    const db = meAccess?.roleStyle;
-    const dbBorder = typeof db?.badge_border === "string" && db.badge_border.trim().length ? db.badge_border.trim() : null;
-    const dbBg = typeof db?.badge_bg === "string" && db.badge_bg.trim().length ? db.badge_bg.trim() : null;
-    const dbText = typeof db?.badge_text === "string" && db.badge_text.trim().length ? db.badge_text.trim() : null;
-
-    if (dbBorder || dbBg || dbText) {
-      return {
-        border: dbBorder ?? siteSettings.theme.navigationUtilityBorder,
-        bg: dbBg ?? siteSettings.theme.navigationUtilityBackground,
-        text: dbText ?? siteSettings.theme.navigationUtilityText,
-      };
-    }
-
-    return {
-      border: siteSettings.theme.navigationUtilityBorder,
-      bg: siteSettings.theme.navigationUtilityBackground,
-      text: siteSettings.theme.navigationUtilityText,
-    };
-  };
-
-  const staffPalette = getStaffPalette();
-
-  const staffPillClass = `${desktopPillBase} justify-center hover:brightness-110`;
-
-  const mobilePillBase =
-    "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[13px] font-medium transition-all duration-150 ease-out";
-
-  const mobileAccountPillClass = `${mobilePillBase} site-nav-utility`;
-  const mobileStaffPillClass = `${mobilePillBase} hover:brightness-110`;
-
-  const headerTheme = "site-header-shell border-b";
-
-  const headerStyle = isStaffRoute
-    ? {
-        borderColor: hexToRgba(staffPalette.border, 0.35) ?? staffPalette.border,
-        boxShadow: `0 10px 30px ${hexToRgba(staffPalette.border, 0.12) ?? "rgba(0,0,0,0.12)"}`,
-      }
-    : {
-        borderColor: "var(--km-nav-border)",
-      };
+  const headerStyle = { borderColor: "var(--km-nav-border)" };
 
   return (
     <header
-      className={`sticky top-0 z-60 border-b backdrop-blur-md transition-transform duration-200 ${
-        siteSettings.theme.navigationBehavior === "auto-hide" && hidden ? "-translate-y-full" : "translate-y-0"
-      } ${headerTheme}`}
+      className={`site-header-shell sticky top-0 z-60 border-b backdrop-blur-md transition-transform duration-200 ${
+        siteSettings.theme.navigationBehavior === "auto-hide" && hidden && !isMobileOpen
+          ? "-translate-y-full"
+          : "translate-y-0"
+      }`}
       style={headerStyle}
+      data-staff-route={isStaffRoute ? "true" : undefined}
     >
-      {/*
-        Wider than the page's content column from `2xl` up.
-
-        `2xl` is where the header *grows*: the search button gains its Ctrl+K
-        chip, the account name is allowed 140px instead of 110, and the wordmark
-        appears. Measured at 1920 that comes to 1292px of content inside a
-        container capped at 1240px — a 52px overflow that landed the navigation
-        under the utilities. Everything below `2xl` fits inside `max-w-7xl` and
-        is unchanged.
-
-        Giving the bar the extra room is the fix rather than shrinking the
-        controls, because the whole point of those wider breakpoints is that
-        there is space to spend.
-      */}
-      <div className="mx-auto max-w-7xl px-4 xl:px-5 2xl:max-w-[94rem]">
-        {/* DESKTOP */}
-        {/*
-          The utilities column is `auto`, not a third `1fr`.
-
-          It used to be `minmax(0,1fr) auto minmax(0,1fr)`, which forces the two
-          side columns to the *same* width. The search button needs about 85px
-          and the signed-in utility cluster needs about 495px, so both were
-          given ~306px — and because the cluster is `justify-end` and its pills
-          do not shrink, the extra 190px overflowed *leftward*, straight over the
-          centred navigation. Nothing clipped it and the page never gained a
-          horizontal scrollbar, so it read as controls stacked on top of each
-          other rather than as overflow.
-
-          Now the utilities take exactly the width they need, the search column
-          may shrink, and the navigation column is the flexible one — so when
-          something has to give, it is the part that has an overflow menu to
-          give into.
-        */}
+      <div className="site-header-inner">
+        {/* DESKTOP
+            `auto minmax(0,1fr) auto` — the brand and the utilities size to
+            their own content and the navigation is the flexible column. The
+            utility cluster is additionally `shrink-0`, because a compressed
+            cart button is a cart button someone cannot press. */}
         <div
-          className="hidden h-14 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 lg:grid"
+          className="site-header-desktop hidden min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 lg:grid"
           data-testid="desktop-header"
         >
-          <div className="flex min-w-0 items-center justify-start" data-testid="header-left-utilities">
+          <Link
+            href="/"
+            aria-label={`${siteSettings.name} home`}
+            className={`site-header-brand ${isHome ? "" : "hover:opacity-90"}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={siteSettings.logoUrl}
+              alt=""
+              width={40}
+              height={40}
+              className="h-10 w-10 shrink-0 object-contain"
+            />
+            {siteSettings.wordmarkUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={siteSettings.wordmarkUrl}
+                alt={siteSettings.name}
+                className="hidden h-6 max-w-32 object-contain xl:block"
+              />
+            ) : (
+              <span className="site-header-wordmark hidden xl:inline">{siteSettings.name}</span>
+            )}
+          </Link>
+
+          <nav className="flex min-w-0 items-center gap-1" aria-label="Primary" data-testid="primary-navigation-group">
+            {primaryNav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={navLinkClass(item.href)}
+                aria-current={isNavItemActive(item, pathname) ? "page" : undefined}
+              >
+                {item.label}
+              </Link>
+            ))}
+
+            <NavMenu
+              triggerClassName={`site-nav-link site-nav-primary-link inline-flex items-center gap-1.5${
+                moreContainsCurrent ? " is-active" : ""
+              }`}
+              menuLabel="More destinations"
+              align="left"
+              panelClassName="w-60 overflow-hidden rounded-2xl border p-1.5 shadow-2xl"
+              trigger={
+                <>
+                  More
+                  <FontAwesomeIcon icon={faChevronDown} className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+                </>
+              }
+            >
+              {secondaryNav.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  role="menuitem"
+                  tabIndex={-1}
+                  aria-current={isNavItemActive(item, pathname) ? "page" : undefined}
+                  className="nav-menu-item nav-menu-item-stacked"
+                >
+                  <span className="font-medium">{item.label}</span>
+                  {item.description ? (
+                    <span className="nav-menu-item-description">{item.description}</span>
+                  ) : null}
+                </Link>
+              ))}
+            </NavMenu>
+          </nav>
+
+          <div className="flex shrink-0 items-center justify-end gap-2" data-testid="header-utilities">
             <button
               type="button"
-              onClick={handleOpenCommandPalette}
-              className={`${desktopPillBase} max-w-full justify-center site-nav-utility`}
-              aria-label="Search site (Ctrl+K)"
+              onClick={openSearch}
+              className={utilityClass}
+              aria-label="Search products (Ctrl+K)"
             >
-              <FontAwesomeIcon icon={faMagnifyingGlass} className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden xl:inline">Search</span>
-              <span className="hidden rounded bg-black/60 px-1 text-[9px] text-brand-textMuted 2xl:inline">
-                Ctrl+K
-              </span>
+              <FontAwesomeIcon icon={faMagnifyingGlass} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="hidden 2xl:inline">Search</span>
             </button>
-          </div>
 
-          <div className="flex min-w-0 items-center justify-center gap-3" data-testid="primary-navigation-group">
-            <nav className="flex items-center gap-1" aria-label="Primary navigation">
-              {leftLinks.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className={`${navLinkClasses(l.href)}${l.primary ? "" : " hidden xl:inline-flex"}`}
-                >
-                  {l.label}
-                </Link>
-              ))}
-            </nav>
-
-            <Link
-              href="/"
-              aria-label="Home"
-              className={`inline-flex shrink-0 items-center transition-transform duration-200 ease-out ${
-                isHome ? "" : "hover:scale-[1.06]"
-              }`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={homeLogoSrc}
-                alt={siteSettings.name}
-                width={44}
-                height={44}
-                className="object-contain drop-shadow-[0_8px_14px_rgba(0,0,0,0.55)]"
-              />
-              {siteSettings.wordmarkUrl ? (
-                // Bounded at 7rem so an operator-supplied wordmark cannot widen
-                // the centre group past the room measured for it above.
-                <img src={siteSettings.wordmarkUrl} alt="" className="ml-2 hidden h-7 max-w-28 object-contain 2xl:block" />
-              ) : null}
-            </Link>
-
-            <nav className="flex items-center gap-1" aria-label="Primary navigation continued">
-              {rightLinks.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className={`${navLinkClasses(l.href)}${l.primary ? "" : " hidden xl:inline-flex"}`}
-                >
-                  {l.label}
-                </Link>
-              ))}
-              <NavOverflowMenu
-                items={overflowLinks}
-                triggerClass={navLinkClasses("__overflow__")}
-                isActive={isActive}
-              />
-            </nav>
-          </div>
-
-          {/* Right utilities. `shrink-0` states the invariant the grid now
-              enforces: these are never compressed, because a compressed cart
-              button is a cart button someone cannot press. */}
-          <div className="flex shrink-0 items-center justify-end gap-2 xl:gap-3" data-testid="header-utilities">
-            {/* Outside the signed-in branch: guests build carts and wishlists
-                too, and hiding the indicators from them loses what they just
-                filled. */}
+            {/* Guests build carts and wishlists too; hiding these from them
+                loses what they just filled. */}
             <WishlistIndicator />
             <CartIndicator />
+
             {user ? (
               <>
-                <MessageBell userId={user.id} desktopPillBase={desktopPillBase} />
-                <NotificationBell userId={user.id} desktopPillBase={desktopPillBase} />
-
-                <Link
-                  href="/account"
-                  className={accountPillClass}
-                  title={displayName || user?.email || "Account"}
-                >
-                  {avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={avatarUrl}
-                      alt={displayName || user.email || "User avatar"}
-                      className="h-7 w-7 rounded-full border border-zinc-700 object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-primary/20 text-[10px] font-semibold text-brand-primary">
-                      {avatarInitial}
-                    </span>
-                  )}
-                  <span className="hidden max-w-[110px] truncate xl:inline 2xl:max-w-[140px]">
-                    {displayName || user?.email?.split("@")[0] || "Account"}
-                    {myIsVerified ? <VerifiedBadge className="ml-0.5 h-3 w-3" /> : null}
-                    {myDonationRank ? (
-                      <DonationBadge rank={myDonationRank} className="ml-0.5 h-3 w-3" />
-                    ) : null}
-                  </span>
-                </Link>
-
-                {isStaff && (
-                  <Link
-                    href="/staff"
-                    className={staffPillClass}
-                    title="Staff"
-                    style={{
-                      borderColor: hexToRgba(staffPalette.border, 0.6) ?? staffPalette.border,
-                      backgroundColor: staffPalette.bg,
-                      color: staffPalette.text,
-                      boxShadow: isStaffRoute
-                        ? `0 0 14px ${hexToRgba(staffPalette.border, 0.22) ?? "rgba(0,0,0,0.18)"}`
-                        : undefined,
-                    }}
-                  >
-                    <FontAwesomeIcon
-                      icon={faScrewdriverWrench}
-                      className="h-3.5 w-3.5"
-                    />
-                    <span className="hidden xl:inline">Staff</span>
-                  </Link>
-                )}
+                <NotificationBell userId={user.id} desktopPillBase="site-nav-control" />
+                <AccountMenu
+                  triggerClassName={`${utilityClass} site-nav-account`}
+                  pathname={pathname}
+                  displayName={displayName}
+                  email={user.email}
+                  avatarUrl={avatarUrl}
+                  isVerified={myIsVerified}
+                  donationRank={myDonationRank}
+                  isStaff={isStaff}
+                  unreadMessages={unreadMessages}
+                  unreadNotifications={unreadNotifications}
+                />
               </>
             ) : (
-              <Link
-                href="/auth/login"
-                className="theme-primary-glow rounded-full border border-amber-300 bg-amber-400 px-3 py-1 text-[11px] font-semibold text-black transition-all duration-150 ease-out hover:bg-amber-300 hover:border-amber-200"
-              >
+              <Link href="/auth/login" className="site-nav-signin">
                 Log in
               </Link>
             )}
           </div>
         </div>
 
-        {/* MOBILE */}
-        <div className="flex h-14 items-center justify-between lg:hidden">
-          <Link
-            href="/"
-            aria-label="Home"
-            className={`inline-flex items-center transition-transform duration-200 ease-out ${
-              isHome ? "" : "hover:scale-[1.06]"
-            }`}
-          >
+        {/* MOBILE — logo, search, cart, menu. Wishlist, account, orders and
+            everything else live in the drawer, because eight controls on a
+            320px bar is how the badges started clipping each other. */}
+        <div className="site-header-mobile flex items-center justify-between gap-2 lg:hidden">
+          <Link href="/" aria-label={`${siteSettings.name} home`} className="site-header-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={homeLogoSrc}
-              alt={siteSettings.name}
+              src={siteSettings.logoUrl}
+              alt=""
               width={36}
               height={36}
-              className="object-contain drop-shadow-[0_8px_14px_rgba(0,0,0,0.55)]"
+              className="h-9 w-9 shrink-0 object-contain"
             />
           </Link>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
-              onClick={handleOpenCommandPalette}
-              className="site-nav-utility inline-flex h-9 items-center justify-center rounded-md border px-2 text-[11px] transition-all duration-150 ease-out"
-              aria-label="Search site (Ctrl+K)"
+              onClick={openSearch}
+              className={utilityClass}
+              aria-label="Search products"
             >
-              🔍
+              <FontAwesomeIcon icon={faMagnifyingGlass} className="h-4 w-4" aria-hidden="true" />
             </button>
 
-            {/* The mobile bar carries the cart and wishlist too. The desktop
-                utilities row is hidden below lg, so without these a phone user
-                could fill a cart and have no way back to it. */}
-            <WishlistIndicator />
             <CartIndicator />
 
-            {user ? (
-              <>
-                <MessageBell
-                  userId={user.id}
-                  desktopPillBase="inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all duration-150 ease-out"
-                />
-                <NotificationBell
-                  userId={user.id}
-                  desktopPillBase="inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all duration-150 ease-out"
-                />
-
-                <Link href="/account" aria-label="Account">
-                  {avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={avatarUrl}
-                      alt={displayName || user.email || "User avatar"}
-                      className="h-8 w-8 rounded-full border border-zinc-700 object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-primary/20 text-[11px] font-semibold text-brand-primary">
-                      {avatarInitial}
-                    </div>
-                  )}
-                </Link>
-              </>
-            ) : null}
-
             <button
+              ref={mobileTriggerRef}
               type="button"
-              onClick={handleToggleMobile}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 bg-black/40 text-xs text-brand-text transition-all duration-150 ease-out hover:border-brand-accent/60"
-              aria-label="Toggle menu"
+              onClick={toggleMobile}
+              className={`${utilityClass} relative`}
+              aria-label={isMobileOpen ? "Close menu" : "Open menu"}
+              aria-expanded={isMobileOpen}
+              aria-haspopup="dialog"
             >
-              {isMobileOpen ? "✕" : "☰"}
+              <FontAwesomeIcon icon={faBars} className="h-4 w-4" aria-hidden="true" />
+              {user && unreadMessages + unreadNotifications > 0 ? (
+                <span className="site-nav-dot" aria-hidden="true" />
+              ) : null}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Mobile nav */}
-      <div
-        className={`overflow-hidden border-t border-zinc-800/80 bg-black/80 px-4 text-xs transition-[max-height,opacity,padding] duration-200 lg:hidden ${
-          isMobileOpen ? "max-h-96 opacity-100 pb-3 pt-3" : "max-h-0 opacity-0 pb-0 pt-0"
-        }`}
-      >
-        <div className="mb-3 flex flex-col gap-2">
-          <Link href="/about" className={navLinkClasses("/about")} onClick={() => setIsMobileOpen(false)}>
-            About
-          </Link>
-          <Link href="/capabilities" className={navLinkClasses("/capabilities")} onClick={() => setIsMobileOpen(false)}>
-            Capabilities
-          </Link>
-          <Link href="/projects" className={navLinkClasses("/projects")} onClick={() => setIsMobileOpen(false)}>
-            Projects
-          </Link>
-          <Link href="/catalog" className={navLinkClasses("/catalog")} onClick={() => setIsMobileOpen(false)}>
-            Catalog
-          </Link>
-          <Link href="/contact" className={navLinkClasses("/contact")} onClick={() => setIsMobileOpen(false)}>
-            Contact
-          </Link>
-          <Link href="/community" className={navLinkClasses("/community")} onClick={() => setIsMobileOpen(false)}>
-            Community
-          </Link>
-        </div>
-
-        <div className="border-t border-zinc-800/80 pt-3">
-          {user ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/account"
-                className={mobileAccountPillClass}
-                onClick={() => setIsMobileOpen(false)}
-              >
-                {avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={avatarUrl}
-                    alt={displayName || user.email || "User avatar"}
-                    className="h-7 w-7 rounded-full border border-zinc-700 object-cover"
-                  />
-                ) : (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-primary/20 text-[10px] font-semibold text-brand-primary">
-                    {avatarInitial}
-                  </span>
-                )}
-                <span className="max-w-[160px] truncate">
-                  {displayName || user?.email?.split("@")[0] || "Account"}
-                </span>
-              </Link>
-
-              {isStaff && (
-                <Link
-                  href="/staff"
-                  className={mobileStaffPillClass}
-                  onClick={() => setIsMobileOpen(false)}
-                  style={{
-                    borderColor: hexToRgba(staffPalette.border, 0.6) ?? staffPalette.border,
-                    backgroundColor: staffPalette.bg,
-                    color: staffPalette.text,
-                  }}
-                >
-                  <FontAwesomeIcon
-                    icon={faScrewdriverWrench}
-                    className="h-3.5 w-3.5"
-                  />
-                  <span>Staff</span>
-                </Link>
-              )}
-            </div>
-          ) : (
-            <Link
-              href="/auth/login"
-              className="theme-primary-glow inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-400 px-3 py-2 text-[11px] font-medium text-black transition-all duration-150 ease-out hover:bg-amber-300 hover:border-amber-200"
-              onClick={() => setIsMobileOpen(false)}
-            >
-              Log in
-            </Link>
-          )}
-        </div>
-      </div>
+      <MobileNavDrawer
+        open={isMobileOpen}
+        onClose={() => setIsMobileOpen(false)}
+        triggerRef={mobileTriggerRef}
+        pathname={pathname}
+        isStaff={isStaff}
+        signedIn={Boolean(user)}
+        onOpenSearch={openSearch}
+        unreadMessages={unreadMessages}
+        unreadNotifications={unreadNotifications}
+      />
     </header>
   );
 }

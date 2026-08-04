@@ -74,45 +74,47 @@ test("navbar utility controls in globals.css read the dedicated tokens, not the 
   assert.doesNotMatch(utilityBlock!, /--km-nav-active/);
 });
 
-test("SiteHeader applies the dedicated navbar utility class to search, messages, notifications, account, and staff", () => {
+test("every navbar utility control carries the dedicated utility class", () => {
   const header = read("src/components/SiteHeader.tsx");
+  const bell = read("src/components/nav/NotificationBell.tsx");
+  const cart = read("src/components/commerce/CartIndicator.tsx");
+  const wishlist = read("src/components/commerce/WishlistIndicator.tsx");
 
-  assert.match(header, /const bellClass = `\$\{desktopPillBase\} justify-center w-9 px-0 site-nav-utility/);
-  assert.match(header, /const pillClass = `\$\{desktopPillBase\} justify-center w-9 px-0 site-nav-utility/);
-  assert.match(header, /const accountPillClass = `\$\{desktopPillBase\} site-nav-utility/);
-  assert.match(header, /const mobileAccountPillClass = `\$\{mobilePillBase\} site-nav-utility`/);
-  assert.match(header, /site-nav-utility-badge/);
+  // One definition, applied to search, the account trigger, and the mobile
+  // menu button. The old header spelled out four near-identical class
+  // constants, which is how one of them ends up a different colour.
+  assert.match(header, /const utilityClass = "site-nav-utility site-nav-control"/);
+  // Desktop search, mobile search, the mobile menu button, and the account
+  // trigger (which takes it as `triggerClassName`).
+  const utilityUses = header.match(/\butilityClass\b/g) ?? [];
+  assert.ok(utilityUses.length >= 5, `expected the definition plus four controls; saw ${utilityUses.length}`);
+  assert.match(header, /triggerClassName=\{`\$\{utilityClass\} site-nav-account`\}/);
 
-  // Search buttons (desktop + mobile) carry the dedicated class.
-  assert.match(header, /\$\{desktopPillBase\} max-w-full justify-center site-nav-utility`/);
-  assert.match(header, /className="site-nav-utility inline-flex h-9 items-center justify-center rounded-md border/);
-
-  // Staff pill's non-database fallback now derives from the navbar utility theme fields.
-  assert.match(header, /siteSettings\.theme\.navigationUtilityBorder/);
-  assert.match(header, /siteSettings\.theme\.navigationUtilityBackground/);
-  assert.match(header, /siteSettings\.theme\.navigationUtilityText/);
+  for (const [name, source] of [["bell", bell], ["cart", cart], ["wishlist", wishlist]] as const) {
+    assert.match(source, /site-nav-utility/, `${name} must use the dedicated utility tokens`);
+  }
+  assert.match(cart, /site-nav-utility-badge/);
 });
 
-test("navbar utility controls no longer derive their color from the shared secondary/accent token", () => {
+test("navbar utility controls do not derive their color from the shared secondary/accent token", () => {
   const header = read("src/components/SiteHeader.tsx");
+  const bell = read("src/components/nav/NotificationBell.tsx");
+  const accountMenu = read("src/components/nav/AccountMenu.tsx");
 
-  const bellClassBlock = header.match(/const bellClass = `[\s\S]*?`;/)?.[0] ?? "";
-  const pillClassBlock = header.match(/const pillClass = `[\s\S]*?`;/)?.[0] ?? "";
-  const accountPillBlock = header.match(/const accountPillClass = `[\s\S]*?`;/)?.[0] ?? "";
-  const mobileAccountPillBlock = header.match(/const mobileAccountPillClass = `[\s\S]*?`;/)?.[0] ?? "";
-  const desktopSearchBlock = header.match(/\$\{desktopPillBase\} max-w-full justify-center site-nav-utility`/)?.[0] ?? "";
-  const mobileSearchBlock = header.match(/className="site-nav-utility inline-flex h-9 items-center justify-center rounded-md border[^"]*"/)?.[0] ?? "";
-  const badgeBlocks = header.match(/site-nav-utility-badge absolute[^"]*"/g) ?? [];
-  const iconBlocks = header.match(/className="text-\[14px\]"/g) ?? [];
-
+  // Changing the site's primary/accent colour must not recolour the header.
   const accentTokens = /brand-accent|amber-200|amber-300|amber-400|theme-accent-glow/;
 
-  for (const block of [bellClassBlock, pillClassBlock, accountPillBlock, mobileAccountPillBlock, desktopSearchBlock, mobileSearchBlock, ...badgeBlocks]) {
-    assert.doesNotMatch(block, accentTokens);
-  }
-  assert.equal(iconBlocks.length, 2, "expected both bell icons to drop their unread-driven accent color class");
+  const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-  // The staff pill's fallback palette must not be the old hardcoded brand-flavored literal.
-  assert.doesNotMatch(header, /border: dbBorder \?\? "#fbbf24"/);
-  assert.doesNotMatch(header, /return \{ border: "#fbbf24", bg: "rgba\(0,0,0,0\.35\)", text: "#ffffff" \}/);
+  for (const [name, source] of [
+    ["header", header],
+    ["bell", bell],
+    ["account menu", accountMenu],
+  ] as const) {
+    assert.doesNotMatch(strip(source), accentTokens, `${name} must not hard-code an accent colour`);
+  }
+
+  // The sign-in call to action was a literal amber pill. It now reads the
+  // badge tokens, so an operator who themes the navbar themes it too.
+  assert.match(read("src/app/globals.css"), /\.site-nav-signin \{[^}]*var\(--km-nav-badge-bg/);
 });

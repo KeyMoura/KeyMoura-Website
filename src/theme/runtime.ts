@@ -15,8 +15,11 @@ export type SiteTheme = {
   navigationBehavior: "sticky" | "auto-hide";
   navigationDensity: "compact" | "comfortable";
   navigationBackground: string; navigationText: string; navigationActiveText: string; navigationBorder: string;
+  navigationHoverBackground: string; navigationHoverText: string;
   navigationUtilityBackground: string; navigationUtilityBorder: string; navigationUtilityText: string;
   navigationUtilityHoverBackground: string; navigationUtilityHoverBorder: string; navigationUtilityHoverText: string;
+  navigationBadgeBackground: string; navigationBadgeText: string;
+  navigationMobileBackground: string; navigationMobileText: string;
   backgroundStyle: "gradient" | "solid" | "spotlight";
   contentWidth: "standard" | "wide" | "full";
   shadowStyle: "none" | "soft" | "glow";
@@ -34,8 +37,11 @@ export const defaultSiteTheme: SiteTheme = {
   navigationStyle: "soft", publicNavigationStyle: "classic", navigationBehavior: "auto-hide",
   navigationDensity: "compact", navigationBackground: "#09090b", navigationText: "#d4d4d8",
   navigationActiveText: "#f59e0b", navigationBorder: "#3f3f46",
+  navigationHoverBackground: "#18181b", navigationHoverText: "#ffffff",
   navigationUtilityBackground: "#0a0a0c", navigationUtilityBorder: "#3f3f46", navigationUtilityText: "#f4f4f5",
   navigationUtilityHoverBackground: "#18181b", navigationUtilityHoverBorder: "#52525b", navigationUtilityHoverText: "#ffffff",
+  navigationBadgeBackground: "#f59e0b", navigationBadgeText: "#09090b",
+  navigationMobileBackground: "#0a0a0c", navigationMobileText: "#f4f4f5",
   backgroundStyle: "gradient", contentWidth: "standard", shadowStyle: "soft", borderStrength: "standard",
 };
 
@@ -53,6 +59,9 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     primaryButtonText: color("primaryButtonText"), secondaryButtonText: color("secondaryButtonText"),
     navigationBackground: color("navigationBackground"), navigationText: color("navigationText"),
     navigationActiveText: color("navigationActiveText"), navigationBorder: color("navigationBorder"),
+    navigationHoverBackground: color("navigationHoverBackground"), navigationHoverText: color("navigationHoverText"),
+    navigationBadgeBackground: color("navigationBadgeBackground"), navigationBadgeText: color("navigationBadgeText"),
+    navigationMobileBackground: color("navigationMobileBackground"), navigationMobileText: color("navigationMobileText"),
     navigationUtilityBackground: color("navigationUtilityBackground"), navigationUtilityBorder: color("navigationUtilityBorder"),
     navigationUtilityText: color("navigationUtilityText"), navigationUtilityHoverBackground: color("navigationUtilityHoverBackground"),
     navigationUtilityHoverBorder: color("navigationUtilityHoverBorder"), navigationUtilityHoverText: color("navigationUtilityHoverText"),
