@@ -69,6 +69,13 @@ function QueueContent() {
   const [error, setError] = useState("");
   const [searchDraft, setSearchDraft] = useState(search);
 
+  // Tracked separately from `error` because a refusal is not a failure. The
+  // permission check below and the route's own check can disagree — a
+  // permission revoked mid-session, or a stale access payload — and when they
+  // do, staff must be told what they lack rather than shown a red "could not
+  // load" box with a Try again button that will never succeed.
+  const [denied, setDenied] = useState(false);
+
   // `now` is captured once per mount. Reading `new Date()` inside the render
   // would make "due today" recompute on every keystroke and could flip a badge
   // mid-session at midnight; more importantly it would differ between the
@@ -83,6 +90,7 @@ function QueueContent() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setDenied(false);
     try {
       const query = new URLSearchParams();
       if (scope) query.set("scope", scope);
@@ -96,6 +104,11 @@ function QueueContent() {
 
       const response = await fetch(`/api/staff/production/jobs?${query}`, { credentials: "same-origin" });
       const body = await response.json().catch(() => null);
+
+      if (response.status === 403) {
+        setDenied(true);
+        return;
+      }
       if (!response.ok) throw new Error(body?.error || "Could not load the production queue.");
 
       lastGood.current = body as Payload;
@@ -140,11 +153,11 @@ function QueueContent() {
     );
   }
 
-  if (!canView) {
+  if (!canView || denied) {
     return (
       <AccessDeniedCard
         title="Production is restricted"
-        message="You need the production access permission to see the job queue."
+        message="You need the production.view permission to see the job queue. Ask an administrator to grant it to your role."
       />
     );
   }

@@ -139,6 +139,9 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // A refusal is not a load failure — see the same note on the queue page.
+  const [denied, setDenied] = useState(false);
+
   const [draft, setDraft] = useState<JobDraftState | null>(null);
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
 
@@ -152,9 +155,14 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setDenied(false);
     try {
       const response = await fetch(`/api/staff/production/jobs/${id}`, { credentials: "same-origin" });
       const body = await response.json().catch(() => null);
+      if (response.status === 403) {
+        setDenied(true);
+        return;
+      }
       if (!response.ok) throw new Error(body?.error || "Could not load the job.");
       setPayload(body as Payload);
       setDraft(toDraft((body as Payload).job));
@@ -324,11 +332,11 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  if (!canView) {
+  if (!canView || denied) {
     return (
       <AccessDeniedCard
         title="Production is restricted"
-        message="You need the production access permission to see this job."
+        message="You need the production.view permission to see this job. Ask an administrator to grant it to your role."
       />
     );
   }

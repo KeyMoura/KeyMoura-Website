@@ -7,7 +7,13 @@ import {
   parseJobDraft,
   TERMINAL_STATUSES,
 } from "@/lib/production/jobs";
-import { JOB_COLUMNS, loadJobReferences, recordJobAction, type JobRow } from "@/lib/production/server";
+import {
+  JOB_COLUMNS,
+  loadJobReferences,
+  logProductionFailure,
+  recordJobAction,
+  type JobRow,
+} from "@/lib/production/server";
 
 /**
  * Production job listing and creation.
@@ -86,8 +92,13 @@ export async function GET(req: NextRequest) {
     .range(offset, offset + limit - 1)
     .returns<JobRow[]>();
 
-  if (error) return NextResponse.json({ error: "Could not load the production queue." }, { status: 500 });
+  if (error) {
+    logProductionFailure("jobs.list", error);
+    return NextResponse.json({ error: "Could not load the production queue." }, { status: 500 });
+  }
 
+  // An empty table is a real answer, not a failure: `data` is `[]` and the
+  // queue renders its empty state. Only `error` above is a failure.
   const jobs = data ?? [];
   const references = await loadJobReferences(jobs);
 
@@ -124,6 +135,7 @@ export async function POST(req: NextRequest) {
     .single<JobRow>();
 
   if (error || !data) {
+    logProductionFailure("jobs.create", error);
     return NextResponse.json({ error: error?.message || "Could not create the job." }, { status: 400 });
   }
 

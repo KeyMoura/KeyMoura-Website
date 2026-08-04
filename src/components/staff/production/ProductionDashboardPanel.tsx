@@ -93,12 +93,18 @@ export function ProductionDashboardPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Refused, rather than broken. The dashboard already gates this panel on the
+  // permission, so reaching here means the two disagreed — which is worth
+  // saying plainly and quietly, not worth a red alert with a retry button.
+  const [denied, setDenied] = useState(false);
+
   // Held across a refetch so the numbers on screen never blink to zero.
   const lastGood = useRef<Summary | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setDenied(false);
     try {
       const now = new Date();
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -106,6 +112,10 @@ export function ProductionDashboardPanel() {
         credentials: "same-origin",
       });
       const body = await response.json().catch(() => null);
+      if (response.status === 403) {
+        setDenied(true);
+        return;
+      }
       if (!response.ok) throw new Error(body?.error || "Could not load production counts.");
       lastGood.current = body as Summary;
       setSummary(body as Summary);
@@ -138,6 +148,13 @@ export function ProductionDashboardPanel() {
         </Link>
       </div>
 
+      {denied ? (
+        <EmptyState className="mt-5">
+          <p className="font-medium">You do not have production access.</p>
+          <p className="mt-1">Ask an administrator for the production.view permission.</p>
+        </EmptyState>
+      ) : null}
+
       {error ? (
         <Notice tone="danger" role="alert" className="mt-4">
           <p>{error}</p>
@@ -151,7 +168,7 @@ export function ProductionDashboardPanel() {
         </Notice>
       ) : null}
 
-      {!shown && loading ? (
+      {!shown && loading && !denied ? (
         <EmptyState className="mt-5">Loading production counts…</EmptyState>
       ) : null}
 

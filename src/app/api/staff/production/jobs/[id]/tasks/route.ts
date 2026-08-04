@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { isProductionTaskKind, TASK_KIND_META } from "@/lib/production/jobs";
-import { JOB_COLUMNS, TASK_COLUMNS, recordJobAction, type JobRow } from "@/lib/production/server";
+import {
+  JOB_COLUMNS,
+  TASK_COLUMNS,
+  logProductionFailure,
+  recordJobAction,
+  type JobRow,
+} from "@/lib/production/server";
 
 /**
  * Manufacturing steps and the completion / quality checklists.
@@ -71,7 +77,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     .select(TASK_COLUMNS)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message || "Could not add the item." }, { status: 400 });
+  if (error) {
+    logProductionFailure("task.add", error);
+    return NextResponse.json({ error: error.message || "Could not add the item." }, { status: 400 });
+  }
 
   await recordJobAction({
     actor,
@@ -139,7 +148,10 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     .select(TASK_COLUMNS)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message || "Could not update the item." }, { status: 400 });
+  if (error) {
+    logProductionFailure("task.update", error);
+    return NextResponse.json({ error: error.message || "Could not update the item." }, { status: 400 });
+  }
 
   // Only a tick is worth a timeline row. Fixing a typo in a label is not the
   // kind of thing anybody reads a job history to find.
@@ -183,7 +195,10 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
     .eq("id", taskId)
     .eq("job_id", id);
 
-  if (error) return NextResponse.json({ error: "Could not remove the item." }, { status: 400 });
+  if (error) {
+    logProductionFailure("task.remove", error);
+    return NextResponse.json({ error: "Could not remove the item." }, { status: 400 });
+  }
 
   await recordJobAction({
     actor,

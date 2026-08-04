@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { isProductionFileKind } from "@/lib/production/jobs";
-import { FILE_COLUMNS, JOB_COLUMNS, recordJobAction, type JobRow } from "@/lib/production/server";
+import {
+  FILE_COLUMNS,
+  JOB_COLUMNS,
+  logProductionFailure,
+  recordJobAction,
+  type JobRow,
+} from "@/lib/production/server";
 
 /**
  * Files attached to a job: CAD, CAM, drawings, reference images, and the
@@ -107,7 +113,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     .select(FILE_COLUMNS)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message || "Could not attach the file." }, { status: 400 });
+  if (error) {
+    logProductionFailure("file.add", error);
+    return NextResponse.json({ error: error.message || "Could not attach the file." }, { status: 400 });
+  }
 
   await recordJobAction({
     actor,
@@ -145,7 +154,10 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     .select(FILE_COLUMNS)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: "Could not update the file." }, { status: 400 });
+  if (error) {
+    logProductionFailure("file.update", error);
+    return NextResponse.json({ error: "Could not update the file." }, { status: 400 });
+  }
   if (!data) return NextResponse.json({ error: "That file no longer exists." }, { status: 404 });
 
   // Changing who can see a manufacturing file is exactly the kind of action the
@@ -188,7 +200,10 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
     .eq("id", fileId)
     .eq("job_id", id);
 
-  if (error) return NextResponse.json({ error: "Could not remove the file." }, { status: 400 });
+  if (error) {
+    logProductionFailure("file.remove", error);
+    return NextResponse.json({ error: "Could not remove the file." }, { status: 400 });
+  }
 
   await recordJobAction({
     actor,
