@@ -473,9 +473,10 @@ that itself has a parent, which also makes cycles unrepresentable.
 All are additive. No column is dropped; the legacy `products.category` text
 column is retained for compatibility and kept in sync.
 
-## Pass 4 — where it stands
+## Pass 4 — merged and in production
 
-Branch `product-experience-lifecycle-20260803`, pushed, four commits:
+Branch `product-experience-lifecycle-20260803` → merged as **`cbf6e26`**, which
+is the current production SHA.
 
 | SHA | What |
 |-----|------|
@@ -483,30 +484,63 @@ Branch `product-experience-lifecycle-20260803`, pushed, four commits:
 | `0359e79` | Show product cover images on cart lines |
 | `4fe74cf` | Stop the discount form silently changing what staff typed |
 | `f69d261` | Stop the navbar stacking its controls on top of each other |
+| `8db08ab` | Record pass 4 status and what remains |
+| `cbf6e26` | Merge commit |
 
-- **437 tests pass** (was 364 at `f47005e`; 73 added across four new suites).
+- **437 tests pass** (was 364 at `f47005e`; 73 added across four new suites),
+  re-run on the merge commit itself.
 - Typecheck clean. Local production build clean.
-- **Vercel preview build: success** on `f69d261`.
+- Vercel preview build: success. **Vercel production deployment: Ready.**
 - No schema change, no migration, no new dependency in this pass.
 - Lint: the 350-problem pre-existing baseline in `src` is unchanged.
 
-### Not merged — one gap and one blocked check
+### Production smoke test — 2026-08-04, on `cbf6e26`
 
-**The preview deployment is behind Vercel SSO protection**
-(`https://keymoura-website-2aakiwut2-keymoura.vercel.app` 302s to
-`vercel.com/sso-api`), so the preview could not be smoke-tested from here. The
-build succeeded; the running app was not exercised.
+Deployed bundle confirmed first: the production CSS chunk carries
+`pointer-events:none` on `.product-card-action`, plus `.site-nav-badge`,
+`.cart-thumb`, `.product-card-aside`, and the `94rem` header cap.
 
-**One code path has never run against a real database.** `resolveLines` now
-calls `loadProductImageSources`, so every cart read *and every checkout* issues
-one extra batched query. It is the same pattern the wishlist and shared-cart
-services have used in production since pass 3, and it is covered by tests, but
-`.env.local` carries a deliberately fake `SUPABASE_SERVICE_ROLE_KEY` and the
-preview is gated, so it has only ever been executed against seeded data. Worth
-one deliberate look at `/cart` and a checkout before or immediately after merge.
+| Check | Result |
+|-------|--------|
+| Catalog card action button | **Passes.** With the hover `filter` applied, both cards hit-test to their own anchor and a dispatched click navigated to `/catalog/premade-shift-knob`. One anchor per card, zero buttons inside it. |
+| Wishlist isolation | **Passes.** The control hit-tests inside its `<button>` and never to the anchor, on both cards. |
+| Cart drawer images | **Passes.** 52×52 box, image painted, `sizes="52px"`, `object-fit: cover`, `alt=""`, wrapper `aria-hidden` and `tabindex="-1"`. Badge read "1", label "Cart, 1 item". |
+| `/cart` images | **Passes.** 64×64 box, image painted, `sizes="64px"`, no overlap with the product name, quantity and Remove both usable. The optimizer served **4.9 KB** (`w=96`) from a 1920×1080, 2.2 MB source. |
+| Navbar | **Passes** at 375, 1024, 1280, 1366 and 1920 with the signed-in staff cluster simulated (messages, notifications at `99+`, long account name, staff pill): zero overlaps, zero clipping, no horizontal page overflow. Below `xl` only Projects and Catalog remain inline and More appears; from `xl` all six show. |
+| Safe cart read | **Passes.** `GET /api/cart` → 200 in 407 ms against the real database. |
+| Checkout, stopped before payment | **Correct refusal.** `POST /api/cart/checkout` as a guest → **401** `requiresSignIn`. No Stripe session, no order row, no payment. |
 
-Everything else in these four phases was verified in a real browser and is
-described per-phase above.
+**The gap flagged before merge is now closed.** `loadProductImageSources` has
+run against the real production database: a cart line for *Premade Shift Knob*
+came back carrying both `image_url` and a `product_media` row with the real
+Supabase Storage URL, and nothing but public catalog columns. That path had
+previously only ever executed against seeded data.
+
+**What could not be verified, and why.**
+
+- **The staff discount create/edit flow.** `/staff/catalog/discounts` correctly
+  redirects to `/auth/login` server-side, and signing in would mean handling a
+  password, which is out of bounds for an automated session. The fix is present
+  in the deployed build — the production CSS is from `cbf6e26` and JS and CSS
+  come out of the same build — but the form was not driven on production. It
+  *was* driven end to end against a local dev server: `12.5` → "A percentage has
+  to be a whole number…", `150`/`-5` → "between 1 and 100", empty → "Give the
+  discount a value.", `abc` → "That is not a number.", `100` accepted, error
+  clears on a valid value, submit blocked with focus moved to the field.
+- **Stripe Checkout Session creation.** Reaching it needs an authenticated
+  customer, so the run stopped at the guest refusal. The session-creation path
+  itself is unchanged by this pass.
+
+**No product's purchase mode was changed to force a test.** Both products are
+still `direct_or_request` and `request_only` exactly as before; the cart test
+used *Premade Shift Knob*, which is already directly purchasable.
+
+**Production data after the run:** 2 products, 6 orders, 1 order item, 1
+category, 4 media rows, 1 wishlist, 1 shared cart, 0 discount codes, 34
+migrations — every count identical to before. The pre-existing account cart
+still holds its one item. The only artifact is **one empty guest cart row**
+created by the test and then cleared; that is ordinary data, produced by any
+guest who touches a cart.
 
 ## Still to build — pass 5 onward
 
@@ -546,10 +580,20 @@ Also still outstanding, unchanged from pass 3:
 
 ## Next steps, in order
 
-1. Smoke-test the preview (needs deployment protection lifted, or an owner to
-   check it) — in particular `/cart` with a real line, and a checkout.
-2. Merge to main, confirm the production deployment reaches Ready, smoke-test
-   `/catalog`, the cart drawer, `/cart`, the staff discount form, and the navbar
-   at a laptop width with a staff account.
+1. **Owner check, five minutes.** Sign in as staff and drive
+   `/staff/catalog/discounts`: type `12.5` into the percentage field and confirm
+   it is refused rather than saved as 12, then create and edit a real
+   percentage code. That is the one shipped fix no automated session can reach.
+2. **Also worth an owner's eye:** a signed-in customer's navbar at ~1100–1300px
+   (the staff cluster was simulated, not authenticated), and one real checkout
+   through Stripe if a test order is acceptable.
 3. Then start the product-detail redesign, which everything in phases 5–8
    hangs off.
+
+### Noticed in passing, not acted on
+
+*Premade Shift Knob*'s cover image is a **2.2 MB, 1920×1080 PNG**. The optimizer
+handles it correctly on every surface (4.9 KB for a cart thumbnail), so nothing
+is broken — but it is worth compressing at the source before the catalog grows,
+and it is the kind of asset that makes the product-page gallery in phase 5
+expensive if left as-is.
