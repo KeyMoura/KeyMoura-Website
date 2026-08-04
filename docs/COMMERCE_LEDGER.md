@@ -1051,3 +1051,181 @@ So the integration is correct and the platform side is on, but **a recorded
 pageview was not observed and could not be**. Worth one glance from a normal
 browser: visit the site, then check Vercel → Analytics. Speed Insights, by
 contrast, loads its script on every page load and was observed doing so.
+
+---
+
+# Pass 5a — production queue repair
+
+Branch `production-queue-grant-repair-20260804`, from `d63b3a2` → merged as
+**`167a6ff`**, which is the current production SHA. Merged with a merge commit,
+never force-pushed.
+
+## The failure
+
+`/staff/production` answered **"Could not load the production queue."** for
+every request, on every filter, for admins included. Pass 5's own smoke test did
+not catch it: every check it ran was an *unauthenticated* one, and those all
+correctly returned 307/403 before ever reaching the database. The first request
+that got past the permission gate was the first one to touch the table.
+
+## Root cause
+
+`20260804010000_production_jobs.sql` created four tables and a sequence and
+enabled RLS on all of them — and issued **no `grant` statements**.
+
+This project's default privileges for a new `public` table are:
+
+```
+postgres=arwdDxtm/postgres
+anon=Dxtm/postgres
+authenticated=Dxtm/postgres
+service_role=Dxtm/postgres
+```
+
+`Dxtm` is TRUNCATE, REFERENCES, TRIGGER, MAINTAIN. **There is no SELECT, INSERT,
+UPDATE or DELETE in it.** A new table in this database starts with no usable
+privilege for any PostgREST role — which is why every other table-creating
+migration in this repository carries explicit grants. That one was the only one
+that did not.
+
+Table privileges are checked **before** row level security, and `service_role`'s
+`BYPASSRLS` bypasses policies but **not** grants. So every service-role read died
+with `42501: permission denied for table production_jobs` before a policy was
+ever consulted.
+
+**RLS, the permission keys, the query columns, the joins, the generated types
+and the middleware were all correct, and none of them were ever reached.** The
+error string was ambiguous by coincidence: `"Could not load the production
+queue."` is both the route's 500 body and the client's fetch fallback. A 403
+would have read `"Forbidden"`, which is what ruled the permission path out.
+
+Evidence: nine `permission denied for table production_jobs` entries in the
+Postgres log, plus role-switched probes showing `service_role` failing on all
+four tables and the sequence while reading `orders` fine.
+
+## Two more defects found on the way in
+
+1. **The job-number sequence had no grants at all** (`relacl` null, owner only).
+   Creating a job would have failed on `nextval` even once the tables were
+   readable — a second outage waiting behind the first.
+2. **`/summary` discarded `result.error` and returned `count ?? 0`.** PostgREST
+   resolves rather than rejects, so the dashboard rendered "0 open, 0 overdue"
+   while the queue beside it showed an error. A refused count is now a 500.
+
+## The repair — `20260804020000_production_job_grants.sql`
+
+Grants only. No DDL, no policy change, no table or row touched; the original
+migration and its data are preserved.
+
+- Only `service_role` is granted. `anon` and `authenticated` are **revoked**,
+  which also removes the TRUNCATE they inherited from the default ACL —
+  **TRUNCATE is not filtered by RLS**, so that was a real hole no policy closed.
+- `production_job_events` gets `select, insert` **only**, so a job's history
+  cannot be rewritten even by the service role. Cascade deletes still work: a
+  referential action runs as the table owner and does not consult the caller's
+  privileges. Verified explicitly.
+- The four RLS policies from `20260804010000` are untouched.
+
+Nothing was granted to any non-admin role. Admins already receive both
+permissions automatically — `loadPermissionsForUser` returns the full `PERMISSIONS`
+set for `admin`, before any `role_permissions` lookup.
+
+## Diagnosability
+
+`logProductionFailure` logs SQLSTATE, message and hint — and deliberately **not**
+`details`, which is the one field that echoes row values back (a unique violation
+reports the conflicting key, and a job carries internal notes, costs and customer
+identifiers). No token, key, cookie or row body is logged. Wired into all six
+routes and the reference loader.
+
+The generic sentence is the right thing to show a machinist. It was the wrong and
+only thing to have when diagnosing this.
+
+## States
+
+- **Authorized** staff get the queue.
+- **Unauthorized** staff get a permission-denied state naming `production.view`,
+  not a red retry box — on the queue, the job workspace, the dashboard panel and
+  the order-page panel. Previously a 403 rendered the raw word "Forbidden" in a
+  danger notice with a Try again button that could never succeed.
+- **Empty** queue keeps its empty state. The route distinguishes `error` from
+  `[]`, and a test asserts it.
+
+## Validation
+
+- **537 tests pass, 0 fail** (522 before, 15 added in `tests/production-grants.test.ts`).
+- Typecheck clean. Focused lint on all production code clean. Production build
+  clean, exit 0.
+- **Lint unchanged at the 350-problem baseline** (179 errors, 171 warnings).
+- Migration dry-run applied and rolled back **twice** against production, with
+  production verified untouched after each.
+
+The last test is the generalizable one: it derives what must be granted from what
+the schema migration *creates*, so a fifth production table cannot ship ungranted
+the way the first four did. It fails against the pre-fix state.
+
+## Migration application — 2026-08-04
+
+Applied with approval through `execute_sql` in one guarded transaction, **not**
+`apply_migration` — that tool stamps its own timestamp as the version, which
+caused six of the seven ledger drift problems repaired in pass 3.
+
+- **Before**: `production_jobs` exists; exactly 35 migration rows; `20260804020000`
+  not recorded; `service_role` does *not* have select (the bug is still present);
+  `production_jobs` empty.
+- **After**: `service_role` holds all four verbs on jobs/tasks/files; events has
+  select+insert and **not** update/delete; sequence usage held; **zero** grant rows
+  for `anon`, `authenticated` or `PUBLIC`; 36 migration rows; 5 policies;
+  products/orders/order_items unchanged at 2/6/1; jobs and events still 0.
+
+All held; the transaction committed. **The ledger is exact: 36 repo files, 36
+rows, versions and names identical.**
+
+The sequence was reset to `1 / is_called=false` after the dry runs, which had
+consumed values — `nextval` is not transactional. Safe because the table is
+empty, so the shop's first job is `JOB-0001`.
+
+### Post-deploy verification — on `167a6ff`
+
+| Check | Result |
+|-------|--------|
+| Vercel preview build | **Success.** |
+| Vercel production deployment | **Ready.** |
+| Site health | `/` 200, `/catalog` 200. |
+| Staff routes exist and are gated | `/staff/production`, `/api/staff/production/jobs` and `/summary` all 307 → `/auth/login` for an anonymous caller. |
+| Every API database path, as `service_role`, against the real production database | **All OK** — the `POST /jobs` insert (exercising the real default expression, the sequence and the `updated_at` trigger), the `GET /jobs` list with `scope=open`, the `/summary` head count, the `PATCH` update, and the timeline append. Run inside a transaction that was rolled back: **nothing was created**. |
+| Append-only still holds | `UPDATE` and `DELETE` on `production_job_events` refused with 42501, as `service_role`. |
+| `anon` / `authenticated` | `SELECT` refused, and `anon`'s inherited `TRUNCATE` refused. Zero grant rows for either. |
+| Postgres log | **11 `permission denied` entries, all historical.** The last was 2026-08-04 12:21:24 UTC, over five hours before the grants were applied. **Zero since.** |
+
+**Production data after the run — unchanged:** 2 products, 6 orders, 1 order
+item, 2 carts, 1 wishlist, 1 discount code, 0 jobs, 0 tasks, 0 files, 0 events,
+0 `staff.production.*` audit events, 36 migrations.
+
+### What could not be verified, and why
+
+**A signed-in staff session was not driven.** Reaching the queue as a real staff
+member means handling a password, which is out of bounds for an automated
+session — the same limit passes 3, 4 and 5 recorded. What was done instead is
+strictly stronger than a page screenshot at the database layer and strictly
+weaker at the UI layer: the exact queries the routes run were executed against
+the real production database as the exact role the routes use, and all passed.
+
+**Still worth one owner check, two minutes:** sign in as staff, open
+`/staff/production` — it should render the polished empty state, not an error —
+then raise a job and confirm it is numbered `JOB-0001`.
+
+## Job files — storage design, not built
+
+`production_job_files` records *references* (a label plus `storage_path` or
+`external_url`), with `is_customer_visible` off by default and a check
+constraint that a row must point at one or the other. It does not accept
+uploads, and **no bucket was created** — that was explicitly held for approval.
+
+The design when it is wanted: a **private** bucket (`production-job-files`), never
+public; no direct client upload — a staff API route with `production.manage`
+issues a short-lived signed upload URL, and reads go through short-lived signed
+download URLs rather than public links; storage RLS keyed on `is_staff_user()`
+so a leaked path is not a leaked file; paths namespaced by job id. That is a
+route, a bucket, and a storage policy — none of it exists yet, and none of it
+should be created without a decision on retention and file-size limits.
