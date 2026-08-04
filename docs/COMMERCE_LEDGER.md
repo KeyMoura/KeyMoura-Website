@@ -3,7 +3,8 @@
 Pass 1: `commerce-catalog-transformation` → PR #5, merged as `706919e`.
 Pass 2: `commerce-completion-20260803` → PR #6, merged as `c4b98d1`, in production.
 Pass 3: `commerce-launch-readiness-20260803` → merged as `f47005e`, in production.
-Pass 4: `product-experience-lifecycle-20260803` → in progress, based on `f47005e`.
+Pass 4: `product-experience-lifecycle-20260803` → merged as `cbf6e26`, in production.
+Pass 5: `staff-operations-command-center-20260804` → in progress, based on `8ce4c92`.
 
 This file is the running record of the catalog and commerce build. It exists so
 the work can be picked up mid-flight without re-auditing finished areas.
@@ -597,3 +598,367 @@ handles it correctly on every surface (4.9 KB for a cart thumbnail), so nothing
 is broken — but it is worth compressing at the source before the catalog grows,
 and it is the kind of asset that makes the product-page gallery in phase 5
 expensive if left as-is.
+
+---
+
+# Pass 5 — staff operations: production and job tracking
+
+Branch `staff-operations-command-center-20260804`, from `8ce4c92`.
+
+## Scope decision, and why
+
+The brief for this pass asked for twenty phases: a staff dashboard rebuild, an
+order command centre, production tracking, a product-management overhaul, bulk
+tools, customer management, financial reporting, cost and margin tracking,
+imports and exports, a notification centre, central business settings, audit-log
+completion, integration health, a launch-readiness checker, printable documents,
+a customer UX audit, performance and security reviews.
+
+**The audit found that almost none of the groundwork existed.** Not "started and
+unfinished" — absent. Reviews, returns, cancellations, refund workflows, support
+tickets, tax, customer management, reporting, imports, notifications,
+integration health and launch readiness had no code at all. The one genuine
+customer-facing gap that was a *defect* rather than an unbuilt feature was
+Vercel Analytics, which was on the required list and not installed.
+
+Twenty systems at production quality is not one pass. The brief's own fallback
+applies: *complete the largest coherent deployable staff workflow and document
+every remaining item precisely.* Going breadth-first would have left every staff
+system half-wired, which the brief explicitly forbids.
+
+**What was built instead: production and job tracking, complete and wired end to
+end** — schema, domain rules, API, queue, job workspace, printable documents,
+audit events, permissions, dashboard cards, and order-page integration. It is
+the system a custom manufacturing business actually runs its day on, it was
+entirely absent, and it stands on its own without depending on anything else in
+the twenty-phase list.
+
+Everything not built is listed under "Not built in pass 5" below, with what is
+already in place noted, so the next pass starts from fact rather than re-auditing.
+
+## Phase 1 carryover — Vercel Analytics — complete
+
+`@vercel/analytics` was **not installed** despite being on the required list;
+`@vercel/speed-insights` was, and was already mounted. Installed and mounted
+beside it in `src/app/layout.tsx`. One dependency added, nothing else touched.
+
+The rest of the pass-4 carryover list (reviews, cancellations, returns, refunds,
+shipping, inventory UI, tax, emails, support, Facebook auth, connected accounts,
+Turnstile, SEO structured data) is unbuilt rather than defective — see below.
+
+- Changed: `package.json`, `package-lock.json`, `src/app/layout.tsx`.
+
+## Production and job tracking — complete
+
+### Schema
+
+`20260804010000_production_jobs.sql`. **Additive**: four new tables, one
+sequence, two functions, one trigger. No existing table, column or constraint is
+altered; a test asserts this by scanning the migration for `drop`, `truncate`,
+`delete from`, and any `alter table` against `orders`, `products`, `profiles` or
+`order_items`.
+
+| Table | Holds |
+|-------|-------|
+| `production_jobs` | The job |
+| `production_job_tasks` | Manufacturing steps, completion checklist, QC checklist |
+| `production_job_files` | CAD/CAM/drawing/reference/customer-approved references |
+| `production_job_events` | The operational timeline |
+
+**One task table, not three.** A manufacturing step, a completion-checklist line
+and a QC line differ only by which list they are on. Three tables would mean
+three sets of policies, indexes and ordering rules that drift apart, and
+reordering written three times. A `kind` discriminator costs one CHECK.
+
+**The timeline is separate from `audit_logs` on purpose.** The audit log is a
+security record with its own retention and severity concerns; the job timeline
+is an operational artifact staff read on every visit to a job. Making the
+timeline a filtered query over `audit_logs` would couple a hot operational read
+to a table that grows without bound and may be pruned. Consequential actions
+write **both**.
+
+**Job numbers come from a sequence**, not `max(job_number) + 1`: two staff
+creating a job at the same moment must not race for the same number. Numbers may
+skip on a rolled-back insert, which is correct — a job number identifies a job,
+it does not count them. Format `JOB-0001`.
+
+**Every link is nullable with `on delete set null`** — order, order item,
+product, customer, assignee. A job may exist before an order does (stock work),
+and must survive the removal of whatever it was raised against.
+
+Two constraints worth naming:
+
+- `production_job_tasks_done_check` forces `is_done` and `done_at` to agree.
+  Without it a row can claim completion while carrying no completion time, and
+  the QC printout shows a tick with no date beside it.
+- `production_job_files_target_check` — a file row pointing at neither a storage
+  path nor a URL is not a file.
+
+**RLS: staff-only on all four tables.** There is deliberately no customer policy,
+because there is no customer-facing read — scrap reasons, rework history,
+internal notes and materials cost are not customer information. The timeline has
+**select and insert policies only**, so an authenticated staff session cannot
+rewrite a job's history through PostgREST. Tests assert no policy is granted to
+`anon` or `public`, that every policy is gated on `is_staff_user()`, and that
+the timeline has no update/delete policy.
+
+**Dry-run result.** Run against production inside a transaction that was rolled
+back: tables created, `JOB-0001` generated by the sequence, task and event
+inserts accepted, 5 policies, 15 indexes. Verified afterwards that production
+was untouched — all four tables absent, sequence absent, zero leftover
+functions, still 34 migration rows.
+
+### Domain rules — `src/lib/production/jobs.ts`
+
+Pure and dependency-free, so the API, the queue, the job page and the printable
+documents import the same rules and cannot state them differently.
+
+Thirteen states: not started, planning, waiting on customer, waiting on
+materials, scheduled, in progress, quality check, rework required, ready for
+pickup, ready to ship, completed, on hold, cancelled. Four priorities.
+
+**Transitions are permissive between live states, and refuse only what is
+actually wrong.** A shop knob goes not started → in progress → completed; a
+one-off fixture wanders through planning, materials, rework and QC. Hard-coding
+one path would make the simple job fight the tool. What is refused:
+
+1. **Re-selecting the current status** — so a dropdown touch is never a write.
+2. **Leaving a terminal state** by anything but an explicit reopen.
+3. **Entering `on_hold`, `rework_required` or `cancelled` without a reason.**
+
+**Completion warnings are advisory, never blocking.** Unticked QC items on a job
+that has a QC list are worth a second look; a job with no list raises nothing,
+which is what keeps simple work simple. The route answers `409` with the
+warnings once; the same call with `acknowledge: true` goes through.
+
+**A bug the tests caught.** `2026-13-45` matched the date regex, and
+`new Date(2026, 12, 45)` is not an error in JavaScript — it rolls forward to
+2027-02-14. An impossible date typed by staff would have been accepted as a real
+one six months away. The parser now round-trips the components back out and
+rejects rather than reinterprets.
+
+### API
+
+| Route | Methods | Permission |
+|-------|---------|------------|
+| `/api/staff/production/jobs` | GET, POST | view / **manage** |
+| `/api/staff/production/jobs/[id]` | GET, PATCH | view / **manage** |
+| `/api/staff/production/jobs/[id]/status` | POST | **manage** |
+| `/api/staff/production/jobs/[id]/tasks` | POST, PATCH, DELETE | **manage** |
+| `/api/staff/production/jobs/[id]/files` | POST, PATCH, DELETE | **manage** |
+| `/api/staff/production/summary` | GET | view |
+
+**Saving fields cannot move a job through the workflow.** `PATCH` pins `status`
+to whatever the row already holds and strips it from the update; status goes
+through its own endpoint, which enforces the transition rules. Two tests assert
+this.
+
+**Two guards against a stale page.** The browser sends `expectedStatus` (or
+`expectedUpdatedAt`), which is compared to the row — and the status update
+additionally re-asserts the from-status in the `WHERE` clause, so a change that
+landed between the read and the write matches zero rows instead of overwriting
+somebody else's work. Both answer `409` with a sentence telling staff to reload.
+
+**The dashboard counts server-side.** `/summary` issues eight `head: true`
+count queries in parallel: Postgres counts and no row crosses the wire. The
+counts are true totals, not "up to the first hundred" — a card reading 12 when
+there are 300 is worse than no card.
+
+**The search box cannot inject filters.** `,`, `(`, `)` and `\` are PostgREST's
+own `or()` separators and are stripped before the filter is built.
+
+### Staff surfaces
+
+- `/staff/production` — the queue. **Filters live in the URL**, so every
+  dashboard card links to an exact view and a view is bookmarkable and
+  shareable. Grouped into overdue / blocked / active / finished, each job in
+  exactly one bucket so the counts add up.
+- `/staff/production/new` — raise a job. Accepts `orderId`, `productId`,
+  `customerId` and `title` so the order page hands off pre-linked.
+- `/staff/production/[id]` — the workspace: linked records, status control,
+  three checklists, files, details form, and history.
+- `/staff/production/[id]/print` — traveller, work order and QC checklist.
+
+**Counts stay stable while loading.** The previous payload is held during a
+refetch, so a filter change looks like a filter change rather than the queue
+emptying and refilling.
+
+**Consequential actions confirm.** Removing a checklist item, removing a file,
+and making a manufacturing file customer-visible each confirm first. Completion
+confirms when there are warnings. Saving is explicit — the button is disabled
+until the form actually differs from what is stored, `beforeunload` guards a
+mid-edit tab close, and nothing autosaves.
+
+### Printable documents
+
+Server-rendered, because `Ctrl+P` on a half-hydrated page is a blank sheet.
+Three sections, each starting on a fresh sheet: the traveller rides with the
+part, the work order goes to whoever is cutting, the QC sheet is signed and
+filed.
+
+**Marked internal on all three sections.** It carries internal notes, scrap and
+rework history. The route requires a staff permission and the tables are
+staff-only under RLS; verified that an unauthenticated request renders the
+refusal and leaks none of the document.
+
+Checkboxes print **empty even when ticked on screen** — the sheet that travels
+with the part is signed at the machine.
+
+Print CSS is global (`src/app/globals.css`): navigation, footer and the staff
+sidebar are never wanted on paper on any page. That blanket rule is only safe
+because the printable pages use no `header`, `footer` or `nav` element of their
+own — a test asserts it.
+
+### Audit
+
+Nine event types, all `staff.`-prefixed so `logAuditEvent` retains them (it
+drops anything not admin/security/moderation/staff — a differently-prefixed type
+would be silently discarded, and a test asserts the prefix):
+
+`create`, `update`, `status`, `task_add`, `task_update`, `task_remove`,
+`file_add`, `file_visibility`, `file_remove`.
+
+**Note bodies are never copied into audit metadata.** The update event records
+*which fields changed*, not what was written in them — the audit log is read
+more widely than the job page.
+
+### Permissions
+
+`production.view` and `production.manage`, registered with labels and
+descriptions. Reading and writing are separate so a machinist can be given the
+queue without the ability to raise or retire work.
+
+**Admins get both automatically** (`loadPermissionsForUser` returns the full set
+for `admin`). **Other roles need a row in `role_permissions`** — see external
+setup below.
+
+## Files changed
+
+New:
+
+- `supabase/migrations/20260804010000_production_jobs.sql`
+- `src/lib/production/jobs.ts`, `server.ts`, `access.ts`
+- `src/app/api/staff/production/jobs/route.ts`
+- `src/app/api/staff/production/jobs/[id]/route.ts`
+- `src/app/api/staff/production/jobs/[id]/status/route.ts`
+- `src/app/api/staff/production/jobs/[id]/tasks/route.ts`
+- `src/app/api/staff/production/jobs/[id]/files/route.ts`
+- `src/app/api/staff/production/summary/route.ts`
+- `src/app/staff/production/page.tsx`, `new/page.tsx`, `[id]/page.tsx`,
+  `[id]/print/page.tsx`
+- `src/components/staff/production/JobBadges.tsx`, `JobForm.tsx`,
+  `ProductionDashboardPanel.tsx`, `OrderProductionJobs.tsx`
+- `tests/production-jobs.test.ts`, `tests/production-surfaces.test.ts`
+
+Modified:
+
+- `src/lib/permissions.ts` — two permissions plus metadata
+- `src/components/staff/StaffNav.tsx` — Production link
+- `src/app/staff/page.tsx` — production panel, loaded outside the orders gate
+- `src/app/staff/orders/[id]/page.tsx` — shop-work panel; `product_id` added to
+  the local `Order` type (the query was already `select("*")`)
+- `src/app/layout.tsx` — Vercel Analytics
+- `src/app/globals.css` — print styles
+- `package.json`, `package-lock.json`
+
+## Validation
+
+- **522 tests pass, 0 fail** (437 before, 85 added across two suites).
+- Typecheck clean. Production build clean, exit 0; all four routes present.
+- **Lint unchanged at the 350-problem baseline** (179 errors, 171 warnings). The
+  new code introduced 5 warnings, all found and fixed; the production code lints
+  completely clean.
+- Migration dry-run against production, rolled back, production verified
+  untouched.
+- Local browser: the queue's permission-denied state renders; print CSS
+  confirmed live in the CSSOM (`header, footer, nav, .skip-link, .staff-nav,
+  .print-hidden { display: none }` under `@media print`); no horizontal overflow
+  at 375px; **every endpoint and the print page answer 403 to an unauthenticated
+  caller** (GET, POST, PATCH and DELETE each checked).
+- Console: only the **pre-existing** `data-motion` hydration mismatch on the root
+  `<html>`, which reproduces on `/` and predates this work. No new errors.
+
+**Not verifiable locally, and why.** `.env.local` carries a deliberately fake
+`SUPABASE_SERVICE_ROLE_KEY` and a staff session cannot be forged without a
+signed JWT, so the **populated** queue, the job workspace with real data, and a
+real status transition were not driven in a browser. The rules behind them are
+covered by the 85 tests; the rendering of populated states is not. This is the
+same limitation pass 3 and pass 4 recorded.
+
+## External setup still required
+
+1. **Grant the new permissions to non-admin roles**, if wanted. Admins already
+   have them. For anyone else, add `production.view` / `production.manage` in
+   `/staff/security/roles`. Until then only admins and operators see Production.
+2. **A storage bucket for job files.** `production_job_files` records
+   *references* — a label plus a link or a storage path. It does not accept
+   uploads: a CAD or CAM file is not something to stream through a JSON route,
+   and the bucket plus its signed-URL policy were out of scope here. Staff can
+   paste a link or a path today; direct upload needs a bucket, an upload route,
+   and expiring signed URLs.
+
+## Not built in pass 5
+
+Carried forward, with what already exists noted. Nothing below was started.
+
+1. **Product-detail redesign** — still the largest single item. Needs structured
+   product content plus an additive migration and staff editing surfaces.
+2. **Reviews** — `product_reviews` and `product_review_reports` exist from
+   `20260802020400`; API, customer UI, product-page integration and the staff
+   moderation queue do not. `catalog.reviews.moderate` exists as a permission
+   with nothing behind it.
+3. **Cancellations, returns, refunds** — `20260801050000` exists and
+   `/api/staff/orders/[id]/refund` exists; the customer request workflow, staff
+   decisions and Stripe refund settlement do not.
+4. **Shipping, inventory UI, fulfilment, tax** — three migrations applied;
+   Stripe Tax is not integrated at all.
+5. **Transactional email lifecycle** — Resend is wired and
+   `20260731160000_order_email_center` exists; the ~25 templates do not.
+6. **Staff dashboard rebuild (phase 2)** — production cards were added; the rest
+   of the dashboard is unchanged. No queues yet for quotes awaiting response,
+   unpaid accepted quotes, cancellation/return requests, refund failures, open
+   tickets, reviews awaiting moderation, failed emails or failed webhooks —
+   most of those have no underlying system yet.
+7. **Order command centre (phase 3)** — the shop-work panel was added to order
+   detail; saved views, the full filter set, and export are not built.
+8. **Product-management overhaul, bulk tools, inventory adjustments (phases
+   5–6)** — `/staff/catalog` is unchanged. No category management *page* exists
+   (the API does).
+9. **Customer management (phase 7)** — nothing. `/staff/security/users` covers
+   accounts, not commerce history.
+10. **Financial reporting and cost/margin (phases 8–9)** — `businessAnalytics.ts`
+    and `/staff/info/analytics` exist and are unchanged; no CSV export, no cost
+    tracking, no margin calculation.
+11. **Imports/exports, notification centre, central settings (phases 10–12)** —
+    nothing.
+12. **Audit-log completion (phase 13)** — the viewer exists at
+    `/staff/security/audit`; production events now flow into it. Search, actor
+    and action filters, severity and before/after detail are not built.
+13. **Integration health and launch readiness (phases 14–15)** — nothing.
+14. **Printable documents beyond production (phase 16)** — packing slip, pickup
+    slip, invoice, return authorisation, refund record and inventory count sheet
+    are not built. The print CSS foundation they need is now in place.
+15. **Support tickets, Facebook auth, connected accounts, Turnstile, SEO
+    structured data** — none started.
+
+Also still outstanding, unchanged since pass 3:
+
+- **Guest checkout is unrepresentable**: `orders.customer_id` is `NOT NULL` and
+  the webhook refuses a session whose `customer_id` does not match the order.
+- **Pre-existing hydration mismatch** on `data-motion` on the root `<html>`.
+- **Pre-existing lint baseline**: 350 problems in `src`.
+- **`npm test` needs Node 22.6+**; this machine has Node 20, so use
+  `npx tsx@4 --test tests/*.test.ts`. Note that PowerShell does not expand the
+  glob for a native command — run it from bash, or expand it first.
+
+## Exact continuation steps
+
+1. **Grant the production permissions** to whichever non-admin roles should see
+   the queue.
+2. **Drive the populated queue once as a signed-in staff member**: raise a job,
+   move it through a status that needs a reason, tick a QC item, and print the
+   work order. That is the one path no automated session can reach.
+3. Then pick the next coherent system. **Reviews** is the cheapest real win —
+   the tables already exist, so it is API plus UI with no migration. **Returns
+   and refunds** is the highest-value one, and it has a migration already
+   applied.
