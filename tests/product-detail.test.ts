@@ -364,6 +364,27 @@ test("the sticky bar clears the safe area and does not trap the footer", () => {
   assert.match(css, /@media \(min-width: 1024px\) \{\s*\.product-sticky-bar \{ display: none/);
 });
 
+test("the sticky bar never covers a dialog or the header", () => {
+  // The brief's rule is that sticky controls must not sit over dialogs,
+  // accordions or footer content. That is a z-index ordering claim, so it is
+  // asserted as one rather than left to a screenshot.
+  const z = (selector: string) => {
+    const rule = css.match(new RegExp(`\\.${selector} \\{([^}]*)\\}`));
+    assert.ok(rule, `globals.css must define .${selector}`);
+    const match = rule[1].match(/z-index:\s*(\d+)/);
+    assert.ok(match, `.${selector} must declare a z-index`);
+    return Number(match[1]);
+  };
+
+  const bar = z("product-sticky-bar");
+  const drawer = z("mobile-nav-root");
+  const lightbox = z("product-lightbox");
+
+  assert.ok(drawer > bar, `the mobile drawer (${drawer}) must paint over the sticky bar (${bar})`);
+  assert.ok(lightbox > bar, `the fullscreen viewer (${lightbox}) must paint over the sticky bar (${bar})`);
+  assert.ok(lightbox > drawer, `the fullscreen viewer (${lightbox}) must paint over the drawer (${drawer})`);
+});
+
 test("the sticky purchase panel cannot outgrow the viewport", () => {
   const rule = css.match(/\.product-info-sticky \{([^}]*)\}/);
   assert.ok(rule, "the sticky rule must exist");

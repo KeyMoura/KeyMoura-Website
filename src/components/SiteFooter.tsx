@@ -42,7 +42,7 @@ export default function SiteFooter() {
             Custom routing and light machining — one-off parts, prototypes, fixtures, and short runs.
             Every request is reviewed and quoted before anything is charged.
           </p>
-          <Link href="/orders/new" className="ui-btn ui-btn-primary mt-5 !px-4 !py-2 text-sm">
+          <Link href="/orders/new" className="ui-btn ui-btn-primary mt-5 !min-h-11 !px-4 text-sm">
             Start a custom project
           </Link>
         </div>

@@ -1973,7 +1973,10 @@
   .product-gallery-expand:hover { border-color: var(--brand-primary); color: var(--brand-primary); }
   .product-gallery-nav-prev { left: 0.75rem; top: 50%; transform: translateY(-50%); }
   .product-gallery-nav-next { right: 0.75rem; top: 50%; transform: translateY(-50%); }
-  .product-gallery-expand { right: 0.75rem; top: 0.75rem; height: 2.25rem; width: 2.25rem; }
+  /* 44px like the other gallery controls. It was 36px, which clears WCAG 2.2
+     AA's 24px minimum but is small for a thumb on the one control that opens
+     the full-size image. */
+  .product-gallery-expand { right: 0.75rem; top: 0.75rem; }
   .product-gallery-counter {
     position: absolute;
     bottom: 0.75rem;
