@@ -962,3 +962,92 @@ Also still outstanding, unchanged since pass 3:
    the tables already exist, so it is API plus UI with no migration. **Returns
    and refunds** is the highest-value one, and it has a migration already
    applied.
+
+## Pass 5 — merged and in production
+
+Branch `staff-operations-command-center-20260804` → merged as **`6bb03f4`**,
+which is the current production SHA. Merged with `--no-ff`, never force-pushed.
+
+| SHA | What |
+|-----|------|
+| `f8a4aec` | Mount Vercel Analytics alongside Speed Insights |
+| `652c7bc` | Add the production job schema and its rules |
+| `0000fbc` | Add the production job API |
+| `0196b68` | Add the production queue, job workspace and printable documents |
+| `db8b17d` | Wire production into the dashboard, orders and staff navigation |
+| `fd11e57` | Record pass 5, the scope decision, and what remains |
+| `6bb03f4` | Merge commit |
+
+- Vercel **preview build: success**. Vercel **production deployment: Ready**.
+- Migration `20260804010000` **applied to production with approval**, before the
+  merge, so production never served a Production page whose tables did not
+  exist.
+
+### Migration application — 2026-08-04
+
+Applied through `execute_sql` in a single guarded transaction, **not**
+`apply_migration` — that tool stamps its own timestamp as the version, which
+caused six of the seven ledger drift problems repaired in pass 3. The ledger row
+was inserted by hand under the repository filename's version.
+
+The transaction carried guards on both sides and would have rolled back whole:
+
+- **Before**: `production_jobs` must not already exist; exactly 34 migration rows.
+- **After**: exactly 4 tables, 5 policies, 15 indexes, 35 migration rows, and
+  products/orders/order_items unchanged at 2/6/1.
+
+All held; the transaction committed. Verified independently afterwards: 4 tables,
+15 indexes, 5 policies, 2 functions, RLS enabled, 0 job rows.
+
+**The ledger is exact: 35 repo files, 35 rows, versions and names identical**,
+checked by diffing the two sorted sets. No drift introduced.
+
+**Supabase security advisors: no new findings.** The 14 `rls_enabled_no_policy`
+notices, the `security definer` warnings and the leaked-password-protection
+warning are all pre-existing and none concern the new tables — all four have
+policies, and `next_production_job_number` and `touch_production_job` are
+deliberately not `SECURITY DEFINER`, so neither appears.
+
+### Production smoke test — 2026-08-04, on `6bb03f4`
+
+| Check | Result |
+|-------|--------|
+| Site health | **Passes.** `/` 200 in 0.86 s. |
+| New staff routes exist | **Passes.** `/staff/production` and `/staff/production/new` answer 307 → `/auth/login`. A missing route would 404. |
+| Production API refuses anonymous | **Passes.** `GET` on jobs and summary, and `POST` on jobs and status, all 307 → `/auth/login`. The pre-existing `/api/staff/catalog/discounts` behaves identically, so the new routes are gated exactly like every other staff route. |
+| Defence in depth | **Confirmed.** Middleware redirects first in production; the route handlers themselves return **403** to every unauthenticated `GET`/`POST`/`PATCH`/`DELETE`, verified locally against a dev server. |
+| Printable document gate | **Passes.** An unauthenticated request renders the refusal and leaks **none** of the document body. |
+| Print CSS deployed | **Passes.** The production CSS chunk carries `@media print{header,footer,nav,.skip-link,.staff-nav,.print-hidden{display:none`, `@page{margin:14mm}`, and `print-break-before`. |
+| Catalog and cart | **Passes.** `/catalog` 200, `/cart` 200, `GET /api/cart` 200 against the real database. |
+| Checkout, stopped before payment | **Correct refusal.** `POST /api/cart/checkout` as a guest → **401** `requiresSignIn`. No Stripe session, no order row, no payment. |
+
+**Production data after the run — every count unchanged:** 2 products, 6 orders,
+1 order item, 1 category, 4 media rows, 2 carts, 1 wishlist, 1 shared cart, 3
+users, 35 migrations. `production_jobs`, `production_job_events` and
+`staff.production.*` audit events are all **0** — the smoke test created nothing,
+because every write it attempted was correctly refused.
+
+(`discount_codes` now reads 1 where pass 4 recorded 0. That was not created by
+this pass, which never touches the table — it appears to be an owner-created
+code from between passes.)
+
+### Vercel Analytics — wired and enabled, end-to-end recording unconfirmed
+
+Precisely what was established, because this one deserves care:
+
+- The package is installed and `<Analytics />` is mounted in the root layout.
+- **It runs in production**: `window.va` is installed and a pageview is queued —
+  `[["pageview",{"route":"/","path":"/"}]]`.
+- **Web Analytics is enabled on the Vercel project**: `/_vercel/insights/script.js`
+  serves the real 2,495-byte tracking script, containing `vaq`, `pageview`,
+  `beforeSend` and `disableAutoTrack`. A project without it enabled does not
+  serve that.
+- **The queue was not drained in the automated session, and that is by design.**
+  The served script begins by refusing to run when
+  `navigator.webdriver || navigator.userAgent.includes("Headless")`. An automated
+  browser therefore cannot produce a recorded pageview, whatever the wiring.
+
+So the integration is correct and the platform side is on, but **a recorded
+pageview was not observed and could not be**. Worth one glance from a normal
+browser: visit the site, then check Vercel → Analytics. Speed Insights, by
+contrast, loads its script on every page load and was observed doing so.
