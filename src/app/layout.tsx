@@ -64,6 +64,12 @@ export default async function RootLayout({
     "--km-nav-util-hover-bg": settings.theme.navigationUtilityHoverBackground,
     "--km-nav-util-hover-border": settings.theme.navigationUtilityHoverBorder,
     "--km-nav-util-hover-text": settings.theme.navigationUtilityHoverText,
+    "--km-nav-hover-bg": settings.theme.navigationHoverBackground,
+    "--km-nav-hover-text": settings.theme.navigationHoverText,
+    "--km-nav-badge-bg": settings.theme.navigationBadgeBackground,
+    "--km-nav-badge-text": settings.theme.navigationBadgeText,
+    "--km-nav-mobile-bg": settings.theme.navigationMobileBackground,
+    "--km-nav-mobile-text": settings.theme.navigationMobileText,
   } as CSSProperties;
 
   return (

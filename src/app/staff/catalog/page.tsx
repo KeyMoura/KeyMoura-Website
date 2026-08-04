@@ -12,12 +12,17 @@ import { EmptyState, Notice } from "@/components/ui/DesignSystem";
 import { CategorySelect } from "@/components/staff/CategorySelect";
 import { visibleCategories, type CategoryRow } from "@/lib/commerce/categories";
 import { allowsDirectPurchase, PURCHASE_MODE_COPY, PURCHASE_MODES, type PurchaseMode } from "@/lib/commerce/purchaseModes";
+import ProductContentEditor from "@/components/staff/ProductContentEditor";
+import { EMPTY_DETAIL_CONTENT, parseDetailContent, serializeDetailContent, type ProductDetailContent } from "@/lib/commerce/productContent";
 
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const input = "ui-input";
 const primary = "ui-btn ui-btn-primary disabled:opacity-50";
 const subtle = "ui-btn ui-btn-ghost text-sm disabled:opacity-50";
-const editorSnapshot = (draft: Partial<CatalogProduct>, groups: ProductOptionGroup[]) => JSON.stringify({ draft, groups });
+// The structured content is part of "has this been edited": without it the
+// Save button stays disabled after adding a benefit, and the beforeunload
+// guard lets the tab close on unsaved work.
+const editorSnapshot = (draft: Partial<CatalogProduct>, groups: ProductOptionGroup[], content?: ProductDetailContent) => JSON.stringify({ draft, groups, content });
 
 export default function StaffCatalogPage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
@@ -37,6 +42,7 @@ export default function StaffCatalogPage() {
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [content, setContent] = useState<ProductDetailContent>(EMPTY_DETAIL_CONTENT);
 
   const filteredProducts = useMemo(() => products.filter(product => {
     const term = search.trim().toLowerCase();
@@ -81,6 +87,8 @@ export default function StaffCatalogPage() {
 
   const loadEditor = useCallback(async (product: CatalogProduct) => {
     setDraft(product);
+    const loadedContent = parseDetailContent(product.detail_content);
+    setContent(loadedContent);
     const [mediaResult, optionResult] = await Promise.all([
       supabase.from("product_media").select("*").eq("product_id", product.id).order("sort_order"),
       supabase.from("product_option_groups").select("*,product_option_values(*)").eq("product_id", product.id).order("sort_order"),
@@ -91,7 +99,7 @@ export default function StaffCatalogPage() {
       product_option_values: [...(group.product_option_values ?? [])].sort((a, b) => a.sort_order - b.sort_order),
     }));
     setGroups(loadedGroups);
-    setSavedSnapshot(editorSnapshot(product, loadedGroups));
+    setSavedSnapshot(editorSnapshot(product, loadedGroups, loadedContent));
     setSaveMessage("");
     setError(mediaResult.error?.message ?? optionResult.error?.message ?? "");
   }, [supabase]);
@@ -144,6 +152,24 @@ export default function StaffCatalogPage() {
       sku: draft.sku?.trim() || null, inventory_policy: draft.inventory_policy || "unlimited",
       inventory_quantity: Math.max(0, Number(draft.inventory_quantity || 0)), low_stock_threshold: Math.max(0, Number(draft.low_stock_threshold || 0)),
       continue_selling_when_out_of_stock: Boolean(draft.continue_selling_when_out_of_stock),
+      // Structured product content. Additive: `description` and
+      // `short_description` above are untouched by any of it.
+      material: draft.material?.trim() || null,
+      finish: draft.finish?.trim() || null,
+      made_to_order: Boolean(draft.made_to_order),
+      installation_difficulty: draft.installation_difficulty || null,
+      installation_notes: draft.installation_notes?.trim() || null,
+      care_instructions: draft.care_instructions?.trim() || null,
+      warranty_text: draft.warranty_text?.trim() || null,
+      shipping_notes: draft.shipping_notes?.trim() || null,
+      return_notes: draft.return_notes?.trim() || null,
+      cancellation_notes: draft.cancellation_notes?.trim() || null,
+      dimensions_text: draft.dimensions_text?.trim() || null,
+      package_dimensions_text: draft.package_dimensions_text?.trim() || null,
+      weight_grams: draft.weight_grams == null ? null : Math.max(0, Number(draft.weight_grams)),
+      // Serialized through the same parser the product page reads with, so the
+      // editor cannot save a shape the page would then discard.
+      detail_content: serializeDetailContent(content),
     };
     const productResult = await supabase.from("products").update(payload).eq("id", selectedId).select("*").single();
     if (productResult.error) { setBusy(false); return setError(productResult.error.message); }
@@ -171,7 +197,12 @@ export default function StaffCatalogPage() {
     }));
     setDraft(savedProduct);
     setGroups(savedGroups);
-    setSavedSnapshot(editorSnapshot(savedProduct, savedGroups));
+    // Re-parsed from the saved row rather than from local state: a row that
+    // came back with a dropped incomplete entry must leave the editor showing
+    // what was actually stored, or Save stays enabled forever.
+    const savedContent = parseDetailContent(savedProduct.detail_content);
+    setContent(savedContent);
+    setSavedSnapshot(editorSnapshot(savedProduct, savedGroups, savedContent));
     setSaveMessage("All catalog changes saved.");
   }
 
@@ -275,7 +306,7 @@ export default function StaffCatalogPage() {
     if (!selectedId || !confirm(`Permanently delete ${draft.name} and its configured options? Existing orders keep their saved request details.`)) return;
     const { error: deleteError } = await supabase.from("products").delete().eq("id", selectedId);
     if (deleteError) return setError(deleteError.message);
-    setSelectedId(null); setDraft({}); setMedia([]); setGroups([]);
+    setSelectedId(null); setDraft({}); setMedia([]); setGroups([]); setContent(EMPTY_DETAIL_CONTENT);
     await loadProducts();
   }
 
@@ -339,7 +370,7 @@ export default function StaffCatalogPage() {
   if (isLoading) return <div className="ui-card">Loading…</div>;
   if (!canView) return <AccessDeniedCard message="You do not have access to catalog management." />;
 
-  const hasUnsavedChanges = selectedId ? editorSnapshot(draft, groups) !== savedSnapshot : false;
+  const hasUnsavedChanges = selectedId ? editorSnapshot(draft, groups, content) !== savedSnapshot : false;
 
   return (
     <main className="page-stack">
@@ -409,6 +440,24 @@ export default function StaffCatalogPage() {
             </div>
             {!readyToPublish && !draft.is_published ? <p className="mt-3 text-xs text-amber-200">Complete the publish checklist to enable publishing. You can save the draft at any time.</p> : null}
             <div className="ui-action-row mt-4"><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className="ui-btn ui-btn-danger">Delete permanently</button></div>
+          </div>
+
+          <div className="ui-card">
+            <h2 className="text-xl font-semibold">Product page content</h2>
+            <p className="mt-1 text-sm text-brand-textMuted">
+              The structured sections on the customer-facing product page. All optional — a section
+              with nothing in it is hidden rather than shown empty, so a sparse product simply gets a
+              shorter page.
+            </p>
+            <div className="mt-5">
+              <ProductContentEditor
+                draft={draft}
+                onChange={patch => setDraft(current => ({ ...current, ...patch }))}
+                content={content}
+                onContentChange={setContent}
+                disabled={!canManage}
+              />
+            </div>
           </div>
 
           <div className="ui-card">

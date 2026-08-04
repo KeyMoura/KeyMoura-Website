@@ -9,8 +9,8 @@ import { getSiteSettings } from "@/lib/siteSettings";
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSiteSettings();
   return {
-    title: { default: "Catalog", template: `%s | ${settings.name}` },
-    description: "Browse published KeyMoura products and customizable designs.",
+    title: { default: "Products", template: `%s | ${settings.name}` },
+    description: `Ready designs and made-to-order parts from ${settings.name}.`,
     alternates: { canonical: "/catalog" },
   };
 }

@@ -666,6 +666,343 @@
   .site-header-shell .site-nav-link { color: var(--km-nav-text, #d4d4d8) !important; }
   .site-header-shell .site-nav-link.is-active { color: var(--km-nav-active, #f59e0b) !important; }
 
+  /*
+   * The storefront header's own layout.
+   *
+   * `--km-header-height` is the single definition of the bar's height. The
+   * mobile drawer offsets itself by it and the sticky product panel subtracts
+   * it, so a density change moves all three together instead of leaving the
+   * drawer overlapping the bar it hangs from.
+   */
+  .site-header-inner {
+    --km-header-height: 3.75rem;
+    margin-inline: auto;
+    max-width: 80rem;
+    padding-inline: 1rem;
+  }
+  @media (min-width: 1536px) {
+    .site-header-inner { max-width: 94rem; padding-inline: 1.5rem; }
+  }
+  [data-navigation-density="comfortable"] .site-header-inner { --km-header-height: 4.25rem; }
+
+  .site-header-desktop,
+  .site-header-mobile { height: var(--km-header-height); }
+
+  .site-header-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 0;
+    transition: opacity 150ms ease-out;
+  }
+  .site-header-wordmark {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    color: var(--km-nav-text, #d4d4d8);
+  }
+
+  /* Primary customer links. Hover and active are separately themable — the
+     Appearance panel previously offered an active colour but no hover, so a
+     light navbar had links that gave no feedback until you clicked one. */
+  .site-header-shell .site-nav-primary-link {
+    display: inline-flex;
+    align-items: center;
+    height: 2.25rem;
+    padding-inline: 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+  }
+  .site-header-shell .site-nav-primary-link:hover {
+    background-color: var(--km-nav-hover-bg, #18181b);
+    color: var(--km-nav-hover-text, #ffffff) !important;
+  }
+
+  /* Utility controls: search, wishlist, cart, notifications, account. */
+  .site-header-shell .site-nav-control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 2.25rem;
+    min-width: 2.25rem;
+    padding-inline: 0.625rem;
+    border: 1px solid;
+    border-radius: 9999px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+  }
+  .site-header-shell .site-nav-account { padding-inline: 0.25rem 0.625rem; }
+  @media (max-width: 1279px) {
+    .site-header-shell .site-nav-account { padding-inline: 0.25rem; }
+  }
+
+  .site-nav-signin {
+    display: inline-flex;
+    align-items: center;
+    height: 2.25rem;
+    padding-inline: 0.875rem;
+    border-radius: 9999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--km-nav-badge-bg, #f59e0b);
+    color: var(--km-nav-badge-text, #09090b);
+    border: 1px solid color-mix(in srgb, var(--km-nav-badge-bg, #f59e0b) 70%, white);
+    transition: filter 150ms ease-out;
+  }
+  .site-nav-signin:hover { filter: brightness(1.08); }
+
+  /* The unread dot on the account trigger and the mobile menu button. Purely
+     an ornament — the real counts are in the accessible name and printed
+     beside each destination inside the menu. */
+  .site-nav-dot {
+    position: absolute;
+    right: -0.125rem;
+    top: -0.125rem;
+    height: 0.5rem;
+    width: 0.5rem;
+    border-radius: 9999px;
+    background: var(--km-nav-badge-bg, #f59e0b);
+    box-shadow: 0 0 0 2px var(--km-nav-bg, #09090b);
+    pointer-events: none;
+  }
+
+  /* Dropdown panels shared by the More menu and the account menu. */
+  .nav-menu-panel {
+    background: var(--km-nav-mobile-bg, #0a0a0c);
+    color: var(--km-nav-mobile-text, #f4f4f5);
+    border-color: color-mix(in srgb, var(--km-nav-border, #3f3f46) 80%, transparent);
+    animation: nav-menu-in 120ms ease-out;
+  }
+  @keyframes nav-menu-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .nav-menu-headline {
+    padding: 0.5rem 0.625rem 0.625rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 60%, transparent);
+    margin-bottom: 0.25rem;
+  }
+  .nav-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--km-nav-mobile-text, #f4f4f5);
+    transition: background-color 120ms ease-out, color 120ms ease-out;
+  }
+  .nav-menu-item-stacked { flex-direction: column; align-items: flex-start; gap: 0.125rem; }
+  .nav-menu-item:hover,
+  .nav-menu-item:focus-visible {
+    background-color: var(--km-nav-hover-bg, #18181b);
+    color: var(--km-nav-hover-text, #ffffff);
+  }
+  .nav-menu-item[aria-current="page"] { color: var(--km-nav-active, #f59e0b); }
+  .nav-menu-item-description {
+    font-size: 0.6875rem;
+    line-height: 1.4;
+    opacity: 0.72;
+  }
+  .nav-menu-item-signout { color: color-mix(in srgb, var(--km-nav-mobile-text, #f4f4f5) 80%, #f87171); }
+  .nav-menu-item-staff { font-weight: 600; }
+  .nav-menu-divider {
+    height: 1px;
+    margin: 0.25rem 0.375rem;
+    background: color-mix(in srgb, var(--km-nav-border, #3f3f46) 60%, transparent);
+  }
+  /* The notification dropdown's chrome. It arrived from the forum header with
+     fixed zinc borders and amber hovers baked in, so an operator who themed the
+     navbar got a panel that still looked like the old site. */
+  .nav-menu-section { border-color: color-mix(in srgb, var(--km-nav-border, #3f3f46) 60%, transparent); }
+  .nav-menu-chip {
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+    padding: 0.25rem 0.75rem;
+    font-size: 11px;
+    color: color-mix(in srgb, var(--km-nav-mobile-text, #f4f4f5) 72%, transparent);
+    transition: border-color 120ms ease-out, color 120ms ease-out, background-color 120ms ease-out;
+  }
+  .nav-menu-chip:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--km-nav-active, #f59e0b) 70%, transparent);
+    color: var(--km-nav-mobile-text, #f4f4f5);
+  }
+  .nav-menu-row { border-color: color-mix(in srgb, var(--km-nav-border, #3f3f46) 40%, transparent); }
+  .nav-menu-row.is-unread { background: color-mix(in srgb, var(--km-nav-active, #f59e0b) 7%, transparent); }
+  .nav-menu-rowlink:hover { background: var(--km-nav-hover-bg, #18181b); }
+  .nav-menu-avatar {
+    border-color: color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+    background: color-mix(in srgb, var(--km-nav-mobile-text, #f4f4f5) 8%, transparent);
+  }
+
+  .nav-menu-count {
+    display: inline-flex;
+    min-width: 1.35rem;
+    height: 1.125rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    padding-inline: 0.3rem;
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    background: var(--km-nav-badge-bg, #f59e0b);
+    color: var(--km-nav-badge-text, #09090b);
+  }
+
+  /* ---- Mobile drawer ---- */
+  .mobile-nav-root { position: fixed; inset: 0; z-index: 70; }
+  .mobile-nav-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / 0.6);
+    backdrop-filter: blur(2px);
+    animation: nav-fade-in 150ms ease-out;
+  }
+  @keyframes nav-fade-in { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes nav-slide-in { from { transform: translateX(100%) } to { transform: translateX(0) } }
+
+  .mobile-nav-panel {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    width: min(22rem, 92vw);
+    max-height: 100dvh;
+    background: var(--km-nav-mobile-bg, #0a0a0c);
+    color: var(--km-nav-mobile-text, #f4f4f5);
+    border-left: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 80%, transparent);
+    box-shadow: -20px 0 60px rgb(0 0 0 / 0.5);
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: nav-slide-in 200ms ease-out;
+  }
+  .mobile-nav-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 60%, transparent);
+  }
+  .mobile-nav-title { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.7; }
+  .mobile-nav-close {
+    display: inline-flex;
+    height: 2.75rem;
+    width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+  }
+  .mobile-nav-close:hover { background: var(--km-nav-hover-bg, #18181b); }
+  /* The panel scrolls, not the page behind it. */
+  .mobile-nav-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.75rem 0.75rem 1.5rem;
+  }
+  .mobile-nav-group { display: grid; gap: 0.125rem; padding-block: 0.5rem; }
+  .mobile-nav-group + .mobile-nav-group {
+    border-top: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 45%, transparent);
+    margin-top: 0.5rem;
+  }
+  .mobile-nav-heading {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.55;
+  }
+  /* 44px minimum target on every row. */
+  .mobile-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.75rem;
+    transition: background-color 120ms ease-out, color 120ms ease-out;
+  }
+  .mobile-nav-item:hover,
+  .mobile-nav-item:focus-visible { background: var(--km-nav-hover-bg, #18181b); }
+  .mobile-nav-item[aria-current="page"] {
+    background: color-mix(in srgb, var(--km-nav-active, #f59e0b) 12%, transparent);
+    color: var(--km-nav-active, #f59e0b);
+  }
+  .mobile-nav-item-label { display: block; font-size: 0.9375rem; font-weight: 500; }
+  .mobile-nav-item-description { display: block; margin-top: 0.125rem; font-size: 0.75rem; line-height: 1.4; opacity: 0.6; }
+  .mobile-nav-item-count {
+    display: inline-flex;
+    min-width: 1.5rem;
+    height: 1.25rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    padding-inline: 0.35rem;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    background: var(--km-nav-badge-bg, #f59e0b);
+    color: var(--km-nav-badge-text, #09090b);
+  }
+  .mobile-nav-search {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+    background: color-mix(in srgb, var(--km-nav-mobile-text, #f4f4f5) 6%, transparent);
+    font-size: 0.875rem;
+    text-align: left;
+  }
+  .mobile-nav-signin,
+  .mobile-nav-signout {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-top: 0.5rem;
+  }
+  .mobile-nav-signin {
+    background: var(--km-nav-badge-bg, #f59e0b);
+    color: var(--km-nav-badge-text, #09090b);
+  }
+  .mobile-nav-signout {
+    border: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-menu-panel,
+    .mobile-nav-panel,
+    .mobile-nav-backdrop { animation: none; }
+  }
+
   /* Navbar utility controls (search, messages, notifications, account, staff) intentionally use
      their own dedicated tokens instead of the shared secondary/accent color, so changing the
      site's primary action color never recolors them. Declared after .site-nav-link so it wins
@@ -681,10 +1018,16 @@
     background-color: var(--km-nav-util-hover-bg, #18181b) !important;
     color: var(--km-nav-util-hover-text, #ffffff) !important;
   }
-  .site-header-shell .site-nav-utility-badge {
-    border-color: var(--km-nav-util-hover-border, #52525b);
-    background-color: var(--km-nav-util-hover-bg, #18181b);
-    color: var(--km-nav-util-hover-text, #ffffff);
+  /* Count bubbles have their own tokens rather than borrowing the utility
+     hover colours. A cart count that is the same colour as a hovered button is
+     a cart count nobody reads as a count — and an operator who darkens the
+     utility hover to get a subtler search button should not silently lose the
+     contrast on the number beside it. */
+  .site-header-shell .site-nav-utility-badge,
+  .site-nav-utility-badge {
+    border-color: color-mix(in srgb, var(--km-nav-badge-bg, #f59e0b) 70%, white);
+    background-color: var(--km-nav-badge-bg, #f59e0b);
+    color: var(--km-nav-badge-text, #09090b);
   }
 
   /*
@@ -726,7 +1069,9 @@
   [data-public-navigation-style="framed"] .site-header-shell .site-nav-link.is-active { border-color: var(--km-nav-active); background: color-mix(in srgb, var(--km-nav-active) 10%, transparent); box-shadow: inset 0 -2px 0 var(--km-nav-active); }
   [data-public-navigation-style="minimal"] .site-header-shell .site-nav-link { border-color: transparent !important; border-radius: 0; background: transparent !important; box-shadow: none !important; }
   [data-public-navigation-style="minimal"] .site-header-shell .site-nav-link.is-active { border-bottom-color: var(--km-nav-active) !important; }
-  [data-navigation-density="comfortable"] .site-header-shell :where([data-testid="desktop-header"], .lg\:hidden) { min-height: 4.25rem; height: 4.25rem; }
+  /* Height now comes from `--km-header-height` on `.site-header-inner`, so the
+     bar, the mobile drawer's offset and the sticky purchase panel all move
+     together when the density changes. */
 
   /* Global search palette */
   .search-overlay {
@@ -1534,6 +1879,615 @@
   }
   [data-primary-button-style="outline"] :where(a, button):is(.bg-white, .bg-amber-300, .bg-amber-400):hover {
     background-color: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Product detail
+ *
+ * Every colour here comes from the page theme tokens (`--panel`, `--border`,
+ * `--brand-primary`, …) rather than a literal, so the Appearance system
+ * restyles the product page along with everything else.
+ * ------------------------------------------------------------------------ */
+@layer components {
+  .product-page {
+    margin-inline: auto;
+    max-width: 80rem;
+    padding: 1.5rem 1rem 4rem;
+  }
+  @media (min-width: 768px) {
+    .product-page { padding: 2rem 1.5rem 5rem; }
+  }
+
+  .product-breadcrumb { margin-bottom: 1.25rem; font-size: 0.8125rem; }
+  .product-breadcrumb ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--muted);
+  }
+  .product-breadcrumb li { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+  .product-breadcrumb li + li::before { content: "/"; opacity: 0.5; }
+  .product-breadcrumb a:hover { color: var(--brand-primary); text-decoration: underline; }
+  /* The current page can be a long product name; it truncates rather than
+     wrapping the trail onto three lines on a phone. */
+  .product-breadcrumb li[aria-current="page"] {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
+
+  .product-layout { display: grid; gap: 2rem; align-items: start; }
+  @media (min-width: 1024px) {
+    .product-layout { grid-template-columns: minmax(0, 1.15fr) minmax(22rem, 0.85fr); gap: 3rem; }
+  }
+
+  /* ---- Gallery ---- */
+  .product-gallery { display: grid; gap: 0.75rem; }
+
+  .product-gallery-frame {
+    position: relative;
+    overflow: hidden;
+    /* The box is reserved before anything loads, so a slow image cannot push
+       the purchase panel down the page. */
+    aspect-ratio: 4 / 3;
+    border-radius: var(--card-radius, 1rem);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+  }
+  .product-gallery-image,
+  .product-lightbox-image { object-fit: cover; transition: transform 200ms ease-out; }
+  .product-gallery-frame.is-zoomed .product-gallery-image {
+    transform: scale(2);
+    transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%);
+  }
+  .product-gallery-fallback {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 3rem;
+    font-weight: 700;
+    color: color-mix(in srgb, var(--brand-primary) 70%, transparent);
+  }
+  .product-gallery-caption { font-size: 0.8125rem; color: var(--muted); }
+
+  .product-gallery-nav,
+  .product-gallery-expand {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    height: 2.75rem;
+    width: 2.75rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--panel) 85%, transparent);
+    color: var(--text);
+    backdrop-filter: blur(4px);
+    transition: border-color 150ms ease-out, color 150ms ease-out;
+  }
+  .product-gallery-nav:hover,
+  .product-gallery-expand:hover { border-color: var(--brand-primary); color: var(--brand-primary); }
+  .product-gallery-nav-prev { left: 0.75rem; top: 50%; transform: translateY(-50%); }
+  .product-gallery-nav-next { right: 0.75rem; top: 50%; transform: translateY(-50%); }
+  /* 44px like the other gallery controls. It was 36px, which clears WCAG 2.2
+     AA's 24px minimum but is small for a thumb on the one control that opens
+     the full-size image. */
+  .product-gallery-expand { right: 0.75rem; top: 0.75rem; }
+  .product-gallery-counter {
+    position: absolute;
+    bottom: 0.75rem;
+    right: 0.75rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    border: 1px solid var(--border);
+    padding: 0.2rem 0.6rem;
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .product-gallery-thumbs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 4.5rem;
+    gap: 0.5rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding-bottom: 0.25rem;
+  }
+  .product-gallery-thumb {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 0.625rem;
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+    transition: border-color 150ms ease-out;
+  }
+  .product-gallery-thumb:hover { border-color: color-mix(in srgb, var(--brand-primary) 60%, transparent); }
+  .product-gallery-thumb.is-selected {
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 35%, transparent);
+  }
+  .product-gallery-thumb-model {
+    display: grid;
+    place-items: center;
+    gap: 0.125rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  /*
+   * Vertical thumbnails beside the frame from `lg`, so the primary image keeps
+   * the full column width; a horizontal strip costs it ~96px of height for
+   * nothing when there is space to the side. Below `lg` the strip is
+   * horizontal and scrolls.
+   *
+   * This block must stay *after* the base `.product-gallery-thumbs` rule. Both
+   * selectors have the same specificity, so source order decides — with the
+   * media query written above the base rule, `grid-auto-flow: column` won at
+   * every width and the thumbnails stayed horizontal on desktop no matter what
+   * the media query said.
+   */
+  @media (min-width: 1024px) {
+    .product-gallery { grid-template-columns: 5rem minmax(0, 1fr); grid-template-areas: "thumbs main"; }
+    .product-gallery-main { grid-area: main; }
+    .product-gallery-thumbs {
+      grid-area: thumbs;
+      grid-auto-flow: row;
+      grid-auto-columns: auto;
+      grid-auto-rows: 4.5rem;
+      overflow-x: visible;
+      overflow-y: auto;
+      /* Bounded to the frame's height so a fifteen-image product scrolls its
+         strip instead of stretching the row past the image it belongs to. */
+      max-height: 100%;
+    }
+  }
+
+  .product-lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; }
+  .product-lightbox-backdrop { position: absolute; inset: 0; background: rgb(0 0 0 / 0.85); }
+  .product-lightbox-panel {
+    position: relative;
+    display: grid;
+    gap: 1rem;
+    width: min(72rem, 94vw);
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  .product-lightbox-frame {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    max-height: 78dvh;
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+  .product-lightbox-image { object-fit: contain; }
+  .product-lightbox-close {
+    position: absolute;
+    right: 0;
+    top: -3rem;
+    display: grid;
+    place-items: center;
+    height: 2.75rem;
+    width: 2.75rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(255 255 255 / 0.3);
+    color: #fff;
+  }
+  .product-lightbox-close:hover { background: rgb(255 255 255 / 0.12); }
+  .product-lightbox-controls { display: flex; align-items: center; justify-content: center; gap: 1rem; }
+  .product-lightbox-controls .product-gallery-nav { position: static; transform: none; }
+  .product-lightbox-counter { color: #fff; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
+
+  /* ---- Purchase panel ---- */
+  @media (min-width: 1024px) {
+    /* Sticky only where the column is genuinely shorter than the gallery, and
+       bounded by the viewport so a tall panel can still be scrolled through
+       rather than having its foot cut off. `--km-header-height` is the one
+       definition of the bar's height, so a density change moves this too. */
+    .product-info-sticky {
+      position: sticky;
+      top: calc(var(--km-header-height, 3.75rem) + 1.5rem);
+      max-height: calc(100dvh - var(--km-header-height, 3.75rem) - 3rem);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+    }
+  }
+
+  .product-eyebrow-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .product-title {
+    margin-top: 0.875rem;
+    font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+    font-weight: 650;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    /* A very long single-token product code must not push the column wider. */
+    overflow-wrap: anywhere;
+  }
+  .product-summary { margin-top: 0.875rem; line-height: 1.65; color: var(--muted); }
+
+  .product-purchase { margin-top: 1.5rem; display: grid; gap: 1.25rem; }
+  .product-purchase-price { display: grid; gap: 0.25rem; }
+  .product-price {
+    font-size: 1.875rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--brand-primary);
+  }
+  .product-price-note { font-size: 0.8125rem; color: var(--muted); min-height: 1.2em; }
+
+  .product-options { display: grid; gap: 1.125rem; }
+  .product-option-group { display: grid; gap: 0.5rem; border: 0; padding: 0; margin: 0; }
+  .product-option-legend { font-size: 0.875rem; font-weight: 600; padding: 0; }
+  .product-option-required { font-weight: 400; color: var(--brand-primary); }
+  .product-option-optional { font-weight: 400; color: var(--muted); }
+  .product-option-description { font-size: 0.75rem; color: var(--muted); }
+  .product-option-select.is-invalid { border-color: #f87171; }
+  .product-option-choices { display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+  .product-option-choice {
+    display: grid;
+    gap: 0.125rem;
+    /* 44px minimum, even for a one-word label. */
+    min-height: 2.75rem;
+    align-content: center;
+    cursor: pointer;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    text-align: left;
+    transition: border-color 150ms ease-out, background-color 150ms ease-out;
+  }
+  .product-option-choice:hover { border-color: color-mix(in srgb, var(--brand-primary) 55%, transparent); }
+  .product-option-choice.is-selected {
+    border-color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+  }
+  /* The radio itself is visually hidden, so the focus ring has to be drawn on
+     the label or a keyboard user cannot see where they are. */
+  .product-option-choice:has(:focus-visible) {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 2px;
+  }
+  .product-option-choice-label { font-weight: 500; }
+  .product-option-choice-price { font-size: 0.75rem; color: var(--brand-primary); font-variant-numeric: tabular-nums; }
+  .product-option-choice-note { font-size: 0.6875rem; color: var(--muted); }
+  .product-option-error { font-size: 0.75rem; color: #fca5a5; }
+
+  .product-purchase-notice {
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 40%, transparent);
+    background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+    padding: 0.75rem 0.875rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  .product-quantity { display: flex; align-items: center; gap: 0.75rem; }
+  .product-quantity-label { font-size: 0.875rem; font-weight: 600; }
+  .product-quantity-input {
+    width: 5rem;
+    min-height: 2.75rem;
+    border-radius: 0.625rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding-inline: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .product-quantity-max { font-size: 0.75rem; color: var(--muted); }
+
+  .product-actions { display: grid; gap: 0.625rem; }
+  @media (min-width: 480px) {
+    .product-actions { grid-auto-flow: column; grid-auto-columns: 1fr; }
+  }
+  .product-action-primary { min-height: 3rem; justify-content: center; }
+  .product-action-hint { font-size: 0.75rem; color: var(--muted); }
+  .product-secondary-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .product-share { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
+  .product-purchase-message { font-size: 0.875rem; }
+  .product-purchase-message.is-error { color: #fcd34d; }
+  .product-purchase-message.is-success { color: #6ee7b7; }
+
+  .product-quick-facts {
+    margin-top: 1.5rem;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    border-top: 1px solid var(--border);
+    padding-top: 1.25rem;
+  }
+  .product-quick-fact dt {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .product-quick-fact dd { margin-top: 0.25rem; font-size: 0.875rem; overflow-wrap: anywhere; }
+
+  .product-assurances {
+    margin-top: 1.25rem;
+    display: grid;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  .product-assurances a { color: var(--brand-primary); }
+  .product-assurances a:hover { text-decoration: underline; }
+
+  /* ---- Structured sections ---- */
+  .product-sections { margin-top: 3.5rem; }
+  .product-sections-heading {
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin-bottom: 1.25rem;
+  }
+  .product-sections-list { border-top: 1px solid var(--border); }
+  .product-section { border-bottom: 1px solid var(--border); }
+  /* A deep link opens its section without JavaScript deciding anything. */
+  .product-section:target { background: color-mix(in srgb, var(--brand-primary) 4%, transparent); }
+  .product-section-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    cursor: pointer;
+    padding: 1.125rem 0.25rem;
+    min-height: 3.25rem;
+    list-style: none;
+  }
+  .product-section-summary::-webkit-details-marker { display: none; }
+  .product-section-summary:hover .product-section-title { color: var(--brand-primary); }
+  .product-section-title { font-size: 1rem; font-weight: 600; transition: color 150ms ease-out; }
+  .product-section-marker {
+    position: relative;
+    flex: none;
+    height: 0.75rem;
+    width: 0.75rem;
+  }
+  .product-section-marker::before,
+  .product-section-marker::after {
+    content: "";
+    position: absolute;
+    background: var(--muted);
+    transition: transform 180ms ease-out, opacity 180ms ease-out;
+  }
+  .product-section-marker::before { inset-inline: 0; top: 50%; height: 1.5px; margin-top: -0.75px; }
+  .product-section-marker::after { inset-block: 0; left: 50%; width: 1.5px; margin-left: -0.75px; }
+  .product-section[open] .product-section-marker::after { transform: rotate(90deg); opacity: 0; }
+  .product-section-body { padding: 0 0.25rem 1.5rem; display: grid; gap: 1rem; }
+  /* Newlines from a staff textarea survive without splitting into elements —
+     and without rendering staff input as HTML. */
+  .product-section-prose { white-space: pre-line; line-height: 1.7; color: var(--muted); max-width: 62ch; }
+
+  .product-benefit-list { display: grid; gap: 1rem; }
+  .product-benefit-title { font-weight: 600; }
+  .product-benefit-body { margin-top: 0.25rem; line-height: 1.65; color: var(--muted); max-width: 62ch; white-space: pre-line; }
+
+  .product-spec-list { display: grid; gap: 0; }
+  .product-spec-row {
+    display: grid;
+    gap: 0.25rem 1.5rem;
+    padding-block: 0.625rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+  @media (min-width: 640px) {
+    .product-spec-row { grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr); }
+  }
+  .product-spec-row:last-child { border-bottom: 0; }
+  .product-spec-name { font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
+  .product-spec-value { overflow-wrap: anywhere; }
+
+  .product-entry-list { display: grid; gap: 0.5rem; }
+  .product-entry { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; padding-left: 1.125rem; position: relative; }
+  .product-entry::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.6em;
+    height: 0.3rem;
+    width: 0.3rem;
+    border-radius: 9999px;
+    background: var(--brand-primary);
+  }
+  .product-entry-note { font-size: 0.8125rem; color: var(--muted); }
+
+  .product-faq-list { display: grid; gap: 1.125rem; }
+  .product-faq-question { font-weight: 600; }
+  .product-faq-answer { margin-top: 0.25rem; line-height: 1.65; color: var(--muted); max-width: 62ch; white-space: pre-line; }
+
+  /* ---- Request wizard ---- */
+  .product-request { margin-top: 3.5rem; }
+  .product-request-form {
+    border-radius: var(--card-radius, 1rem);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 1.25rem;
+  }
+  @media (min-width: 768px) {
+    .product-request-form { padding: 1.75rem; }
+  }
+  .product-request-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1.5rem; }
+  .product-request-step {
+    border-radius: 0.625rem;
+    border: 1px solid var(--border);
+    padding: 0.5rem;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .product-request-step.is-current {
+    border-color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+    color: var(--brand-primary);
+  }
+  .product-request-step.is-done { border-color: color-mix(in srgb, #34d399 40%, transparent); color: #6ee7b7; }
+  .product-request-title { font-size: 1.25rem; font-weight: 650; }
+  .product-request-lede { margin-top: 0.25rem; font-size: 0.875rem; color: var(--muted); }
+  .product-request-field { display: block; margin-top: 1rem; font-size: 0.875rem; }
+  .product-request-summary {
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+    padding: 1rem;
+  }
+  .product-request-total {
+    margin-top: 1.25rem;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+
+  .product-related { margin-top: 3.5rem; }
+
+  /* ---- Mobile sticky action bar ----
+     Below `lg` the purchase actions scroll away behind the gallery and the
+     structured sections, so they are mirrored in a fixed bar. It is hidden
+     while the request wizard is on screen, because the wizard has its own
+     submit and two competing primary actions is worse than none. */
+  .product-sticky-bar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--panel) 96%, transparent);
+    backdrop-filter: blur(8px);
+    padding: 0.625rem 1rem calc(0.625rem + env(safe-area-inset-bottom));
+    transform: translateY(0);
+    transition: transform 200ms ease-out;
+  }
+  .product-sticky-bar[data-hidden="true"] { transform: translateY(110%); }
+  .product-sticky-price { flex: none; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .product-sticky-action { flex: 1; min-height: 2.75rem; justify-content: center; }
+  @media (min-width: 1024px) {
+    .product-sticky-bar { display: none; }
+  }
+  /* The bar sits over the page, so the last thing on it needs clearance or
+     the footer's final row is unreachable behind a fixed control. */
+  @media (max-width: 1023px) {
+    .product-page { padding-bottom: 6.5rem; }
+  }
+
+  /* ---- Catalog ---- */
+  .catalog-filters {
+    margin-top: 2rem;
+    border-radius: var(--card-radius, 1rem);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 1rem;
+  }
+  .catalog-filter-row {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 640px) {
+    .catalog-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* Search spans the row: it is the control people reach for first. */
+    .catalog-search { grid-column: 1 / -1; }
+  }
+  @media (min-width: 1024px) {
+    .catalog-filter-row { grid-template-columns: minmax(12rem, 1.6fr) repeat(4, minmax(0, 1fr)); }
+    .catalog-search { grid-column: auto; }
+  }
+  .catalog-filter-summary {
+    margin-top: 0.875rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .catalog-grid {
+    display: grid;
+    gap: 1.25rem;
+    /* Auto-fit rather than fixed breakpoints, so a two-product catalog does not
+       leave a third of the row empty and a large one fills whatever it is
+       given. `minmax(0, …)` keeps a long product name from widening a track. */
+    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  }
+
+  /* ---- Footer ---- */
+  .site-footer {
+    margin-top: 4rem;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .site-footer-inner {
+    margin-inline: auto;
+    max-width: 80rem;
+    display: grid;
+    gap: 2.5rem;
+    padding: 3rem 1rem 2.5rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  @media (min-width: 640px) {
+    .site-footer-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1024px) {
+    .site-footer-inner { grid-template-columns: 1.6fr repeat(3, minmax(0, 1fr)); padding-inline: 1.5rem; }
+  }
+  .site-footer-brand { min-width: 0; }
+  .site-footer-heading {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .site-footer-links { margin-top: 0.875rem; display: grid; gap: 0.625rem; }
+  .site-footer-links a {
+    /* Comfortable on a phone without becoming a list of buttons on desktop. */
+    display: inline-block;
+    min-height: 1.5rem;
+    transition: color 120ms ease-out;
+  }
+  .site-footer-links a:hover { color: var(--brand-primary); }
+  .site-footer-base {
+    margin-inline: auto;
+    max-width: 80rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-top: 1px solid var(--border);
+    padding: 1rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  @media (min-width: 1024px) {
+    .site-footer-base { padding-inline: 1.5rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .product-gallery-image,
+    .product-lightbox-image,
+    .product-section-marker::before,
+    .product-section-marker::after,
+    .product-sticky-bar { transition: none; }
+    .product-gallery-frame.is-zoomed .product-gallery-image { transform: none; }
   }
 }
 

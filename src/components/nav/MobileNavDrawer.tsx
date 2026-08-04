@@ -1,0 +1,275 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faXmark, faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
+import {
+  accountNav,
+  accountSecondaryNav,
+  isNavItemActive,
+  primaryNav,
+  secondaryNav,
+  staffNavItems,
+  type NavItem,
+} from "@/lib/navigation";
+
+/**
+ * The mobile navigation drawer.
+ *
+ * Replaces a `max-h-96` height transition on a plain `<div>`. That approach had
+ * three problems beyond the styling: it was not a dialog, so a screen reader
+ * announced nothing when it opened and the page behind it stayed reachable by
+ * Tab; the page behind it scrolled under the open panel; and 24rem of max-height
+ * silently clipped the list once it grew past six links — which it does here,
+ * now that the drawer carries the full destination set.
+ *
+ * What this does instead:
+ *
+ * - `role="dialog"` + `aria-modal` + a labelled heading, so it is announced.
+ * - Focus moves to the close button on open and returns to the trigger on close.
+ * - Tab is trapped inside the panel while it is open.
+ * - `overflow: hidden` on `<body>` with the scroll position pinned, so the page
+ *   behind does not scroll and does not jump when the drawer closes.
+ * - Rendered through a **portal onto `<body>`**, not in place. The header
+ *   carries `transition-transform` for its auto-hide behaviour, and a
+ *   transformed ancestor becomes the containing block for `position: fixed`
+ *   descendants (CSS Transforms L1 §3). Left inside the header, the drawer's
+ *   `inset: 0` resolved against the 60px-tall bar instead of the viewport, so
+ *   it rendered 60px tall with its list clipped away. Nothing about the markup
+ *   looked wrong; it was only visible by measuring the panel in a browser.
+ * - The panel scrolls internally and is bounded by `100dvh`, so a long list is
+ *   reachable rather than clipped — `dvh` rather than `vh` because mobile
+ *   browsers shrink the viewport when their toolbar appears.
+ * - `env(safe-area-inset-*)` padding, so the last item clears a home indicator.
+ *
+ * Every destination comes from `@/lib/navigation`, which is also what the
+ * desktop bar reads. The two cannot drift.
+ */
+
+type MobileNavDrawerProps = {
+  open: boolean;
+  onClose: () => void;
+  /** Focus returns here on close. */
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  pathname: string;
+  isStaff: boolean;
+  signedIn: boolean;
+  onOpenSearch: () => void;
+  unreadMessages: number;
+  unreadNotifications: number;
+};
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])';
+
+export default function MobileNavDrawer({
+  open,
+  onClose,
+  triggerRef,
+  pathname,
+  isStaff,
+  signedIn,
+  onOpenSearch,
+  unreadMessages,
+  unreadNotifications,
+}: MobileNavDrawerProps) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+
+  // Lock the page behind the drawer without losing its scroll position.
+  useEffect(() => {
+    if (!open) return;
+    const { body } = document;
+    const scrollY = window.scrollY;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    };
+
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+
+    return () => {
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.width = previous.width;
+      body.style.overflow = previous.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [open]);
+
+  // Focus in on open, back to the trigger on close.
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => closeRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  // Escape closes; Tab is trapped inside the panel.
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        triggerRef.current?.focus();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (node) => node.offsetParent !== null || node === document.activeElement
+      );
+      if (!items.length) return;
+
+      const first = items[0];
+      const last = items[items.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose, triggerRef]);
+
+  // `open` only becomes true from a click, so this is never true on the server;
+  // the `document` guard states that rather than relying on it.
+  if (!open || typeof document === "undefined") return null;
+
+  const staffItems = staffNavItems(isStaff);
+
+  const renderLink = (item: NavItem, badge?: number) => (
+    <Link
+      key={item.href}
+      href={item.href}
+      onClick={onClose}
+      aria-current={isNavItemActive(item, pathname) ? "page" : undefined}
+      className="mobile-nav-item"
+    >
+      <span className="min-w-0">
+        <span className="mobile-nav-item-label">{item.label}</span>
+        {item.description ? (
+          <span className="mobile-nav-item-description">{item.description}</span>
+        ) : null}
+      </span>
+      {badge && badge > 0 ? (
+        <span className="mobile-nav-item-count">{badge > 99 ? "99+" : badge}</span>
+      ) : null}
+    </Link>
+  );
+
+  return createPortal(
+    <div className="mobile-nav-root lg:hidden">
+      {/* Decorative: Escape and the labelled Close button are the accessible
+          dismissals, and the backdrop is not reachable by keyboard. */}
+      <div className="mobile-nav-backdrop" onClick={onClose} aria-hidden="true" />
+
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-nav-title"
+        className="mobile-nav-panel"
+      >
+        <div className="mobile-nav-header">
+          <h2 id="mobile-nav-title" className="mobile-nav-title">
+            Menu
+          </h2>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={() => {
+              onClose();
+              triggerRef.current?.focus();
+            }}
+            className="mobile-nav-close"
+            aria-label="Close menu"
+          >
+            <FontAwesomeIcon icon={faXmark} className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mobile-nav-scroll">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenSearch();
+            }}
+            className="mobile-nav-search"
+          >
+            <FontAwesomeIcon icon={faMagnifyingGlass} className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Search products</span>
+          </button>
+
+          <nav aria-label="Primary" className="mobile-nav-group">
+            {primaryNav.map((item) => renderLink(item))}
+          </nav>
+
+          <div className="mobile-nav-group">
+            <p className="mobile-nav-heading">Your account</p>
+            {signedIn ? (
+              <>
+                {accountNav.map((item) =>
+                  renderLink(
+                    item,
+                    item.href === "/messages"
+                      ? unreadMessages
+                      : item.href === "/notifications"
+                        ? unreadNotifications
+                        : undefined
+                  )
+                )}
+                {accountSecondaryNav.map((item) => renderLink(item))}
+              </>
+            ) : (
+              <>
+                {renderLink({ href: "/wishlist", label: "Wishlist" })}
+                {renderLink({ href: "/cart", label: "Cart" })}
+                <Link href="/auth/login" onClick={onClose} className="mobile-nav-signin">
+                  Log in
+                </Link>
+              </>
+            )}
+          </div>
+
+          <nav aria-label="More" className="mobile-nav-group">
+            <p className="mobile-nav-heading">More</p>
+            {secondaryNav.map((item) => renderLink(item))}
+          </nav>
+
+          {staffItems.length ? (
+            <nav aria-label="Staff" className="mobile-nav-group">
+              <p className="mobile-nav-heading">Staff</p>
+              {staffItems.map((item) => renderLink(item))}
+            </nav>
+          ) : null}
+
+          {signedIn ? (
+            <div className="mobile-nav-group">
+              <Link href="/auth/logout" onClick={onClose} className="mobile-nav-signout">
+                Sign out
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}

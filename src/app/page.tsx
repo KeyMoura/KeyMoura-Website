@@ -13,7 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `${settings.name} | Custom Parts, Made to Order`,
     description:
-      "KeyMoura designs and machines custom parts, prototypes, fixtures, and short runs. Browse the catalog or send a drawing, CAD file, or description and get a reviewed quote before you pay.",
+      "KeyMoura designs and machines custom parts, prototypes, fixtures, and short runs. Browse the products or send a drawing, CAD file, or description and get a reviewed quote before you pay.",
     alternates: { canonical: "/" },
   };
 }
@@ -95,7 +95,7 @@ const process = [
   {
     step: "01",
     title: "Describe the part",
-    body: "Start from a catalog design or send a CAD file, drawing, sketch, or plain-language description. Dimensions, material, finish, quantity, and how the part gets used all help.",
+    body: "Start from a product page or send a CAD file, drawing, sketch, or plain-language description. Dimensions, material, finish, quantity, and how the part gets used all help.",
   },
   {
     step: "02",
@@ -156,16 +156,16 @@ export default async function Home() {
               Parts made to your drawing, <span className="home-hero-accent">quoted before you pay.</span>
             </h1>
             <p className="home-hero-lede">
-              KeyMoura makes one-off parts, prototypes, fixtures, signage, and short runs. Start from a catalog design
+              KeyMoura makes one-off parts, prototypes, fixtures, signage, and short runs. Start from a stocked product
               or send your own idea — we review whether it can be made, agree the details, and only then ask for
               payment.
             </p>
             <div className="home-hero-actions">
               <Link href="/orders/new" className="ui-btn ui-btn-primary !px-6 !py-3">
-                Request custom work
+                Start a custom project
               </Link>
               <Link href="/catalog" className="ui-btn ui-btn-secondary !px-6 !py-3">
-                Browse the catalog
+                Browse products
               </Link>
             </div>
             <p className="home-hero-note">
@@ -213,13 +213,13 @@ export default async function Home() {
           <section className="home-section" aria-labelledby="home-catalog">
             <Reveal className="home-section-head">
               <div>
-                <p className="ui-eyebrow">From the catalog</p>
+                <p className="ui-eyebrow">Products</p>
                 <h2 id="home-catalog" className="home-section-title">
-                  Ready designs you can customize
+                  Ready to buy, or made to your drawing
                 </h2>
               </div>
               <Link href="/catalog" className="home-section-link">
-                View the full catalog →
+                All products →
               </Link>
             </Reveal>
             <Reveal stagger className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -266,13 +266,13 @@ export default async function Home() {
           <section className="home-section" aria-labelledby="home-projects">
             <Reveal className="home-section-head">
               <div>
-                <p className="ui-eyebrow">Projects</p>
+                <p className="ui-eyebrow">Gallery</p>
                 <h2 id="home-projects" className="home-section-title">
-                  Recent write-ups and builds
+                  Recent work
                 </h2>
               </div>
               <Link href="/projects" className="home-section-link">
-                All projects →
+                See the gallery →
               </Link>
             </Reveal>
             <Reveal stagger className="mt-7 grid gap-4 md:grid-cols-3">

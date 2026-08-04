@@ -260,6 +260,11 @@ export default function AppearancePage() {
     if (contrast(form.theme.mutedText, form.theme.background) < 3) return "Muted text needs more contrast against the background.";
     if (contrast(form.theme.navigationText, form.theme.navigationBackground) < 4.5) return "Navbar text needs more contrast against the navbar background.";
     if (contrast(form.theme.navigationActiveText, form.theme.navigationBackground) < 3) return "The active navbar link needs more contrast against the navbar background.";
+    if (contrast(form.theme.navigationHoverText, form.theme.navigationHoverBackground) < 4.5) return "Navbar hover text needs more contrast against the hover background.";
+    // A count badge carries 10px bold text. It is small, so it is held to the
+    // normal-text ratio rather than the large-text one.
+    if (contrast(form.theme.navigationBadgeText, form.theme.navigationBadgeBackground) < 4.5) return "Badge text needs more contrast against the badge background — cart and wishlist counts are 10px.";
+    if (contrast(form.theme.navigationMobileText, form.theme.navigationMobileBackground) < 4.5) return "Menu text needs more contrast against the menu background.";
     // The brand colors are not only fills: eyebrows, prices, section links, and
     // in-content links are drawn in them directly on the page background.
     if (contrast(form.primaryColor, form.theme.background) < 4.5) return "The primary color needs more contrast against the page background — it is also used for small text like prices and section links.";
@@ -293,6 +298,12 @@ export default function AppearancePage() {
     "--km-nav-util-hover-bg": form.theme.navigationUtilityHoverBackground,
     "--km-nav-util-hover-border": form.theme.navigationUtilityHoverBorder,
     "--km-nav-util-hover-text": form.theme.navigationUtilityHoverText,
+    "--km-nav-hover-bg": form.theme.navigationHoverBackground,
+    "--km-nav-hover-text": form.theme.navigationHoverText,
+    "--km-nav-badge-bg": form.theme.navigationBadgeBackground,
+    "--km-nav-badge-text": form.theme.navigationBadgeText,
+    "--km-nav-mobile-bg": form.theme.navigationMobileBackground,
+    "--km-nav-mobile-text": form.theme.navigationMobileText,
   } as CSSProperties;
 
   const setTheme = <Key extends keyof SiteTheme>(key: Key, value: SiteTheme[Key]) =>
@@ -303,7 +314,7 @@ export default function AppearancePage() {
   const resetSection = () => setForm((current) => {
     if (section === "theme") return { ...current, primaryColor: saved.primaryColor, accentColor: saved.accentColor, theme: saved.theme };
     if (section === "navigation") {
-      const keys = ["publicNavigationStyle", "navigationBehavior", "navigationDensity", "navigationBackground", "navigationText", "navigationActiveText", "navigationBorder", "navigationUtilityBackground", "navigationUtilityBorder", "navigationUtilityText", "navigationUtilityHoverBackground", "navigationUtilityHoverBorder", "navigationUtilityHoverText"] as const;
+      const keys = ["publicNavigationStyle", "navigationBehavior", "navigationDensity", "navigationBackground", "navigationText", "navigationActiveText", "navigationBorder", "navigationHoverBackground", "navigationHoverText", "navigationBadgeBackground", "navigationBadgeText", "navigationMobileBackground", "navigationMobileText", "navigationUtilityBackground", "navigationUtilityBorder", "navigationUtilityText", "navigationUtilityHoverBackground", "navigationUtilityHoverBorder", "navigationUtilityHoverText"] as const;
       return { ...current, theme: { ...current.theme, ...Object.fromEntries(keys.map((key) => [key, saved.theme[key]])) } };
     }
     const keys: Array<keyof Identity> = section === "brand"
@@ -392,7 +403,17 @@ export default function AppearancePage() {
               <AppearanceGroup title="Navbar colors" description="Change the header without recoloring cards, buttons, or page content.">
                 <div className="grid gap-4 sm:grid-cols-2"><ColorField label="Navbar background" value={form.theme.navigationBackground} onChange={(value) => setTheme("navigationBackground", value)} /><ColorField label="Navbar text" value={form.theme.navigationText} onChange={(value) => setTheme("navigationText", value)} /><ColorField label="Active link" value={form.theme.navigationActiveText} onChange={(value) => setTheme("navigationActiveText", value)} /><ColorField label="Navbar border" value={form.theme.navigationBorder} onChange={(value) => setTheme("navigationBorder", value)} /></div>
               </AppearanceGroup>
-              <AppearanceGroup title="Navbar utility controls" description="Search, messages, notifications, the account pill, and the staff pill keep their own colors here — they no longer follow the site's primary or secondary/accent colors.">
+              {/* Hover was previously the one navbar state with no control: an
+                  operator could set an active colour but nothing happened when a
+                  customer moved the pointer over a link, which on a light navbar
+                  read as an unresponsive header. */}
+              <AppearanceGroup title="Navbar link hover" description="What a primary navigation link looks like under the pointer, and inside the More and account menus.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ColorField label="Hover background" value={form.theme.navigationHoverBackground} onChange={(value) => setTheme("navigationHoverBackground", value)} />
+                  <ColorField label="Hover text" value={form.theme.navigationHoverText} onChange={(value) => setTheme("navigationHoverText", value)} />
+                </div>
+              </AppearanceGroup>
+              <AppearanceGroup title="Navbar utility controls" description="Search, the wishlist, the cart, notifications, and the account control keep their own colors here — they no longer follow the site's primary or secondary/accent colors.">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <ColorField label="Utility background" value={form.theme.navigationUtilityBackground} onChange={(value) => setTheme("navigationUtilityBackground", value)} />
                   <ColorField label="Utility border" value={form.theme.navigationUtilityBorder} onChange={(value) => setTheme("navigationUtilityBorder", value)} />
@@ -400,6 +421,20 @@ export default function AppearancePage() {
                   <ColorField label="Utility hover background" value={form.theme.navigationUtilityHoverBackground} onChange={(value) => setTheme("navigationUtilityHoverBackground", value)} />
                   <ColorField label="Utility hover border" value={form.theme.navigationUtilityHoverBorder} onChange={(value) => setTheme("navigationUtilityHoverBorder", value)} />
                   <ColorField label="Utility hover text" value={form.theme.navigationUtilityHoverText} onChange={(value) => setTheme("navigationUtilityHoverText", value)} />
+                </div>
+              </AppearanceGroup>
+              {/* Counts used to borrow the utility hover colours, so a subtler
+                  hover silently dulled the cart count with it. */}
+              <AppearanceGroup title="Count badges" description="The cart, wishlist, and notification counts, and the unread dot on the account control.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ColorField label="Badge background" value={form.theme.navigationBadgeBackground} onChange={(value) => setTheme("navigationBadgeBackground", value)} />
+                  <ColorField label="Badge text" value={form.theme.navigationBadgeText} onChange={(value) => setTheme("navigationBadgeText", value)} />
+                </div>
+              </AppearanceGroup>
+              <AppearanceGroup title="Menus and the mobile drawer" description="The dropdown panels and the slide-in menu on phones. Separate from the bar itself, which is usually translucent over the page.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ColorField label="Menu background" value={form.theme.navigationMobileBackground} onChange={(value) => setTheme("navigationMobileBackground", value)} />
+                  <ColorField label="Menu text" value={form.theme.navigationMobileText} onChange={(value) => setTheme("navigationMobileText", value)} />
                 </div>
               </AppearanceGroup>
               <NavbarPreview form={form} />

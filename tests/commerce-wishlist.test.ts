@@ -311,10 +311,25 @@ test("a refused save on a product card is never silent", () => {
   assert.match(body, /error \? "border-amber-400\/70/, "and it needs to be visible without a hover");
 });
 
-test("the wishlist indicator is reachable on mobile as well as desktop", () => {
+test("the wishlist is reachable on mobile as well as desktop", async () => {
   const header = read("src/components/SiteHeader.tsx");
-  const mounts = header.match(/<WishlistIndicator \/>/g) ?? [];
-  assert.equal(mounts.length, 2, "WishlistIndicator must be mounted in both the desktop and mobile bars");
+  const drawer = read("src/components/nav/MobileNavDrawer.tsx");
+
+  // Desktop keeps the indicator on the bar, beside the cart.
+  assert.match(header, /<WishlistIndicator \/>/, "the desktop utility cluster must carry it");
+
+  // The mobile bar deliberately carries only logo, search, cart and menu —
+  // eight controls at 320px is how the badges started clipping each other. The
+  // requirement is that a phone user can still *get* to the wishlist, not that
+  // the same component is mounted twice, so the drawer has to offer it in both
+  // states.
+  assert.match(drawer, /accountNav\.map/, "signed in, via the account destinations");
+  const { accountNav } = await import("../src/lib/navigation.ts");
+  assert.ok(
+    accountNav.some((item) => item.href === "/wishlist"),
+    "and /wishlist must be one of them"
+  );
+  assert.match(drawer, /renderLink\(\{ href: "\/wishlist", label: "Wishlist" \}\)/, "signed out, explicitly");
 });
 
 test("the wishlist toggle on a card sits above the card's stretched link", () => {

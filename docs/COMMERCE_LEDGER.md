@@ -1229,3 +1229,239 @@ download URLs rather than public links; storage RLS keyed on `is_staff_user()`
 so a leaked path is not a leaked file; paths namespaced by job id. That is a
 route, a bucket, and a storage policy — none of it exists yet, and none of it
 should be created without a decision on retention and file-size limits.
+
+---
+
+# Pass 6 — storefront, navigation and product-detail redesign
+
+Branch `storefront-navigation-product-detail-20260804`, from `e2f2a9b`.
+
+The brief: rebuild the customer-facing storefront so it reads as a premium
+ecommerce and custom-manufacturing site rather than the forum template it grew
+out of. Navbar information architecture, a complete product-detail redesign,
+catalog consistency, mobile behaviour, Appearance integration, accessibility.
+
+## What the audit found
+
+The forum origins were structural, not cosmetic.
+
+**Navigation.** The desktop bar centred the logo between two halves of the
+navigation — About / Capabilities / Projects · KM · Catalog / Contact /
+Community. That is a masthead: it reads as a community with a shop attached.
+Community held prime position; "Catalog" was the word for the shop. The utility
+cluster carried search, wishlist, cart, a message bell, a notification bell, an
+account pill and a role-coloured staff pill — measured at 495px on a staff
+session, which is what caused the pass-4 overlap.
+
+There was **no account menu at all**: `/account` was a bare link, so Orders,
+Requests, Wishlist and Sign out had no home in the navigation. The mobile panel
+was a `max-h-96` height transition on a plain `<div>` — not a dialog, no focus
+trap, no scroll lock, and it **hard-coded a second copy of the navigation** that
+had already drifted from the desktop one: no Wishlist, no Orders, no search.
+
+**Product page.** A client component that fetched its product in a `useEffect`.
+First paint was the word "Loading…"; a crawler or link preview got nothing. It
+bypassed `productImages.ts` and used raw `<img>` with its own `media.filter()`,
+so it could disagree with the catalog about which photograph is the cover. No
+breadcrumb, no category, no SKU, no structured content, and four hard-coded
+information cards — "Lead time", "Pricing basis", "Customization", "Before
+payment" — that rendered on every product whether or not there was anything to
+put in them. Three of the four were static prose.
+
+**Catalog.** Also client-fetched. Filters were bare `<select>` elements on a
+page where every other dropdown is a `MenuSelect`, and the category list was
+derived from the legacy free-text `products.category` column rather than from
+`product_categories`, so it was whatever strings happened to be in use.
+
+No category routes exist. That remains true — see deferred work.
+
+## Phase 1 — navigation — complete
+
+**Logo left, not centred.** A centred logo forces the navigation to split around
+it, which is what made the bar symmetric and fragile: the pass-4 overlap came
+from two side columns being forced to equal widths. One flexible column between
+two content-sized ones removes that class of bug.
+
+Primary navigation is **Products, Custom Projects, Gallery, About**.
+Capabilities, the design guide, Contact and Community move into a More menu.
+**Community keeps every route it had** — it is reachable from More, the mobile
+drawer and the footer.
+
+Utilities are **Search, Wishlist, Cart, Notifications, Account**. Messages and
+staff access moved inside the account menu; the trigger carries an unread dot,
+so nothing became undiscoverable. Staff access is deliberately not in the
+customer link row: there it reads as a store category to every customer who
+cannot use it, and its role colour made it the loudest thing in the header.
+
+`src/lib/navigation.ts` is the one definition, read by the desktop bar, the More
+menu, the drawer, the account menu and the footer. A test asserts no customer
+href is hard-coded in `SiteHeader` any more.
+
+The drawer is a real dialog: focus trap, focus restoration, body-scroll lock
+that preserves the scroll position, `100dvh` bound, internal scrolling,
+safe-area padding, 44px rows.
+
+**One bug that only measurement finds.** The drawer rendered **60px tall** with
+its list clipped away. The header carries `transition-transform` for auto-hide,
+and a transformed ancestor becomes the containing block for `position: fixed`
+descendants (CSS Transforms L1 §3) — so `inset: 0` resolved against the bar
+rather than the viewport. Fixed with a portal onto `document.body`; a test
+asserts both the portal and that the header still transforms, so the fix cannot
+be removed as redundant.
+
+`NavMenu` is one implementation for every dropdown. Its first cut threaded an
+`itemProps(index)` render prop and asked each caller to declare its item count —
+a hand-maintained number sitting a hundred lines from the markup it described,
+which the account menu already had to remember to increment for Sign out. It now
+queries `[role="menuitem"]` out of the open panel, which cannot disagree with
+what was rendered.
+
+**Appearance.** Six new tokens: navbar hover background and text, badge
+background and text, menu background and text. Count badges previously borrowed
+the *utility hover* colours, so darkening the search button's hover silently
+dulled the cart count with it. The notification panel stopped hard-coding zinc
+borders and amber hovers. A test asserts every hex in the navbar CSS is a
+`var()` fallback, and that a `theme_config` saved before this pass keeps its
+values while the new keys fall back to defaults.
+
+## Phase 2 — product-detail — complete
+
+**Server-rendered, through the anon key rather than the service role.** That is
+deliberate on two counts: RLS becomes a second guard behind every filter, so a
+missing `.eq("is_published", true)` returns nothing rather than serving a draft;
+and the query is exercisable locally, because the deliberately fake
+service-role key in `.env.local` is what made passes 3, 4 and 5 each record
+"the data path could not be verified here". `src/lib/supabasePublicServer.ts`.
+
+- Gallery: 4:3 box reserved before load, vertical thumbnails from `lg` and a
+  horizontal scroller below, pointer-position zoom (disabled under reduced
+  motion and on coarse pointers), fullscreen dialog with focus trap and arrow
+  keys, keyboard-navigable thumbnails, fall-forward through broken URLs. It does
+  **not** resolve images itself — the page passes them in, resolved by
+  `productImages.ts`.
+- Purchase panel: options, quantity, wishlist, share, validation that moves
+  focus to the offending group.
+- Structured sections on native `<details>`: keyboard operable and correct to a
+  screen reader before hydration, deep-linkable via `:target`. Empty sections
+  never render, so a sparse product gets a short page rather than a broken one.
+- Quick-information row built only from facts that are set.
+- Mobile sticky action, mirroring whichever primary action the product offers.
+
+**Purchase modes.** `request_only` never renders a cart control, and the wizard
+owns configuration — rendering the option groups in the panel *as well* would
+ask for a material twice, in two controls that do not talk to each other. An
+option value flagged `requires_request` swaps Add to Cart for the request action
+and names the choice that did it, rather than leaving a disabled button.
+
+A pricing inconsistency was found and fixed on the way: the card said "From
+$20.00" for a priced request-only product while the page said "Priced after
+review". The page now agrees with the card and keeps the caveat on the line
+below.
+
+### Migration `20260804030000_product_detail_content.sql`
+
+Additive: 14 columns on `products`, all nullable or defaulted, plus three
+CHECKs. No table, column or existing constraint is altered.
+
+Columns rather than five new tables (benefits, specifications, compatibility,
+included, FAQ). These are ordered display blocks, always read whole with the
+product and never queried independently — and, per the pass-5a outage, a *new*
+table that ships without explicit grants is unreadable by every PostgREST role,
+because this database's default privileges carry no SELECT. **A column addition
+inherits the table's ACL, so that failure mode is unreachable here.** The
+migration issues no grants at all, and a test asserts it.
+
+`detail_content` is `jsonb` with a `jsonb_typeof(...) = 'object'` CHECK — the
+floor, not the specification. `src/lib/commerce/productContent.ts` is the one
+gate every reader goes through: it is total (any input yields a valid empty
+structure), drops blank rows, and truncates on read so a row written before any
+editor limit still renders bounded.
+
+**Dry run against production, rolled back:** 39 columns, 3 checks, both live
+rows valid on the defaults, and all three constraints verified to actually
+refuse a negative weight, an unknown difficulty and a JSON array. Production
+confirmed untouched afterwards — 25 columns, 36 migration rows.
+
+Staff editor at `/staff/catalog` covers every field. Nothing in it can clear
+`description` or `short_description`, and none of it gates publishing.
+
+## Phase 3 — catalog, homepage, footer — complete
+
+- `/catalog` server-rendered; filtering stays client-side, which is correct for
+  a list already in memory.
+- Categories from `product_categories`, with a parent including its children.
+- `MenuSelect` throughout; zero native selects.
+- "Customizable only" became a purchase-type filter — buy now / buy or
+  customize / quoted — which is the distinction a customer shops on.
+- Auto-fill grid, so a two-product catalog does not leave a third of a row empty.
+- Footer rebuilt around the business: Shop, The shop, Support, carrying the
+  policy pages a customer looks for before committing. Three *named* nav
+  landmarks. Community lands here as a secondary destination.
+- Homepage drops the forum vocabulary: "From the catalog" becomes Products,
+  "Projects" becomes Gallery.
+
+No fabricated counts, ratings, urgency, scarcity or testimonials. The catalog
+count is a count of what is on screen. No star rating is rendered anywhere:
+`product_reviews` exists but holds zero rows and has no UI, so a star row would
+be decoration standing in for data that does not exist. A test asserts it.
+
+## Validation
+
+- **593 tests pass, 0 fail** (537 before; 56 added across `product-detail` and a
+  rewritten `navbar-layout`).
+- Typecheck clean. Production build clean, exit 0.
+- **Lint improved: 332 problems, from the 350 baseline** (178 errors, 154
+  warnings). The drop is the deleted client product page and message bell. All
+  new files lint clean.
+- Browser-verified at **320, 375, 480, 768, 1024, 1152, 1280, 1366, 1440, 1920**
+  with a signed-in staff cluster simulated (99+ badges, a long account name):
+  zero overlaps, zero clipping, no horizontal overflow at any width.
+- Menus: ArrowDown opens and focuses the first item, End jumps to the last,
+  ArrowDown wraps to the first, Escape closes and restores focus to the trigger.
+- Drawer: dialog semantics, focus to Close on open, body locked at the scroll
+  offset, last row reachable by scrolling, Escape restores focus and scroll.
+- Gallery: thumbnail click and arrow keys, 3D model view, fullscreen dialog with
+  `object-fit: contain`, arrow keys inside it, Escape restoring focus and
+  unlocking the body.
+- Product page against **real production data**, both live products: correct
+  badges, prices, actions, quick facts, breadcrumb with category, and empty
+  sections hidden.
+- Accessibility on the product page: one h1, no heading-level skips, no image
+  without alt, no control without an accessible name, named landmarks.
+- Reduced motion, `safe-area-inset`, and `100dvh` confirmed **in the served
+  CSS**, not just the source.
+
+### What could not be verified here, and why
+
+- **The mobile sticky bar's reveal.** `IntersectionObserver` delivers no
+  callbacks in a browser pane that is not compositing frames — confirmed by
+  observing an element that was demonstrably on screen. This is environmental,
+  not a code defect, and the failure mode is safe: the bar stays hidden and the
+  real buttons still work. The rule it would have checked is asserted directly
+  as a pure function instead.
+- **A signed-in customer or staff session.** Unchanged limitation from passes
+  3–5: signing in means handling a password. The staff cluster was simulated at
+  DOM level with real dimensions.
+- **Browser zoom at 125% and 150%** was not driven directly. It is equivalent to
+  a narrower CSS viewport (1280 becomes 1024, then 853), which the width matrix
+  covers.
+
+## Deferred, and why
+
+- **Category routes** (`/catalog/category/[slug]`) still do not exist. The
+  breadcrumb and the footer link to `/catalog?category=…`, which the catalog
+  reads and applies. Real routes are a separate piece of work with their own
+  metadata and canonical-URL decisions.
+- **Reviews.** Tables exist, zero rows, no API and no UI. The product page
+  deliberately renders nothing rather than an empty five-star row.
+- **Returns, cancellations, support, tax, shipping integrations, reporting,
+  imports/exports** — all explicitly out of scope for this pass.
+- The 2.2 MB 1920×1080 PNG cover noted in pass 4 is still uncompressed at the
+  source. The optimizer handles it on every surface.
+
+### Pre-existing, unchanged
+
+- The `data-motion` hydration mismatch on the root `<html>`.
+- The site broadcast banner's Dismiss button is 20×20, under WCAG 2.2 AA's 24px
+  minimum. Outside the storefront and outside this pass.
+- Guest checkout remains unrepresentable: `orders.customer_id` is `NOT NULL`.

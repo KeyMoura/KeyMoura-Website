@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { normalizeShippingAddress } from "../src/lib/checkout.ts";
 
-const page = readFileSync("src/app/catalog/[slug]/page.tsx", "utf8");
+// The request wizard moved out of the product page into its own client
+// component when the page became a server component. Same three steps, same
+// validation, same uploads, same POST /api/orders.
+const page = readFileSync("src/components/product/ProductRequestForm.tsx", "utf8");
 const route = readFileSync("src/app/api/orders/route.ts", "utf8");
 const migration = readFileSync("supabase/migrations/20260731190000_checkout_inventory_reservations.sql", "utf8");
 
