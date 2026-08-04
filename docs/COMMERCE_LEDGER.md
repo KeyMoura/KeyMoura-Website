@@ -197,6 +197,72 @@ Note that an *empty* value is caught by the browser's native `required` handling
 before React's guard runs, because the code field is `required` too and fails
 first. That path shows the browser's own bubble rather than the inline message.
 
+### Phase 4 — navbar layout — complete
+
+**Root cause, measured.** The desktop bar was
+`grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]`, which forces the two side
+columns to the *same* width. At 1280 with a signed-in staff account the search
+button needs 85px and the utility cluster needs **495px** — and both were given
+**306px**. The cluster is `justify-end` and its pills do not shrink, so the
+extra 190px overflowed *leftward*, straight over the centred navigation.
+Nothing clipped it and the page never gained a horizontal scrollbar, which is
+why it presented as controls sitting on top of each other rather than as
+overflow. Reproduced before the fix as four concrete collisions, the worst being
+"Community" over the cart button by 36px.
+
+**Fix.**
+
+1. `grid-cols-[auto_minmax(0,1fr)_auto]`. Utilities and search size to their own
+   content; the navigation is the flexible column — so when something has to
+   give, it is the part that has an overflow menu to give into. The utility
+   cluster is additionally `shrink-0`, stating the invariant.
+2. **Explicit priority.** Catalog and Projects stay on the bar at every desktop
+   width; About, Capabilities, Contact and Community are inline from `xl` up and
+   collapse into a **More** menu below it. Both sides are driven by the same
+   `xl` breakpoint, so exactly one of the two ever shows a given link, and the
+   menu is derived from the same list rather than maintained separately.
+3. **No measurement.** A measured overflow has to guess a width during server
+   rendering and correct it after mount — a hydration mismatch and a visible
+   reflow on every load. The split is pure CSS.
+4. **A second overflow at `2xl`, found while testing.** `2xl` is where the
+   header *grows*: the search button gains its Ctrl+K chip, the account name is
+   allowed 140px instead of 110, and the wordmark appears. Measured at 1920 that
+   is 1292px of content inside a container capped at 1240px. The bar now widens
+   to `94rem` from `2xl`, and an operator wordmark is bounded at `max-w-28` so
+   it cannot reopen it. Giving the controls room is the fix rather than shrinking
+   them — the point of those breakpoints is that there is space to spend.
+5. **Counts cap at `99+`, not `9+`.** `src/lib/navBadge.ts` is now the one
+   definition, shared by cart, wishlist, messages and notifications; four copies
+   of `count > 9 ? "9+" : count` is how one control ends up saying "9+" beside
+   another saying "12". The bubble is absolutely positioned with its width
+   reserved at "99+" and `tabular-nums`, so a count arriving after first paint
+   cannot resize its button or nudge the bar. Screen readers get the real number
+   ("Cart, 128 items"), never the capped text.
+
+- Changed: `src/components/SiteHeader.tsx`, `src/lib/navBadge.ts` (new),
+  `src/components/commerce/CartIndicator.tsx`, `WishlistIndicator.tsx`,
+  `src/app/globals.css`.
+- Tests: `tests/navbar-layout.test.ts` (17 new). 437 pass, 0 fail. Production
+  build clean.
+- No schema change. No migration.
+
+**Verified in a real browser** at 320, 375, 480, 768, 1024, 1152, 1280, 1366,
+1440, 1536 and 1920, with the signed-in staff cluster simulated (messages,
+notifications carrying `99+`, a long account name, and the staff pill) and again
+with a wordmark: **zero overlaps, zero clipping, no horizontal page overflow at
+any width.** Below `xl` only Projects and Catalog remain inline and More
+appears; from `xl` all six show and More is gone. The menu reports
+`aria-expanded`, `aria-haspopup="menu"`, `aria-controls`, `role="menu"` with a
+label, and `role="menuitem"` children; Escape closes it and returns focus to its
+trigger; an outside click dismisses it. Growing a badge to `99+` moves the cart
+button by 0px.
+
+**Not covered by the local run:** browser zoom at 125%/150% was not driven
+directly — it is equivalent to a narrower CSS viewport, which the width matrix
+covers, but it was not separately confirmed. The signed-in state was simulated
+at DOM level because `.env.local` cannot authenticate; confirm on preview with a
+real staff session.
+
 ## Migration history — repaired 2026-08-03
 
 The ledger had drifted three ways and `supabase db push` would have misbehaved

@@ -687,6 +687,37 @@
     color: var(--km-nav-util-hover-text, #ffffff);
   }
 
+  /*
+   * The count bubble on a navbar utility control.
+   *
+   * Absolutely positioned, so the number arriving after the page has painted
+   * cannot resize its button or nudge anything beside it — counts load from a
+   * query and always land late.
+   *
+   * `min-width` fits "99+" so growing from 1 to 12 to 99+ only changes the
+   * text, not the silhouette, and `justify-content: center` keeps the shorter
+   * values centred in the same box. Shared by cart, wishlist, messages, and
+   * notifications so all four agree.
+   */
+  .site-nav-badge {
+    position: absolute;
+    right: -0.25rem;
+    top: -0.25rem;
+    display: inline-flex;
+    height: 1rem;
+    min-width: 1.35rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border-width: 1px;
+    padding-inline: 0.25rem;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+
   [data-public-navigation-style="classic"] .site-header-shell .site-nav-link { border-radius: 9999px; background: transparent; }
   [data-public-navigation-style="classic"] .site-header-shell .site-nav-link.is-active { border-color: color-mix(in srgb, var(--km-nav-active) 70%, transparent); background: color-mix(in srgb, var(--km-nav-bg) 84%, black); }
   [data-public-navigation-style="soft"] .site-header-shell .site-nav-link { border-radius: var(--control-radius); background: color-mix(in srgb, var(--km-nav-text) 7%, transparent); }

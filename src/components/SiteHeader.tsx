@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import * as React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
+import { badgeCount } from "@/lib/navBadge";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
 import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
@@ -22,6 +23,7 @@ import {
   faChessRook,
   faBook,
   faMagnifyingGlass,
+  faChevronDown,
 } from "@fortawesome/free-solid-svg-icons";
 
 type SimpleUser = {
@@ -236,6 +238,89 @@ function useOutsideClick(
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
   }, [ref, onClose]);
+}
+
+/**
+ * The desktop overflow menu.
+ *
+ * Holds the navigation links that step off the bar below `xl`, so the bar runs
+ * out of *links* rather than running out of room and letting the utility
+ * cluster land on top of them.
+ *
+ * A real menu, not a hover card: `aria-expanded` and `aria-haspopup` describe
+ * it, Escape closes it and returns focus to the trigger, an outside click
+ * dismisses it, and the items are reachable with a keyboard in the order they
+ * appear. Focus returns to the trigger on close because a keyboard user who
+ * escapes a menu should land where they opened it, not at the top of the page.
+ */
+function NavOverflowMenu({
+  items,
+  triggerClass,
+  isActive,
+}: {
+  items: ReadonlyArray<{ href: string; label: string }>;
+  triggerClass: string;
+  isActive: (href: string) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuId = useId();
+
+  useOutsideClick(wrapRef, () => setOpen(false));
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  if (!items.length) return null;
+  const containsCurrent = items.some((item) => isActive(item.href));
+
+  return (
+    <div ref={wrapRef} className="relative xl:hidden">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls={open ? menuId : undefined}
+        className={`${triggerClass}${containsCurrent ? " is-highlighted" : ""}`}
+      >
+        More
+        <FontAwesomeIcon icon={faChevronDown} className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+      </button>
+
+      {open ? (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="More navigation"
+          className="absolute right-0 top-full z-50 mt-2 min-w-44 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/95 py-1 shadow-2xl backdrop-blur"
+        >
+          {items.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              aria-current={isActive(item.href) ? "page" : undefined}
+              className="block px-3 py-2 text-[12px] font-medium text-brand-text hover:bg-white/5 aria-[current=page]:text-brand-primary"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function NotificationBell({
@@ -501,7 +586,7 @@ function NotificationBell({
     });
   };
 
-  const badgeText = unreadCount > 9 ? "9+" : String(unreadCount);
+  const badgeText = badgeCount(unreadCount);
 
   return (
     <div className="relative" ref={popRef}>
@@ -509,14 +594,15 @@ function NotificationBell({
         type="button"
         className={bellClass}
         onClick={onToggle}
-        aria-label="Notifications"
+        // The real count, not the capped bubble text.
+        aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
       >
         <FontAwesomeIcon
           icon={unreadCount > 0 ? faBell : faBellSlash}
           className="text-[14px]"
         />
         {unreadCount > 0 && (
-          <span className="site-nav-utility-badge absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border px-1 text-[10px] font-bold">
+          <span className="site-nav-utility-badge site-nav-badge" aria-hidden="true">
             {badgeText}
           </span>
         )}
@@ -885,7 +971,7 @@ function MessageBell({
     setUnreadCount((c) => Math.max(0, c - unread));
   };
 
-  const badgeText = unreadCount > 9 ? "9+" : String(unreadCount);
+  const badgeText = badgeCount(unreadCount);
 
   return (
     <div className="relative" ref={popRef}>
@@ -893,14 +979,14 @@ function MessageBell({
         type="button"
         className={pillClass}
         onClick={onToggle}
-        aria-label="Messages"
+        aria-label={unreadCount ? `Messages, ${unreadCount} unread` : "Messages"}
       >
         <FontAwesomeIcon
           icon={unreadCount > 0 ? faEnvelope : faEnvelopeOpen}
           className="text-[14px]"
         />
         {unreadCount > 0 && (
-          <span className="site-nav-utility-badge absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border px-1 text-[10px] font-bold">
+          <span className="site-nav-utility-badge site-nav-badge" aria-hidden="true">
             {badgeText}
           </span>
         )}
@@ -1225,21 +1311,46 @@ export default function SiteHeader() {
     }
   };
 
+  /**
+   * Navigation priority.
+   *
+   * `primary: true` means the link stays on the bar at every desktop width.
+   * Everything else is inline from `xl` up and collapses into the More menu
+   * below it, where the utility cluster is at its widest relative to the space
+   * available.
+   *
+   * Catalog and Projects are the two that stay: one is where you buy, the
+   * other is the portfolio that makes you want to. The rest are reference
+   * pages that a customer visits once.
+   *
+   * The split is by CSS breakpoint rather than by measuring, deliberately. A
+   * measured overflow has to guess a width during server rendering and correct
+   * it after mount, which is a hydration mismatch and a visible reflow on every
+   * page load. The same `xl` breakpoint drives both the inline links and the
+   * More menu, so exactly one of the two is ever showing a given link.
+   */
   const leftLinks = useMemo(
     () => [
-      { href: "/about", label: "About" },
-      { href: "/capabilities", label: "Capabilities" },
-      { href: "/projects", label: "Projects" },
+      { href: "/about", label: "About", primary: false },
+      { href: "/capabilities", label: "Capabilities", primary: false },
+      { href: "/projects", label: "Projects", primary: true },
     ],
     []
   );
 
   const rightLinks = useMemo(
     () => [
-      { href: "/catalog", label: "Catalog" },
-      { href: "/contact", label: "Contact" },
+      { href: "/catalog", label: "Catalog", primary: true },
+      { href: "/contact", label: "Contact", primary: false },
+      { href: "/community", label: "Community", primary: false },
     ],
     []
+  );
+
+  /** Exactly the links hidden inline below `xl`, in bar order. */
+  const overflowLinks = useMemo(
+    () => [...leftLinks, ...rightLinks].filter((link) => !link.primary),
+    [leftLinks, rightLinks]
   );
 
   const desktopPillBase =
@@ -1308,10 +1419,41 @@ export default function SiteHeader() {
       } ${headerTheme}`}
       style={headerStyle}
     >
-      <div className="mx-auto max-w-7xl px-4 xl:px-5">
+      {/*
+        Wider than the page's content column from `2xl` up.
+
+        `2xl` is where the header *grows*: the search button gains its Ctrl+K
+        chip, the account name is allowed 140px instead of 110, and the wordmark
+        appears. Measured at 1920 that comes to 1292px of content inside a
+        container capped at 1240px — a 52px overflow that landed the navigation
+        under the utilities. Everything below `2xl` fits inside `max-w-7xl` and
+        is unchanged.
+
+        Giving the bar the extra room is the fix rather than shrinking the
+        controls, because the whole point of those wider breakpoints is that
+        there is space to spend.
+      */}
+      <div className="mx-auto max-w-7xl px-4 xl:px-5 2xl:max-w-[94rem]">
         {/* DESKTOP */}
+        {/*
+          The utilities column is `auto`, not a third `1fr`.
+
+          It used to be `minmax(0,1fr) auto minmax(0,1fr)`, which forces the two
+          side columns to the *same* width. The search button needs about 85px
+          and the signed-in utility cluster needs about 495px, so both were
+          given ~306px — and because the cluster is `justify-end` and its pills
+          do not shrink, the extra 190px overflowed *leftward*, straight over the
+          centred navigation. Nothing clipped it and the page never gained a
+          horizontal scrollbar, so it read as controls stacked on top of each
+          other rather than as overflow.
+
+          Now the utilities take exactly the width they need, the search column
+          may shrink, and the navigation column is the flexible one — so when
+          something has to give, it is the part that has an overflow menu to
+          give into.
+        */}
         <div
-          className="hidden h-14 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 lg:grid"
+          className="hidden h-14 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 lg:grid"
           data-testid="desktop-header"
         >
           <div className="flex min-w-0 items-center justify-start" data-testid="header-left-utilities">
@@ -1329,10 +1471,14 @@ export default function SiteHeader() {
             </button>
           </div>
 
-          <div className="flex items-center gap-3" data-testid="primary-navigation-group">
+          <div className="flex min-w-0 items-center justify-center gap-3" data-testid="primary-navigation-group">
             <nav className="flex items-center gap-1" aria-label="Primary navigation">
               {leftLinks.map((l) => (
-                <Link key={l.href} href={l.href} className={navLinkClasses(l.href)}>
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={`${navLinkClasses(l.href)}${l.primary ? "" : " hidden xl:inline-flex"}`}
+                >
                   {l.label}
                 </Link>
               ))}
@@ -1354,24 +1500,34 @@ export default function SiteHeader() {
                 className="object-contain drop-shadow-[0_8px_14px_rgba(0,0,0,0.55)]"
               />
               {siteSettings.wordmarkUrl ? (
-                <img src={siteSettings.wordmarkUrl} alt="" className="ml-2 hidden h-7 max-w-36 object-contain 2xl:block" />
+                // Bounded at 7rem so an operator-supplied wordmark cannot widen
+                // the centre group past the room measured for it above.
+                <img src={siteSettings.wordmarkUrl} alt="" className="ml-2 hidden h-7 max-w-28 object-contain 2xl:block" />
               ) : null}
             </Link>
 
             <nav className="flex items-center gap-1" aria-label="Primary navigation continued">
               {rightLinks.map((l) => (
-                <Link key={l.href} href={l.href} className={navLinkClasses(l.href)}>
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={`${navLinkClasses(l.href)}${l.primary ? "" : " hidden xl:inline-flex"}`}
+                >
                   {l.label}
                 </Link>
               ))}
-              <Link href="/community" className={navLinkClasses("/community")}>
-                Community
-              </Link>
+              <NavOverflowMenu
+                items={overflowLinks}
+                triggerClass={navLinkClasses("__overflow__")}
+                isActive={isActive}
+              />
             </nav>
           </div>
 
-          {/* Right utilities */}
-          <div className="flex min-w-0 items-center justify-end gap-2 xl:gap-3" data-testid="header-utilities">
+          {/* Right utilities. `shrink-0` states the invariant the grid now
+              enforces: these are never compressed, because a compressed cart
+              button is a cart button someone cannot press. */}
+          <div className="flex shrink-0 items-center justify-end gap-2 xl:gap-3" data-testid="header-utilities">
             {/* Outside the signed-in branch: guests build carts and wishlists
                 too, and hiding the indicators from them loses what they just
                 filled. */}
