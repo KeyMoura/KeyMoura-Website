@@ -32,6 +32,57 @@ export type DiscountDraftResult = { ok: true; draft: DiscountDraft } | { ok: fal
 /** Matches `discount_codes_code_shape` exactly. */
 export const DISCOUNT_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{2,39}$/;
 
+export type DiscountValueResult = { ok: true; value: number } | { ok: false; problem: string };
+
+/**
+ * Parses the one field staff get wrong most often, for both validators.
+ *
+ * The client imports this too, so the inline message under the field and the
+ * message the route would return are the same sentence produced by the same
+ * code. Two validators is how a form starts accepting something the server
+ * refuses, or refusing something it would have accepted.
+ *
+ * **Percentages are whole numbers.** `discount_codes.discount_value` is an
+ * `integer` and `discount_codes_value_check` pins percentages to 1–100, so
+ * 12.5% is not representable. This used to `Math.trunc` the input, which meant
+ * a staff member typed 12.5, saw no complaint, and published a 12% code. A
+ * value the system cannot store has to be refused, not quietly rounded.
+ *
+ * A blank field is its own problem with its own sentence. `Number("")` is `0`,
+ * which is finite, so an empty box used to fall through the "is this a number"
+ * guard and come back as "a percentage discount is between 1 and 100" — an
+ * answer to a question nobody asked.
+ *
+ * @param raw the string straight off the form, untrimmed
+ * @returns the canonical stored value: whole percent, or cents for a fixed amount
+ */
+export function parseDiscountValue(discountType: "fixed" | "percent", raw: unknown): DiscountValueResult {
+  const text = typeof raw === "number" ? String(raw) : typeof raw === "string" ? raw.trim() : "";
+  if (!text) return { ok: false, problem: "Give the discount a value." };
+
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed)) return { ok: false, problem: "That is not a number." };
+
+  if (discountType === "percent") {
+    if (!Number.isInteger(parsed)) {
+      return { ok: false, problem: "A percentage has to be a whole number, so 12.5% is not supported." };
+    }
+    if (parsed < 1 || parsed > 100) {
+      return { ok: false, problem: "A percentage discount is between 1 and 100." };
+    }
+    return { ok: true, value: parsed };
+  }
+
+  if (parsed <= 0) return { ok: false, problem: "A fixed discount has to be more than nothing." };
+  // Dollars and cents. Anything finer would be rounded away silently, which is
+  // the same trap as truncating a percentage.
+  const cents = parsed * 100;
+  if (Math.abs(cents - Math.round(cents)) > 1e-6) {
+    return { ok: false, problem: "A fixed discount is in dollars and cents, so at most two decimal places." };
+  }
+  return { ok: true, value: Math.round(cents) };
+}
+
 function optionalCount(value: unknown): number | null | undefined {
   if (value == null || value === "") return null;
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
@@ -74,18 +125,9 @@ export function buildDiscountDraft(input: Record<string, unknown>): DiscountDraf
 
   const discountType = input.discountType === "percent" ? "percent" : "fixed";
 
-  const rawValue = typeof input.discountValue === "number" ? input.discountValue : Number(input.discountValue);
-  if (!Number.isFinite(rawValue)) return { ok: false, problem: "Give the discount a value." };
-
-  // A percentage is stored as whole percent; a fixed amount as cents.
-  const discountValue = discountType === "percent" ? Math.trunc(rawValue) : Math.round(rawValue * 100);
-
-  if (discountType === "percent" && (discountValue < 1 || discountValue > 100)) {
-    return { ok: false, problem: "A percentage discount is between 1 and 100." };
-  }
-  if (discountType === "fixed" && discountValue <= 0) {
-    return { ok: false, problem: "A fixed discount has to be more than nothing." };
-  }
+  const value = parseDiscountValue(discountType, input.discountValue);
+  if (!value.ok) return { ok: false, problem: value.problem };
+  const discountValue = value.value;
 
   const maxDiscount = input.maxDiscount == null || input.maxDiscount === "" ? null : Number(input.maxDiscount);
   if (maxDiscount != null && (!Number.isFinite(maxDiscount) || maxDiscount <= 0)) {

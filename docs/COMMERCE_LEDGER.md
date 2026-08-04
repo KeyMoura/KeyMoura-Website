@@ -139,6 +139,64 @@ product is no longer available". Local rendering was therefore verified by
 seeding the React Query cache with a payload built from real production media
 URLs, which exercises the real components but not the real query.
 
+### Phase 3 — discount value input — complete
+
+**The input control was never broken.** `discountValue` is a plain string in
+state and `onChange` writes `event.target.value` verbatim; typing, clearing,
+pasting and decimals all land correctly. Confirmed by driving the real field in
+a browser before changing anything. The bug was downstream, and there were three
+of them.
+
+1. **Decimals were silently truncated.** `discount_codes.discount_value` is an
+   `integer` and `discount_codes_value_check` pins percentages to 1–100, so
+   12.5% is not representable. `buildDiscountDraft` ran `Math.trunc`, so a staff
+   member typed 12.5, saw no complaint, and published a **12%** code. The number
+   that came out was not the number that went in — which is exactly "a number
+   cannot be typed correctly."
+2. **An empty field reported the wrong problem.** `Number("")` is `0`, which is
+   finite, so a blank box slipped past the "is this a number" guard and came
+   back as *"A percentage discount is between 1 and 100"* — an answer to a
+   question nobody asked.
+3. **`inputMode="decimal"` on a whole-number field.** Mobile staff got a decimal
+   keypad for a column that cannot hold a decimal.
+
+**Decision: percentages are whole numbers.** That is what the schema enforces.
+Widening `discount_value` to `numeric` would touch a live pricing path and the
+redemption RPC for a feature nobody asked for; refusing the value clearly is the
+honest fix. A fixed amount takes dollars and cents and refuses a third decimal
+place for the same reason — it would be rounded away silently.
+
+**One validator, two callers.** `parseDiscountValue(type, raw)` in
+`discountAdmin.ts` is pure and dependency-free, so the form imports the same
+function the route runs. The sentence under the field is the sentence the server
+would have returned; they cannot drift.
+
+**Switching type clears the value.** "10" is 10% in one mode and $10.00 in the
+other — same digits, very different offer. Carrying it across is how a
+ten-percent code ships as a ten-dollar one.
+
+The error waits for a blur or a submit, so a fresh form does not open red and a
+field does not flash invalid between being emptied and the first digit landing.
+On submit it stops locally, marks `aria-invalid`, and moves focus to the field.
+
+- Changed: `src/lib/commerce/discountAdmin.ts`,
+  `src/app/staff/catalog/discounts/page.tsx`.
+- Tests: `tests/discount-value-input.test.ts` (24 new). 420 pass, 0 fail.
+- No schema change. No migration.
+
+**Verified in a real browser**, driving the live form with the staff permission
+seeded into the query cache: `25` accepted; `12.5` → "A percentage has to be a
+whole number…"; `150` and `-5` → "between 1 and 100"; empty → "Give the discount
+a value."; `abc` → "That is not a number."; `100` accepted at the boundary; the
+error clears when the value becomes valid. `aria-invalid` and `aria-describedby`
+toggle between the hint and the error. Switching percent→fixed clears the value
+and flips the keypad and the hint. Submitting `12.5` is stopped locally, focus
+lands on the field, and the typed value is preserved.
+
+Note that an *empty* value is caught by the browser's native `required` handling
+before React's guard runs, because the code field is `required` too and fails
+first. That path shows the browser's own bubble rather than the inline message.
+
 ## Migration history — repaired 2026-08-03
 
 The ledger had drifted three ways and `supabase db push` would have misbehaved
