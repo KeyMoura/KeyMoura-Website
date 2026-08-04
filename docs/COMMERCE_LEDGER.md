@@ -473,12 +473,83 @@ that itself has a parent, which also makes cycles unrepresentable.
 All are additive. No column is dropped; the legacy `products.category` text
 column is retained for compatibility and kept in sync.
 
+## Pass 4 — where it stands
+
+Branch `product-experience-lifecycle-20260803`, pushed, four commits:
+
+| SHA | What |
+|-----|------|
+| `4c766c9` | Fix the catalog card's dead call-to-action |
+| `0359e79` | Show product cover images on cart lines |
+| `4fe74cf` | Stop the discount form silently changing what staff typed |
+| `f69d261` | Stop the navbar stacking its controls on top of each other |
+
+- **437 tests pass** (was 364 at `f47005e`; 73 added across four new suites).
+- Typecheck clean. Local production build clean.
+- **Vercel preview build: success** on `f69d261`.
+- No schema change, no migration, no new dependency in this pass.
+- Lint: the 350-problem pre-existing baseline in `src` is unchanged.
+
+### Not merged — one gap and one blocked check
+
+**The preview deployment is behind Vercel SSO protection**
+(`https://keymoura-website-2aakiwut2-keymoura.vercel.app` 302s to
+`vercel.com/sso-api`), so the preview could not be smoke-tested from here. The
+build succeeded; the running app was not exercised.
+
+**One code path has never run against a real database.** `resolveLines` now
+calls `loadProductImageSources`, so every cart read *and every checkout* issues
+one extra batched query. It is the same pattern the wishlist and shared-cart
+services have used in production since pass 3, and it is covered by tests, but
+`.env.local` carries a deliberately fake `SUPABASE_SERVICE_ROLE_KEY` and the
+preview is gated, so it has only ever been executed against seeded data. Worth
+one deliberate look at `/cart` and a checkout before or immediately after merge.
+
+Everything else in these four phases was verified in a real browser and is
+described per-phase above.
+
+## Still to build — pass 5 onward
+
+Nothing below was started in pass 4. The priority order from the brief, with
+what is already in place noted:
+
+1. **Product-detail redesign** — the largest single item. Needs structured
+   product content (benefits, specs, fitment, included items, installation,
+   care, warranty, FAQ, dimensions, SKU, made-to-order, lead time), which is an
+   additive migration plus staff editing surfaces, plus a two-column gallery and
+   purchase panel.
+2. **Reviews** — `product_reviews` and `product_review_reports` tables already
+   exist from `20260802020400`; the API, customer UI, product-page integration,
+   and staff moderation queue do not.
+3. **Cancellations, returns, refunds** — `20260801050000_order_refunds_and_quote_expiration`
+   exists; the customer request workflow, staff decisions, and Stripe refund
+   settlement do not.
+4. **Shipping, inventory, fulfillment, tax** — `20260731170000_order_fulfillment`,
+   `20260731180000_catalog_inventory_editor` and
+   `20260731190000_checkout_inventory_reservations` exist and are applied;
+   Stripe Tax is not integrated at all.
+5. **Transactional email lifecycle** — Resend is wired and
+   `20260731160000_order_email_center` exists; the ~25 templates in the brief do
+   not.
+6. **Support tickets, Facebook auth and connected accounts, Vercel Analytics and
+   Speed Insights, Sentry completion, Turnstile, rate-limit expansion, staff
+   audit-log viewer, SEO structured data, policy pages** — none started.
+
+Also still outstanding, unchanged from pass 3:
+
+- **Guest checkout is unrepresentable**, not merely unimplemented:
+  `orders.customer_id` is `NOT NULL` and the webhook refuses a session whose
+  `customer_id` does not match the order.
+- **Pre-existing hydration mismatch** on `data-motion` on the root `<html>`,
+  reproducible on every page. It lives in the Appearance/theme runtime.
+- **Pre-existing lint baseline**: 350 problems in `src`.
+
 ## Next steps, in order
 
-Pass 4, in priority order:
-
-1. ~~Catalog card click target~~ — complete.
-2. Product cover images in the cart drawer and `/cart`.
-3. Staff discount percentage input.
-4. Navbar responsive repair.
-5. Product-detail redesign, then reviews, cancellations, returns.
+1. Smoke-test the preview (needs deployment protection lifted, or an owner to
+   check it) — in particular `/cart` with a real line, and a checkout.
+2. Merge to main, confirm the production deployment reaches Ready, smoke-test
+   `/catalog`, the cart drawer, `/cart`, the staff discount form, and the navbar
+   at a laptop width with a staff account.
+3. Then start the product-detail redesign, which everything in phases 5–8
+   hangs off.
