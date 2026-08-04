@@ -78,6 +78,67 @@ wording; no horizontal overflow.
   in an allow-list with a stated reason.
 - No schema change. No migration.
 
+### Phase 2 — cart cover images — complete
+
+Cart lines now show the product's cover image in both the drawer and `/cart`.
+
+**The loader was already duplicated.** `loadDisplayFields` existed byte-identical
+in `wishlistService` and `sharedCartService`, and the cart would have been a
+third copy. Extracted to `src/lib/commerce/productDisplay.ts` as
+`loadProductImageSources` — three answers to "which image wins" is how one of
+them quietly stops agreeing with the catalog. Both services now import it.
+
+Resolution itself is unchanged and still goes through `productImages.ts`:
+gallery media by `sort_order` first, `products.image_url` only as a fallback.
+No competing resolver was introduced.
+
+**Query shape.** Two batched queries for the whole cart regardless of line
+count, run in parallel with the pricing load rather than after it. Ids are
+de-duplicated first, because a cart may hold the same product configured two
+ways. A fifty-line cart costs the same as a one-line cart.
+
+**Wire shape.** `image: ProductImageSource` — `{ image_url, product_media }`,
+the same shape the wishlist already sends, so the client keeps `ProductImage`'s
+fall-forward behaviour when the first gallery URL is broken. Public catalog
+columns only: no signed URLs, no storage credentials, no owner identity. Both
+the `items` list and the `unavailable` list carry one, so an out-of-stock line
+is still recognisable and a deleted product falls back to the brand mark.
+
+**Accessibility.** The thumbnail links to the product but is `aria-hidden`,
+`tabIndex={-1}`, and `alt=""` — the product name beside it is the labelled link
+to the same place, so a screen reader announces each line once, not twice.
+
+**Layout.** `.cart-thumb` is square (4rem page, 3.25rem drawer, 2.5rem on the
+unavailable list) with `aspect-ratio` reserving the box, so a loading image
+cannot shift the quantity and Remove controls.
+
+- Changed: `src/lib/commerce/productDisplay.ts` (new),
+  `src/lib/commerce/cartService.ts`, `wishlistService.ts`,
+  `sharedCartService.ts`, `src/components/commerce/CartIndicator.tsx`,
+  `src/app/cart/page.tsx`, `src/app/globals.css`.
+- Tests: `tests/cart-product-images.test.ts` (18 new). 396 pass, 0 fail.
+- No schema change. No migration.
+
+**One defect found and fixed in browser testing.** At 320px a `basis-48` text
+column no longer fitted beside the thumbnail, so the row wrapped and left the
+image stranded on a line of its own. Narrowed to `basis-40`; re-measured with
+rectangle-intersection rather than edge comparison, which is what distinguishes
+a wrap from a real overlap.
+
+**Verified locally:** thumbnail boxes 64/40px as specified, all three media
+cases render (gallery-only with a null `image_url`, `image_url`-only, and the
+`KM` fallback for no media), `object-fit: cover`, empty alt, no horizontal
+overflow, no text/thumbnail overlap. The optimizer serves 8.8 KB at DPR 2 for a
+64px box rather than the full-size original.
+
+**Still to verify on preview:** the live API data path and the full
+320/375/768/1024/1440 matrix with images actually painting. `.env.local` carries
+a deliberately fake `SUPABASE_SERVICE_ROLE_KEY`, so every `routeServiceClient`
+read fails locally — `/api/cart` returns an empty cart and `POST` answers "that
+product is no longer available". Local rendering was therefore verified by
+seeding the React Query cache with a payload built from real production media
+URLs, which exercises the real components but not the real query.
+
 ## Migration history — repaired 2026-08-03
 
 The ledger had drifted three ways and `supabase db push` would have misbehaved

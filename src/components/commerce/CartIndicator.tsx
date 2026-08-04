@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCartShopping } from "@fortawesome/free-solid-svg-icons";
+import ProductImage from "@/components/ProductImage";
 import { formatCents, useCart, useCartMutations } from "@/lib/hooks/useCart";
 
 /**
@@ -114,8 +115,21 @@ export default function CartIndicator() {
             ) : (
               <ul className="space-y-3">
                 {cart.items.map((item) => (
-                  <li key={item.itemId ?? item.productId} className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <li key={item.itemId ?? item.productId} className="flex items-start gap-3">
+                    {/* Decorative: the product name beside it is the labelled
+                        link to the same place, so an empty alt keeps a screen
+                        reader from hearing the product twice. */}
+                    <Link
+                      href={`/catalog/${item.slug}`}
+                      onClick={() => setOpen(false)}
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      className="cart-thumb-link"
+                    >
+                      <ProductImage product={item.image} alt="" sizes="52px" className="cart-thumb cart-thumb-sm" />
+                    </Link>
+
+                    <div className="min-w-0 flex-1">
                       <Link
                         href={`/catalog/${item.slug}`}
                         onClick={() => setOpen(false)}

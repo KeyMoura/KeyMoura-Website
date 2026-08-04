@@ -1156,6 +1156,38 @@
 
   .wishlist-thumb .product-image-fallback { font-size: 1.125rem; }
 
+  /*
+   * Cart line thumbnails. Square rather than the card's 4:3, because a cart row
+   * is a fixed-height list item and a 4:3 box would make each row taller than
+   * its own controls need.
+   *
+   * The width is fixed and the box reserves its space through `aspect-ratio`,
+   * so a slow image cannot push the quantity and Remove controls around while
+   * it loads — the whole point of putting pictures in a cart is that it stays
+   * scannable.
+   */
+  .cart-thumb {
+    aspect-ratio: 1 / 1;
+    width: 4rem;
+    flex: 0 0 auto;
+    border-radius: var(--control-radius);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+  }
+
+  .cart-thumb .product-image-fallback { font-size: .9rem; }
+
+  /* The drawer is narrower than the page, and at 320px the row still has to fit
+     a name, options, a quantity field and a price. */
+  .cart-thumb-sm { width: 3.25rem; }
+  .cart-thumb-sm .product-image-fallback { font-size: .75rem; }
+
+  /* A thumbnail that links to the product keeps the card's hover language
+     without becoming a second visual button. */
+  a.cart-thumb-link { display: block; flex: 0 0 auto; border-radius: var(--control-radius); }
+  a.cart-thumb-link:hover .cart-thumb { border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border)); }
+  a.cart-thumb-link:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+
   /* Customer content hubs: Community and Projects share this page language. */
   .content-hub { width: 100%; max-width: 72rem; margin-inline: auto; padding: 1.5rem 1rem 2.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
   .content-hero { border-radius: var(--control-radius); border: 1px solid var(--border); background: linear-gradient(135deg, color-mix(in srgb, var(--panel-strong) 92%, transparent), color-mix(in srgb, var(--brand-primary) 7%, var(--panel))); padding: clamp(1rem, 3vw, 1.75rem); }
