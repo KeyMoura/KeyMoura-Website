@@ -2,26 +2,75 @@
 
 import Link from "next/link";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
+import { footerNav } from "@/lib/navigation";
 
 const currentYear = new Date().getFullYear();
 
+/**
+ * The site footer.
+ *
+ * Rebuilt around the business rather than around the navbar. The header answers
+ * "where do I shop" and has room for four links; the footer answers "what are
+ * the terms" — shipping, returns, cancellations, privacy — which is what a
+ * customer looks for before committing to a custom order and could not find
+ * anywhere else.
+ *
+ * It is deliberately not a copy of the navigation. The columns come from
+ * `footerNav` in `@/lib/navigation`, which is a different list from `primaryNav`
+ * for that reason, and it is where Community lands as a secondary destination
+ * now that it is out of the header.
+ *
+ * Three real `<nav>` elements with their own accessible names, not one nav
+ * wrapping everything: a screen reader lists landmarks, and "Shop", "The shop"
+ * and "Support" are more useful than three unnamed navigations.
+ */
 export default function SiteFooter() {
   const siteSettings = useSiteSettings();
+
   return (
-    <footer className="mt-8 border-t border-[var(--border)] bg-[var(--panel)]">
-      <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 text-sm text-brand-textMuted md:grid-cols-[1.5fr_1fr_1fr]">
-        <div>
+    <footer className="site-footer">
+      <div className="site-footer-inner">
+        <div className="site-footer-brand">
           <div className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {siteSettings.footerLogoUrl ? <img src={siteSettings.footerLogoUrl} alt="" className="h-6 w-auto object-contain" /> : null}
-          <span className="font-semibold text-brand-text">{siteSettings.name}</span>
+            {siteSettings.footerLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={siteSettings.footerLogoUrl} alt="" className="h-7 w-auto object-contain" />
+            ) : null}
+            <span className="text-base font-semibold text-brand-text">{siteSettings.name}</span>
           </div>
-          <p className="mt-3 max-w-sm leading-6">Custom CNC parts, clear quoting, and order progress in one place.</p>
+          <p className="mt-3 max-w-sm text-sm leading-6">
+            Custom routing and light machining — one-off parts, prototypes, fixtures, and short runs.
+            Every request is reviewed and quoted before anything is charged.
+          </p>
+          <Link href="/orders/new" className="ui-btn ui-btn-primary mt-5 !px-4 !py-2 text-sm">
+            Start a custom project
+          </Link>
         </div>
-        <nav aria-label="Shop"><p className="font-semibold text-brand-text">Shop</p><div className="mt-3 grid gap-2"><Link href="/catalog" className="hover:text-brand-primary">Catalog</Link><Link href="/orders/new" className="hover:text-brand-primary">Custom request</Link><Link href="/orders" className="hover:text-brand-primary">My orders</Link></div></nav>
-        <nav aria-label="Information"><p className="font-semibold text-brand-text">Information</p><div className="mt-3 grid gap-2"><Link href="/about" className="hover:text-brand-primary">About</Link><Link href="/capabilities" className="hover:text-brand-primary">Capabilities & materials</Link><Link href="/design-guide" className="hover:text-brand-primary">Design & tolerance guide</Link><Link href="/contact" className="hover:text-brand-primary">Contact</Link><Link href="/shipping" className="hover:text-brand-primary">Shipping</Link><Link href="/refunds" className="hover:text-brand-primary">Cancellations & refunds</Link><Link href="/terms" className="hover:text-brand-primary">Terms</Link><Link href="/privacy" className="hover:text-brand-primary">Privacy</Link></div></nav>
+
+        {footerNav.map((column) => (
+          <nav key={column.heading} aria-label={column.heading} className="site-footer-column">
+            <p className="site-footer-heading">{column.heading}</p>
+            <div className="site-footer-links">
+              {column.items.map((item) => (
+                <Link key={item.href} href={item.href}>
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        ))}
       </div>
-      <div className="mx-auto max-w-6xl border-t border-[var(--border)] px-4 py-4 text-xs text-brand-textMuted">© {currentYear} {siteSettings.name}. {siteSettings.copyrightText}</div>
+
+      <div className="site-footer-base">
+        <span>
+          © {currentYear} {siteSettings.name}. {siteSettings.copyrightText}
+        </span>
+        {siteSettings.supportEmail ? (
+          <a href={`mailto:${siteSettings.supportEmail}`} className="hover:text-brand-primary">
+            {siteSettings.supportEmail}
+          </a>
+        ) : null}
+      </div>
     </footer>
   );
 }

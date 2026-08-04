@@ -37,8 +37,14 @@ test("expired quotes cannot be approved or paid", () => {
 });
 
 test("customer policy pages are discoverable", () => {
-  assert.match(footer, /href="\/shipping"/);
-  assert.match(footer, /href="\/refunds"/);
+  // The footer's columns come from the shared navigation module now, so the
+  // policy links are asserted where they are defined rather than as literals
+  // in the component that maps over them.
+  const nav = readFileSync("src/lib/navigation.ts", "utf8");
+  for (const href of ["/shipping", "/refunds", "/terms", "/privacy", "/contact"]) {
+    assert.match(nav, new RegExp(`href: "${href}"`), `${href} must stay in the footer navigation`);
+  }
+  assert.match(footer, /footerNav\.map/);
   for (const file of ["src/app/privacy/page.tsx", "src/app/terms/page.tsx", "src/app/shipping/page.tsx", "src/app/refunds/page.tsx"]) {
     assert.match(readFileSync(file, "utf8"), /support@keymoura\.com|PolicyPage/);
   }

@@ -2383,6 +2383,101 @@
     .product-page { padding-bottom: 6.5rem; }
   }
 
+  /* ---- Catalog ---- */
+  .catalog-filters {
+    margin-top: 2rem;
+    border-radius: var(--card-radius, 1rem);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 1rem;
+  }
+  .catalog-filter-row {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 640px) {
+    .catalog-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* Search spans the row: it is the control people reach for first. */
+    .catalog-search { grid-column: 1 / -1; }
+  }
+  @media (min-width: 1024px) {
+    .catalog-filter-row { grid-template-columns: minmax(12rem, 1.6fr) repeat(4, minmax(0, 1fr)); }
+    .catalog-search { grid-column: auto; }
+  }
+  .catalog-filter-summary {
+    margin-top: 0.875rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .catalog-grid {
+    display: grid;
+    gap: 1.25rem;
+    /* Auto-fit rather than fixed breakpoints, so a two-product catalog does not
+       leave a third of the row empty and a large one fills whatever it is
+       given. `minmax(0, …)` keeps a long product name from widening a track. */
+    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  }
+
+  /* ---- Footer ---- */
+  .site-footer {
+    margin-top: 4rem;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .site-footer-inner {
+    margin-inline: auto;
+    max-width: 80rem;
+    display: grid;
+    gap: 2.5rem;
+    padding: 3rem 1rem 2.5rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  @media (min-width: 640px) {
+    .site-footer-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1024px) {
+    .site-footer-inner { grid-template-columns: 1.6fr repeat(3, minmax(0, 1fr)); padding-inline: 1.5rem; }
+  }
+  .site-footer-brand { min-width: 0; }
+  .site-footer-heading {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .site-footer-links { margin-top: 0.875rem; display: grid; gap: 0.625rem; }
+  .site-footer-links a {
+    /* Comfortable on a phone without becoming a list of buttons on desktop. */
+    display: inline-block;
+    min-height: 1.5rem;
+    transition: color 120ms ease-out;
+  }
+  .site-footer-links a:hover { color: var(--brand-primary); }
+  .site-footer-base {
+    margin-inline: auto;
+    max-width: 80rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-top: 1px solid var(--border);
+    padding: 1rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  @media (min-width: 1024px) {
+    .site-footer-base { padding-inline: 1.5rem; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .product-gallery-image,
     .product-lightbox-image,
