@@ -2,38 +2,81 @@
 
 Pass 1: `commerce-catalog-transformation` → PR #5, merged as `706919e`.
 Pass 2: `commerce-completion-20260803` → PR #6, merged as `c4b98d1`, in production.
-Pass 3: `commerce-launch-readiness-20260803` → **open, unmerged**, based on `a02a400`.
+Pass 3: `commerce-launch-readiness-20260803` → merged as `f47005e`, in production.
+Pass 4: `product-experience-lifecycle-20260803` → in progress, based on `f47005e`.
 
 This file is the running record of the catalog and commerce build. It exists so
 the work can be picked up mid-flight without re-auditing finished areas.
 
-## Pass 3 — state right now
+## Pass 3 — closed out
 
-Branch `commerce-launch-readiness-20260803`, four commits:
+Merged as `f47005e`. 364 tests pass, typecheck clean, production build clean.
+Lint: 350 pre-existing problems in `src`, unchanged.
 
-| SHA | What |
-|-----|------|
-| `586f441` | Reconcile the migration ledger with the repository |
-| `180b197` | Add wishlists, sharing, and a durable rate limiter |
-| `64d01fe` | Add shared carts and discount-code management |
-| `ce53e00` | Fix two gaps found in browser verification |
+**Both pass-3 migrations are applied.** Verified against production on
+2026-08-03 by checking the objects themselves, not the ledger row — the
+distinction matters, because a recorded version proves bookkeeping, not DDL:
 
-**Not merged. Two migrations written and not applied.** Everything else is
-complete, tested, and built.
+- `rate_limit_hits` table — present
+- `consume_rate_limit(p_bucket, p_subject, p_limit, p_window_seconds)` — present
+- `touch_shared_cart(p_token)` — present
+- `wishlists.share_token`, `.share_expires_at`, `.shared_at` — present, nullable
+- `shared_carts.owner_hash`, `.snapshot_subtotal_cents` — present, nullable
 
-- 364 tests pass (was 275 at `a02a400`; 89 added).
-- Typecheck clean. Production build clean.
-- Lint: 350 pre-existing problems in `src`, unchanged — this branch adds none.
+The migration ledger and the repository agree exactly: 34 files, 34 rows,
+versions matching filenames. Nothing outstanding from pass 3.
 
-### Requires approval before the branch can be finished
+## Pass 4 — product experience and customer lifecycle
 
-1. Apply `20260803010000_wishlist_sharing_and_rate_limits.sql` to production.
-2. Apply `20260803020000_shared_cart_ownership.sql` to production.
+Branch `product-experience-lifecycle-20260803`, from `f47005e`.
 
-Both are additive: two nullable columns on `wishlists`, two on `shared_carts`,
-one new table (`rate_limit_hits`), two new functions. No column is dropped, no
-type changed, no existing row touched. Until they are applied, the wishlist
-share-expiry field, the rate limiter, and shared-cart revocation do not work.
+### Phase 1 — catalog card click target — complete
+
+**Root cause.** `.product-card:hover .product-card-action { filter:
+brightness(1.1) }`. A computed `filter` other than `none` makes an element
+establish a stacking context (Filter Effects L1). An element that establishes a
+stacking context with `z-index: auto` paints in CSS 2.1 Appendix E step 8,
+together with positioned `z-index: 0/auto` boxes, **in tree order**. The
+call-to-action `<span>` follows the anchor in the DOM, so on hover it painted
+*above* the anchor's `inset: 0` `::after` overlay and swallowed the click.
+
+That is why the symptom looked so odd: every other part of the card navigated,
+and only the button was dead — and it was dead only for a pointer, because
+hovering is the thing that created the stacking context. A programmatic hit test
+finds nothing wrong, since `:hover` never applies.
+
+**Fix.** Two independent guards, either of which closes it:
+
+1. `.product-card-link::after` gets `z-index: 1`, making the overlay's layer
+   explicit instead of leaving it to paint order.
+2. `.product-card-action` gets `pointer-events: none`, so it cannot become a hit
+   target no matter what future style lands on it.
+
+Independent controls move to a named `.product-card-aside` (`z-index: 2`), so
+the card's whole layering contract is stated in one place and is testable:
+aside > overlay > everything decorative.
+
+The card keeps **exactly one anchor**. The call-to-action is `aria-hidden`
+decorative markup rather than a second link, because a second link to the same
+product would give it two tab stops, two screen-reader announcements, and two
+analytics activations for one click. Keyboard users get one focus ring drawn on
+the overlay, so the visible target matches the clickable one.
+
+**Verified in a real browser** (desktop 1280 and mobile 375, dev server): with
+the hover filter applied, the button hit-tests to the anchor and a dispatched
+click navigates to the product; the wishlist control hit-tests inside its
+`<button>` and never to the anchor; both live purchase modes render their own
+wording; no horizontal overflow.
+
+- Changed: `src/app/globals.css`, `src/components/ProductCard.tsx`.
+- Tests: `tests/product-card-interaction.test.ts` (14 new), plus one assertion
+  updated in `tests/commerce-wishlist.test.ts`. 378 pass, 0 fail.
+- The new suite was confirmed to **fail** against the pre-fix CSS, so it tests
+  the bug rather than the fix.
+- One test generalizes the lesson: it scans every rule that sets a
+  stacking-context property inside `.product-card` and fails on any that is not
+  in an allow-list with a stated reason.
+- No schema change. No migration.
 
 ## Migration history — repaired 2026-08-03
 
@@ -239,17 +282,18 @@ that itself has a parent, which also makes cycles unrepresentable.
 | `20260802020200_carts_and_wishlists.sql` | Carts, cart items, shared cart snapshots, wishlists | yes |
 | `20260802020300_discount_codes.sql` | Discount codes, targeting, redemptions, atomic redemption RPC | yes |
 | `20260802020400_direct_orders_and_reviews.sql` | `order_items`, order commerce columns, reviews and reports | yes |
-| `20260803010000_wishlist_sharing_and_rate_limits.sql` | Wishlist share expiry, `rate_limit_hits`, `consume_rate_limit` | **no** |
-| `20260803020000_shared_cart_ownership.sql` | `shared_carts.owner_hash`, snapshot subtotal, `touch_shared_cart` | **no** |
+| `20260803010000_wishlist_sharing_and_rate_limits.sql` | Wishlist share expiry, `rate_limit_hits`, `consume_rate_limit` | yes |
+| `20260803020000_shared_cart_ownership.sql` | `shared_carts.owner_hash`, snapshot subtotal, `touch_shared_cart` | yes |
 
 All are additive. No column is dropped; the legacy `products.category` text
 column is retained for compatibility and kept in sync.
 
 ## Next steps, in order
 
-1. Apply the two pass-3 migrations to production (needs approval).
-2. Verify the Vercel preview build on `commerce-launch-readiness-20260803`.
-3. Smoke-test wishlist, shared wishlist, shared cart, and discount staff UI
-   against a real service-role key.
-4. Merge, verify production Ready, smoke-test.
-5. Then: reviews and moderation (schema already exists), cancellations, returns.
+Pass 4, in priority order:
+
+1. ~~Catalog card click target~~ — complete.
+2. Product cover images in the cart drawer and `/cart`.
+3. Staff discount percentage input.
+4. Navbar responsive repair.
+5. Product-detail redesign, then reviews, cancellations, returns.

@@ -61,9 +61,18 @@ type ProductCardProps = {
  * over the whole card, so the entire card is clickable without giving keyboard
  * and screen-reader users three redundant stops on the same destination.
  *
- * The wishlist toggle is the one exception, and it has to be lifted above that
- * stretched link's `::after` overlay to stay clickable — hence the explicit
- * stacking context rather than plain absolute positioning.
+ * That gives the card a strict two-layer contract, enforced in `globals.css`:
+ *
+ *   - Everything decorative stays *below* the stretched link's `::after`
+ *     overlay, and the call-to-action is additionally `pointer-events: none`.
+ *   - Only genuinely independent controls — the wishlist toggle — are lifted
+ *     *above* it, via `.product-card-aside`.
+ *
+ * Anything added here that gains `filter`, `opacity`, `transform`, or
+ * `will-change` establishes a stacking context and, if it sits after the anchor
+ * in the DOM, will punch a hole in the card's hit target. That is not
+ * hypothetical: a hover `filter` on the call-to-action is what made the button
+ * a dead zone while every other part of the card navigated.
  */
 export default function ProductCard({
   product,
@@ -86,7 +95,7 @@ export default function ProductCard({
   return (
     <article className="product-card">
       {showWishlist ? (
-        <div className="absolute right-3 top-3 z-10">
+        <div className="product-card-aside">
           <WishlistButton productId={product.id} productName={product.name} variant="icon" />
         </div>
       ) : null}
@@ -120,7 +129,17 @@ export default function ProductCard({
 
         <div className="product-card-footer">
           <p className="text-sm font-semibold text-brand-primary">{priceLabel(mode, product.starting_price_cents)}</p>
-          <span className="product-card-action">{cardAction(mode, canRequest)}</span>
+          {/*
+            Decorative, and deliberately not a second link. The card's one
+            anchor already covers this box, so a real <a> here would give the
+            same destination two tab stops, two screen-reader announcements, and
+            two analytics activations for a single click. aria-hidden keeps the
+            wording visible to sighted users while the link's own text carries
+            the accessible name.
+          */}
+          <span className="product-card-action" aria-hidden="true">
+            {cardAction(mode, canRequest)}
+          </span>
         </div>
       </div>
     </article>

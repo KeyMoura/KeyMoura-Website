@@ -1042,8 +1042,37 @@
   }
 
   .product-card-link { color: inherit; }
-  .product-card-link::after { content: ""; position: absolute; inset: 0; }
+
+  /*
+   * The card's single hit target, stretched over the whole card.
+   *
+   * The z-index is load-bearing, not decoration. A descendant that gains
+   * `filter`, `opacity`, `transform`, or `will-change` establishes a stacking
+   * context, and one with `z-index: auto` then paints alongside positioned
+   * boxes in *tree order* — so any such descendant sitting after this anchor in
+   * the DOM covers the overlay and silently swallows the click. That is exactly
+   * what the hover `filter` on `.product-card-action` did: the card worked
+   * everywhere except its own call-to-action, and only while hovered, because
+   * hovering is what created the stacking context.
+   *
+   * Everything decorative now stays below this layer; only genuinely
+   * independent controls (`.product-card-aside`) are lifted above it.
+   */
+  .product-card-link::after { content: ""; position: absolute; inset: 0; z-index: 1; }
   .product-card:hover .product-card-link { color: var(--brand-primary); }
+
+  /* One ring around the whole card rather than a second one around the title
+     text, so the keyboard target matches the pointer target. */
+  .product-card-link:focus-visible { outline: none; }
+  .product-card-link:focus-visible::after {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: -2px;
+    border-radius: var(--control-radius);
+  }
+
+  /* Independent controls — wishlist and friends — must clear the overlay or
+     they become unclickable. */
+  .product-card-aside { position: absolute; right: .75rem; top: .75rem; z-index: 2; }
 
   .product-card-footer {
     display: flex;
@@ -1066,8 +1095,19 @@
     font-size: .875rem;
     font-weight: 600;
     transition: filter 120ms ease;
+    /*
+     * Decorative. The card exposes exactly one anchor and its overlay owns
+     * every click, so this call-to-action must never become a second hit
+     * target. Without this the hover `filter` below lifts the span into its own
+     * stacking context above the overlay and the button turns into a dead zone.
+     * Belt and braces with the overlay's z-index: either alone fixes the bug,
+     * and together no future style on this element can reopen it.
+     */
+    pointer-events: none;
   }
 
+  /* Driven by the card's hover, not the span's own, so it still lights up while
+     the span itself is inert to the pointer. */
   .product-card:hover .product-card-action { filter: brightness(1.1); }
 
   /*
