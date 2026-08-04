@@ -22,6 +22,7 @@ export function StaffNav() {
       links: [
         { href: "/staff", label: "Dashboard", anyOf: ["orders.view", "orders.manage", "catalog.view", "catalog.manage", "analytics.view"] },
         { href: "/staff/orders", label: "Orders", anyOf: ["orders.view", "orders.manage"] },
+        { href: "/staff/production", label: "Production", anyOf: ["production.view", "production.manage"] },
         { href: "/staff/catalog", label: "Catalog & inventory", anyOf: ["catalog.view", "catalog.manage"] },
         { href: "/staff/catalog/discounts", label: "Discount codes", anyOf: ["catalog.discounts.manage"] },
         { href: "/staff/info/todo", label: "Staff to-do", anyOf: ["todo.view"] },
