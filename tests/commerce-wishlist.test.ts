@@ -321,7 +321,10 @@ test("the wishlist toggle on a card sits above the card's stretched link", () =>
   const card = read("src/components/ProductCard.tsx");
   // .product-card-link::after covers the whole card; without its own stacking
   // context the toggle is rendered but unclickable.
-  assert.match(card, /absolute right-3 top-3 z-10/);
+  // The stacking now lives in one named class rather than inline utilities, so
+  // the card's layering contract is stated in a single place and testable
+  // against the overlay's own z-index — see product-card-interaction.test.ts.
+  assert.match(card, /className="product-card-aside"/);
   assert.match(card, /<WishlistButton[\s\S]*?variant="icon"/);
 });
 

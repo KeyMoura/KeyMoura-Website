@@ -5,8 +5,9 @@ import { routeServiceClient } from "@/lib/api/routeAuth";
 import { createToken, loadPricedProducts, resolveCart, type CartOwner } from "@/lib/commerce/cartService";
 import { isRejected, priceLine, type PricedProduct } from "@/lib/commerce/pricing";
 import { allowsRequest, normalizePurchaseMode, type PurchaseMode } from "@/lib/commerce/purchaseModes";
+import { EMPTY_IMAGE_SOURCE, loadProductImageSources } from "@/lib/commerce/productDisplay";
 import { isValidShareToken, shareExpiryFrom, shareIsLive } from "@/lib/commerce/sharing";
-import { groupMediaByProduct, type ProductImageSource, type ProductMediaRef } from "@/lib/productImages";
+import { type ProductImageSource } from "@/lib/productImages";
 
 /**
  * Shared carts.
@@ -214,29 +215,6 @@ function sanitizeSnapshot(value: unknown): SharedCartSnapshotItem[] {
   return items;
 }
 
-async function loadDisplayFields(productIds: readonly string[]): Promise<Map<string, ProductImageSource>> {
-  const unique = Array.from(new Set(productIds)).filter(Boolean);
-  if (!unique.length) return new Map();
-
-  const [{ data: products }, { data: media }] = await Promise.all([
-    routeServiceClient.from("products").select("id,image_url").in("id", unique),
-    routeServiceClient
-      .from("product_media")
-      .select("product_id,url,kind,sort_order")
-      .in("product_id", unique)
-      .eq("kind", "image")
-      .order("sort_order"),
-  ]);
-
-  const byProduct = groupMediaByProduct((media ?? []) as Array<ProductMediaRef & { product_id?: string | null }>);
-  return new Map(
-    (products ?? []).map((row) => [
-      row.id as string,
-      { image_url: (row.image_url as string | null) ?? null, product_media: byProduct.get(row.id as string) ?? [] },
-    ])
-  );
-}
-
 /**
  * Loads a shared cart by token, for anyone holding the link.
  *
@@ -264,7 +242,7 @@ export async function loadSharedCart(token: unknown): Promise<SharedCartView | n
   if (!snapshot.length) return null;
 
   const productIds = snapshot.map((item) => item.productId);
-  const [products, display] = await Promise.all([loadPricedProducts(productIds), loadDisplayFields(productIds)]);
+  const [products, display] = await Promise.all([loadPricedProducts(productIds), loadProductImageSources(productIds)]);
 
   const lines: SharedCartLine[] = [];
   let currentSubtotal = 0;
@@ -279,7 +257,7 @@ export async function loadSharedCart(token: unknown): Promise<SharedCartView | n
         productId: item.productId,
         name: item.name || "This product is no longer available",
         slug: "",
-        image: { image_url: null, product_media: [] },
+        image: EMPTY_IMAGE_SOURCE,
         quantity: item.quantity,
         selectedOptions: item.selectedOptions,
         optionLabels: [],
@@ -311,7 +289,7 @@ export async function loadSharedCart(token: unknown): Promise<SharedCartView | n
       productId: item.productId,
       name: product.name,
       slug: product.slug,
-      image: display.get(item.productId) ?? { image_url: null, product_media: [] },
+      image: display.get(item.productId) ?? EMPTY_IMAGE_SOURCE,
       // The live pricing may have clamped quantity to available stock, which is
       // itself worth showing rather than hiding.
       quantity: rejected ? item.quantity : priced.quantity,

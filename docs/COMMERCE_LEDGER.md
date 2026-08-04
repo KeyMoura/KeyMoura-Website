@@ -2,38 +2,266 @@
 
 Pass 1: `commerce-catalog-transformation` → PR #5, merged as `706919e`.
 Pass 2: `commerce-completion-20260803` → PR #6, merged as `c4b98d1`, in production.
-Pass 3: `commerce-launch-readiness-20260803` → **open, unmerged**, based on `a02a400`.
+Pass 3: `commerce-launch-readiness-20260803` → merged as `f47005e`, in production.
+Pass 4: `product-experience-lifecycle-20260803` → in progress, based on `f47005e`.
 
 This file is the running record of the catalog and commerce build. It exists so
 the work can be picked up mid-flight without re-auditing finished areas.
 
-## Pass 3 — state right now
+## Pass 3 — closed out
 
-Branch `commerce-launch-readiness-20260803`, four commits:
+Merged as `f47005e`. 364 tests pass, typecheck clean, production build clean.
+Lint: 350 pre-existing problems in `src`, unchanged.
 
-| SHA | What |
-|-----|------|
-| `586f441` | Reconcile the migration ledger with the repository |
-| `180b197` | Add wishlists, sharing, and a durable rate limiter |
-| `64d01fe` | Add shared carts and discount-code management |
-| `ce53e00` | Fix two gaps found in browser verification |
+**Both pass-3 migrations are applied.** Verified against production on
+2026-08-03 by checking the objects themselves, not the ledger row — the
+distinction matters, because a recorded version proves bookkeeping, not DDL:
 
-**Not merged. Two migrations written and not applied.** Everything else is
-complete, tested, and built.
+- `rate_limit_hits` table — present
+- `consume_rate_limit(p_bucket, p_subject, p_limit, p_window_seconds)` — present
+- `touch_shared_cart(p_token)` — present
+- `wishlists.share_token`, `.share_expires_at`, `.shared_at` — present, nullable
+- `shared_carts.owner_hash`, `.snapshot_subtotal_cents` — present, nullable
 
-- 364 tests pass (was 275 at `a02a400`; 89 added).
-- Typecheck clean. Production build clean.
-- Lint: 350 pre-existing problems in `src`, unchanged — this branch adds none.
+The migration ledger and the repository agree exactly: 34 files, 34 rows,
+versions matching filenames. Nothing outstanding from pass 3.
 
-### Requires approval before the branch can be finished
+## Pass 4 — product experience and customer lifecycle
 
-1. Apply `20260803010000_wishlist_sharing_and_rate_limits.sql` to production.
-2. Apply `20260803020000_shared_cart_ownership.sql` to production.
+Branch `product-experience-lifecycle-20260803`, from `f47005e`.
 
-Both are additive: two nullable columns on `wishlists`, two on `shared_carts`,
-one new table (`rate_limit_hits`), two new functions. No column is dropped, no
-type changed, no existing row touched. Until they are applied, the wishlist
-share-expiry field, the rate limiter, and shared-cart revocation do not work.
+### Phase 1 — catalog card click target — complete
+
+**Root cause.** `.product-card:hover .product-card-action { filter:
+brightness(1.1) }`. A computed `filter` other than `none` makes an element
+establish a stacking context (Filter Effects L1). An element that establishes a
+stacking context with `z-index: auto` paints in CSS 2.1 Appendix E step 8,
+together with positioned `z-index: 0/auto` boxes, **in tree order**. The
+call-to-action `<span>` follows the anchor in the DOM, so on hover it painted
+*above* the anchor's `inset: 0` `::after` overlay and swallowed the click.
+
+That is why the symptom looked so odd: every other part of the card navigated,
+and only the button was dead — and it was dead only for a pointer, because
+hovering is the thing that created the stacking context. A programmatic hit test
+finds nothing wrong, since `:hover` never applies.
+
+**Fix.** Two independent guards, either of which closes it:
+
+1. `.product-card-link::after` gets `z-index: 1`, making the overlay's layer
+   explicit instead of leaving it to paint order.
+2. `.product-card-action` gets `pointer-events: none`, so it cannot become a hit
+   target no matter what future style lands on it.
+
+Independent controls move to a named `.product-card-aside` (`z-index: 2`), so
+the card's whole layering contract is stated in one place and is testable:
+aside > overlay > everything decorative.
+
+The card keeps **exactly one anchor**. The call-to-action is `aria-hidden`
+decorative markup rather than a second link, because a second link to the same
+product would give it two tab stops, two screen-reader announcements, and two
+analytics activations for one click. Keyboard users get one focus ring drawn on
+the overlay, so the visible target matches the clickable one.
+
+**Verified in a real browser** (desktop 1280 and mobile 375, dev server): with
+the hover filter applied, the button hit-tests to the anchor and a dispatched
+click navigates to the product; the wishlist control hit-tests inside its
+`<button>` and never to the anchor; both live purchase modes render their own
+wording; no horizontal overflow.
+
+- Changed: `src/app/globals.css`, `src/components/ProductCard.tsx`.
+- Tests: `tests/product-card-interaction.test.ts` (14 new), plus one assertion
+  updated in `tests/commerce-wishlist.test.ts`. 378 pass, 0 fail.
+- The new suite was confirmed to **fail** against the pre-fix CSS, so it tests
+  the bug rather than the fix.
+- One test generalizes the lesson: it scans every rule that sets a
+  stacking-context property inside `.product-card` and fails on any that is not
+  in an allow-list with a stated reason.
+- No schema change. No migration.
+
+### Phase 2 — cart cover images — complete
+
+Cart lines now show the product's cover image in both the drawer and `/cart`.
+
+**The loader was already duplicated.** `loadDisplayFields` existed byte-identical
+in `wishlistService` and `sharedCartService`, and the cart would have been a
+third copy. Extracted to `src/lib/commerce/productDisplay.ts` as
+`loadProductImageSources` — three answers to "which image wins" is how one of
+them quietly stops agreeing with the catalog. Both services now import it.
+
+Resolution itself is unchanged and still goes through `productImages.ts`:
+gallery media by `sort_order` first, `products.image_url` only as a fallback.
+No competing resolver was introduced.
+
+**Query shape.** Two batched queries for the whole cart regardless of line
+count, run in parallel with the pricing load rather than after it. Ids are
+de-duplicated first, because a cart may hold the same product configured two
+ways. A fifty-line cart costs the same as a one-line cart.
+
+**Wire shape.** `image: ProductImageSource` — `{ image_url, product_media }`,
+the same shape the wishlist already sends, so the client keeps `ProductImage`'s
+fall-forward behaviour when the first gallery URL is broken. Public catalog
+columns only: no signed URLs, no storage credentials, no owner identity. Both
+the `items` list and the `unavailable` list carry one, so an out-of-stock line
+is still recognisable and a deleted product falls back to the brand mark.
+
+**Accessibility.** The thumbnail links to the product but is `aria-hidden`,
+`tabIndex={-1}`, and `alt=""` — the product name beside it is the labelled link
+to the same place, so a screen reader announces each line once, not twice.
+
+**Layout.** `.cart-thumb` is square (4rem page, 3.25rem drawer, 2.5rem on the
+unavailable list) with `aspect-ratio` reserving the box, so a loading image
+cannot shift the quantity and Remove controls.
+
+- Changed: `src/lib/commerce/productDisplay.ts` (new),
+  `src/lib/commerce/cartService.ts`, `wishlistService.ts`,
+  `sharedCartService.ts`, `src/components/commerce/CartIndicator.tsx`,
+  `src/app/cart/page.tsx`, `src/app/globals.css`.
+- Tests: `tests/cart-product-images.test.ts` (18 new). 396 pass, 0 fail.
+- No schema change. No migration.
+
+**One defect found and fixed in browser testing.** At 320px a `basis-48` text
+column no longer fitted beside the thumbnail, so the row wrapped and left the
+image stranded on a line of its own. Narrowed to `basis-40`; re-measured with
+rectangle-intersection rather than edge comparison, which is what distinguishes
+a wrap from a real overlap.
+
+**Verified locally:** thumbnail boxes 64/40px as specified, all three media
+cases render (gallery-only with a null `image_url`, `image_url`-only, and the
+`KM` fallback for no media), `object-fit: cover`, empty alt, no horizontal
+overflow, no text/thumbnail overlap. The optimizer serves 8.8 KB at DPR 2 for a
+64px box rather than the full-size original.
+
+**Still to verify on preview:** the live API data path and the full
+320/375/768/1024/1440 matrix with images actually painting. `.env.local` carries
+a deliberately fake `SUPABASE_SERVICE_ROLE_KEY`, so every `routeServiceClient`
+read fails locally — `/api/cart` returns an empty cart and `POST` answers "that
+product is no longer available". Local rendering was therefore verified by
+seeding the React Query cache with a payload built from real production media
+URLs, which exercises the real components but not the real query.
+
+### Phase 3 — discount value input — complete
+
+**The input control was never broken.** `discountValue` is a plain string in
+state and `onChange` writes `event.target.value` verbatim; typing, clearing,
+pasting and decimals all land correctly. Confirmed by driving the real field in
+a browser before changing anything. The bug was downstream, and there were three
+of them.
+
+1. **Decimals were silently truncated.** `discount_codes.discount_value` is an
+   `integer` and `discount_codes_value_check` pins percentages to 1–100, so
+   12.5% is not representable. `buildDiscountDraft` ran `Math.trunc`, so a staff
+   member typed 12.5, saw no complaint, and published a **12%** code. The number
+   that came out was not the number that went in — which is exactly "a number
+   cannot be typed correctly."
+2. **An empty field reported the wrong problem.** `Number("")` is `0`, which is
+   finite, so a blank box slipped past the "is this a number" guard and came
+   back as *"A percentage discount is between 1 and 100"* — an answer to a
+   question nobody asked.
+3. **`inputMode="decimal"` on a whole-number field.** Mobile staff got a decimal
+   keypad for a column that cannot hold a decimal.
+
+**Decision: percentages are whole numbers.** That is what the schema enforces.
+Widening `discount_value` to `numeric` would touch a live pricing path and the
+redemption RPC for a feature nobody asked for; refusing the value clearly is the
+honest fix. A fixed amount takes dollars and cents and refuses a third decimal
+place for the same reason — it would be rounded away silently.
+
+**One validator, two callers.** `parseDiscountValue(type, raw)` in
+`discountAdmin.ts` is pure and dependency-free, so the form imports the same
+function the route runs. The sentence under the field is the sentence the server
+would have returned; they cannot drift.
+
+**Switching type clears the value.** "10" is 10% in one mode and $10.00 in the
+other — same digits, very different offer. Carrying it across is how a
+ten-percent code ships as a ten-dollar one.
+
+The error waits for a blur or a submit, so a fresh form does not open red and a
+field does not flash invalid between being emptied and the first digit landing.
+On submit it stops locally, marks `aria-invalid`, and moves focus to the field.
+
+- Changed: `src/lib/commerce/discountAdmin.ts`,
+  `src/app/staff/catalog/discounts/page.tsx`.
+- Tests: `tests/discount-value-input.test.ts` (24 new). 420 pass, 0 fail.
+- No schema change. No migration.
+
+**Verified in a real browser**, driving the live form with the staff permission
+seeded into the query cache: `25` accepted; `12.5` → "A percentage has to be a
+whole number…"; `150` and `-5` → "between 1 and 100"; empty → "Give the discount
+a value."; `abc` → "That is not a number."; `100` accepted at the boundary; the
+error clears when the value becomes valid. `aria-invalid` and `aria-describedby`
+toggle between the hint and the error. Switching percent→fixed clears the value
+and flips the keypad and the hint. Submitting `12.5` is stopped locally, focus
+lands on the field, and the typed value is preserved.
+
+Note that an *empty* value is caught by the browser's native `required` handling
+before React's guard runs, because the code field is `required` too and fails
+first. That path shows the browser's own bubble rather than the inline message.
+
+### Phase 4 — navbar layout — complete
+
+**Root cause, measured.** The desktop bar was
+`grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]`, which forces the two side
+columns to the *same* width. At 1280 with a signed-in staff account the search
+button needs 85px and the utility cluster needs **495px** — and both were given
+**306px**. The cluster is `justify-end` and its pills do not shrink, so the
+extra 190px overflowed *leftward*, straight over the centred navigation.
+Nothing clipped it and the page never gained a horizontal scrollbar, which is
+why it presented as controls sitting on top of each other rather than as
+overflow. Reproduced before the fix as four concrete collisions, the worst being
+"Community" over the cart button by 36px.
+
+**Fix.**
+
+1. `grid-cols-[auto_minmax(0,1fr)_auto]`. Utilities and search size to their own
+   content; the navigation is the flexible column — so when something has to
+   give, it is the part that has an overflow menu to give into. The utility
+   cluster is additionally `shrink-0`, stating the invariant.
+2. **Explicit priority.** Catalog and Projects stay on the bar at every desktop
+   width; About, Capabilities, Contact and Community are inline from `xl` up and
+   collapse into a **More** menu below it. Both sides are driven by the same
+   `xl` breakpoint, so exactly one of the two ever shows a given link, and the
+   menu is derived from the same list rather than maintained separately.
+3. **No measurement.** A measured overflow has to guess a width during server
+   rendering and correct it after mount — a hydration mismatch and a visible
+   reflow on every load. The split is pure CSS.
+4. **A second overflow at `2xl`, found while testing.** `2xl` is where the
+   header *grows*: the search button gains its Ctrl+K chip, the account name is
+   allowed 140px instead of 110, and the wordmark appears. Measured at 1920 that
+   is 1292px of content inside a container capped at 1240px. The bar now widens
+   to `94rem` from `2xl`, and an operator wordmark is bounded at `max-w-28` so
+   it cannot reopen it. Giving the controls room is the fix rather than shrinking
+   them — the point of those breakpoints is that there is space to spend.
+5. **Counts cap at `99+`, not `9+`.** `src/lib/navBadge.ts` is now the one
+   definition, shared by cart, wishlist, messages and notifications; four copies
+   of `count > 9 ? "9+" : count` is how one control ends up saying "9+" beside
+   another saying "12". The bubble is absolutely positioned with its width
+   reserved at "99+" and `tabular-nums`, so a count arriving after first paint
+   cannot resize its button or nudge the bar. Screen readers get the real number
+   ("Cart, 128 items"), never the capped text.
+
+- Changed: `src/components/SiteHeader.tsx`, `src/lib/navBadge.ts` (new),
+  `src/components/commerce/CartIndicator.tsx`, `WishlistIndicator.tsx`,
+  `src/app/globals.css`.
+- Tests: `tests/navbar-layout.test.ts` (17 new). 437 pass, 0 fail. Production
+  build clean.
+- No schema change. No migration.
+
+**Verified in a real browser** at 320, 375, 480, 768, 1024, 1152, 1280, 1366,
+1440, 1536 and 1920, with the signed-in staff cluster simulated (messages,
+notifications carrying `99+`, a long account name, and the staff pill) and again
+with a wordmark: **zero overlaps, zero clipping, no horizontal page overflow at
+any width.** Below `xl` only Projects and Catalog remain inline and More
+appears; from `xl` all six show and More is gone. The menu reports
+`aria-expanded`, `aria-haspopup="menu"`, `aria-controls`, `role="menu"` with a
+label, and `role="menuitem"` children; Escape closes it and returns focus to its
+trigger; an outside click dismisses it. Growing a badge to `99+` moves the cart
+button by 0px.
+
+**Not covered by the local run:** browser zoom at 125%/150% was not driven
+directly — it is equivalent to a narrower CSS viewport, which the width matrix
+covers, but it was not separately confirmed. The signed-in state was simulated
+at DOM level because `.env.local` cannot authenticate; confirm on preview with a
+real staff session.
 
 ## Migration history — repaired 2026-08-03
 
@@ -239,17 +467,89 @@ that itself has a parent, which also makes cycles unrepresentable.
 | `20260802020200_carts_and_wishlists.sql` | Carts, cart items, shared cart snapshots, wishlists | yes |
 | `20260802020300_discount_codes.sql` | Discount codes, targeting, redemptions, atomic redemption RPC | yes |
 | `20260802020400_direct_orders_and_reviews.sql` | `order_items`, order commerce columns, reviews and reports | yes |
-| `20260803010000_wishlist_sharing_and_rate_limits.sql` | Wishlist share expiry, `rate_limit_hits`, `consume_rate_limit` | **no** |
-| `20260803020000_shared_cart_ownership.sql` | `shared_carts.owner_hash`, snapshot subtotal, `touch_shared_cart` | **no** |
+| `20260803010000_wishlist_sharing_and_rate_limits.sql` | Wishlist share expiry, `rate_limit_hits`, `consume_rate_limit` | yes |
+| `20260803020000_shared_cart_ownership.sql` | `shared_carts.owner_hash`, snapshot subtotal, `touch_shared_cart` | yes |
 
 All are additive. No column is dropped; the legacy `products.category` text
 column is retained for compatibility and kept in sync.
 
+## Pass 4 — where it stands
+
+Branch `product-experience-lifecycle-20260803`, pushed, four commits:
+
+| SHA | What |
+|-----|------|
+| `4c766c9` | Fix the catalog card's dead call-to-action |
+| `0359e79` | Show product cover images on cart lines |
+| `4fe74cf` | Stop the discount form silently changing what staff typed |
+| `f69d261` | Stop the navbar stacking its controls on top of each other |
+
+- **437 tests pass** (was 364 at `f47005e`; 73 added across four new suites).
+- Typecheck clean. Local production build clean.
+- **Vercel preview build: success** on `f69d261`.
+- No schema change, no migration, no new dependency in this pass.
+- Lint: the 350-problem pre-existing baseline in `src` is unchanged.
+
+### Not merged — one gap and one blocked check
+
+**The preview deployment is behind Vercel SSO protection**
+(`https://keymoura-website-2aakiwut2-keymoura.vercel.app` 302s to
+`vercel.com/sso-api`), so the preview could not be smoke-tested from here. The
+build succeeded; the running app was not exercised.
+
+**One code path has never run against a real database.** `resolveLines` now
+calls `loadProductImageSources`, so every cart read *and every checkout* issues
+one extra batched query. It is the same pattern the wishlist and shared-cart
+services have used in production since pass 3, and it is covered by tests, but
+`.env.local` carries a deliberately fake `SUPABASE_SERVICE_ROLE_KEY` and the
+preview is gated, so it has only ever been executed against seeded data. Worth
+one deliberate look at `/cart` and a checkout before or immediately after merge.
+
+Everything else in these four phases was verified in a real browser and is
+described per-phase above.
+
+## Still to build — pass 5 onward
+
+Nothing below was started in pass 4. The priority order from the brief, with
+what is already in place noted:
+
+1. **Product-detail redesign** — the largest single item. Needs structured
+   product content (benefits, specs, fitment, included items, installation,
+   care, warranty, FAQ, dimensions, SKU, made-to-order, lead time), which is an
+   additive migration plus staff editing surfaces, plus a two-column gallery and
+   purchase panel.
+2. **Reviews** — `product_reviews` and `product_review_reports` tables already
+   exist from `20260802020400`; the API, customer UI, product-page integration,
+   and staff moderation queue do not.
+3. **Cancellations, returns, refunds** — `20260801050000_order_refunds_and_quote_expiration`
+   exists; the customer request workflow, staff decisions, and Stripe refund
+   settlement do not.
+4. **Shipping, inventory, fulfillment, tax** — `20260731170000_order_fulfillment`,
+   `20260731180000_catalog_inventory_editor` and
+   `20260731190000_checkout_inventory_reservations` exist and are applied;
+   Stripe Tax is not integrated at all.
+5. **Transactional email lifecycle** — Resend is wired and
+   `20260731160000_order_email_center` exists; the ~25 templates in the brief do
+   not.
+6. **Support tickets, Facebook auth and connected accounts, Vercel Analytics and
+   Speed Insights, Sentry completion, Turnstile, rate-limit expansion, staff
+   audit-log viewer, SEO structured data, policy pages** — none started.
+
+Also still outstanding, unchanged from pass 3:
+
+- **Guest checkout is unrepresentable**, not merely unimplemented:
+  `orders.customer_id` is `NOT NULL` and the webhook refuses a session whose
+  `customer_id` does not match the order.
+- **Pre-existing hydration mismatch** on `data-motion` on the root `<html>`,
+  reproducible on every page. It lives in the Appearance/theme runtime.
+- **Pre-existing lint baseline**: 350 problems in `src`.
+
 ## Next steps, in order
 
-1. Apply the two pass-3 migrations to production (needs approval).
-2. Verify the Vercel preview build on `commerce-launch-readiness-20260803`.
-3. Smoke-test wishlist, shared wishlist, shared cart, and discount staff UI
-   against a real service-role key.
-4. Merge, verify production Ready, smoke-test.
-5. Then: reviews and moderation (schema already exists), cancellations, returns.
+1. Smoke-test the preview (needs deployment protection lifted, or an owner to
+   check it) — in particular `/cart` with a real line, and a checkout.
+2. Merge to main, confirm the production deployment reaches Ready, smoke-test
+   `/catalog`, the cart drawer, `/cart`, the staff discount form, and the navbar
+   at a laptop width with a staff account.
+3. Then start the product-detail redesign, which everything in phases 5–8
+   hangs off.

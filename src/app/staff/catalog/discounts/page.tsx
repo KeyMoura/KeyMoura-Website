@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { EmptyState, Notice } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
-import { discountStatus, discountValueLabel } from "@/lib/commerce/discountAdmin";
+import { discountStatus, discountValueLabel, parseDiscountValue } from "@/lib/commerce/discountAdmin";
 
 /**
  * Discount code management.
@@ -78,6 +78,14 @@ export default function StaffDiscountsPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [draftTargets, setDraftTargets] = useState<TargetRow[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  /**
+   * Whether to show the value field's error yet.
+   *
+   * A brand-new form must not open already marked invalid, and a field being
+   * edited must not go red between the moment it is emptied and the moment the
+   * first digit lands. So the message waits for a blur or a submit attempt.
+   */
+  const [valueTouched, setValueTouched] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -109,10 +117,30 @@ export default function StaffDiscountsPage() {
 
   const visible = codes.filter((code) => (showArchived ? true : !code.archived_at));
 
+  // The same function the route runs, so the sentence under the field is the
+  // sentence the server would have sent back.
+  const valueCheck = parseDiscountValue(draft.discountType, draft.discountValue);
+  const showValueError = valueTouched && !valueCheck.ok;
+
+  /**
+   * Switching type clears the value rather than carrying it over.
+   *
+   * "10" means 10% in one mode and $10.00 in the other — the same digits, a
+   * very different offer. Carrying the number across is how someone publishes a
+   * ten-dollar code they meant as ten percent. Clearing is the honest default,
+   * and the hint beneath the field immediately says what the new mode wants.
+   */
+  function changeDiscountType(discountType: "percent" | "fixed") {
+    if (discountType === draft.discountType) return;
+    setDraft({ ...draft, discountType, discountValue: "" });
+    setValueTouched(false);
+  }
+
   function startNew() {
     setEditingId(null);
     setDraft(emptyDraft);
     setDraftTargets([]);
+    setValueTouched(false);
     setMessage("");
     setError("");
   }
@@ -136,6 +164,9 @@ export default function StaffDiscountsPage() {
       isStackable: code.is_stackable,
     });
     setDraftTargets(targets[code.id] ?? []);
+    // An existing code is valid by construction, so editing one must not open
+    // with an error showing.
+    setValueTouched(false);
     setMessage("");
     setError("");
   }
@@ -155,6 +186,18 @@ export default function StaffDiscountsPage() {
 
   async function save(event: FormEvent) {
     event.preventDefault();
+
+    // Stop here rather than spending a round trip to be told the same thing,
+    // and move focus to the field so a keyboard user is put where the problem
+    // is instead of hunting for it.
+    if (!valueCheck.ok) {
+      setValueTouched(true);
+      setMessage("");
+      setError("");
+      document.getElementById("discount-value")?.focus();
+      return;
+    }
+
     setBusy(true);
     setError("");
     setMessage("");
@@ -405,26 +448,46 @@ export default function StaffDiscountsPage() {
               <select
                 aria-label="Discount type"
                 value={draft.discountType}
-                onChange={(event) =>
-                  setDraft({ ...draft, discountType: event.target.value as "percent" | "fixed" })
-                }
+                onChange={(event) => changeDiscountType(event.target.value as "percent" | "fixed")}
                 className="ui-input"
               >
                 <option value="percent">Percent</option>
                 <option value="fixed">Fixed amount</option>
               </select>
               <input
+                id="discount-value"
                 aria-label={draft.discountType === "percent" ? "Percent off" : "Dollars off"}
                 required
-                inputMode="decimal"
+                // Honest per type: a percentage is a whole number, so a decimal
+                // keypad on mobile would invite a value the column cannot hold.
+                inputMode={draft.discountType === "percent" ? "numeric" : "decimal"}
+                aria-invalid={showValueError || undefined}
+                aria-describedby={showValueError ? "discount-value-error" : "discount-value-hint"}
                 value={draft.discountValue}
                 onChange={(event) => setDraft({ ...draft, discountValue: event.target.value })}
+                onBlur={() => setValueTouched(true)}
                 className="ui-input flex-1"
               />
               <span className="self-center text-sm text-brand-textMuted">
                 {draft.discountType === "percent" ? "%" : "$"}
               </span>
             </div>
+
+            {/* One live region for both states, so a screen reader hears the
+                problem as it appears rather than only on submit. The hint says
+                up front what the field will accept, which is the cheapest way
+                to prevent the error in the first place. */}
+            {showValueError ? (
+              <p id="discount-value-error" role="alert" className="mt-1 text-xs text-amber-200">
+                {valueCheck.ok ? "" : valueCheck.problem}
+              </p>
+            ) : (
+              <p id="discount-value-hint" className="mt-1 text-xs text-brand-textMuted">
+                {draft.discountType === "percent"
+                  ? "A whole number from 1 to 100."
+                  : "Dollars and cents, more than zero."}
+              </p>
+            )}
           </fieldset>
 
           <div className="mt-3 grid grid-cols-2 gap-2">

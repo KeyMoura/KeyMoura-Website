@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import ProductImage from "@/components/ProductImage";
 import CartSharePanel from "@/components/commerce/CartSharePanel";
 import { formatCents, useCart, useCartMutations } from "@/lib/hooks/useCart";
 
@@ -101,6 +102,15 @@ export default function CartPage() {
           <ul className="mt-2 space-y-1 text-sm">
             {unavailable.map((entry) => (
               <li key={entry.itemId ?? entry.productId} className="flex flex-wrap items-center gap-2">
+                {/* A picture is what makes "this one is out of stock"
+                    recognisable at a glance. A deleted product has no media and
+                    falls back to the brand mark rather than a broken box. */}
+                <ProductImage
+                  product={entry.image}
+                  alt=""
+                  sizes="40px"
+                  className="cart-thumb !w-10"
+                />
                 <span>{entry.message}</span>
                 {entry.itemId ? (
                   <button
@@ -148,8 +158,24 @@ export default function CartPage() {
             </h2>
             <ul className="divide-y divide-[var(--border)]">
               {items.map((item) => (
-                <li key={item.itemId ?? item.productId} className="flex flex-wrap items-start justify-between gap-4 py-4 first:pt-0">
-                  <div className="min-w-0 flex-1">
+                <li key={item.itemId ?? item.productId} className="flex flex-wrap items-start gap-4 py-4 first:pt-0">
+                  {/* Decorative: the heading link beside it points at the same
+                      product, so an empty alt avoids announcing it twice. */}
+                  <Link
+                    href={`/catalog/${item.slug}`}
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="cart-thumb-link"
+                  >
+                    <ProductImage product={item.image} alt="" sizes="64px" className="cart-thumb" />
+                  </Link>
+
+                  {/* basis-40 rather than a wider basis: at 320px a 12rem
+                      column no longer fits beside the 4rem thumbnail, and the
+                      row wraps the text underneath, stranding the image on a
+                      line of its own. At 10rem the thumbnail and text stay
+                      side by side and the price is what wraps instead. */}
+                  <div className="min-w-0 flex-1 basis-40">
                     <h3 className="text-base font-semibold">
                       <Link href={`/catalog/${item.slug}`} className="hover:text-brand-primary">
                         {item.name}

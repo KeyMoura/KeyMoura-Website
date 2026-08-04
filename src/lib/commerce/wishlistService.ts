@@ -4,8 +4,9 @@ import { routeServiceClient } from "@/lib/api/routeAuth";
 import { createToken, loadPricedProducts, MAX_CART_LINES } from "@/lib/commerce/cartService";
 import { isRejected, priceLine, type PricedProduct } from "@/lib/commerce/pricing";
 import { allowsRequest, normalizePurchaseMode, type PurchaseMode } from "@/lib/commerce/purchaseModes";
+import { EMPTY_IMAGE_SOURCE, loadProductImageSources } from "@/lib/commerce/productDisplay";
 import { isValidShareToken, MAX_SHARE_DAYS, shareExpiryFrom, shareIsLive } from "@/lib/commerce/sharing";
-import { groupMediaByProduct, type ProductImageSource, type ProductMediaRef } from "@/lib/productImages";
+import { type ProductImageSource } from "@/lib/productImages";
 
 /**
  * The wishlist.
@@ -127,38 +128,6 @@ export async function loadWishlistItems(wishlistId: string): Promise<StoredWishl
 }
 
 /**
- * Display-only fields the pricing loader has no reason to carry.
- *
- * Media is fetched separately and grouped, the same way the catalog and
- * homepage do it, so a wishlist row resolves its image through exactly the same
- * rules — gallery order first, the denormalized `image_url` only as a fallback.
- * Reading `image_url` alone is what used to make products with real images
- * render as placeholders.
- */
-async function loadDisplayFields(productIds: readonly string[]): Promise<Map<string, ProductImageSource>> {
-  const unique = Array.from(new Set(productIds)).filter(Boolean);
-  if (!unique.length) return new Map();
-
-  const [{ data: products }, { data: media }] = await Promise.all([
-    routeServiceClient.from("products").select("id,image_url").in("id", unique),
-    routeServiceClient
-      .from("product_media")
-      .select("product_id,url,kind,sort_order")
-      .in("product_id", unique)
-      .eq("kind", "image")
-      .order("sort_order"),
-  ]);
-
-  const byProduct = groupMediaByProduct((media ?? []) as Array<ProductMediaRef & { product_id?: string | null }>);
-  return new Map(
-    (products ?? []).map((row) => [
-      row.id as string,
-      { image_url: (row.image_url as string | null) ?? null, product_media: byProduct.get(row.id as string) ?? [] },
-    ])
-  );
-}
-
-/**
  * Turns stored items into displayable entries, resolving every product live.
  *
  * Shared by the owner's page and the public shared page so a viewer and an
@@ -168,7 +137,7 @@ export async function resolveWishlistEntries(items: readonly StoredWishlistItem[
   if (!items.length) return [];
 
   const productIds = items.map((item) => item.product_id);
-  const [products, display] = await Promise.all([loadPricedProducts(productIds), loadDisplayFields(productIds)]);
+  const [products, display] = await Promise.all([loadPricedProducts(productIds), loadProductImageSources(productIds)]);
 
   const entries: WishlistEntry[] = [];
   for (const item of items) {
@@ -182,7 +151,7 @@ export async function resolveWishlistEntries(items: readonly StoredWishlistItem[
         productId: item.product_id,
         name: "This product is no longer available",
         slug: "",
-        image: { image_url: null, product_media: [] },
+        image: EMPTY_IMAGE_SOURCE,
         selectedOptions: item.selected_options,
         optionLabels: [],
         unitPriceCents: null,
@@ -210,7 +179,7 @@ export async function resolveWishlistEntries(items: readonly StoredWishlistItem[
       productId: item.product_id,
       name: product.name,
       slug: product.slug,
-      image: display.get(item.product_id) ?? { image_url: null, product_media: [] },
+      image: display.get(item.product_id) ?? EMPTY_IMAGE_SOURCE,
       selectedOptions: rejected ? item.selected_options : priced.selectedOptions,
       optionLabels: rejected ? [] : priced.optionLabels,
       unitPriceCents: rejected ? null : priced.unitPriceCents,

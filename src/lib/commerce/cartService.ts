@@ -15,7 +15,9 @@ import {
   type PricedProduct,
   type RequestedLine,
 } from "@/lib/commerce/pricing";
+import { EMPTY_IMAGE_SOURCE, loadProductImageSources } from "@/lib/commerce/productDisplay";
 import { normalizePurchaseMode } from "@/lib/commerce/purchaseModes";
+import type { ProductImageSource } from "@/lib/productImages";
 import {
   cartTotals,
   evaluateDiscount,
@@ -65,6 +67,14 @@ export type ResolvedCart = {
   priced: PricedCart;
   totals: CartTotals;
   discount: DiscountResult | null;
+  /**
+   * Cover-image sources by product id, for the drawer and the cart page.
+   *
+   * Kept beside the priced lines rather than inside them: `PricedProduct` is the
+   * pricing module's type and has no business carrying display data. One batched
+   * lookup for the whole cart, so line count does not change the query count.
+   */
+  images: Map<string, ProductImageSource>;
 };
 
 
@@ -279,7 +289,11 @@ export async function resolveLines(
   lines: readonly RequestedLine[],
   options: { discountCode?: string | null; customerId?: string | null } = {}
 ): Promise<ResolvedCart> {
-  const products = await loadPricedProducts(lines.map((line) => line.productId));
+  const productIds = lines.map((line) => line.productId);
+  // Images are display-only, so they are loaded alongside pricing rather than
+  // after it — a rejected line still shows its picture, and nothing waits on a
+  // second round trip.
+  const [products, images] = await Promise.all([loadPricedProducts(productIds), loadProductImageSources(productIds)]);
   const priced = priceCart(products, lines);
 
   const requestedCode = normalizeDiscountCodeInput(options.discountCode ?? "");
@@ -306,6 +320,7 @@ export async function resolveLines(
     priced,
     totals: cartTotals(priced.subtotalCents, discountCents),
     discount,
+    images,
   };
 }
 
@@ -316,6 +331,7 @@ export async function resolveCart(owner: CartOwner | null): Promise<ResolvedCart
     priced: { lines: [], rejected: [], subtotalCents: 0, itemCount: 0 },
     totals: cartTotals(0, 0),
     discount: null,
+    images: new Map(),
   };
 
   if (!owner) return empty;
@@ -539,6 +555,11 @@ export function serializeCart(resolved: ResolvedCart) {
       productId: line.productId,
       name: line.product.name,
       slug: line.product.slug,
+      // Shaped for the shared ProductImage component rather than pre-resolved to
+      // one URL, so a line keeps the same fall-forward behaviour as a product
+      // card when the first gallery image turns out to be broken. Carries only
+      // public catalog media — no storage credentials, no owner identity.
+      image: resolved.images.get(line.productId) ?? EMPTY_IMAGE_SOURCE,
       quantity: line.quantity,
       unitPriceCents: line.unitPriceCents,
       lineSubtotalCents: line.lineSubtotalCents,
@@ -549,6 +570,10 @@ export function serializeCart(resolved: ResolvedCart) {
       itemId: entry.lineId,
       productId: entry.productId,
       name: entry.productName,
+      // A deleted product resolves to no image and falls back to the brand mark;
+      // an out-of-stock one still has its picture, which is what makes the
+      // "needs attention" list recognisable.
+      image: resolved.images.get(entry.productId) ?? EMPTY_IMAGE_SOURCE,
       reason: entry.blocker.reason,
       message: entry.blocker.message,
     })),

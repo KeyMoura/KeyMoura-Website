@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faHeart } from "@fortawesome/free-solid-svg-icons";
+import { badgeCount, badgeLabel } from "@/lib/navBadge";
 import { useWishlist } from "@/lib/hooks/useWishlist";
 
 /**
@@ -24,15 +25,12 @@ export default function WishlistIndicator() {
       className={`relative inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm site-nav-utility${
         itemCount > 0 ? " is-highlighted" : ""
       }`}
-      aria-label={itemCount === 1 ? "Wishlist, 1 item" : `Wishlist, ${itemCount} items`}
+      aria-label={badgeLabel("Wishlist", itemCount)}
     >
       <FontAwesomeIcon icon={faHeart} className="text-[14px]" />
-      {itemCount > 0 ? (
-        <span
-          aria-hidden="true"
-          className="site-nav-utility-badge absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border px-1 text-[10px] font-bold"
-        >
-          {itemCount > 9 ? "9+" : itemCount}
+      {badgeCount(itemCount) ? (
+        <span className="site-nav-utility-badge site-nav-badge" aria-hidden="true">
+          {badgeCount(itemCount)}
         </span>
       ) : null}
     </Link>

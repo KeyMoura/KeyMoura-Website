@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCartShopping } from "@fortawesome/free-solid-svg-icons";
+import ProductImage from "@/components/ProductImage";
+import { badgeCount, badgeLabel } from "@/lib/navBadge";
 import { formatCents, useCart, useCartMutations } from "@/lib/hooks/useCart";
 
 /**
@@ -58,7 +60,7 @@ export default function CartIndicator() {
     };
   }, [open]);
 
-  const badge = itemCount > 9 ? "9+" : String(itemCount);
+  const badge = badgeCount(itemCount);
 
   return (
     <div className="relative">
@@ -69,11 +71,13 @@ export default function CartIndicator() {
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label={itemCount === 1 ? "Cart, 1 item" : `Cart, ${itemCount} items`}
+        // The real number, not the truncated bubble: "Cart, 128 items" is
+        // useful where "Cart, 99+ items" is not.
+        aria-label={badgeLabel("Cart", itemCount)}
       >
         <FontAwesomeIcon icon={faCartShopping} className="text-[14px]" />
-        {itemCount > 0 ? (
-          <span className="site-nav-utility-badge absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border px-1 text-[10px] font-bold">
+        {badge ? (
+          <span className="site-nav-utility-badge site-nav-badge" aria-hidden="true">
             {badge}
           </span>
         ) : null}
@@ -114,8 +118,21 @@ export default function CartIndicator() {
             ) : (
               <ul className="space-y-3">
                 {cart.items.map((item) => (
-                  <li key={item.itemId ?? item.productId} className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <li key={item.itemId ?? item.productId} className="flex items-start gap-3">
+                    {/* Decorative: the product name beside it is the labelled
+                        link to the same place, so an empty alt keeps a screen
+                        reader from hearing the product twice. */}
+                    <Link
+                      href={`/catalog/${item.slug}`}
+                      onClick={() => setOpen(false)}
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      className="cart-thumb-link"
+                    >
+                      <ProductImage product={item.image} alt="" sizes="52px" className="cart-thumb cart-thumb-sm" />
+                    </Link>
+
+                    <div className="min-w-0 flex-1">
                       <Link
                         href={`/catalog/${item.slug}`}
                         onClick={() => setOpen(false)}
