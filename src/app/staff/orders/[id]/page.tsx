@@ -7,6 +7,7 @@ import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
 import { StaffOrderWorkspace } from "@/components/staff/StaffOrderWorkspace";
+import { OrderProductionJobs } from "@/components/staff/production/OrderProductionJobs";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 
@@ -14,6 +15,7 @@ type Order = {
   id: string;
   order_number: string | null;
   customer_id: string;
+  product_id: string | null;
   product_name: string;
   status: string;
   quantity: number;
@@ -334,6 +336,14 @@ export default function StaffOrderDetail() {
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         <div id="production" className="scroll-mt-5 lg:col-span-2">
           <StaffOrderWorkspace orderId={id} canManage={canManage} />
+        </div>
+        <div id="shop-work" className="scroll-mt-5 lg:col-span-2">
+          <OrderProductionJobs
+            orderId={id}
+            productId={order.product_id}
+            customerId={order.customer_id}
+            productName={order.product_name}
+          />
         </div>
         {order.status === "in_progress" && canManage ? <section id="customer-review-package" className="scroll-mt-5 rounded-2xl border border-amber-400/35 bg-amber-400/5 p-5 lg:col-span-2">
           <p className="text-xs font-semibold uppercase tracking-[.16em] text-amber-300">Next · Customer review</p>

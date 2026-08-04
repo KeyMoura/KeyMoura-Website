@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { ProductionDashboardPanel } from "@/components/staff/production/ProductionDashboardPanel";
 import { Badge, EmptyState, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
@@ -29,7 +30,8 @@ export default function StaffDashboardPage() {
   const permissions = useMemo(() => new Set(access?.permissions ?? []), [access]);
   const canViewOrders = permissions.has("orders.view") || permissions.has("orders.manage");
   const canViewCatalog = permissions.has("catalog.view") || permissions.has("catalog.manage");
-  const canView = canViewOrders || canViewCatalog || permissions.has("analytics.view");
+  const canViewProduction = permissions.has("production.view") || permissions.has("production.manage");
+  const canView = canViewOrders || canViewCatalog || canViewProduction || permissions.has("analytics.view");
   const [orders, setOrders] = useState<DashboardOrder[]>([]);
   const [products, setProducts] = useState<DashboardProduct[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -82,6 +84,14 @@ export default function StaffDashboardPage() {
     </div>
 
     {error ? <Notice tone="danger" role="alert">Dashboard data could not be fully loaded: {error}</Notice> : null}
+
+    {/*
+      Outside the orders-loading gate on purpose. Production counts come from
+      their own endpoint, and a slow orders query must not hold back the panel
+      that says what is late in the shop.
+    */}
+    {canViewProduction ? <ProductionDashboardPanel /> : null}
+
     {loading || !summary ? <EmptyState>Loading business snapshot…</EmptyState> : <>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Business summary">
         <MetricCard label="Revenue collected" value={money(summary.revenueCents)} detail={summary.revenueComparison} />

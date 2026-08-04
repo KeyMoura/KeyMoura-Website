@@ -16,6 +16,8 @@ export const PERMISSIONS = [
   "catalog.reviews.moderate",
   "orders.view",
   "orders.manage",
+  "production.view",
+  "production.manage",
   "appearance.manage",
   "emails.manage",
   // Reports
@@ -161,6 +163,17 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       category: "Commerce",
       label: "Manage orders",
       description: "Allows accepting requests and updating order, payment, and customer-visible details.",
+    },
+    "production.view": {
+      category: "Commerce",
+      label: "View production jobs",
+      description: "Allows viewing the production queue, job details, and printable work orders.",
+    },
+    "production.manage": {
+      category: "Commerce",
+      label: "Manage production jobs",
+      description:
+        "Allows creating jobs, changing job status, editing checklists and files, and recording labour time.",
     },
     "appearance.manage": {
       category: "Site",

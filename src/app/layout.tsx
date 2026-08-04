@@ -9,6 +9,7 @@ import SiteFooter from "@/components/SiteFooter";
 import GlobalLockdownGate from "@/components/GlobalLockdownGate";
 import SiteBroadcastBanner from "@/components/SiteBroadcastBanner";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/next";
 import { BlocksProvider } from "@/components/BlocksProvider";
 import { getSiteSettings } from "@/lib/siteSettings";
 import { SiteSettingsProvider } from "@/components/SiteSettingsProvider";
@@ -97,6 +98,7 @@ export default async function RootLayout({
                 </main>
                 <SiteFooter />
                 <SpeedInsights />
+                <Analytics />
               </div>
             </GlobalLockdownGate>
           </BlocksProvider>

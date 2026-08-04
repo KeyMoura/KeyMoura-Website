@@ -1536,3 +1536,90 @@
     background-color: color-mix(in srgb, var(--brand-primary) 10%, transparent);
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Printing
+ *
+ * Operational documents — work orders, job travellers, quality checklists —
+ * are printed on the shop floor and filed. Navigation, the staff sidebar and
+ * the footer are chrome for a screen and are never wanted on paper, on any
+ * page, so they are dropped globally rather than per document.
+ *
+ * The printable pages therefore use only div/section/h1 elements and never
+ * header/footer/nav, which is what makes the blanket rules below safe.
+ * ------------------------------------------------------------------------- */
+
+@media print {
+  header,
+  footer,
+  nav,
+  .skip-link,
+  .staff-nav,
+  .print-hidden {
+    display: none !important;
+  }
+
+  /* Paper is white and ink is expensive; the dark theme is a screen concern. */
+  :root,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  body,
+  .page-container,
+  .page-container-wide,
+  .staff-shell {
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    max-width: none !important;
+  }
+
+  .ui-card,
+  .print-block {
+    border: 1px solid #999 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    /* A checklist split across two sheets loses the tick boxes that follow it. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-document {
+    font-size: 11pt;
+    line-height: 1.35;
+  }
+
+  .print-document a {
+    color: #000 !important;
+    text-decoration: none !important;
+  }
+
+  .print-break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    border: 1px solid #999;
+    padding: 4pt 6pt;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  /* Repeat the header row when a long table runs onto a second sheet. */
+  thead {
+    display: table-header-group;
+  }
+}
+
+@page {
+  margin: 14mm;
+}
