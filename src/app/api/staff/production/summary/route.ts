@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAnyPermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { TERMINAL_STATUSES } from "@/lib/production/jobs";
+import { logProductionFailure } from "@/lib/production/server";
 
 /**
  * Counts for the dashboard's production cards.
@@ -28,7 +29,15 @@ export async function GET(req: NextRequest) {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(today ?? "") ? today! : new Date().toISOString().slice(0, 10);
 
   const countOf = (build: (query: ReturnType<typeof base>) => ReturnType<typeof base>) =>
-    build(base()).then((result) => result.count ?? 0);
+    build(base()).then((result) => {
+      // A refused count must not read as zero. PostgREST resolves rather than
+      // rejects on an error, so without this the whole panel renders "0 open,
+      // 0 overdue" when the real answer is that the database would not say —
+      // which is exactly how the permission failure this route hit stayed
+      // invisible on the dashboard while the queue beside it showed an error.
+      if (result.error) throw result.error;
+      return result.count ?? 0;
+    });
 
   function base() {
     return routeServiceClient.from("production_jobs").select("id", { count: "exact", head: true });
@@ -63,7 +72,8 @@ export async function GET(req: NextRequest) {
       ready,
       dueThisWeek,
     });
-  } catch {
+  } catch (cause) {
+    logProductionFailure("summary.counts", cause);
     return NextResponse.json({ error: "Could not load production counts." }, { status: 500 });
   }
 }

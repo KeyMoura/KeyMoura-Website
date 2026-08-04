@@ -8,6 +8,7 @@ import {
   JOB_COLUMNS,
   TASK_COLUMNS,
   loadJobReferences,
+  logProductionFailure,
   recordJobAction,
   type JobRow,
 } from "@/lib/production/server";
@@ -57,7 +58,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       .returns<Array<Record<string, unknown>>>(),
   ]);
 
-  if (error) return NextResponse.json({ error: "Could not load the job." }, { status: 500 });
+  if (error) {
+    logProductionFailure("job.get", error);
+    return NextResponse.json({ error: "Could not load the job." }, { status: 500 });
+  }
   if (!jobRow) return missing();
 
   const job = jobRow;
@@ -139,6 +143,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     .single<JobRow>();
 
   if (error || !data) {
+    logProductionFailure("job.update", error);
     return NextResponse.json({ error: error?.message || "Could not save the job." }, { status: 400 });
   }
 

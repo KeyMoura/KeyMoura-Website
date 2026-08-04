@@ -8,7 +8,13 @@ import {
   transitionProblem,
   type ProductionStatus,
 } from "@/lib/production/jobs";
-import { JOB_COLUMNS, TASK_COLUMNS, recordJobAction, type JobRow } from "@/lib/production/server";
+import {
+  JOB_COLUMNS,
+  TASK_COLUMNS,
+  logProductionFailure,
+  recordJobAction,
+  type JobRow,
+} from "@/lib/production/server";
 
 /**
  * Moving a job through the workflow.
@@ -111,6 +117,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     .maybeSingle<JobRow>();
 
   if (error) {
+    logProductionFailure("job.status", error);
     return NextResponse.json({ error: error.message || "Could not change the status." }, { status: 400 });
   }
 

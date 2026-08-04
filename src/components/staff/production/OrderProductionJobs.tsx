@@ -48,15 +48,25 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
   const [loading, setLoading] = useState(true);
   const [now] = useState(() => new Date());
 
+  // Same rule as the `canView` gate below: a refusal hides the section rather
+  // than turning it red. An order page should not grow a permission error for
+  // a panel its reader was never meant to see.
+  const [denied, setDenied] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setDenied(false);
     try {
       const response = await fetch(
         `/api/staff/production/jobs?scope=all&orderId=${encodeURIComponent(orderId)}`,
         { credentials: "same-origin" }
       );
       const body = await response.json().catch(() => null);
+      if (response.status === 403) {
+        setDenied(true);
+        return;
+      }
       if (!response.ok) throw new Error(body?.error || "Could not load production jobs.");
       setJobs(body.jobs ?? []);
       setPeople(body.people ?? {});
@@ -73,7 +83,7 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
 
   // Silent for staff without production access — an order page should not grow
   // a permission error for a section they were never meant to see.
-  if (!canView) return null;
+  if (!canView || denied) return null;
 
   const newJobHref = (() => {
     const params = new URLSearchParams({ orderId });

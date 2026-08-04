@@ -27,6 +27,33 @@ export const FILE_COLUMNS =
 export const EVENT_COLUMNS = "id,job_id,actor_id,event_type,from_status,to_status,note,metadata,created_at";
 
 /**
+ * Records why a production query failed, on the server, in one shape.
+ *
+ * This exists because of a real outage: the queue answered "Could not load the
+ * production queue." for every request while the actual cause —
+ * `42501: permission denied for table production_jobs`, the migration having
+ * created the tables without granting them — appeared nowhere in the
+ * application's own logs. The generic sentence is the right thing to show a
+ * machinist; it is the wrong and only thing to have when diagnosing it.
+ *
+ * What is logged is the error's shape, never its payload: `code`, `message` and
+ * `hint` describe what Postgres refused and why. `details` is deliberately
+ * omitted — it is the one field that echoes row values back (a unique violation
+ * reports the conflicting key), and a job carries internal notes, costs and
+ * customer identifiers. No token, key, cookie or row body is ever logged.
+ */
+export function logProductionFailure(operation: string, error: unknown): void {
+  const shape = error as { code?: unknown; message?: unknown; hint?: unknown } | null;
+
+  console.error("[production] query failed", {
+    operation,
+    code: typeof shape?.code === "string" ? shape.code : undefined,
+    message: typeof shape?.message === "string" ? shape.message : undefined,
+    hint: typeof shape?.hint === "string" ? shape.hint : undefined,
+  });
+}
+
+/**
  * Appends to a job's own timeline.
  *
  * Separate from `logAuditEvent` on purpose — see the migration's header. This
@@ -146,14 +173,22 @@ export async function loadJobReferences(jobs: readonly JobRow[]) {
   const [people, orders, products] = await Promise.all([
     userIds.size
       ? routeServiceClient.from("profiles").select("id,username,display_name").in("id", [...userIds])
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null }),
     orderIds.size
       ? routeServiceClient.from("orders").select("id,order_number,status,order_kind").in("id", [...orderIds])
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null }),
     productIds.size
       ? routeServiceClient.from("products").select("id,name,slug").in("id", [...productIds])
-      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null }),
   ]);
+
+  // A reference that cannot be resolved is not fatal — a job whose customer was
+  // deleted still belongs in the queue, and every link is nullable by design.
+  // It is logged rather than swallowed, because "names silently stopped
+  // appearing" is otherwise invisible until somebody notices column of uuids.
+  if (people.error) logProductionFailure("references.people", people.error);
+  if (orders.error) logProductionFailure("references.orders", orders.error);
+  if (products.error) logProductionFailure("references.products", products.error);
 
   const nameFor = (row: Record<string, unknown>) =>
     (row.display_name as string | null) || (row.username as string | null) || "Unknown";
