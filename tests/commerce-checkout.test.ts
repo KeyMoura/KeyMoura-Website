@@ -91,5 +91,9 @@ test("the buy actions follow the purchase mode", () => {
 });
 
 test("a product that cannot be requested never renders the request wizard", () => {
-  assert.match(productPage, /!allowsRequest\(purchaseMode\)/);
+  // The page used to render the wizard and hide it behind an inverted branch.
+  // It is now not rendered at all unless the mode allows a request *and* the
+  // product is available — the component never reaches the browser.
+  assert.match(productPage, /const canRequest = allowsRequest\(purchaseMode\) && available/);
+  assert.match(productPage, /\{canRequest \? <ProductRequestForm/);
 });

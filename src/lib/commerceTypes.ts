@@ -18,6 +18,16 @@ export type ProductOptionValue = {
   is_default: boolean;
   is_active: boolean;
   sort_order: number;
+  /**
+   * The shop can make this, but not at the listed price.
+   *
+   * The column has existed since `20260802020100` and the cart has always
+   * enforced it server-side; it was simply missing from this type, so the
+   * product page had no way to tell a customer *why* a configuration could not
+   * be bought outright. Selecting one is not an error — it moves the product
+   * onto the request path.
+   */
+  requires_request?: boolean | null;
 };
 
 export type ProductOptionGroup = {
@@ -62,6 +72,30 @@ export type CatalogProduct = {
   low_stock_threshold: number;
   continue_selling_when_out_of_stock: boolean;
   archived_at: string | null;
+  /**
+   * Structured product content, added by `20260804030000`.
+   *
+   * All optional: every existing row predates them, and a product with none of
+   * them set renders a shorter page rather than a broken one. `detail_content`
+   * is deliberately `unknown` here — its shape is owned by
+   * `src/lib/commerce/productContent.ts`, which every reader goes through, and
+   * typing it as a structure at this level would invite the page to trust the
+   * column directly.
+   */
+  material?: string | null;
+  finish?: string | null;
+  made_to_order?: boolean | null;
+  installation_difficulty?: string | null;
+  installation_notes?: string | null;
+  care_instructions?: string | null;
+  warranty_text?: string | null;
+  shipping_notes?: string | null;
+  return_notes?: string | null;
+  cancellation_notes?: string | null;
+  dimensions_text?: string | null;
+  package_dimensions_text?: string | null;
+  weight_grams?: number | null;
+  detail_content?: unknown;
 };
 
 export const productCanBeRequested = (product: Pick<CatalogProduct, "availability_status" | "inventory_policy" | "inventory_quantity" | "continue_selling_when_out_of_stock">) =>

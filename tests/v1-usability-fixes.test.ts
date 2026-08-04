@@ -16,8 +16,13 @@ test("catalog uses gallery media and exposes image navigation", () => {
   assert.match(image, /onError=/);
   assert.match(image, /product-image-fallback/);
   assert.doesNotMatch(catalog, /My requests & orders/);
-  assert.match(product, /Previous product image/);
-  assert.match(product, /Next product image/);
+  // Gallery navigation moved into its own component with the product-page
+  // redesign; the labels dropped the redundant "product" because they are
+  // already inside a group labelled "Product images".
+  const galleryComponent = read("src/components/product/ProductGallery.tsx");
+  assert.match(galleryComponent, /aria-label="Previous image"/);
+  assert.match(galleryComponent, /aria-label="Next image"/);
+  assert.match(product, /ProductGallery/);
 });
 
 test("account is the customer order launch point", () => {
