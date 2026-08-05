@@ -12,7 +12,13 @@ export type CommerceEmailTemplateKey =
   // instead of silence.
   | "order_cancelled" | "cancellation_requested" | "cancellation_approved" | "cancellation_denied"
   | "refund_initiated" | "refund_completed" | "refund_failed"
-  | "return_requested" | "return_approved" | "return_denied" | "return_received" | "return_inspected";
+  | "return_requested" | "return_approved" | "return_denied" | "return_received" | "return_inspected"
+  // Fulfillment and inventory, seeded by `20260805020000`. A key with no row
+  // still sends: the generic subject and body below are the fallback, so a
+  // missed seed degrades to a plain email rather than to silence.
+  | "fulfillment_processing" | "order_ready_to_fulfill" | "order_ready_for_pickup" | "order_picked_up"
+  | "tracking_corrected"
+  | "low_stock_alert" | "out_of_stock_alert" | "staff_fulfillment_due";
 
 const defaults = {
   enabled: true, fromName: "KeyMoura", fromEmail: "orders@keymoura.com", replyTo: "support@keymoura.com",
@@ -39,9 +45,21 @@ export async function sendCommerceEmail(input: { to?: string | null; orderId?: s
   const body = interpolate(template?.body || "There is an update to your order.", input.variables);
   const button = interpolate(template?.button_label || "View order", input.variables);
   const logo = config.logoUrl ? `<img src="${escapeHtml(config.logoUrl.startsWith("http") ? config.logoUrl : config.siteUrl + config.logoUrl)}" alt="${escapeHtml(config.siteName)}" style="max-height:42px;max-width:180px;margin-bottom:24px"/>` : `<div style="font-weight:700;margin-bottom:24px">${escapeHtml(config.siteName)}</div>`;
+  // A plain-text alternative on every message, not just the HTML one. Some
+  // clients render only this part, spam filters weight its absence, and it is
+  // what a screen reader in a text-first client actually reads. It is built
+  // from the same interpolated strings, so the two versions cannot drift.
+  const plainText = [
+    config.siteName,
+    input.variables.order_label ? `\n${input.variables.order_label}` : "",
+    `\n${heading}`,
+    `\n${body}`,
+    `\n${button}: ${url}`,
+  ].filter(Boolean).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const { data, error } = await resend.emails.send({ from: `${config.fromName} <${config.fromEmail}>`, to: recipient, replyTo: config.replyTo || undefined, subject, html: `<div style="background:#0b0b0c;padding:36px 16px;color:#f4f4f5;font-family:Arial,sans-serif"><div style="max-width:580px;margin:auto;background:#151517;border:1px solid #333;border-radius:16px;padding:32px">${logo}<div style="color:${escapeHtml(config.accentColor)};font-size:12px;letter-spacing:.16em;text-transform:uppercase">${escapeHtml(input.variables.order_label || "KeyMoura")}</div><h1 style="font-size:26px;line-height:1.2;margin:12px 0">${escapeHtml(heading)}</h1><p style="color:#d4d4d8;line-height:1.65;white-space:pre-line">${escapeHtml(body)}</p><a href="${escapeHtml(url)}" style="display:inline-block;margin-top:18px;background:${escapeHtml(config.primaryColor)};border-radius:10px;padding:12px 18px;color:#fff;text-decoration:none;font-weight:700">${escapeHtml(button)}</a></div></div>` }, { idempotencyKey: input.eventKey });
+    const { data, error } = await resend.emails.send({ from: `${config.fromName} <${config.fromEmail}>`, to: recipient, replyTo: config.replyTo || undefined, subject, text: plainText, html: `<div style="background:#0b0b0c;padding:36px 16px;color:#f4f4f5;font-family:Arial,sans-serif"><div style="max-width:580px;margin:auto;background:#151517;border:1px solid #333;border-radius:16px;padding:32px">${logo}<div style="color:${escapeHtml(config.accentColor)};font-size:12px;letter-spacing:.16em;text-transform:uppercase">${escapeHtml(input.variables.order_label || "KeyMoura")}</div><h1 style="font-size:26px;line-height:1.2;margin:12px 0">${escapeHtml(heading)}</h1><p style="color:#d4d4d8;line-height:1.65;white-space:pre-line">${escapeHtml(body)}</p><a href="${escapeHtml(url)}" style="display:inline-block;margin-top:18px;background:${escapeHtml(config.primaryColor)};border-radius:10px;padding:12px 18px;color:#fff;text-decoration:none;font-weight:700">${escapeHtml(button)}</a></div></div>` }, { idempotencyKey: input.eventKey });
     if (error) { await log("failed", undefined, error.message); return { sent:false as const }; }
     await log("sent", data?.id); return { sent:true as const };
   } catch (error) { await log("failed", undefined, error instanceof Error ? error.message : "Unknown provider error"); return { sent:false as const }; }

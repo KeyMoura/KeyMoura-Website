@@ -29,6 +29,13 @@ export const PERMISSIONS = [
   "refunds.issue",
   "inventory.view",
   "inventory.manage",
+  // Commerce settings, added in pass 8. Separate from `appearance.manage`
+  // because these values decide what customers are charged for delivery and
+  // where parcels are posted, which is not a branding decision. Reading is
+  // split from writing so the shipping desk can consult the configured methods
+  // without being able to reprice them.
+  "commerce.settings.view",
+  "commerce.settings.manage",
   "appearance.manage",
   "emails.manage",
   // Reports
@@ -224,6 +231,17 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       category: "Commerce",
       label: "Manage inventory",
       description: "Allows adjusting stock levels by hand, with a reason recorded against each change.",
+    },
+    "commerce.settings.view": {
+      category: "Commerce",
+      label: "View commerce settings",
+      description: "Allows reading shipping methods, pickup details, inventory rules and commerce policy.",
+    },
+    "commerce.settings.manage": {
+      category: "Commerce",
+      label: "Manage commerce settings",
+      description:
+        "Allows changing shipping prices, destinations, pickup details, inventory rules and cancellation and return policy.",
     },
     "appearance.manage": {
       category: "Site",
