@@ -2469,3 +2469,141 @@ Not built in this pass. Each is specified, none is half-wired:
 6. **Custom-request orders keep the legacy eager decrement.** Reservations sit
    in front of the direct-purchase path only. The two cannot double-count
    because `order_items` rows exist only for direct purchases.
+
+## Pass 8 — merged and in production
+
+Branch `shipping-fulfillment-inventory-reservations-20260805` → merged as
+**`856417e`**, which is the current production SHA. Merged with `--no-ff`,
+never force-pushed.
+
+| SHA | What |
+|-----|------|
+| `9dbc534` | Commerce settings, shipping snapshots and reservations schema |
+| `a10f156` | Commerce settings and fulfillment APIs |
+| `4fb256e` | Reservations and server-priced shipping into checkout and the webhook |
+| `b5966e2` | Inventory API and the customer delivery step |
+| `b876f7c` | Staff inventory and commerce settings surfaces |
+| `82060a7` | Record pass 8 |
+| `856417e` | Merge commit |
+
+### Migration application — 2026-08-05
+
+Both applied with approval through `execute_sql` in **two separate guarded
+transactions**, not `apply_migration` — that tool stamps its own timestamp as
+the version, which caused six of the seven ledger drifts repaired in pass 3.
+Each ledger row was inserted by hand under the repository filename's version.
+
+Each transaction carried assertions on both sides and would have rolled back
+whole. Migration 1 guards: `commerce_settings` absent, `order_fulfillment_events`
+absent, exactly 38 rows, 39 product columns, 56 order columns — then 51 product
+columns, 67 order columns, 39 rows, 30 templates, orders/products/order_items
+unchanged at 6/2/1, and grants asserted per role. Migration 2 guards: the two
+tables absent, exactly 39 rows, `inventory_adjustments` empty — then 2 tables,
+9 functions, 40 rows, data unchanged, and least-privilege asserted.
+
+All held; both committed.
+
+**The ledger is exact: 40 repo files, 40 rows, versions and names identical**,
+checked by diffing the two sorted sets. No malformed versions, no duplicates.
+
+### Independent verification after applying
+
+| Check | Result |
+|-------|--------|
+| Existing data | **unchanged** — 6 orders, 2 products, 1 order item, 2 carts, 3 users, 1 discount, 1 wishlist, 0 refunds/returns/jobs/adjustments |
+| New tables | 3 present, all empty, RLS enabled, exactly 1 staff-select policy each |
+| New columns | products 39 → 51, orders 56 → 67; all 6 orders carry `fulfillment_status`, both products defaulted to shipping/pickup/fulfillment-required |
+| `anon` / `authenticated` / `PUBLIC` | **zero grants** on all three new tables, and **zero** execute on all ten new functions |
+| `service_role` | select+insert+update on reservations and alerts; select+insert **only** on fulfillment events; **no DELETE anywhere** |
+| Append-only, role-switched | `service_role` refused UPDATE and DELETE on `order_fulfillment_events`, and DELETE on reservations and alerts |
+| `anon`, role-switched | refused SELECT on reservations and refused EXECUTE on `reserve_cart_inventory` |
+| Email templates | 22 → 30, the 8 new keys present |
+| Supabase security advisors | **no new findings.** None of the 3 new tables or 10 new functions appears; every listed item is pre-existing |
+
+**A mis-designed probe, and what it actually proved.** The first append-only
+check ran `UPDATE` on the events table and *succeeded*. That was the test being
+wrong, not the grant: `execute_sql` connects as the table owner, who bypasses
+grants entirely. Re-run under `set local role service_role` — the role the
+application actually uses — the update and delete were both refused. The
+guarantee holds; the first probe was measuring the wrong role.
+
+### Concurrency and idempotency, re-run against the live schema
+
+Every check passed against the deployed functions, inside a rolled-back
+transaction: one unit and two customers (second refused), an idempotent repeat
+(still one hold), a refused increase leaving the existing hold intact, a
+removed line releasing, link + commit exactly once with a replay committing
+**zero**, committed rows not releasable, an expired hold not reducing
+availability before the sweep, the sweep, a fulfillment transition with a stale
+from-status **refused** and a repeat reported as `already` with exactly one
+event written, and low → out → resolved producing exactly **one** alert row.
+
+### Sequence hygiene
+
+`nextval` is not transactional, so the rolled-back dry runs still consumed
+values. Checked and corrected:
+
+| Sequence | State | First real value |
+|----------|-------|------------------|
+| `order_fulfillment_events_id_seq` | untouched | 1 |
+| `order_return_number_seq` | untouched | RMA-0001 |
+| `production_job_number_seq` | untouched | JOB-0001 |
+| `keymoura_order_number_seq` | **consumed 7 and 8** by probe order inserts | reset to **KM-0007** |
+
+The reset was guarded on no existing order holding a number ≥ 7, and verified
+by reading `last_value`/`is_called` rather than by calling `nextval` — the first
+verification attempt used `nextval` and consumed the value it was checking, so
+it had to be reset a second time.
+
+### Production smoke test — on `856417e`
+
+| Check | Result |
+|-------|--------|
+| Storefront | `/` 200 (0.52 s), `/catalog` 200, `/cart` 200, `/shipping` 200, `/refunds` 200 |
+| `GET /api/cart` | 200 against the real database |
+| `GET /api/cart/fulfillment` | 200; correctly reports nothing available for an empty cart |
+| **Public payload privacy** | **no origin address, no return address, no staff recipients, no reservation timings** in the served JSON |
+| Staff routes gated | `/api/staff/inventory`, `/api/staff/commerce/settings`, `/staff/inventory`, `/staff/settings/commerce` all 307 → `/auth/login` |
+| Checkout, stopped before payment | `POST /api/cart/checkout` as a guest → **401** `requiresSignIn`. No Stripe session, no order, no reservation |
+| Every new read as `service_role` | **all OK** — the three new tables, the new order and product columns, `commerce_settings`, and `available_product_inventory` returning real values (0 and 5) |
+| Emails sent | **zero** in the deployment window |
+
+Production data after the run — unchanged: 6 orders, 2 products, 1 order item,
+2 carts, 0 reservations, 0 alerts, 0 fulfillment events, 0 adjustments, 40
+migrations.
+
+### The owner action this deployment requires
+
+**Direct checkout now requires a fulfillment method, and shipping and local
+pickup both ship disabled.** Until at least one is configured at
+`/staff/settings/commerce`, a cart holding a physical product will refuse at
+checkout with "This order cannot be delivered right now."
+
+That is deliberate — an unconfigured shop must not invent a delivery price —
+but it makes configuring a method a **launch step, not a follow-up**.
+
+### External setup still required
+
+1. **Configure a fulfillment method** (above). Nothing else in this pass
+   matters until this is done.
+2. **`checkout.session.expired`** on the Stripe webhook endpoint. The owner
+   confirmed on 2026-08-05 they are adding it. Until it is delivering, an
+   abandoned checkout's hold lapses on its own expiry rather than releasing
+   immediately — degraded, not broken, because availability already ignores a
+   lapsed hold.
+3. **Grant the two new permissions** (`commerce.settings.view`,
+   `commerce.settings.manage`) to any non-admin role that should use them.
+   Admins already have both.
+4. **No Resend change is required.** Plain-text bodies are code-side and the
+   templates were seeded by migration.
+
+### What could not be verified, and why
+
+- **A signed-in staff or customer session.** Unchanged limitation from passes 3
+  to 7: signing in means handling a password. What was done instead is stronger
+  at the database layer and weaker at the UI layer — every query and function
+  the new routes call was executed against the real production database as the
+  exact role the routes use.
+- **A real reservation through a real checkout.** Reaching one needs an
+  authenticated customer and a configured fulfillment method. The reservation
+  *mechanics* were exercised against the live schema with synthetic carts.
