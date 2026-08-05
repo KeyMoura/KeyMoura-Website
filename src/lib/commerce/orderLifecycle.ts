@@ -151,7 +151,12 @@ const METHOD_FORBIDDEN: Readonly<Record<string, readonly FulfillmentState[]>> = 
 export function fulfillmentTransitionsFor(from: string, method: string | null | undefined): FulfillmentState[] {
   const allowed = FULFILLMENT_TRANSITIONS[from as FulfillmentState];
   if (!Array.isArray(allowed)) return [];
-  const forbidden = METHOD_FORBIDDEN[String(method || "shipping")] ?? [];
+  // An unrecognised method falls back to the *shipping* restrictions rather
+  // than to none. Defaulting to an empty forbidden-list would mean a corrupted
+  // or unexpected `fulfillment_method` unlocked every state at once, including
+  // both delivery channels on the same order — the widest possible behaviour
+  // from the least trustworthy input.
+  const forbidden = METHOD_FORBIDDEN[String(method || "shipping")] ?? METHOD_FORBIDDEN.shipping;
   return allowed.filter((state) => !forbidden.includes(state));
 }
 

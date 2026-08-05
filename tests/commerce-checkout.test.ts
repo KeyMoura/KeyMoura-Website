@@ -19,10 +19,49 @@ test("checkout re-resolves the cart from live products before charging", () => {
 test("the charged amount comes from the resolved cart, never the request body", () => {
   assert.match(checkout, /agreed_price_cents: totalCents/);
   assert.match(checkout, /unit_amount: totalCents/);
-  assert.match(checkout, /const totalCents = cart\.totals\.totalCents/);
-  // No amount, price, or total is ever read off the request.
-  for (const field of ["amount", "total", "price", "discountCents"]) {
-    assert.doesNotMatch(checkout, new RegExp(`body\.${field}`), `checkout must not read ${field} from the client`);
+  // Pass 8 moved the total behind `planFulfillment`, which adds a
+  // server-computed shipping charge to the server-resolved cart. The property
+  // is unchanged and now covers one more component of the price.
+  assert.match(checkout, /const totalCents = plan\.totals\.totalCents/);
+  assert.match(
+    checkout,
+    /subtotalCents: cart\.totals\.subtotalCents/,
+    "the plan must be fed the server's own subtotal, not a client figure"
+  );
+  // No amount, price, total or shipping charge is ever read off the request.
+  // `shippingMethodId` and `shippingAddress` are the only shipping-related
+  // things the client may choose, and neither carries money.
+  for (const field of ["amount", "total", "price", "discountCents", "shippingCents", "totals", "subtotal"]) {
+    assert.doesNotMatch(checkout, new RegExp(`body\\.${field}\\b`), `checkout must not read ${field} from the client`);
+  }
+});
+
+test("checkout holds stock before Stripe and releases it on every failure path", () => {
+  // The reservation is taken before the session exists, so the window where two
+  // customers could both buy the last unit is closed rather than narrowed.
+  const reserveAt = checkout.indexOf("reserveCartInventory");
+  const sessionAt = checkout.indexOf("checkout.sessions.create");
+  assert.ok(reserveAt > 0 && sessionAt > reserveAt, "stock must be reserved before the Stripe session is created");
+
+  // Every path that abandons the checkout gives the stock straight back.
+  for (const reason of ["checkout_order_failed", "checkout_items_failed", "checkout_session_failed"]) {
+    assert.match(checkout, new RegExp(`releaseReservations\\([^)]*${reason}`, "s"), `missing release on ${reason}`);
+  }
+
+  // The session cannot outlive the hold.
+  assert.match(checkout, /expires_at: Math\.floor\(Date\.now\(\) \/ 1000\) \+ settings\.inventory\.reservationMinutes \* 60/);
+  assert.match(checkout, /linkCartReservationsToOrder\(cart\.cartId, order\.id, session\.id\)/);
+});
+
+test("the order stores immutable shipping snapshots rather than references", () => {
+  for (const column of [
+    "shipping_method_snapshot",
+    "shipping_origin_snapshot",
+    "pickup_location_snapshot",
+    "package_snapshot",
+    "shipping_cents",
+  ]) {
+    assert.match(checkout, new RegExp(`${column}:`), `checkout must snapshot ${column} onto the order`);
   }
 });
 

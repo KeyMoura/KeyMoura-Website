@@ -11,6 +11,12 @@ import {
   moneyText,
   sendLifecycleNotification,
 } from "@/lib/commerce/orderLifecycleServer";
+import {
+  commitOrderReservations,
+  evaluateAndAnnounceStock,
+  loadCommerceSettings,
+  releaseReservations,
+} from "@/lib/commerce/commerceSettingsServer";
 
 export const runtime = "nodejs";
 
@@ -171,6 +177,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true, unmatched: Boolean(outcome?.unmatched) });
   }
 
+  /**
+   * A Checkout Session that lapsed without payment.
+   *
+   * Releasing here is what stops an abandoned checkout holding the last unit
+   * until its own expiry sweeps it. The release is keyed on the session id and
+   * only touches `active` rows, so a redelivered event releases nothing the
+   * second time.
+   *
+   * This event has to be *subscribed* on the Stripe endpoint to arrive at all.
+   * If it never does, the hold still lapses on its own expiry and availability
+   * already ignores a lapsed hold — so the failure mode is a unit held for the
+   * remainder of its window, not a unit held forever.
+   */
+  if (event.type === "checkout.session.expired") {
+    const expiredEvent = await routeServiceClient
+      .from("stripe_webhook_events")
+      .insert({ stripe_event_id: event.id, event_type: event.type });
+    if (expiredEvent.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
+    if (expiredEvent.error) {
+      captureCommerceException(expiredEvent.error, { operation: "record_expired_event", stripeEventId: event.id });
+      return NextResponse.json({ error: "Could not record event" }, { status: 500 });
+    }
+
+    const expiredSession = event.data.object as Stripe.Checkout.Session;
+    const released = await releaseReservations({
+      reason: "checkout_session_expired",
+      checkoutSessionId: expiredSession.id,
+    });
+
+    // The order stays. It is a real record of an attempt, it is what the
+    // customer sees in their history, and deleting it would strand the
+    // order_items rows that explain what they tried to buy.
+    await routeServiceClient
+      .from("orders")
+      .update({ stripe_checkout_session_id: null })
+      .eq("stripe_checkout_session_id", expiredSession.id)
+      .eq("payment_status", "unpaid");
+
+    await routeServiceClient
+      .from("stripe_webhook_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("stripe_event_id", event.id);
+    return NextResponse.json({ received: true, released });
+  }
+
   if (event.type === "checkout.session.async_payment_failed") {
     const failedEvent = await routeServiceClient.from("stripe_webhook_events").insert({ stripe_event_id: event.id, event_type: event.type });
     if (failedEvent.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
@@ -186,6 +237,18 @@ export async function POST(req: NextRequest) {
       // could not tell "never tried" from "tried and was declined", which is
       // the difference between a nudge and an apology.
       await routeServiceClient.from("orders").update({ stripe_checkout_session_id: null, payment_status: "payment_failed" }).eq("id", failedOrderId).eq("stripe_checkout_session_id", failedSession.id);
+      /**
+       * The documented retry policy: a declined payment **releases** the hold.
+       *
+       * The alternative — holding stock through an indefinite retry — lets one
+       * failed card keep the last unit away from a customer who can actually
+       * pay for it. Retrying starts a new checkout, which takes a fresh hold if
+       * the stock is still there, and says so plainly if it is not.
+       */
+      const settings = await loadCommerceSettings();
+      if (settings.inventory.releaseOnPaymentFailure) {
+        await releaseReservations({ reason: "payment_failed", orderId: failedOrderId });
+      }
       await Promise.all([
         notifyOrderUser({ orderId:failedOrderId, actorUserId:null, recipientUserId:failedCustomerId, title:"Payment failed", message:"Your payment did not complete. No successful payment was recorded; open the order to try again." }),
         notifyOrderStaff({ orderId:failedOrderId, actorUserId:null, title:"Customer payment failed", message:"A delayed payment failed. The order remains unpaid and the customer can try again." }),
@@ -251,6 +314,33 @@ export async function POST(req: NextRequest) {
     // customer charged for an order the system then disowns.
     logLifecycleFailure("commit_order_inventory", inventoryError, { orderId, stripeEventId: event.id });
   }
+
+  /**
+   * Retire the hold at the same moment the on-hand figure drops.
+   *
+   * This does not move stock — `commit_order_inventory` above is still the only
+   * writer of `products.inventory_quantity` on this path. Committing the
+   * reservation stops it counting against availability, and because both happen
+   * together, availability is unchanged across the commit. That is the point:
+   * the unit was already spoken for, and now it is simply gone rather than
+   * held.
+   *
+   * Only `active` rows move, so a webhook delivered five times commits on the
+   * first and is a no-op on the rest.
+   */
+  const committedReservations = await commitOrderReservations(orderId);
+
+  // Stock actually moved, so re-evaluate the alert. Deduplication is a partial
+  // unique index in the database, so calling this on every payment cannot
+  // produce a second alert for a product that is already flagged.
+  const { data: paidItems } = await routeServiceClient
+    .from("order_items")
+    .select("product_id")
+    .eq("order_id", orderId);
+  for (const productId of [...new Set((paidItems ?? []).map((row) => row.product_id).filter(Boolean))]) {
+    await evaluateAndAnnounceStock(String(productId));
+  }
+  void committedReservations;
 
   if (order.order_kind === "direct_purchase") {
     const { data: convertedCart } = await routeServiceClient

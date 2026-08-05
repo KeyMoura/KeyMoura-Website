@@ -484,24 +484,38 @@ grant select, insert, update on table public.inventory_alerts to service_role;
 -- tells an expired hold from one that was never taken, and an alert's history
 -- is how "this keeps running out" becomes visible. Both are closed by status.
 
-do $$
-declare fn text;
-begin
-  foreach fn in array array[
-    'public.reserved_product_quantity(uuid, uuid)',
-    'public.available_product_inventory(uuid, uuid)',
-    'public.expire_inventory_reservations(integer)',
-    'public.reserve_cart_inventory(uuid, uuid, jsonb, integer, boolean)',
-    'public.link_cart_reservations_to_order(uuid, uuid, text)',
-    'public.commit_order_reservations(uuid)',
-    'public.release_inventory_reservations(text, uuid, uuid, text)',
-    'public.evaluate_inventory_alert(uuid)',
-    'public.mark_inventory_alert_notified(uuid)'
-  ] loop
-    execute format('revoke all on function %s from public, anon, authenticated', fn);
-    execute format('grant execute on function %s to service_role', fn);
-  end loop;
-end $$;
+-- Written out one statement per function rather than looped through a DO
+-- block. A loop is shorter, but it hides the function names from anything
+-- reading the migration as text — including the test that derives what must be
+-- granted from what the migration creates, which is the guard that exists
+-- because pass 5a shipped four ungranted tables.
+
+revoke all on function public.reserved_product_quantity(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.reserved_product_quantity(uuid, uuid) to service_role;
+
+revoke all on function public.available_product_inventory(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.available_product_inventory(uuid, uuid) to service_role;
+
+revoke all on function public.expire_inventory_reservations(integer) from public, anon, authenticated;
+grant execute on function public.expire_inventory_reservations(integer) to service_role;
+
+revoke all on function public.reserve_cart_inventory(uuid, uuid, jsonb, integer, boolean) from public, anon, authenticated;
+grant execute on function public.reserve_cart_inventory(uuid, uuid, jsonb, integer, boolean) to service_role;
+
+revoke all on function public.link_cart_reservations_to_order(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.link_cart_reservations_to_order(uuid, uuid, text) to service_role;
+
+revoke all on function public.commit_order_reservations(uuid) from public, anon, authenticated;
+grant execute on function public.commit_order_reservations(uuid) to service_role;
+
+revoke all on function public.release_inventory_reservations(text, uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.release_inventory_reservations(text, uuid, uuid, text) to service_role;
+
+revoke all on function public.evaluate_inventory_alert(uuid) from public, anon, authenticated;
+grant execute on function public.evaluate_inventory_alert(uuid) to service_role;
+
+revoke all on function public.mark_inventory_alert_notified(uuid) from public, anon, authenticated;
+grant execute on function public.mark_inventory_alert_notified(uuid) to service_role;
 
 notify pgrst, 'reload schema';
 
