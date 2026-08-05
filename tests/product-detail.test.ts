@@ -84,13 +84,23 @@ test("a row that already holds too much is bounded on read", () => {
 
 test("serializing round-trips through the same parser", () => {
   // An editor cannot save a shape the page would then discard.
+  //
+  // This assertion used to compare the serializer's output against editor state
+  // directly. That is not a round trip: both sides held FAQ rows as
+  // `title`/`body`, they agreed with each other, and neither agreed with the
+  // column — which the parser reads as `question`/`answer`. Every saved FAQ was
+  // dropped on the next read and the test stayed green. Going through JSON, as
+  // `jsonb` does, is what makes this test able to fail.
   const content = parseDetailContent({
     benefits: [{ title: "A", body: "B" }],
-    faq: [{ question: "Q", answer: "A" }],
+    faq: [{ question: "Q", answer: "An answer" }],
   });
-  const round = serializeDetailContent(content);
-  assert.deepEqual(round, content);
-  assert.equal(round.faq[0].title, "Q", "faq keeps question/answer through the trip");
+  const stored = serializeDetailContent(content);
+  assert.deepEqual(stored.faq, [{ question: "Q", answer: "An answer" }], "faq is stored under its own keys");
+
+  const reloaded = parseDetailContent(JSON.parse(JSON.stringify(stored)));
+  assert.deepEqual(reloaded, content, "what is stored must read back as what was held");
+  assert.equal(reloaded.faq[0].title, "Q", "faq keeps question/answer through the trip");
 });
 
 test("hasStructuredContent is false only when every section is empty", () => {
