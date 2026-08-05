@@ -1465,3 +1465,200 @@ be decoration standing in for data that does not exist. A test asserts it.
 - The site broadcast banner's Dismiss button is 20×20, under WCAG 2.2 AA's 24px
   minimum. Outside the storefront and outside this pass.
 - Guest checkout remains unrepresentable: `orders.customer_id` is `NOT NULL`.
+
+---
+
+# Pass 6a — product content editor repair
+
+Branch `product-content-editor-repair-20260804`, from `edf78c3`.
+
+Reported: on `/staff/catalog`, every Add button in the structured product
+content editor did nothing when clicked — benefits, specifications,
+compatibility, included items and FAQ alike.
+
+## Root cause
+
+**The editor used the storage-layer parser as its state reducer.**
+
+`ProductContentEditor`'s `setList` rebuilt editor state by running
+`parseDetailContent` on every mutation. That function is a *boundary* function:
+it runs when content is read out of `products.detail_content` and again when it
+is written back, and it deliberately drops incomplete rows so the product page
+never renders a "Specifications" heading over nothing.
+
+A freshly added row is blank. So the parser deleted every row the Add buttons
+created, in the same tick it was created. Reproduced before any edit, against
+the real parser:
+
+| Click | Result |
+|-------|--------|
+| Add a benefit | `[]` |
+| Add a specification | `[]` |
+| Add compatibility entry | `[]` |
+| Add included item | `[]` |
+| Add a question | `[]` |
+
+Deterministic, and in the state layer. The hypotheses in the brief were checked
+and **ruled out**: every button was already `type="button"`; the editor is not
+inside the create-product form and there are no nested forms (1 form on the
+page, 0 nested); both files carry `"use client"`; the Add button hit-tests to
+itself with `pointer-events: auto` and nothing overlapping; `disabled` is only
+the legitimate `catalog.manage` gate.
+
+The same one line caused three more failures, all worse than the reported one:
+
+1. **The FAQ list was destroyed by a single keystroke.** `setList` passed FAQ
+   rows back through the parser as `{title, body}` while the parser reads FAQs
+   as `{question, answer}`, so every row parsed to blank and was filtered out.
+   Typing one character into a saved question emptied the whole list — and a
+   subsequent Save would have written the empty list back.
+2. **A space could not be typed.** The parser trims, and it ran on every
+   keystroke, so `"Shift "` became `"Shift"` and the next character produced
+   `"Shiftk"`. No multi-word value was enterable in any list field.
+3. **A specification vanished mid-edit.** Clearing either half to retype it
+   dropped the row, because a spec needs both halves to survive parsing.
+
+## A second, independent defect found while testing
+
+**Every FAQ staff saved was silently discarded on the next read.**
+
+`serializeDetailContent` returned the *in-memory* type, so it wrote FAQ rows to
+the column under `title`/`body`. `parseDetailContent` reads that column looking
+for `question`/`answer`. A saved FAQ therefore came back empty — invisible on
+the product page, gone from the editor on reload. Benefits were unaffected,
+because their in-memory and stored keys happen to be identical.
+
+The round-trip test that should have caught this compared the serializer's
+output against editor state instead of re-parsing it. Both sides held FAQs as
+`title`/`body`, they agreed with each other, and neither agreed with the
+database. That test now goes through `JSON.parse(JSON.stringify(...))`, as
+`jsonb` does, which is what makes it able to fail.
+
+**No production data was lost to this.** Both products hold zero FAQ rows, so
+the bug would have eaten the first FAQ anyone saved, not any existing content.
+
+## A third defect, found only in the browser
+
+**A double-click on Add produced one row, not two.** Every handler derived from
+the `content` prop captured at render, so two activations inside one React batch
+both computed from the same starting point and the second overwrote the first.
+Measured live: two clicks gave one row; five different Add buttons in one tick
+gave one row in total.
+
+`onContentChange` now takes an **updater** rather than a value, so each change
+composes on the latest state. The page already passed `setContent` straight
+through, and `useState`'s setter accepts updaters, so no page change was needed.
+Re-measured after the fix: double-click gives two rows; five Adds in one tick
+give five rows, one per list.
+
+## The fix
+
+**`src/lib/commerce/productContentEditing.ts` (new).** Pure, dependency-free
+editor-state operations: `addRow`, `updateRow`, `removeRow`, `moveRow`,
+`replaceList`, plus the per-list wording and the incomplete-row predicates. One
+rule runs through all of it: **editor state is verbatim.** What staff typed is
+what is held, spaces and blank rows and all. Normalization happens exactly
+twice — reading from the column, and `serializeDetailContent` on save — and
+never in between.
+
+`replaceList` is the single write path and carries the four untouched lists
+across *by reference*, which makes "adding a benefit reset my FAQs" structurally
+impossible rather than merely tested for.
+
+**Rows are capped at the parser's own limit.** `addRow` refuses at 60 and the
+button says why, instead of appending a 61st row that a save would discard.
+Field lengths are capped at the same numbers the parser truncates at, exported
+from `productContent.ts` as `CONTENT_LIMITS` so there is one copy of each.
+
+**Empty rows are refused out loud.** Dropping incomplete rows on save stays —
+an unlabelled specification has nothing to render — but each list now says what
+will not be saved and why, before Save is pressed. A test pins the count to what
+`serializeDetailContent` actually removes, so the notice cannot drift from the
+behaviour it describes.
+
+**Accessible names.** Both entry lists previously rendered a button reading
+"Add an entry", so fitment and included-items were indistinguishable to a screen
+reader, and `aria-label="Remove this entry"` was repeated identically on all
+fifteen rows. Every control now names its list and its 1-based position: "Move
+benefit 2 up", "Remove included item 1". The first row's up arrow used to be
+labelled "Move to position 0", a position that does not exist.
+
+**Focus follows a new row.** The added row's field does not exist when the
+button is clicked, so the target is parked in a ref and claimed by that field's
+own ref callback as it mounts — no state, no effect, no extra render.
+
+**`ListControls` moved to module scope.** A component declared in a render body
+is a new type every render, so React remounted it and threw away focus the
+moment a control was used. ESLint's `react-hooks/static-components` caught the
+same mistake being reintroduced as an `AddButton` component mid-fix; it is a
+function returning elements now.
+
+## Files changed
+
+- `src/lib/commerce/productContentEditing.ts` — new
+- `src/components/staff/ProductContentEditor.tsx` — rewritten mutation path
+- `src/lib/commerce/productContent.ts` — `StoredDetailContent`, the FAQ wire
+  shape, exported limits, and a parser that reads either FAQ key pair
+- `tests/product-content-editor.test.ts` — new, 40 tests
+- `tests/product-detail.test.ts` — the round-trip assertion made able to fail
+
+`src/app/staff/catalog/page.tsx` is **unchanged**. No schema change, no
+migration, no new dependency, no permission touched.
+
+## Validation
+
+- **633 tests pass, 0 fail** (593 before; 40 added).
+- Typecheck clean. Production build clean, exit 0.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings). The new
+  code lints clean.
+- The new suite was confirmed to **fail against the shipped build**: 9 of 38
+  failed against `edf78c3`'s component — including "the editor never re-parses
+  its own state", which is the root cause stated as an assertion — and the FAQ
+  persistence tests failed against `edf78c3`'s `productContent.ts`.
+
+### Driven in a real browser, against the live editor
+
+Dev server, `/staff/catalog`, with staff permissions seeded into the React Query
+cache and both real products loaded through the anon key. **Nothing was saved,
+and production data is unchanged** — verified afterwards against the database:
+both products still hold zero benefits, specs, compatibility, included items and
+FAQs, with their original `updated_at`.
+
+| Check | Result |
+|-------|--------|
+| All five Add buttons | **Pass.** Each adds exactly one row. |
+| Focus after Add | **Pass.** Lands on the new row's first field, all five lists. |
+| Multi-word typing | **Pass.** "Machined billet", "M10 x 1.25" — spaces kept. |
+| Second row added | **Pass.** First row's values untouched. |
+| Cross-list isolation | **Pass.** Four lists unchanged through every operation. |
+| Reorder | **Pass.** Move up, move back; only the intended list moved. |
+| Remove first / middle / last | **Pass.** Only the intended row; values travel with their own row. |
+| Double-click Add | **Pass** (after the updater fix). Two rows. |
+| Incomplete-row notices | **Pass.** Correct and specific per list. |
+| Hit test on Add | **Pass.** Resolves to the button, `pointer-events: auto`. |
+| Forms | **Pass.** Editor is outside the create-product form; 1 form on the page, 0 nested. |
+| Button types | **Pass.** All 24 editor buttons are `type="button"`. |
+| Tab order | **Pass.** title, Remove, description, Add, then the next list. Disabled arrows correctly skipped. |
+| Console | Only the **pre-existing** `data-motion` hydration mismatch, which reproduces on `/`, plus a local 503 from the deliberately fake service-role key. Nothing from the editor. |
+
+### What could not be verified here, and why
+
+- **Enter/Space activating a button.** Proven environmental, not a code defect:
+  a plain native `<button>` injected as a control received a **trusted** Enter
+  keydown and still registered zero clicks, so this pane does not dispatch the
+  browser's default activation. Tab navigation *does* work and was used. What
+  makes keyboard activation correct is asserted instead: every control is a real
+  `<button type="button">`, with no `tabindex` and no `role="button"` stand-ins.
+- **Screenshots.** The pane was not compositing frames. The rendered state was
+  captured from the DOM instead.
+- **A real save as a signed-in staff member.** Unchanged limitation from passes
+  3 to 6: signing in means handling a password.
+
+## Noticed, not acted on
+
+Thirteen buttons elsewhere on `/staff/catalog` — Save changes, Duplicate,
+Archive, Delete permanently, Add option, the media and option controls — carry
+no explicit `type`, so they default to `submit`. All of them are currently
+**outside** any form, so nothing can be submitted and there is no live defect.
+It is the exact hazard the brief named, one refactor away from mattering.
+Outside this repair; flagged separately.
