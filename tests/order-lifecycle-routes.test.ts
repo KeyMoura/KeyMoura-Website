@@ -117,7 +117,7 @@ test("the refund route does not accept a payment id from the client", () => {
 });
 
 test("a client-supplied idempotency key can only collapse a duplicate, never widen an amount", () => {
-  assert.match(staffRefund, /idempotency_key.*slice\(0, 80\)/s);
+  assert.match(staffRefund, /idempotency_key[\s\S]*slice\(0, 80\)/);
   assert.match(staffRefund, /manual-\$\{id\}-\$\{amount\}/);
 });
 

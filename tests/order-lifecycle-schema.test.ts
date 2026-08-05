@@ -211,21 +211,21 @@ test("every security definer function pins its search_path", () => {
 
 test("one open cancellation request per order is enforced by a unique index, not by a route", () => {
   assert.equal(
-    /create unique index[^;]*order_cancellation_requests_open_idx[^;]*where status = 'pending'/s.test(statements),
+    /create unique index[^;]*order_cancellation_requests_open_idx[^;]*where status = 'pending'/.test(statements),
     true
   );
 });
 
 test("refund idempotency keys are unique", () => {
   assert.equal(
-    /create unique index[^;]*order_refunds_idempotency_key_idx[^;]*where idempotency_key is not null/s.test(statements),
+    /create unique index[^;]*order_refunds_idempotency_key_idx[^;]*where idempotency_key is not null/.test(statements),
     true
   );
 });
 
 test("inventory adjustments are idempotent on their key", () => {
   assert.equal(
-    /create unique index[^;]*inventory_adjustments_idempotency_idx[^;]*where idempotency_key is not null/s.test(statements),
+    /create unique index[^;]*inventory_adjustments_idempotency_idx[^;]*where idempotency_key is not null/.test(statements),
     true
   );
 });

@@ -1662,3 +1662,495 @@ no explicit `type`, so they default to `submit`. All of them are currently
 **outside** any form, so nothing can be submitted and there is no live defect.
 It is the exact hazard the brief named, one refactor away from mattering.
 Outside this repair; flagged separately.
+
+---
+
+# Pass 7 — order lifecycle: cancellations, refunds, returns
+
+Branch `order-lifecycle-cancellations-refunds-returns-20260805`, from `bbf2b57`.
+
+## Scope decision, and why
+
+The brief asked for sixteen phases: state normalization, cancellations,
+refunds, returns, shipping and fulfillment, inventory, discount restoration,
+Stripe Tax, ~40 transactional emails, staff and customer UI, policy settings,
+printable documents, audit, reconciliation, security review and validation.
+
+**The audit found three live financial defects, not just missing features.**
+That changed what "largest coherent deployable lifecycle" meant.
+
+1. **A refund could be issued twice for the same money.** The webhook handled
+   no refund events at all, so a refund issued from the **Stripe Dashboard**
+   never reached this database: `orders.amount_refunded_cents` stayed where it
+   was, and the staff refund form would happily send the same amount again.
+2. **A refund was recorded as complete because the API call returned.**
+   `order_refunds` had no status column; the route called Stripe and, on a
+   resolved promise, wrote the accounting. A Stripe refund can come back
+   `pending` and settle later, and it can fail after acceptance. "We asked" was
+   being stored as "it happened", with no state that could ever say otherwise.
+3. **Direct-purchase checkout never touched inventory.** `create_checkout_order`
+   decrements stock for the *custom request* path, but `/api/cart/checkout`
+   writes its order directly and moves nothing. A tracked product could be
+   bought any number of times without its count changing.
+
+Alongside those: customers could not cancel an order at all — no route, no UI,
+nothing — and returns did not exist in any form.
+
+The brief's own fallback ordering is cancellations and refunds, then returns,
+then fulfillment, then inventory, then tax, then emails. **This pass completes
+the first three in full, plus the inventory commit/restore loop those two
+depend on to be correct.** Shipping configuration, the full inventory
+management surface, Stripe Tax and the complete email catalogue are deferred
+and specified below.
+
+Going breadth-first would have left every financial workflow half-wired, which
+the brief explicitly forbids — and would have left the double-refund hole open.
+
+## Phase 1 — state model — complete
+
+**Five independent state fields, not one enum.** An order can be paid, in
+production, carrying an open cancellation request and partly returned at the
+same moment. A single `status` column needs a value per combination and is
+still wrong the first time a new combination happens.
+
+`orders.status` is **unchanged**: same eleven values, every existing reader
+keeps working. The new columns answer the questions it was being asked to
+answer as a side effect.
+
+| Field | States |
+|-------|--------|
+| `payment_status` | not_required, unpaid, payment_pending, partial, paid, partially_refunded, refunded, payment_failed, payment_canceled |
+| `fulfillment_status` | not_required, unfulfilled, processing, ready_for_pickup, picked_up, shipped, delivered, returned, partially_returned |
+| `cancellation_status` | none, requested, under_review, approved, denied, withdrawn, refund_pending, refund_failed, completed |
+| `return_status` | none, requested, under_review, approved, denied, awaiting_shipment, in_transit, received, inspected, refund_pending, completed, closed |
+| `order_refunds.status` | pending, succeeded, failed, canceled |
+
+**Two states the old `payment_status` was forced to lie about.** A partly
+refunded order read as plain `paid`. A declined async payment left it `unpaid`,
+with no way to tell "never tried" from "tried and was refused". The CHECK is
+only **widened** — every previously legal value stays legal, so no stored row
+can fail it, and a test asserts exactly that.
+
+Production reuses the existing thirteen production-job states from pass 5
+rather than inventing a parallel set.
+
+### Transition graph
+
+Defined once in `src/lib/commerce/orderLifecycle.ts` and imported by the
+routes, both UIs and the tests, so none of them can hold a different opinion.
+
+**Fulfillment moves forward only.**
+
+    not_required     -> unfulfilled
+    unfulfilled      -> processing | not_required
+    processing       -> ready_for_pickup | shipped
+    ready_for_pickup -> picked_up | shipped
+    picked_up        -> returned | partially_returned
+    shipped          -> delivered | returned | partially_returned
+    delivered        -> returned | partially_returned
+    partially_returned -> returned
+    returned         -> (terminal)
+
+A shipped order silently becoming "unfulfilled" is how a second label gets
+printed for a parcel already in the post, so backward moves are not in the
+graph at all. A mistake is corrected by editing the tracking details, which is
+audited.
+
+**Returns.**
+
+    requested         -> under_review | approved | denied
+    under_review      -> approved | denied
+    approved          -> awaiting_shipment | in_transit | received
+    awaiting_shipment -> in_transit | received | closed
+    in_transit        -> received | closed
+    received          -> inspected
+    inspected         -> refund_pending | completed | closed
+    refund_pending    -> completed | closed
+    completed         -> closed
+    denied, closed    -> (terminal)
+
+`received` cannot be skipped on the way to `inspected` — the receipt is what
+proves the parcel actually arrived. `denied` is terminal: a denied return
+cannot silently reopen, and asking again means a new row with its own reason
+and timestamp.
+
+**Cancellation requests.**
+
+    pending   -> approved | denied | withdrawn
+    approved  -> completed | failed
+    failed    -> completed        (a failed refund can be retried)
+    denied, withdrawn, completed -> (terminal)
+
+### Snapshots
+
+`order_return_items` copies `product_name` and `unit_price_cents` at request
+time. What was returned has to stay describable after the product is renamed,
+repriced or deleted. `order_returns.return_address` is snapshotted at approval:
+a later change to the shop's address must not redirect a parcel already in the
+post.
+
+## Phase 2 — cancellations — complete
+
+Two paths, chosen server-side from live rows by `evaluateCancellation`.
+
+**Unpaid and eligible → cancelled immediately.** There is no money to unwind
+and nothing for staff to weigh up. Inventory is released, the discount
+redemption is returned according to policy, and the event is recorded as a
+completed request so the order's history reads the same whichever path
+cancelled it.
+
+**Paid → a request.** The customer never triggers a refund. Approving one is a
+staff decision, and whether it carries a refund is a separate choice within it.
+
+Eligibility considers order type, payment state, fulfillment state, production
+state (read from the linked `production_jobs`), materials commitment, custom or
+personalized status, and a configurable unpaid window. A shipped or delivered
+order is refused and pointed at returns instead.
+
+**Duplicate prevention is structural.** A partial unique index on
+`order_cancellation_requests(order_id) where status = 'pending'` means two
+tabs, a double click and a retried fetch all collapse to one row — the loser
+gets `23505`, not a second request. Withdrawing and deciding are both
+conditional on `status = 'pending'`, so anything that landed in between matches
+zero rows instead of overwriting it.
+
+**A denial requires a customer-visible reason**, and it is exactly what the
+customer is shown. The internal note is a separate column that the customer
+endpoint does not select at all.
+
+## Phase 3 — refunds — complete
+
+Rewritten from "call Stripe and hope" to a two-phase settlement.
+
+1. **`begin_order_refund`** locks the order, recomputes what is refundable, and
+   inserts one `pending` row per payment the refund draws from, each with its
+   own idempotency key. It refuses outright if the amount exceeds what is left.
+2. The route calls Stripe once per leg, passing **the same key** as Stripe's own
+   idempotency key, so a retried fetch cannot create a second refund on either
+   side.
+3. **`settle_order_refund`** writes Stripe's answer. It is the only place
+   `orders.amount_refunded_cents` grows, and it is a no-op on a refund that is
+   not still `pending`.
+
+**Refundable subtracts pending refunds as well as settled ones.** Money handed
+to Stripe and not yet confirmed is already committed; counting it as available
+is exactly how one order gets refunded twice by two people reading the same
+screen.
+
+**A Stripe exception releases the claim.** An unreleased hold would block every
+later refund on that order forever, so the failure path settles the leg as
+`failed` rather than leaving it pending.
+
+**`reconcile_stripe_refund` adopts refunds this application never created.**
+The webhook now handles `refund.created`, `refund.updated`, `refund.failed` and
+the older `charge.refund.updated` — which one an account receives depends on
+its API version — so a Dashboard refund lands in the local accounting instead
+of leaving a hole the refund form would fall into.
+
+**`refunds.issue` is its own permission.** Refunds used to need
+`orders.manage`, which meant anyone who could update a tracking number could
+also send money out. It is granted to no non-admin role by default.
+
+The old `record_stripe_order_refund` RPC is left in the database (dropping it
+would not be additive) but **nothing calls it any more**, and a test asserts
+the route does not.
+
+## Phase 4 — returns — complete
+
+Customer: choose eligible items and quantities, pick a reason, submit; then
+watch the decision, the instructions, the receipt, the inspection and the
+refund. The response never promises a refund and the confirmation says so.
+
+Staff: review, approve or deny with a customer-visible reason, set per-line
+approved quantities, issue instructions and a snapshotted return address, mark
+awaiting shipment / in transit / received with per-line received quantities and
+condition, then inspect — choosing the outcome, whether stock goes back, and
+whether to refund and how much.
+
+**Custom and personalized products are excluded by default** rather than
+inheriting the catalogue's 30-day rule. A bespoke part cannot be resold, and
+`allowCustomProducts` is off unless the owner turns it on.
+
+**Quantities are validated inside `create_order_return`**, under a row lock,
+summing existing returns that are neither denied nor closed. Doing that check
+in a route would leave a window between the read and the insert wide enough to
+return the same item twice from two tabs.
+
+**Stock returns only at inspection, and only on an explicit decision.**
+Restocking at approval would put a part back on the shelf that is still in the
+post; restocking damaged goods would oversell the next customer.
+
+## Inventory — commit and restore loop only
+
+Not the full Phase 6. What was built is what cancellations and returns need to
+be correct, and it closes the overselling hole.
+
+`inventory_adjustments` gives stock a history: delta, before, after, reason,
+actor, and a reference to the order, item, return or cancellation.
+`adjust_product_inventory` is the only writer of `products.inventory_quantity`
+— one statement reads, changes and records, under a row lock.
+
+- **Committed** at confirmed payment, keyed per order item, so a webhook
+  delivered five times decrements once.
+- **Restored** on cancellation, reading the *ledger* for what was actually
+  committed rather than the order lines — an order that never decremented stock
+  cannot invent it.
+- **Restocked** on return inspection, once per line.
+
+A made-to-order or unlimited product is skipped rather than driven negative,
+and that is reported as a normal outcome, not an error.
+
+**Reservation at checkout is deliberately deferred.** Committing at checkout
+would hold stock for every abandoned Stripe session, which needs expiry,
+sweeping and abandoned-checkout handling to be safe. Committing at confirmed
+payment means stock moves exactly when the money does. The tradeoff is honest:
+**two customers can both check out the last unit**, and the second one's
+payment succeeds. Reservations with expiry are the fix and are specified below.
+
+## Discount restoration
+
+`release_order_discount` deletes the redemption row *and* decrements
+`total_uses`, rather than only lowering the counter. A code capped at one use
+per customer has to stop counting the cancelled order, not merely free a global
+slot. It is guarded on the row still existing, so calling twice restores once.
+Staff choose whether to release it as part of approving a cancellation.
+
+The first-order-only check in `cartService` was fixed at the same time: it
+counted only `payment_status = 'paid'`, so any earlier partial refund would
+have let a one-per-customer code be used a second time.
+
+## Policy settings
+
+`site_settings.commerce_policy` (jsonb, defaulted) holds cancellation, return
+and inventory rules in one place instead of spelling them out in each route.
+`parseCommercePolicy` is **total** — any input at all yields a usable policy —
+because the column has only an object CHECK behind it and a hand-edited row
+must not be able to take cancellations offline.
+
+Defaults are deliberately conservative: custom work is not returnable, the
+return window is 30 days, materials-committed blocks online cancellation.
+**No staff editing surface was built for this yet** — see deferred work.
+
+## Files changed
+
+New:
+
+- `supabase/migrations/20260805010000_order_lifecycle_cancellations_refunds_returns.sql`
+- `src/lib/commerce/orderLifecycle.ts` (pure), `orderLifecycleServer.ts` (server)
+- `src/app/api/orders/[id]/cancellation/route.ts` (POST, DELETE)
+- `src/app/api/orders/[id]/returns/route.ts`
+- `src/app/api/orders/[id]/lifecycle/route.ts`
+- `src/app/api/staff/orders/[id]/cancellation/route.ts`
+- `src/app/api/staff/orders/[id]/returns/[returnId]/route.ts`
+- `src/app/api/staff/orders/[id]/lifecycle/route.ts`
+- `src/components/staff/OrderLifecyclePanel.tsx`
+- `src/components/commerce/OrderLifecycleActions.tsx`
+- `tests/order-lifecycle.test.ts`, `order-lifecycle-schema.test.ts`,
+  `order-lifecycle-routes.test.ts`
+
+Modified:
+
+- `src/app/api/staff/orders/[id]/refund/route.ts` — rewritten
+- `src/app/api/webhooks/stripe/route.ts` — refund events, inventory commit,
+  `payment_failed`
+- `src/lib/permissions.ts` — seven permissions plus metadata
+- `src/lib/commerceEmail.ts` — twelve template keys
+- `src/lib/commerce/rateLimit.ts` — two buckets
+- `src/lib/orderHub.ts`, `src/lib/commerce/cartService.ts`,
+  `src/app/staff/orders/[id]/page.tsx` — `payment_status` readers corrected
+- `src/app/orders/[id]/page.tsx` — lifecycle actions mounted
+- `tests/payment-monitoring.test.ts`, `tests/v1-business-safety.test.ts`
+
+## Permissions
+
+`fulfillment.view`, `fulfillment.manage`, `cancellations.review`,
+`returns.review`, `refunds.issue`, `inventory.view`, `inventory.manage`.
+
+Reading, deciding and paying are separated on purpose: a shop hand who updates
+tracking should not thereby be able to refund a customer. **Admins get all of
+them automatically** (`loadPermissionsForUser` returns the full set for
+`admin`). **No non-admin role has any of them** until one is granted in
+`/staff/security/roles`.
+
+## Validation
+
+- **756 tests pass, 0 fail** (633 before; 123 added across three suites).
+- Typecheck clean. Production build clean, exit 0; all seven new routes present.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings). New code
+  lints clean.
+- Vercel **preview build: success**.
+
+### Concurrency and idempotency, against real Postgres
+
+Run against the **production database** as `service_role`, inside a transaction
+ended with a sentinel exception to force rollback. Every check passed:
+
+| Check | Result |
+|-------|--------|
+| Commit inventory | 10 → 7 for a quantity-3 order |
+| **Replayed webhook** (2nd and 3rd commit) | **no further decrement** |
+| Pending hold honoured | with $50 pending on $300 paid, refundable read $250 and a $260 refund was refused |
+| **Duplicate idempotency key** | returned the *same* refund row; `order_refunds` count stayed at 1 |
+| Money before Stripe confirms | `amount_refunded_cents` = 0 after the claim |
+| Settle | $50 applied, `payment_status` → `partially_refunded` |
+| **Repeated settle** (webhook replay) | no-op, no double count |
+| Second partial | $150 total |
+| Refund beyond remaining | refused |
+| **Failed refund** | marked `failed`, moved no money, **released its hold** so a retry was accepted |
+| **Dashboard refund** | adopted by `reconcile_stripe_refund` → $200 total, and idempotent on redelivery |
+| Return created | `RMA-0001` from the sequence |
+| Second open return | refused |
+| Over-quantity return | refused (2 of 3 already spoken for) |
+| Restock | 7 → 9, and idempotent |
+| Cancellation restore | 9 → 12, and idempotent |
+
+**Production verified untouched afterwards:** 6 orders, 2 products, 1 order
+item, 0 refunds, 0 cancellation requests, 0 returns, 0 inventory adjustments,
+no leftover test product. The return sequence was reset to 1 — `nextval` is not
+transactional, so the rolled-back run had still consumed `RMA-0001`, and the
+table is empty so the shop's first real return gets that number.
+
+### Local browser
+
+Dev server, unauthenticated. All eight lifecycle endpoints refuse correctly:
+
+    GET    /api/orders/<id>/lifecycle          -> 401
+    POST   /api/orders/<id>/cancellation       -> 401
+    DELETE /api/orders/<id>/cancellation       -> 401
+    POST   /api/orders/<id>/returns            -> 401
+    GET    /api/staff/orders/<id>/lifecycle    -> 403
+    POST   /api/staff/orders/<id>/cancellation -> 403
+    POST   /api/staff/orders/<id>/refund       -> 403
+    POST   /api/staff/orders/<id>/returns/<r>  -> 403
+
+The refund route refuses **before** Stripe is reached. Console carried only the
+pre-existing `data-motion` hydration mismatch and the local 503 from the
+deliberately fake service-role key.
+
+### Three existing tests updated, not weakened
+
+Each asserted the *old* refund mechanics. All three were re-pointed at where
+the property now lives and made **stricter**:
+
+- `refund accounting is atomic…` — now also asserts the two-phase RPC pair and
+  that `record_stripe_order_refund` is **absent** from the route.
+- `Sentry covers every Next.js runtime…` — now asserts the shared
+  `logLifecycleFailure` wrapper *and* that Postgres `details` is never logged.
+- `staff refunds are permission checked…` — now requires `refunds.issue` and
+  asserts `orders.manage` is **not** accepted.
+
+## Migration application — 2026-08-05
+
+Applied with approval through `execute_sql` in guarded transactions, **not**
+`apply_migration` — that tool stamps its own timestamp as the version, which
+caused six of the seven ledger drifts repaired in pass 3. The ledger row was
+inserted by hand under the repository filename's version.
+
+- **Before**: `order_cancellation_requests` absent; exactly 37 migration rows;
+  orders/products/order_items at 6/2/1.
+- **After**: 4 tables, 9 functions, 4 policies; 4 `service_role` SELECT grants;
+  **zero** grants for `anon` or `PUBLIC`; 38 migration rows; 22 email
+  templates; orders/products/order_items unchanged at 6/2/1.
+
+All guards held. **The ledger is exact: 38 repo files, 38 rows, versions and
+names identical.**
+
+A follow-up transaction revoked `authenticated`'s inherited TRUNCATE,
+REFERENCES and TRIGGER on the three customer-readable tables and granted back
+only SELECT. TRUNCATE is not filtered by RLS, so a policy does not close it.
+
+**Supabase security advisors: no new findings.** All four new tables have
+policies, and none of the nine new SECURITY DEFINER functions appears in either
+"executable by anon/authenticated" warning, because all nine are revoked from
+both. Every listed finding is pre-existing.
+
+## What could not be verified, and why
+
+- **A signed-in customer or staff session.** Unchanged limitation from passes 3
+  to 6: signing in means handling a password, which is out of bounds for an
+  automated session. What was done instead is stronger at the database layer
+  and weaker at the UI layer — the exact RPCs the routes call were exercised
+  against the real production database as the exact role the routes use.
+- **A real Stripe refund.** Reaching one needs a real paid order and a real
+  card. The refund *arithmetic*, idempotency, hold release and reconciliation
+  were exercised against real Postgres with synthetic payments; the Stripe API
+  call itself was not made.
+- **The populated staff and customer panels.** Both render from endpoints that
+  need a session. Their rules are covered by the 123 new tests; the rendering
+  of populated states is not.
+
+## Deferred, with what already exists
+
+1. **Shipping configuration and the fulfillment state machine.** The
+   `fulfillment_status` column, its transition graph and its labels exist and
+   are tested. What does not: flat-rate methods, free-shipping thresholds,
+   supported destinations, origin address, package defaults, and staff controls
+   that *write* `fulfillment_status`. Today fulfillment is still driven by the
+   pass-1 `shipment_action` on `PATCH /api/staff/orders/[id]`, which sets
+   `shipped_at`/`delivered_at` but not the new column. **Wiring that PATCH to
+   the new state field is the single highest-value next step** and is a small
+   change — the graph and the labels are already there.
+2. **Inventory management surface.** The ledger, the atomic function and the
+   commit/restore loop exist. No staff overview, low-stock view, manual
+   adjustment form, CSV export or low-stock notification. No reservation at
+   checkout — see the honest tradeoff recorded above.
+3. **Stripe Tax.** Not integrated at all; no `automatic_tax` anywhere. Owner
+   decision recorded on 2026-08-05: leave it out and document it rather than
+   ship a disabled code path. What it needs: Stripe Tax enabled on the account,
+   at least one tax registration, a product tax code per product, a decision on
+   shipping tax behaviour, `automatic_tax: { enabled: true }` plus address
+   collection on the Checkout Session, immutable tax snapshots on the order, and
+   tax-aware refund arithmetic. **Stripe Tax does not handle registration or
+   filing** — that is a business obligation, not a checkbox.
+4. **The full email catalogue.** Twelve lifecycle templates were added and are
+   sent idempotently. The brief lists roughly forty; production, fulfillment,
+   payment-reminder and most staff-alert templates are not written. There is no
+   staff preview-before-send and no resend control.
+5. **Printable documents.** Packing slip, pickup slip, return authorization and
+   refund record are not built. The print CSS foundation from pass 5 is in place.
+6. **Reconciliation tooling.** `reconcile_stripe_refund` handles the webhook
+   path. There is no sweep that walks Stripe for refunds whose webhook was
+   missed, and no report comparing order totals against snapshots.
+7. **Everything from pass 6's deferred list** — category routes, reviews,
+   support tickets, Facebook auth, Turnstile, SEO structured data — unchanged.
+
+## External setup still required
+
+1. **Grant the new permissions** to whichever non-admin roles should use them,
+   in `/staff/security/roles`. Admins already have all seven. **Be deliberate
+   with `refunds.issue`** — it is the only permission that moves money out.
+2. **Add the refund events to the Stripe webhook endpoint.** The handler is
+   deployed, but Stripe only delivers what the endpoint is subscribed to. Add
+   `refund.created`, `refund.updated`, `refund.failed` (or
+   `charge.refund.updated` on an older API version) in the Stripe Dashboard.
+   **Until this is done, the Dashboard-refund hole stays open** — the code can
+   reconcile, but it will never be told there is anything to reconcile.
+3. **Set the return address** in `commerce_policy.returns.returnAddress`. Until
+   it is set, approving a return snapshots `null` and staff must type the
+   address into the instructions each time. There is no editing UI yet, so this
+   is a direct `site_settings` update.
+
+## Owner decisions still required
+
+- Cancellation window for unpaid orders (`unpaidWindowHours`, default 0 = no
+  window).
+- Whether production start blocks online cancellation
+  (`blockAfterProductionStart`, default off; materials-committed is on).
+- Return window (default 30 days) and whether custom work is returnable
+  (default no).
+- Who pays return postage (default customer) and whether a restocking fee
+  applies (default 0%).
+- Customer-facing policy text for `/refunds` and `/shipping`. **No legal policy
+  was invented** — those fields are empty strings.
+
+## Exact continuation steps
+
+1. **Subscribe the Stripe webhook to the refund events** (item 2 above). This
+   is the one step that leaves a real hole open until it is done.
+2. **Wire `PATCH /api/staff/orders/[id]`'s `shipment_action` to
+   `fulfillment_status`**, using `canTransitionFulfillment` from
+   `orderLifecycle.ts`. Small, and it completes the state model end to end.
+3. **Drive one cancellation and one return as a signed-in staff member.** That
+   is the one path no automated session can reach.
+4. Then pick up shipping configuration and the inventory surface, in that
+   order — both now have their schema and their rules in place.
