@@ -5,6 +5,17 @@ import { captureCommerceException } from "@/lib/monitoring";
 import { resolveCart } from "@/lib/commerce/cartService";
 import { readGuestToken } from "@/lib/commerce/cartSession";
 import { mergeGuestCart } from "@/lib/commerce/cartService";
+import {
+  linkCartReservationsToOrder,
+  loadCommerceSettings,
+  releaseReservations,
+  reserveCartInventory,
+} from "@/lib/commerce/commerceSettingsServer";
+import {
+  loadProductFulfillment,
+  planFulfillment,
+  toQuotableLines,
+} from "@/lib/commerce/checkoutFulfillment";
 
 /**
  * Direct-purchase checkout.
@@ -60,12 +71,80 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const totalCents = cart.totals.totalCents;
-  if (!cart.totals.chargeable || totalCents < STRIPE_MINIMUM_CENTS) {
+  if (!cart.totals.chargeable) {
     return NextResponse.json({ error: "This cart cannot be checked out." }, { status: 409 });
   }
 
   const lines = cart.priced.lines;
+
+  // ---------------------------------------------------------------------
+  // Fulfillment, priced server-side
+  // ---------------------------------------------------------------------
+  // The browser sends a *method id* and an address. It never sends a shipping
+  // price, and no field carrying one is read: the charge is recomputed here
+  // from the configured methods and this server's own subtotal.
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const settings = await loadCommerceSettings();
+  const productFulfillment = await loadProductFulfillment(lines.map((line) => line.productId));
+  const quotableLines = toQuotableLines(lines, productFulfillment);
+
+  const planned = planFulfillment({
+    settings,
+    lines: quotableLines,
+    products: productFulfillment,
+    requestedMethod: body.fulfillmentMethod,
+    requestedShippingMethodId: body.shippingMethodId,
+    requestedAddress: body.shippingAddress,
+    subtotalCents: cart.totals.subtotalCents,
+    discountCents: cart.totals.discountCents,
+    orderKind: "direct_purchase",
+  });
+
+  if (!planned.ok) {
+    return NextResponse.json({ error: planned.error, field: planned.field }, { status: 400 });
+  }
+
+  const { plan } = planned;
+  const totalCents = plan.totals.totalCents;
+  if (totalCents < STRIPE_MINIMUM_CENTS) {
+    return NextResponse.json({ error: "This cart cannot be checked out." }, { status: 409 });
+  }
+
+  // ---------------------------------------------------------------------
+  // Hold the stock before taking the customer to Stripe
+  // ---------------------------------------------------------------------
+  // This is the window pass 7 recorded as open: without a hold, two customers
+  // can both check out the last unit and both payments succeed. The hold is
+  // atomic and all-or-nothing, and it lapses on its own.
+  if (!cart.cartId) {
+    return NextResponse.json({ error: "Could not start checkout. Please try again." }, { status: 500 });
+  }
+
+  const reservation = await reserveCartInventory({
+    cartId: cart.cartId,
+    userId: user.id,
+    lines: lines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+    minutes: settings.inventory.reservationMinutes,
+    allowOversell: settings.inventory.allowOverselling,
+  });
+
+  if (!reservation.ok) {
+    return NextResponse.json(
+      {
+        error:
+          reservation.shortages.length === 1
+            ? `${reservation.shortages[0].product_name} only has ${reservation.shortages[0].available} left.`
+            : "Some items in your cart are no longer available in the quantity you asked for.",
+        shortages: reservation.shortages.map((entry) => ({
+          productName: entry.product_name,
+          requested: entry.requested,
+          available: entry.available,
+        })),
+      },
+      { status: 409 }
+    );
+  }
+
   const summaryName =
     lines.length === 1
       ? lines[0].product.name
@@ -81,16 +160,30 @@ export async function POST(req: NextRequest) {
       product_id: lines.length === 1 ? lines[0].productId : null,
       product_name: summaryName,
       quantity: cart.priced.itemCount,
-      subtotal_cents: cart.totals.subtotalCents,
-      discount_cents: cart.totals.discountCents,
+      subtotal_cents: plan.totals.subtotalCents,
+      discount_cents: plan.totals.discountCents,
+      shipping_cents: plan.totals.shippingCents,
+      tax_cents: plan.totals.taxCents,
       discount_code: cart.discount?.ok ? cart.discount.code.code : null,
       discount_code_id: cart.discount?.ok ? cart.discount.code.id : null,
       agreed_price_cents: totalCents,
+      // Snapshots. A settings change six months from now must not rewrite what
+      // this customer was charged or redirect a parcel already in the post.
+      fulfillment_method: plan.method,
+      fulfillment_status: plan.method === "none" ? "not_required" : "unfulfilled",
+      shipping_address: plan.shippingAddress,
+      shipping_method_snapshot: plan.shippingMethodSnapshot,
+      shipping_origin_snapshot: plan.shippingOriginSnapshot,
+      pickup_location_snapshot: plan.pickupLocationSnapshot,
+      package_snapshot: plan.packageSnapshot,
     })
     .select("id")
     .single();
 
   if (orderError || !order) {
+    // Give the stock straight back. An unreleased hold on a checkout that never
+    // happened is an outage that presents as an out-of-stock product.
+    await releaseReservations({ reason: "checkout_order_failed", cartId: cart.cartId });
     captureCommerceException(orderError, { operation: "create_direct_order" });
     return NextResponse.json({ error: "Could not start checkout. Please try again." }, { status: 500 });
   }
@@ -113,6 +206,7 @@ export async function POST(req: NextRequest) {
   if (itemsError) {
     // No payment exists yet, so removing the shell order is safe and keeps a
     // half-written order out of the customer's history.
+    await releaseReservations({ reason: "checkout_items_failed", cartId: cart.cartId });
     await routeServiceClient.from("orders").delete().eq("id", order.id);
     captureCommerceException(itemsError, { operation: "create_direct_order_items", orderId: order.id });
     return NextResponse.json({ error: "Could not start checkout. Please try again." }, { status: 500 });
@@ -146,6 +240,10 @@ export async function POST(req: NextRequest) {
         ],
         success_url: `${siteUrl}/orders/${order.id}?payment=success`,
         cancel_url: `${siteUrl}/cart?payment=cancelled`,
+        // The session dies when the hold does. Without this the session would
+        // outlive its reservation by up to 24 hours, and a customer could pay
+        // for stock that had already been released to somebody else.
+        expires_at: Math.floor(Date.now() / 1000) + settings.inventory.reservationMinutes * 60,
       },
       { idempotencyKey: `direct-checkout-${order.id}-${totalCents}` }
     );
@@ -160,16 +258,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Could not prepare checkout. Please try again." }, { status: 500 });
     }
 
+    // The hold now belongs to this order and this session, which is what lets
+    // `checkout.session.expired` and the payment webhook find it later.
+    await linkCartReservationsToOrder(cart.cartId, order.id, session.id);
+
     // The cart is marked converted only after a session exists. It is not
     // emptied: payment has not happened yet, and a customer who abandons
     // Stripe must come back to a cart that still holds their items.
     await routeServiceClient
       .from("carts")
       .update({ converted_order_id: order.id, updated_at: new Date().toISOString() })
-      .eq("id", cart.cartId ?? "");
+      .eq("id", cart.cartId);
 
     return NextResponse.json({ url: session.url, orderId: order.id });
   } catch (error) {
+    await releaseReservations({ reason: "checkout_session_failed", cartId: cart.cartId, orderId: order.id });
     await routeServiceClient.from("orders").delete().eq("id", order.id);
     captureCommerceException(error, { operation: "create_direct_checkout_session", orderId: order.id });
     return NextResponse.json({ error: "Could not start checkout. Please try again." }, { status: 500 });

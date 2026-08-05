@@ -54,12 +54,19 @@ export const FULFILLMENT_STATES = [
   "not_required",
   "unfulfilled",
   "processing",
+  // Added in pass 8. `ready_to_fulfill` is the packed-and-waiting state a
+  // shipping order sits in between production finishing and a label being
+  // bought; `canceled` is where fulfillment stops when the order itself is
+  // cancelled, which previously had nowhere to go and left a cancelled order
+  // reading "Not yet prepared" forever.
+  "ready_to_fulfill",
   "ready_for_pickup",
   "picked_up",
   "shipped",
   "delivered",
   "returned",
   "partially_returned",
+  "canceled",
 ] as const;
 export type FulfillmentState = (typeof FULFILLMENT_STATES)[number];
 
@@ -110,15 +117,84 @@ export type RefundState = (typeof REFUND_STATES)[number];
  * state because that is where a return actually lands.
  */
 export const FULFILLMENT_TRANSITIONS: Readonly<Record<FulfillmentState, readonly FulfillmentState[]>> = {
-  not_required: ["unfulfilled"],
-  unfulfilled: ["processing", "not_required"],
-  processing: ["ready_for_pickup", "shipped"],
-  ready_for_pickup: ["picked_up", "shipped"],
+  not_required: ["unfulfilled", "canceled"],
+  unfulfilled: ["processing", "not_required", "canceled"],
+  processing: ["ready_to_fulfill", "ready_for_pickup", "shipped", "canceled"],
+  // A packed order can still be handed over the counter or posted; it can no
+  // longer be cancelled silently once it has left, which is why `canceled`
+  // stops being reachable after `shipped` and `picked_up`.
+  ready_to_fulfill: ["ready_for_pickup", "shipped", "canceled"],
+  ready_for_pickup: ["picked_up", "shipped", "canceled"],
   picked_up: ["returned", "partially_returned"],
   shipped: ["delivered", "returned", "partially_returned"],
   delivered: ["returned", "partially_returned"],
   returned: [],
   partially_returned: ["returned"],
+  canceled: [],
+};
+
+/**
+ * The same graph, narrowed by how the order is actually being fulfilled.
+ *
+ * A pickup order must never be offered "Shipped", and a shipping order must
+ * never be offered "Ready for pickup" — showing both is how a parcel gets a
+ * tracking number and a collection slot at the same time. The narrowing is
+ * applied server-side as well as in the UI, so hiding a control is a
+ * convenience rather than the control.
+ */
+const METHOD_FORBIDDEN: Readonly<Record<string, readonly FulfillmentState[]>> = {
+  shipping: ["ready_for_pickup", "picked_up"],
+  pickup: ["shipped", "delivered"],
+  none: ["ready_for_pickup", "picked_up", "shipped", "delivered", "ready_to_fulfill"],
+};
+
+export function fulfillmentTransitionsFor(from: string, method: string | null | undefined): FulfillmentState[] {
+  const allowed = FULFILLMENT_TRANSITIONS[from as FulfillmentState];
+  if (!Array.isArray(allowed)) return [];
+  // An unrecognised method falls back to the *shipping* restrictions rather
+  // than to none. Defaulting to an empty forbidden-list would mean a corrupted
+  // or unexpected `fulfillment_method` unlocked every state at once, including
+  // both delivery channels on the same order — the widest possible behaviour
+  // from the least trustworthy input.
+  const forbidden = METHOD_FORBIDDEN[String(method || "shipping")] ?? METHOD_FORBIDDEN.shipping;
+  return allowed.filter((state) => !forbidden.includes(state));
+}
+
+export function canTransitionFulfillmentForMethod(
+  from: string,
+  to: string,
+  method: string | null | undefined
+): boolean {
+  if (from === to) return false;
+  return (fulfillmentTransitionsFor(from, method) as readonly string[]).includes(to);
+}
+
+/**
+ * Fulfillment states in which the order has physically left the shop. Read by
+ * cancellation eligibility and by the reservation release rules.
+ */
+export const FULFILLMENT_DEPARTED: readonly FulfillmentState[] = ["shipped", "delivered", "picked_up"];
+
+/** Which timestamp column a transition stamps, if any. */
+export const FULFILLMENT_TIMESTAMP_COLUMN: Readonly<Partial<Record<FulfillmentState, string>>> = {
+  ready_to_fulfill: "ready_at",
+  ready_for_pickup: "ready_at",
+  picked_up: "picked_up_at",
+  shipped: "shipped_at",
+  delivered: "delivered_at",
+};
+
+/**
+ * Transitions that reach the customer. Staff are shown exactly this before
+ * they confirm, so "what will the customer be told" is answered by the same
+ * table that decides what is sent.
+ */
+export const FULFILLMENT_CUSTOMER_EMAIL: Readonly<Partial<Record<FulfillmentState, string>>> = {
+  processing: "fulfillment_processing",
+  ready_for_pickup: "order_ready_for_pickup",
+  picked_up: "order_picked_up",
+  shipped: "order_shipped",
+  delivered: "order_delivered",
 };
 
 /**
@@ -618,12 +694,33 @@ export const FULFILLMENT_LABELS: Readonly<Record<FulfillmentState, string>> = {
   not_required: "No delivery needed",
   unfulfilled: "Not yet prepared",
   processing: "Being prepared",
+  ready_to_fulfill: "Packed and ready",
   ready_for_pickup: "Ready for pickup",
   picked_up: "Picked up",
   shipped: "Shipped",
   delivered: "Delivered",
   returned: "Returned",
   partially_returned: "Partly returned",
+  canceled: "Cancelled",
+};
+
+/**
+ * The staff wording, which is deliberately not the customer wording. Staff need
+ * to know an order is waiting on a label; the customer needs to know it is
+ * being prepared.
+ */
+export const FULFILLMENT_STAFF_LABELS: Readonly<Record<FulfillmentState, string>> = {
+  not_required: "No fulfillment required",
+  unfulfilled: "Unfulfilled",
+  processing: "Processing",
+  ready_to_fulfill: "Ready to fulfill",
+  ready_for_pickup: "Ready for pickup",
+  picked_up: "Picked up",
+  shipped: "Shipped",
+  delivered: "Delivered",
+  returned: "Returned",
+  partially_returned: "Partially returned",
+  canceled: "Fulfillment cancelled",
 };
 
 export const CANCELLATION_LABELS: Readonly<Record<CancellationState, string>> = {

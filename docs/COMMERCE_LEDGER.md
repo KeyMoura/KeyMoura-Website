@@ -2154,3 +2154,318 @@ both. Every listed finding is pre-existing.
    is the one path no automated session can reach.
 4. Then pick up shipping configuration and the inventory surface, in that
    order — both now have their schema and their rules in place.
+
+---
+
+# Pass 8 — shipping, fulfillment, inventory reservations, commerce settings
+
+Branch `shipping-fulfillment-inventory-reservations-20260805`, from `e207fc5`.
+
+## Verified starting state — 2026-08-05
+
+| Check | Result |
+|-------|--------|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `e207fc5` |
+| Baseline present | `e207fc5` is HEAD, the pass-7 merge |
+| Production health | `/` 200, `/catalog` 200, `GET /api/cart` 200 |
+| Migration ledger | **exact** — 38 repo files, 38 rows, versions and names identical |
+| Refund webhook events | handler present: `event.type.startsWith("refund.")` covers `refund.created`, `refund.updated`, `refund.failed`, plus `charge.refund.updated` |
+
+The owner has since subscribed the Stripe endpoint to the three refund events,
+closing the item pass 7 recorded as external setup #2.
+
+## Phase 1 — audit of what actually exists
+
+Read from code, live schema, routes and grants — not from ledger labels.
+
+### The three misleading migration names
+
+`20260731170000_order_fulfillment`, `20260731180000_catalog_inventory_editor`
+and `20260731190000_checkout_inventory_reservations` are all applied, and pass
+4 recorded them as covering "shipping, inventory, fulfilment". They do not.
+
+**`checkout_inventory_reservations` is not a reservation system.** It adds
+`orders.checkout_token` and `orders.inventory_reserved_quantity`, and
+`create_checkout_order` decrements `products.inventory_quantity` *immediately*
+at custom-request order creation, restoring it by trigger on cancel/decline or
+delete. There is no expiry, no sweep, no checkout-session link, and no
+availability calculation. It is an eager decrement with a misleading name.
+
+**`order_fulfillment` is shipment columns only** — `fulfillment_method`
+(`shipping`/`pickup`), `shipping_address`, `shipping_carrier`,
+`tracking_number`, `tracking_url`, `shipped_at`, `delivered_at`, plus two email
+templates. No state machine, no price, no snapshots, no origin, no packages.
+
+### Two inventory writers already exist, and they do not overlap
+
+| Writer | Path | Moves stock |
+|--------|------|-------------|
+| `create_checkout_order` (pass 1) | custom request | at order creation, direct `update products` |
+| `commit_order_inventory` (pass 7) | direct purchase | at confirmed payment, through `inventory_adjustments` |
+
+They cannot double-count **because they cover disjoint order kinds**:
+`order_items` rows are written only by `/api/cart/checkout`, so
+`commit_order_inventory` finds nothing on a custom-request order, and
+`create_checkout_order` is never called for a direct purchase. That is a real
+invariant this pass must not break, not a coincidence to leave undocumented.
+
+### Lifecycle map — cart to restoration, as built today
+
+    cart add/update ........ no inventory check beyond display; no reservation
+    checkout creation ...... prices revalidated from live rows; order +
+                             order_items written; Stripe session created.
+                             NO inventory movement. NO address. NO shipping
+                             price. NO fulfillment method chosen.
+    payment confirmed ...... record_stripe_order_payment, then
+                             commit_order_inventory (idempotent per order item)
+    checkout abandoned ..... nothing happens. Order stays awaiting_payment
+                             forever; cart keeps its items
+    session expired ........ NOT HANDLED — no `checkout.session.expired` case
+    payment failed ......... payment_status = payment_failed; stock untouched
+                             (none was held)
+    repeated webhook ....... stripe_webhook_events unique on event id; the
+                             accounting RPC and the inventory commit are each
+                             independently idempotent
+    production complete .... does NOT touch fulfillment_status
+    cancellation ........... restores from the ledger, not the order lines
+    return inspection ...... restocks per line, on an explicit decision
+
+**The overselling window is real and open:** two customers can both check out
+the last unit, and both payments succeed.
+
+### Fulfillment state — the column exists and nothing writes it
+
+`orders.fulfillment_status` (pass 7) defaults to `unfulfilled` and has a
+transition graph and labels in `orderLifecycle.ts`. **No route writes it.**
+Fulfillment is still driven by `shipment_action` on
+`PATCH /api/staff/orders/[id]`, which sets `shipped_at`/`delivered_at` and
+moves `orders.status`, and never touches the new column. Customer-facing
+fulfillment state is therefore derived from timestamps, while the column that
+the cancellation and return eligibility rules *read* stays at `unfulfilled`
+forever — so a shipped order still looks cancellable to `evaluateCancellation`.
+
+### Field-by-field audit
+
+| Area | State |
+|------|-------|
+| Fulfillment states | enum + graph + labels exist; unwritten |
+| Shipment data | carrier, number, url, shipped_at, delivered_at on `orders` |
+| Local pickup | `fulfillment_method='pickup'` only; no location, no snapshot, no instructions |
+| Shipping-address snapshot | `orders.shipping_address` jsonb — written only by the custom-request RPC; **null on every direct purchase** |
+| Shipping prices | **nowhere.** No column on `orders`, no calculation anywhere |
+| Product shipping fields | `weight_grams`, `dimensions_text`, `package_dimensions_text`, `shipping_notes`, `return_notes` |
+| Product inventory fields | `sku`, `inventory_policy`, `inventory_quantity`, `low_stock_threshold` (default 2), `continue_selling_when_out_of_stock`, `made_to_order`, `lead_time_text` |
+| Order fulfillment UI | staff: tracking fields + two shipment actions on the order page. customer: read-only timestamps |
+| Inventory ledger | `inventory_adjustments` + `adjust_product_inventory` (pass 7) |
+| Inventory reservations | **none** |
+| Abandoned checkout | **none** |
+| Low-stock behavior | threshold column only; nothing reads it |
+| Commerce policies | `site_settings.commerce_policy` jsonb + total parser; **no editing surface** |
+| Return address | `commerce_policy.returns.returnAddress`, unset |
+| Shipping configuration | **none** |
+| Transactional emails | `email_templates` + `email_deliveries` (unique `event_key`) + `sendCommerceEmail`; 22 templates; **HTML only, no plain text** |
+| Staff notifications | `notifyOrderStaff` / `notifyOrderUser` |
+| Printable documents | production traveller/work order/QC only |
+| Audit events | `logAuditEvent` retains `staff.`-prefixed types; lifecycle events registered |
+| Staff permissions | `fulfillment.view/manage`, `inventory.view/manage` exist from pass 7 **with nothing behind them** |
+
+### Snapshots versus mutable references
+
+`order_items` snapshots name, slug, options and price. `order_returns`
+snapshots the return address at approval. Everything shipping-related is a
+**mutable reference or absent**: there is no method snapshot, no price
+snapshot, no origin snapshot, no package snapshot, and a direct-purchase order
+carries no address at all. Order addresses cannot currently change after
+purchase only because nothing writes them.
+
+Tracking URLs are validated for `https://` prefix and nothing else — no host
+allow-list and no template generation. Local pickup is a `fulfillment_method`
+value with no data behind it. Production completion does not affect
+fulfillment.
+
+
+## Scope decision, and why
+
+The brief asked for twenty phases. The audit above found that the three
+migrations pass 4 recorded as covering "shipping, inventory, fulfilment" cover
+none of it: `checkout_inventory_reservations` is an eager decrement with a
+misleading name, `order_fulfillment` is seven columns, and the pass-7
+`fulfillment_status` column had a graph, labels and **no writer**.
+
+This pass completes the brief's own fallback ordering — shipping and
+fulfillment, inventory reservations, inventory staff UI, commerce settings —
+end to end and server-enforced, and defers the rest with its state recorded.
+
+## Phases 2-11 — complete
+
+### Commerce settings
+
+`site_settings.commerce_settings` jsonb beside the existing `commerce_policy`,
+read through `parseCommerceSettings`, which is **total**: any input at all
+yields usable settings, so a hand-edited row degrades to safe defaults instead
+of taking checkout offline. Defaults have shipping and pickup **off**, so an
+unconfigured shop refuses clearly rather than quoting a price it invented.
+
+**Three addresses, edited and stored separately** — shipping origin, return
+address, pickup location. For a shop run from home these are frequently the
+same building, and publishing one because another was configured is how a
+private address reaches a public page. `publicCommerceSettings` is the only
+projection a customer surface may read and carries no origin address, no return
+address, no staff recipients and no reservation timings **by construction**. A
+test serialises it and asserts the private street never appears.
+
+Staff surface at `/staff/settings/commerce`. Explicit Save, disabled until
+something differs, `beforeunload` guard. The server refuses incoherent
+combinations by naming the fix, and audits **which sections changed, never the
+values** — an address and a support email are personal data, and the audit log
+is read more widely and kept longer than the settings page.
+
+New permissions: `commerce.settings.view`, `commerce.settings.manage`. Admins
+inherit both; no non-admin role receives either automatically.
+
+### Shipping and order snapshots
+
+`quoteShipping` is the only place a delivery charge is computed. The client
+sends a **method id** and an address; the charge is recomputed server-side from
+the configured methods and the server's own subtotal, and no request field
+carrying money is read — a test enumerates the amount, total, price,
+shippingCents, totals and subtotal request fields and asserts none is
+referenced.
+
+Free shipping is earned on subtotal **minus discount**: the alternative rewards
+stacking a code onto a barely-qualifying basket. The lower of the global and
+per-method thresholds wins. Boundary, discount interaction and determinism are
+all tested.
+
+Orders now carry immutable snapshots — method, charged price, list price,
+whether free applied and why, origin, package, pickup location. A settings
+change six months later cannot rewrite what a customer was charged or redirect
+a parcel already in the post. **The origin snapshot deliberately keeps only the
+name, city, region, postcode and country** — not the street — because an order
+row is read by more code than the settings page.
+
+`tax_cents` and `products.tax_code` are threaded and always 0/null. Stripe Tax
+stays out per the pass-7 owner decision; carrying the fields now makes enabling
+it later a value change rather than a schema change on live orders.
+
+### Fulfillment
+
+Two states added to the pass-7 graph — `ready_to_fulfill` and `canceled` — and
+the CHECK widened, never narrowed. Forward-only is unchanged: a shipped order
+cannot become unfulfilled, a picked-up order cannot return to ready-for-pickup,
+and a correction is an audited tracking edit rather than a rewind.
+
+`fulfillmentTransitionsFor` narrows the graph by method, so shipping and pickup
+controls can never both appear — asserted exhaustively across every state and
+method. **A defect the tests found:** an unrecognised method fell through to
+*no* restrictions, so a corrupted value unlocked every state at once including
+both channels. Unknown now falls back to shipping's restrictions.
+
+`transition_order_fulfillment` re-asserts the from-status in its WHERE clause,
+so a change that landed between page load and click matches zero rows and is
+refused as `stale`. A repeat reports `already` and returns **before** the
+notification and the audit write, so a double-click cannot double-send.
+
+`GET` returns the legal transitions *and the email each would send*, so the
+staff page previews the exact consequence before confirming. Marking shipped
+without a carrier and tracking number is refused before the state moves.
+
+**One fulfillment group per order.** Split shipments are not supported and are
+not pretended to be.
+
+### Tracking
+
+Links are generated from configured templates with the number
+percent-encoded, so a "tracking number" carrying an ampersand or a fragment
+cannot reshape the URL. A manual URL is allow-listed to https with no embedded
+credentials — a URL whose authority reads as the carrier but resolves to an
+attacker is refused. A URL stored before this validation existed does not
+become trusted by age, because the check runs on every read. Corrections keep
+the previous values in the fulfillment history.
+
+### Inventory reservations
+
+The overselling window pass 7 recorded as open is closed. Availability is
+on-hand minus active, unexpired holds. Shortages are computed **before**
+anything is written, so a refusal leaves existing holds intact. Product rows
+are locked in id order, so two carts with overlapping products cannot deadlock.
+Duplicate holds are prevented by a partial unique index rather than by
+remembering to check.
+
+Checkout reserves before creating the session, pins the session's `expires_at`
+to the hold window, links the hold to the order and session, and releases on
+every abandoning path. Confirmed payment commits exactly once; a replayed
+webhook commits zero. `checkout.session.expired` releases by session id.
+A failed payment releases per a documented policy — holding stock through an
+indefinite retry lets one failed card keep the last unit from a customer who
+can pay.
+
+**Expiry does not depend on a cron service**, because this project has none:
+the reservation path sweeps before it measures, the staff page sweeps on load,
+and availability ignores a lapsed hold regardless. A scheduled job is optional,
+not load-bearing.
+
+Made-to-order, untracked and backorder-enabled products are **skipped, not
+refused** — reserving a made-to-order part would make it look sold out the
+moment two people opened checkout.
+
+### Low-stock alerts
+
+One open alert per product, enforced by a partial unique index, so evaluating
+after every movement cannot produce an alert per page load. `low` escalates to
+`out` in place with `notified_at` cleared — the one case where a second message
+is correct — and resolves when stock rises. Untracked and made-to-order
+products never alert. Notifications go to `inventory.view` holders through the
+existing notification centre, deep-linked to the product.
+
+### Staff inventory UI
+
+`/staff/inventory` and `/staff/inventory/[productId]`. On hand, reserved and
+available are shown with the distinction stated on the page. Reservation totals
+come from one grouped query per page; the ledger is paginated. Adjustments
+require a reason, require a description for "other", confirm reductions and
+large moves by spelling out before and after, refuse a count that moved since
+page load, and refuse going below zero unless backorders are enabled.
+
+**Two mismatches with pass 7, found and fixed:** `adjust_product_inventory`
+takes `p_created_by`, not `p_actor_user_id`; and its `reason` CHECK allowed only
+six mechanical values, so every operational reason the UI offers would have been
+a 500 for whoever picked it first. The CHECK is widened additively and a test
+now asserts every reason the route accepts is one the ledger permits.
+
+## Validation
+
+- **847 tests pass, 0 fail** (757 at `e207fc5`; 90 added across three new suites
+  plus three strengthened checkout assertions).
+- Typecheck clean. Production build clean, exit 0; all seven new routes present.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings). All new
+  code lints clean.
+- Both migrations dry-run against production inside rolled-back transactions,
+  with a behavioural suite covering two customers racing for the last unit, an
+  idempotent repeat, a refused increase leaving the hold intact, a removed line
+  releasing, commit-exactly-once under replay, an expired hold not reducing
+  availability before the sweep, and low to out to resolved producing exactly
+  one alert row. **Production verified untouched after every run.**
+- All ten new function signatures verified against the exact grant statements:
+  `service_role` can execute all ten, `anon` and `authenticated` none.
+
+## Deferred, honestly
+
+Not built in this pass. Each is specified, none is half-wired:
+
+1. **Staff fulfillment panel on the order page.** The API is complete and
+   server-enforced; no staff UI drives it yet, so fulfillment state cannot be
+   changed from the browser. This is the single highest-value next step.
+2. **Customer order-page fulfillment display** — tracking link, pickup
+   instructions, delivery timeline.
+3. **Product editor shipping fields.** The twelve columns exist and default to
+   today's behaviour; the staff editor does not expose them yet.
+4. **Printable documents** — packing slip, pickup slip, return authorization,
+   refund record.
+5. **Reconciliation tooling and the remaining transactional-email catalogue.**
+   Eight new templates are seeded; the fulfillment ones send.
+6. **Custom-request orders keep the legacy eager decrement.** Reservations sit
+   in front of the direct-purchase path only. The two cannot double-count
+   because `order_items` rows exist only for direct purchases.

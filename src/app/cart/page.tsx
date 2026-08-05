@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import ProductImage from "@/components/ProductImage";
 import CartSharePanel from "@/components/commerce/CartSharePanel";
+import CheckoutFulfillmentPanel, {
+  type FulfillmentSelection,
+  type QuotedTotals,
+} from "@/components/commerce/CheckoutFulfillmentPanel";
 import { formatCents, useCart, useCartMutations } from "@/lib/hooks/useCart";
 
 /**
@@ -20,6 +24,13 @@ export default function CartPage() {
   const [codeInput, setCodeInput] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
   const [checkingOut, setCheckingOut] = useState(false);
+  const [fulfillment, setFulfillment] = useState<FulfillmentSelection | null>(null);
+  const [quoted, setQuoted] = useState<QuotedTotals | null>(null);
+
+  // Stable identities so the panel's effect does not re-run on every render of
+  // this page.
+  const handleFulfillmentChange = useCallback((next: FulfillmentSelection | null) => setFulfillment(next), []);
+  const handleTotals = useCallback((next: QuotedTotals | null) => setQuoted(next), []);
 
   const items = cart?.items ?? [];
   const unavailable = cart?.unavailable ?? [];
@@ -30,9 +41,16 @@ export default function CartPage() {
     setCheckingOut(true);
     setCheckoutError("");
     try {
-      const response = await fetch("/api/cart/checkout", { method: "POST", credentials: "same-origin" });
+      const response = await fetch("/api/cart/checkout", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        // A method id and an address, never a price. The server recomputes the
+        // delivery charge from its own configuration and its own subtotal.
+        body: JSON.stringify(fulfillment ?? {}),
+      });
       const payload = (await response.json().catch(() => null)) as
-        | { url?: string; error?: string; requiresSignIn?: boolean }
+        | { url?: string; error?: string; requiresSignIn?: boolean; shortages?: { productName: string; available: number }[] }
         | null;
 
       if (payload?.requiresSignIn) {
@@ -262,11 +280,30 @@ export default function CartPage() {
                   <span className="font-medium text-emerald-300">−{formatCents(cart.discountCents)}</span>
                 </div>
               ) : null}
+              {/* Shipping appears as its own line as soon as the server has
+                  priced it, so the customer never has to work out which part of
+                  the total was delivery. */}
+              {quoted ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-brand-textMuted">Delivery</span>
+                  <span className="font-medium">
+                    {quoted.shippingCents === 0 ? "Free" : formatCents(quoted.shippingCents)}
+                  </span>
+                </div>
+              ) : null}
+              {quoted && quoted.taxCents > 0 ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-brand-textMuted">Tax</span>
+                  <span className="font-medium">{formatCents(quoted.taxCents)}</span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between border-t border-[var(--border)] pt-2 text-base">
                 <span className="font-semibold">Total</span>
-                <span className="font-semibold">{formatCents(cart?.totalCents ?? 0)}</span>
+                <span className="font-semibold">{formatCents(quoted?.totalCents ?? cart?.totalCents ?? 0)}</span>
               </div>
-              <p className="text-xs text-brand-textMuted">Shipping and tax are calculated at checkout.</p>
+              {!quoted ? (
+                <p className="text-xs text-brand-textMuted">Choose a delivery option to see the final total.</p>
+              ) : null}
             </div>
 
             <form
@@ -318,16 +355,23 @@ export default function CartPage() {
 
             <button
               type="button"
-              disabled={!cart?.chargeable || checkingOut}
+              disabled={!cart?.chargeable || checkingOut || !fulfillment}
               onClick={() => void startCheckout()}
               className="ui-btn ui-btn-primary mt-5 w-full disabled:opacity-50"
             >
               {checkingOut ? "Starting checkout…" : "Check out"}
             </button>
+            {!fulfillment ? (
+              <p className="mt-2 text-center text-xs text-brand-textMuted">
+                Choose a delivery option below to continue.
+              </p>
+            ) : null}
             <p className="mt-2 text-center text-xs text-brand-textMuted">
               You will be asked to sign in before paying.
             </p>
           </aside>
+
+          <CheckoutFulfillmentPanel onChange={handleFulfillmentChange} onTotals={handleTotals} />
 
           <CartSharePanel canShare={items.length > 0} />
           </div>
