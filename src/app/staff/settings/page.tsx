@@ -8,6 +8,7 @@ import { useMeAccess } from "@/lib/hooks/useMeAccess";
 
 const tools = [
   { href: "/staff/appearance", title: "Appearance", description: "Brand identity, logos, customer-facing wording, colors, typography, spacing, and controls.", permissions: ["appearance.manage"] },
+  { href: "/staff/settings/commerce", title: "Shipping, pickup & inventory", description: "Delivery methods and prices, destinations, local pickup, stock rules, and cancellation and return policy.", permissions: ["commerce.settings.view", "commerce.settings.manage"] },
   { href: "/staff/emails", title: "Email & notifications", description: "Sender details, staff alerts, customer email rules, templates, and delivery testing.", permissions: ["emails.manage"] },
   { href: "/staff/security", title: "Security controls", description: "Maintenance mode, lockdown, emergency messaging, IP restrictions, and administrative controls.", permissions: ["security.view"] },
   { href: "/staff/security/roles", title: "Roles & permissions", description: "Decide which staff roles can view and manage each area.", permissions: ["roles.view"] },
