@@ -67,8 +67,24 @@ export const EMPTY_DETAIL_CONTENT: ProductDetailContent = {
  * producing an unusable wall. Truncating on read means the page is bounded no
  * matter how the data got there.
  */
-const MAX_ENTRIES = 60;
+export const MAX_ENTRIES = 60;
 const MAX_TEXT = 2000;
+
+/**
+ * Per-field text limits, in one place and exported.
+ *
+ * The editor stops staff at the same number the parser truncates at. Two copies
+ * of "200" is how a title silently loses its last word on save while the box it
+ * was typed into cheerfully accepted it — the editor must refuse what the parser
+ * would quietly rewrite, and it can only do that if there is one number.
+ */
+export const CONTENT_LIMITS = {
+  benefits: { title: 200, body: MAX_TEXT },
+  specifications: { name: 200, value: 500 },
+  compatibility: { value: 300, note: 300 },
+  included: { value: 300, note: 300 },
+  faq: { title: 200, body: MAX_TEXT },
+} as const;
 
 function text(value: unknown, limit = MAX_TEXT): string {
   if (typeof value !== "string") return "";
@@ -97,29 +113,71 @@ export function parseDetailContent(value: unknown): ProductDetailContent {
   if (!value || typeof value !== "object" || Array.isArray(value)) return EMPTY_DETAIL_CONTENT;
   const input = value as Record<string, unknown>;
 
-  const titled = (key: string, titleKey: string, bodyKey: string): ProductBenefit[] =>
+  /**
+   * A titled paragraph, read from whichever key pair the row happens to carry.
+   *
+   * FAQs are stored as `question`/`answer` and held in memory as `title`/`body`.
+   * A build once wrote the in-memory shape into the column, which then read back
+   * as nothing at all, so both are accepted here and the first non-empty one
+   * wins. Being total about the column's contents is this parser's whole job.
+   */
+  const titled = (key: "benefits" | "faq", ...keyPairs: [string, string][]): ProductBenefit[] =>
     rows(input[key])
-      .map((row) => ({ title: text(row[titleKey], 200), body: text(row[bodyKey]) }))
+      .map((row) => ({
+        title: keyPairs.map(([titleKey]) => text(row[titleKey], CONTENT_LIMITS[key].title)).find(Boolean) ?? "",
+        body: keyPairs.map(([, bodyKey]) => text(row[bodyKey], CONTENT_LIMITS[key].body)).find(Boolean) ?? "",
+      }))
       // A benefit with neither a title nor a body is a blank row left behind in
       // the editor, not content.
       .filter((row) => row.title || row.body);
 
   return {
-    benefits: titled("benefits", "title", "body"),
+    benefits: titled("benefits", ["title", "body"]),
     specifications: rows(input.specifications)
-      .map((row) => ({ name: text(row.name, 200), value: text(row.value, 500) }))
+      .map((row) => ({
+        name: text(row.name, CONTENT_LIMITS.specifications.name),
+        value: text(row.value, CONTENT_LIMITS.specifications.value),
+      }))
       // Both halves are required: a value with no name is unlabelled, and a
       // name with no value is a question the page cannot answer.
       .filter((row) => row.name && row.value),
     compatibility: rows(input.compatibility)
-      .map((row) => ({ value: text(row.value, 300), note: text(row.note, 300) }))
+      .map((row) => ({
+        value: text(row.value, CONTENT_LIMITS.compatibility.value),
+        note: text(row.note, CONTENT_LIMITS.compatibility.note),
+      }))
       .filter((row) => row.value),
     included: rows(input.included)
-      .map((row) => ({ value: text(row.value, 300), note: text(row.note, 300) }))
+      .map((row) => ({
+        value: text(row.value, CONTENT_LIMITS.included.value),
+        note: text(row.note, CONTENT_LIMITS.included.note),
+      }))
       .filter((row) => row.value),
-    faq: titled("faq", "question", "answer").map((row) => ({ title: row.title, body: row.body })),
+    faq: titled("faq", ["question", "answer"], ["title", "body"]),
   };
 }
+
+/**
+ * What is actually written to `products.detail_content`.
+ *
+ * Distinct from `ProductDetailContent` for one reason: a FAQ row is stored as
+ * `question`/`answer` and held in memory as `title`/`body`. Giving the wire
+ * format its own type is what makes that difference impossible to forget —
+ * `serializeDetailContent` used to return the in-memory type, so it wrote FAQ
+ * rows under `title`/`body`, and `parseDetailContent` then read that column
+ * looking for `question`/`answer` and found nothing. Every FAQ staff saved was
+ * silently discarded on the next read. The round-trip test that was supposed to
+ * catch it compared the serializer's output against editor state instead of
+ * re-parsing it, so both sides agreed with each other and neither agreed with
+ * the database.
+ */
+export type StoredDetailContent = {
+  benefits: ProductBenefit[];
+  specifications: ProductSpec[];
+  compatibility: ProductEntry[];
+  included: ProductEntry[];
+  faq: { question: string; answer: string }[];
+};
 
 /**
  * Serializes editor state back to the column.
@@ -129,14 +187,18 @@ export function parseDetailContent(value: unknown): ProductDetailContent {
  * as empty arrays rather than omitted, which keeps the column's shape stable
  * and makes "staff cleared this section" distinguishable from "never set".
  */
-export function serializeDetailContent(content: ProductDetailContent): ProductDetailContent {
-  return parseDetailContent({
+export function serializeDetailContent(content: ProductDetailContent): StoredDetailContent {
+  const normalized = parseDetailContent({
     benefits: content.benefits.map((row) => ({ title: row.title, body: row.body })),
     specifications: content.specifications,
     compatibility: content.compatibility,
     included: content.included,
     faq: content.faq.map((row) => ({ question: row.title, answer: row.body })),
   });
+  return {
+    ...normalized,
+    faq: normalized.faq.map((row) => ({ question: row.title, answer: row.body })),
+  };
 }
 
 /** True when any structured section has something worth a heading. */
