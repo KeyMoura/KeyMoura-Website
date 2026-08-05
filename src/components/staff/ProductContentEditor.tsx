@@ -1,12 +1,25 @@
 "use client";
 
+import { useRef } from "react";
+
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import {
   INSTALLATION_DIFFICULTIES,
   INSTALLATION_DIFFICULTY_LABEL,
-  parseDetailContent,
   type ProductDetailContent,
 } from "@/lib/commerce/productContent";
+import {
+  addRow,
+  CONTENT_LIMITS,
+  CONTENT_LIST_META,
+  type ContentListKey,
+  describeIncompleteRows,
+  isListFull,
+  MAX_ENTRIES,
+  moveRow,
+  removeRow,
+  updateRow,
+} from "@/lib/commerce/productContentEditing";
 import type { CatalogProduct } from "@/lib/commerceTypes";
 
 /**
@@ -27,17 +40,110 @@ import type { CatalogProduct } from "@/lib/commerceTypes";
  *
  * Every value is stored as text and rendered as text. Staff may paste anything;
  * `parseDetailContent` is the one gate, and the page never renders it as HTML.
+ *
+ * **This component holds staff input verbatim and normalizes nothing.** Every
+ * list mutation goes through `productContentEditing`, which is pure and does no
+ * parsing. Re-parsing here is what previously made every Add button appear
+ * dead — a freshly added row is blank, and the parser's job is to drop blank
+ * rows. Normalization belongs at the save boundary, where
+ * `serializeDetailContent` still does it, and nowhere else.
  */
 
 type ProductContentEditorProps = {
   draft: Partial<CatalogProduct>;
   onChange: (patch: Partial<CatalogProduct>) => void;
   content: ProductDetailContent;
-  onContentChange: (content: ProductDetailContent) => void;
+  /**
+   * Takes an updater, not a value.
+   *
+   * Every mutation here is derived from the content that was current when the
+   * row rendered, so two activations inside one React batch — a double-click on
+   * Add, or two keystrokes landing in the same tick — would both compute from
+   * the same starting point and the second would overwrite the first. Measured:
+   * clicking Add twice quickly produced one row. Handing React a function makes
+   * each change compose on the latest state instead. `useState`'s setter takes
+   * an updater already, so the page passes it straight through.
+   */
+  onContentChange: (update: (current: ProductDetailContent) => ProductDetailContent) => void;
   disabled?: boolean;
 };
 
 const input = "ui-input";
+const addButton = "ui-btn ui-btn-secondary justify-self-start disabled:opacity-50";
+
+/**
+ * One row's move and remove controls.
+ *
+ * Defined at module scope rather than inside the editor. A component declared
+ * in a render body is a new type on every render, so React unmounts and
+ * remounts it — which throws away focus the instant a control is used, and
+ * makes reordering by keyboard require re-finding the button after every press.
+ */
+function ListControls({
+  index,
+  length,
+  noun,
+  disabled,
+  onMove,
+  onRemove,
+}: {
+  index: number;
+  length: number;
+  noun: string;
+  disabled: boolean;
+  onMove: (direction: -1 | 1) => void;
+  onRemove: () => void;
+}) {
+  // Positions staff see are 1-based, and every name says which list it belongs
+  // to. "Remove this entry", repeated identically on every row of all five
+  // lists, told a screen-reader user nothing about what they were removing.
+  const position = index + 1;
+  const control = "ui-btn ui-btn-ghost !px-2 !py-1 text-xs disabled:opacity-40";
+  return (
+    <div className="flex shrink-0 gap-1">
+      <button
+        type="button"
+        disabled={disabled || index === 0}
+        onClick={() => onMove(-1)}
+        className={control}
+        aria-label={`Move ${noun} ${position} up`}
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        disabled={disabled || index === length - 1}
+        onClick={() => onMove(1)}
+        className={control}
+        aria-label={`Move ${noun} ${position} down`}
+      >
+        ↓
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onRemove}
+        className={`${control} text-rose-300`}
+        aria-label={`Remove ${noun} ${position}`}
+      >
+        Remove
+      </button>
+    </div>
+  );
+}
+
+/**
+ * What will not survive Save, said before Save is pressed.
+ *
+ * Dropping incomplete rows is deliberate — an unlabelled specification has
+ * nothing to render — but doing it without a word is how staff type half a row,
+ * save, and find it gone with no explanation.
+ */
+function IncompleteNotice({ content, listKey }: { content: ProductDetailContent; listKey: ContentListKey }) {
+  const message = describeIncompleteRows(content, listKey);
+  if (!message) return null;
+  return <p className="text-xs text-amber-200">{message}</p>;
+}
 
 export default function ProductContentEditor({
   draft,
@@ -48,59 +154,62 @@ export default function ProductContentEditor({
 }: ProductContentEditorProps) {
   const set = <K extends keyof CatalogProduct>(key: K, value: CatalogProduct[K]) => onChange({ [key]: value });
 
-  /** Replaces one list, re-parsing so what is held matches what will be stored. */
-  const setList = <K extends keyof ProductDetailContent>(key: K, rows: ProductDetailContent[K]) =>
-    onContentChange(parseDetailContent({ ...content, [key]: rows, faq: key === "faq" ? rows : content.faq.map((r) => ({ question: r.title, answer: r.body })) }));
+  /**
+   * Focus follows a newly added row.
+   *
+   * Adding a row and leaving focus on the Add button means a keyboard user has
+   * to tab back through every existing row to reach the box they just asked
+   * for. The new row's field does not exist yet when the button is clicked, so
+   * the target is parked in a ref and claimed by that field's own ref callback
+   * as it mounts. A ref rather than state, and no effect: focusing is a commit
+   * side effect on one element, not a reason to render the editor again.
+   */
+  const pendingFocus = useRef<string | null>(null);
 
-  const move = <T,>(rows: T[], index: number, direction: -1 | 1): T[] => {
-    const next = index + direction;
-    if (next < 0 || next >= rows.length) return rows;
-    const copy = [...rows];
-    [copy[index], copy[next]] = [copy[next], copy[index]];
-    return copy;
+  const focusOnMount =
+    (id: string) => (element: HTMLInputElement | HTMLTextAreaElement | null) => {
+      if (!element || pendingFocus.current !== id) return;
+      pendingFocus.current = null;
+      element.focus();
+    };
+
+  const add = (key: ContentListKey) => {
+    // `addRow` returns the same object at the cap, which the button's own
+    // disabled state should have prevented anyway — nothing changes and nothing
+    // is marked dirty. The focus target is the position this click is asking
+    // for; two Adds batched together both point at the first of the new rows,
+    // which is where focus should land regardless.
+    if (isListFull(content, key)) return;
+    pendingFocus.current = `${key}-${content[key].length}`;
+    onContentChange((current) => addRow(current, key));
   };
 
-  const ListControls = ({
-    index,
-    length,
-    onMove,
-    onRemove,
-  }: {
-    index: number;
-    length: number;
-    onMove: (direction: -1 | 1) => void;
-    onRemove: () => void;
-  }) => (
-    <div className="flex shrink-0 gap-1">
-      <button
-        type="button"
-        disabled={disabled || index === 0}
-        onClick={() => onMove(-1)}
-        className="ui-btn ui-btn-ghost !px-2 !py-1 text-xs disabled:opacity-40"
-        aria-label={`Move to position ${index}`}
-      >
-        ↑
-      </button>
-      <button
-        type="button"
-        disabled={disabled || index === length - 1}
-        onClick={() => onMove(1)}
-        className="ui-btn ui-btn-ghost !px-2 !py-1 text-xs disabled:opacity-40"
-        aria-label={`Move to position ${index + 2}`}
-      >
-        ↓
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onRemove}
-        className="ui-btn ui-btn-ghost !px-2 !py-1 text-xs text-rose-300 disabled:opacity-40"
-        aria-label="Remove this entry"
-      >
-        Remove
-      </button>
-    </div>
-  );
+  const update = <K extends ContentListKey>(key: K, index: number, patch: Partial<ProductDetailContent[K][number]>) =>
+    onContentChange((current) => updateRow(current, key, index, patch));
+
+  /**
+   * The Add control and, at the cap, the reason it is unavailable.
+   *
+   * A function returning elements rather than a component declared in a render
+   * body — the latter is a fresh type on every render, which remounts whatever
+   * it renders and throws away focus. That is the same mistake this file's row
+   * controls used to make.
+   */
+  const addControl = (key: ContentListKey) => {
+    const full = isListFull(content, key);
+    return (
+      <>
+        <button type="button" disabled={disabled || full} onClick={() => add(key)} className={addButton}>
+          {CONTENT_LIST_META[key].addLabel}
+        </button>
+        {full ? (
+          <p className="text-xs text-amber-200">
+            This list is at its limit of {MAX_ENTRIES} rows. Remove one before adding another.
+          </p>
+        ) : null}
+      </>
+    );
+  };
 
   return (
     <div className="grid gap-8">
@@ -238,44 +347,37 @@ export default function ProductContentEditor({
             <div key={index} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3">
               <div className="flex items-start justify-between gap-3">
                 <input
+                  ref={focusOnMount(`benefits-${index}`)}
                   className={input}
                   disabled={disabled}
                   value={row.title}
+                  maxLength={CONTENT_LIMITS.benefits.title}
                   placeholder="Benefit title"
-                  onChange={(e) => {
-                    const rows = [...content.benefits];
-                    rows[index] = { ...rows[index], title: e.target.value };
-                    setList("benefits", rows);
-                  }}
+                  aria-label={`Benefit ${index + 1} title`}
+                  onChange={(e) => update("benefits", index, { title: e.target.value })}
                 />
                 <ListControls
                   index={index}
                   length={content.benefits.length}
-                  onMove={(direction) => setList("benefits", move(content.benefits, index, direction))}
-                  onRemove={() => setList("benefits", content.benefits.filter((_, i) => i !== index))}
+                  noun={CONTENT_LIST_META.benefits.noun}
+                  disabled={disabled}
+                  onMove={(direction) => onContentChange((current) => moveRow(current, "benefits", index, direction))}
+                  onRemove={() => onContentChange((current) => removeRow(current, "benefits", index))}
                 />
               </div>
               <textarea
                 className={`${input} mt-2 min-h-16`}
                 disabled={disabled}
                 value={row.body}
+                maxLength={CONTENT_LIMITS.benefits.body}
                 placeholder="What it means for the customer"
-                onChange={(e) => {
-                  const rows = [...content.benefits];
-                  rows[index] = { ...rows[index], body: e.target.value };
-                  setList("benefits", rows);
-                }}
+                aria-label={`Benefit ${index + 1} description`}
+                onChange={(e) => update("benefits", index, { body: e.target.value })}
               />
             </div>
           ))}
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setList("benefits", [...content.benefits, { title: "", body: "" }])}
-            className="ui-btn ui-btn-secondary justify-self-start"
-          >
-            Add a benefit
-          </button>
+          <IncompleteNotice content={content} listKey="benefits" />
+          {addControl("benefits")}
         </div>
       </section>
 
@@ -287,43 +389,36 @@ export default function ProductContentEditor({
           {content.specifications.map((row, index) => (
             <div key={index} className="flex flex-wrap items-center gap-2">
               <input
+                ref={focusOnMount(`specifications-${index}`)}
                 className={`${input} min-w-40 flex-1`}
                 disabled={disabled}
                 value={row.name}
+                maxLength={CONTENT_LIMITS.specifications.name}
                 placeholder="Name"
-                onChange={(e) => {
-                  const rows = [...content.specifications];
-                  rows[index] = { ...rows[index], name: e.target.value };
-                  setList("specifications", rows);
-                }}
+                aria-label={`Specification ${index + 1} name`}
+                onChange={(e) => update("specifications", index, { name: e.target.value })}
               />
               <input
                 className={`${input} min-w-40 flex-[2]`}
                 disabled={disabled}
                 value={row.value}
+                maxLength={CONTENT_LIMITS.specifications.value}
                 placeholder="Value"
-                onChange={(e) => {
-                  const rows = [...content.specifications];
-                  rows[index] = { ...rows[index], value: e.target.value };
-                  setList("specifications", rows);
-                }}
+                aria-label={`Specification ${index + 1} value`}
+                onChange={(e) => update("specifications", index, { value: e.target.value })}
               />
               <ListControls
                 index={index}
                 length={content.specifications.length}
-                onMove={(direction) => setList("specifications", move(content.specifications, index, direction))}
-                onRemove={() => setList("specifications", content.specifications.filter((_, i) => i !== index))}
+                noun={CONTENT_LIST_META.specifications.noun}
+                disabled={disabled}
+                onMove={(direction) => onContentChange((current) => moveRow(current, "specifications", index, direction))}
+                onRemove={() => onContentChange((current) => removeRow(current, "specifications", index))}
               />
             </div>
           ))}
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setList("specifications", [...content.specifications, { name: "", value: "" }])}
-            className="ui-btn ui-btn-secondary justify-self-start"
-          >
-            Add a specification
-          </button>
+          <IncompleteNotice content={content} listKey="specifications" />
+          {addControl("specifications")}
           <p className="text-xs text-brand-textMuted">
             Both halves are needed. A value with no name is unlabelled on the page, so incomplete rows
             are dropped when saved.
@@ -345,43 +440,36 @@ export default function ProductContentEditor({
             {content[key].map((row, index) => (
               <div key={index} className="flex flex-wrap items-center gap-2">
                 <input
+                  ref={focusOnMount(`${key}-${index}`)}
                   className={`${input} min-w-40 flex-[2]`}
                   disabled={disabled}
                   value={row.value}
+                  maxLength={CONTENT_LIMITS[key].value}
                   placeholder={placeholder}
-                  onChange={(e) => {
-                    const rows = [...content[key]];
-                    rows[index] = { ...rows[index], value: e.target.value };
-                    setList(key, rows);
-                  }}
+                  aria-label={`${CONTENT_LIST_META[key].noun} ${index + 1}`}
+                  onChange={(e) => update(key, index, { value: e.target.value })}
                 />
                 <input
                   className={`${input} min-w-40 flex-1`}
                   disabled={disabled}
                   value={row.note}
+                  maxLength={CONTENT_LIMITS[key].note}
                   placeholder="Note (optional)"
-                  onChange={(e) => {
-                    const rows = [...content[key]];
-                    rows[index] = { ...rows[index], note: e.target.value };
-                    setList(key, rows);
-                  }}
+                  aria-label={`${CONTENT_LIST_META[key].noun} ${index + 1} note`}
+                  onChange={(e) => update(key, index, { note: e.target.value })}
                 />
                 <ListControls
                   index={index}
                   length={content[key].length}
-                  onMove={(direction) => setList(key, move(content[key], index, direction))}
-                  onRemove={() => setList(key, content[key].filter((_, i) => i !== index))}
+                  noun={CONTENT_LIST_META[key].noun}
+                  disabled={disabled}
+                  onMove={(direction) => onContentChange((current) => moveRow(current, key, index, direction))}
+                  onRemove={() => onContentChange((current) => removeRow(current, key, index))}
                 />
               </div>
             ))}
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => setList(key, [...content[key], { value: "", note: "" }])}
-              className="ui-btn ui-btn-secondary justify-self-start"
-            >
-              Add an entry
-            </button>
+            <IncompleteNotice content={content} listKey={key} />
+            {addControl(key)}
           </div>
         </section>
       ))}
@@ -395,44 +483,37 @@ export default function ProductContentEditor({
             <div key={index} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3">
               <div className="flex items-start justify-between gap-3">
                 <input
+                  ref={focusOnMount(`faq-${index}`)}
                   className={input}
                   disabled={disabled}
                   value={row.title}
+                  maxLength={CONTENT_LIMITS.faq.title}
                   placeholder="Question"
-                  onChange={(e) => {
-                    const rows = [...content.faq];
-                    rows[index] = { ...rows[index], title: e.target.value };
-                    setList("faq", rows);
-                  }}
+                  aria-label={`Question ${index + 1}`}
+                  onChange={(e) => update("faq", index, { title: e.target.value })}
                 />
                 <ListControls
                   index={index}
                   length={content.faq.length}
-                  onMove={(direction) => setList("faq", move(content.faq, index, direction))}
-                  onRemove={() => setList("faq", content.faq.filter((_, i) => i !== index))}
+                  noun={CONTENT_LIST_META.faq.noun}
+                  disabled={disabled}
+                  onMove={(direction) => onContentChange((current) => moveRow(current, "faq", index, direction))}
+                  onRemove={() => onContentChange((current) => removeRow(current, "faq", index))}
                 />
               </div>
               <textarea
                 className={`${input} mt-2 min-h-16`}
                 disabled={disabled}
                 value={row.body}
+                maxLength={CONTENT_LIMITS.faq.body}
                 placeholder="Answer"
-                onChange={(e) => {
-                  const rows = [...content.faq];
-                  rows[index] = { ...rows[index], body: e.target.value };
-                  setList("faq", rows);
-                }}
+                aria-label={`Answer ${index + 1}`}
+                onChange={(e) => update("faq", index, { body: e.target.value })}
               />
             </div>
           ))}
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setList("faq", [...content.faq, { title: "", body: "" }])}
-            className="ui-btn ui-btn-secondary justify-self-start"
-          >
-            Add a question
-          </button>
+          <IncompleteNotice content={content} listKey="faq" />
+          {addControl("faq")}
         </div>
       </section>
     </div>
