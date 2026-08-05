@@ -22,7 +22,6 @@ import {
 import {
   buildTrackingUrl,
   customerTrackingUrl,
-  formatAddressLines,
   isSafeTrackingUrl,
   isValidTrackingNumber,
   normalizeTrackingNumber,
@@ -395,7 +394,6 @@ async function notifyCustomer(input: {
   if (input.to === "ready_for_pickup" && !input.settings.pickup.notifyWhenReady) return;
 
   const tracking = customerTrackingUrl(input.settings, input.order);
-  const pickup = input.order.pickup_location_snapshot as Record<string, unknown> | null;
 
   const messages: Partial<Record<FulfillmentState, string>> = {
     processing: "We are getting your order ready. We will let you know as soon as it is on its way.",

@@ -2285,3 +2285,187 @@ allow-list and no template generation. Local pickup is a `fulfillment_method`
 value with no data behind it. Production completion does not affect
 fulfillment.
 
+
+## Scope decision, and why
+
+The brief asked for twenty phases. The audit above found that the three
+migrations pass 4 recorded as covering "shipping, inventory, fulfilment" cover
+none of it: `checkout_inventory_reservations` is an eager decrement with a
+misleading name, `order_fulfillment` is seven columns, and the pass-7
+`fulfillment_status` column had a graph, labels and **no writer**.
+
+This pass completes the brief's own fallback ordering — shipping and
+fulfillment, inventory reservations, inventory staff UI, commerce settings —
+end to end and server-enforced, and defers the rest with its state recorded.
+
+## Phases 2-11 — complete
+
+### Commerce settings
+
+`site_settings.commerce_settings` jsonb beside the existing `commerce_policy`,
+read through `parseCommerceSettings`, which is **total**: any input at all
+yields usable settings, so a hand-edited row degrades to safe defaults instead
+of taking checkout offline. Defaults have shipping and pickup **off**, so an
+unconfigured shop refuses clearly rather than quoting a price it invented.
+
+**Three addresses, edited and stored separately** — shipping origin, return
+address, pickup location. For a shop run from home these are frequently the
+same building, and publishing one because another was configured is how a
+private address reaches a public page. `publicCommerceSettings` is the only
+projection a customer surface may read and carries no origin address, no return
+address, no staff recipients and no reservation timings **by construction**. A
+test serialises it and asserts the private street never appears.
+
+Staff surface at `/staff/settings/commerce`. Explicit Save, disabled until
+something differs, `beforeunload` guard. The server refuses incoherent
+combinations by naming the fix, and audits **which sections changed, never the
+values** — an address and a support email are personal data, and the audit log
+is read more widely and kept longer than the settings page.
+
+New permissions: `commerce.settings.view`, `commerce.settings.manage`. Admins
+inherit both; no non-admin role receives either automatically.
+
+### Shipping and order snapshots
+
+`quoteShipping` is the only place a delivery charge is computed. The client
+sends a **method id** and an address; the charge is recomputed server-side from
+the configured methods and the server's own subtotal, and no request field
+carrying money is read — a test enumerates the amount, total, price,
+shippingCents, totals and subtotal request fields and asserts none is
+referenced.
+
+Free shipping is earned on subtotal **minus discount**: the alternative rewards
+stacking a code onto a barely-qualifying basket. The lower of the global and
+per-method thresholds wins. Boundary, discount interaction and determinism are
+all tested.
+
+Orders now carry immutable snapshots — method, charged price, list price,
+whether free applied and why, origin, package, pickup location. A settings
+change six months later cannot rewrite what a customer was charged or redirect
+a parcel already in the post. **The origin snapshot deliberately keeps only the
+name, city, region, postcode and country** — not the street — because an order
+row is read by more code than the settings page.
+
+`tax_cents` and `products.tax_code` are threaded and always 0/null. Stripe Tax
+stays out per the pass-7 owner decision; carrying the fields now makes enabling
+it later a value change rather than a schema change on live orders.
+
+### Fulfillment
+
+Two states added to the pass-7 graph — `ready_to_fulfill` and `canceled` — and
+the CHECK widened, never narrowed. Forward-only is unchanged: a shipped order
+cannot become unfulfilled, a picked-up order cannot return to ready-for-pickup,
+and a correction is an audited tracking edit rather than a rewind.
+
+`fulfillmentTransitionsFor` narrows the graph by method, so shipping and pickup
+controls can never both appear — asserted exhaustively across every state and
+method. **A defect the tests found:** an unrecognised method fell through to
+*no* restrictions, so a corrupted value unlocked every state at once including
+both channels. Unknown now falls back to shipping's restrictions.
+
+`transition_order_fulfillment` re-asserts the from-status in its WHERE clause,
+so a change that landed between page load and click matches zero rows and is
+refused as `stale`. A repeat reports `already` and returns **before** the
+notification and the audit write, so a double-click cannot double-send.
+
+`GET` returns the legal transitions *and the email each would send*, so the
+staff page previews the exact consequence before confirming. Marking shipped
+without a carrier and tracking number is refused before the state moves.
+
+**One fulfillment group per order.** Split shipments are not supported and are
+not pretended to be.
+
+### Tracking
+
+Links are generated from configured templates with the number
+percent-encoded, so a "tracking number" carrying an ampersand or a fragment
+cannot reshape the URL. A manual URL is allow-listed to https with no embedded
+credentials — a URL whose authority reads as the carrier but resolves to an
+attacker is refused. A URL stored before this validation existed does not
+become trusted by age, because the check runs on every read. Corrections keep
+the previous values in the fulfillment history.
+
+### Inventory reservations
+
+The overselling window pass 7 recorded as open is closed. Availability is
+on-hand minus active, unexpired holds. Shortages are computed **before**
+anything is written, so a refusal leaves existing holds intact. Product rows
+are locked in id order, so two carts with overlapping products cannot deadlock.
+Duplicate holds are prevented by a partial unique index rather than by
+remembering to check.
+
+Checkout reserves before creating the session, pins the session's `expires_at`
+to the hold window, links the hold to the order and session, and releases on
+every abandoning path. Confirmed payment commits exactly once; a replayed
+webhook commits zero. `checkout.session.expired` releases by session id.
+A failed payment releases per a documented policy — holding stock through an
+indefinite retry lets one failed card keep the last unit from a customer who
+can pay.
+
+**Expiry does not depend on a cron service**, because this project has none:
+the reservation path sweeps before it measures, the staff page sweeps on load,
+and availability ignores a lapsed hold regardless. A scheduled job is optional,
+not load-bearing.
+
+Made-to-order, untracked and backorder-enabled products are **skipped, not
+refused** — reserving a made-to-order part would make it look sold out the
+moment two people opened checkout.
+
+### Low-stock alerts
+
+One open alert per product, enforced by a partial unique index, so evaluating
+after every movement cannot produce an alert per page load. `low` escalates to
+`out` in place with `notified_at` cleared — the one case where a second message
+is correct — and resolves when stock rises. Untracked and made-to-order
+products never alert. Notifications go to `inventory.view` holders through the
+existing notification centre, deep-linked to the product.
+
+### Staff inventory UI
+
+`/staff/inventory` and `/staff/inventory/[productId]`. On hand, reserved and
+available are shown with the distinction stated on the page. Reservation totals
+come from one grouped query per page; the ledger is paginated. Adjustments
+require a reason, require a description for "other", confirm reductions and
+large moves by spelling out before and after, refuse a count that moved since
+page load, and refuse going below zero unless backorders are enabled.
+
+**Two mismatches with pass 7, found and fixed:** `adjust_product_inventory`
+takes `p_created_by`, not `p_actor_user_id`; and its `reason` CHECK allowed only
+six mechanical values, so every operational reason the UI offers would have been
+a 500 for whoever picked it first. The CHECK is widened additively and a test
+now asserts every reason the route accepts is one the ledger permits.
+
+## Validation
+
+- **847 tests pass, 0 fail** (757 at `e207fc5`; 90 added across three new suites
+  plus three strengthened checkout assertions).
+- Typecheck clean. Production build clean, exit 0; all seven new routes present.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings). All new
+  code lints clean.
+- Both migrations dry-run against production inside rolled-back transactions,
+  with a behavioural suite covering two customers racing for the last unit, an
+  idempotent repeat, a refused increase leaving the hold intact, a removed line
+  releasing, commit-exactly-once under replay, an expired hold not reducing
+  availability before the sweep, and low to out to resolved producing exactly
+  one alert row. **Production verified untouched after every run.**
+- All ten new function signatures verified against the exact grant statements:
+  `service_role` can execute all ten, `anon` and `authenticated` none.
+
+## Deferred, honestly
+
+Not built in this pass. Each is specified, none is half-wired:
+
+1. **Staff fulfillment panel on the order page.** The API is complete and
+   server-enforced; no staff UI drives it yet, so fulfillment state cannot be
+   changed from the browser. This is the single highest-value next step.
+2. **Customer order-page fulfillment display** — tracking link, pickup
+   instructions, delivery timeline.
+3. **Product editor shipping fields.** The twelve columns exist and default to
+   today's behaviour; the staff editor does not expose them yet.
+4. **Printable documents** — packing slip, pickup slip, return authorization,
+   refund record.
+5. **Reconciliation tooling and the remaining transactional-email catalogue.**
+   Eight new templates are seeded; the fulfillment ones send.
+6. **Custom-request orders keep the legacy eager decrement.** Reservations sit
+   in front of the direct-purchase path only. The two cannot double-count
+   because `order_items` rows exist only for direct purchases.
