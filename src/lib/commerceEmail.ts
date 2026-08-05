@@ -2,7 +2,17 @@ import "server-only";
 import { Resend } from "resend";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 
-export type CommerceEmailTemplateKey = "request_received" | "staff_new_request" | "needs_information" | "quote_ready" | "status_update" | "customer_message" | "staff_message" | "payment_received" | "order_shipped" | "order_delivered";
+export type CommerceEmailTemplateKey =
+  | "request_received" | "staff_new_request" | "needs_information" | "quote_ready"
+  | "status_update" | "customer_message" | "staff_message" | "payment_received"
+  | "order_shipped" | "order_delivered"
+  // Lifecycle templates, seeded by `20260805010000`. A key with no row still
+  // sends: `sendCommerceEmail` falls back to a generic subject and body rather
+  // than dropping the message, so a missed seed degrades to a plain email
+  // instead of silence.
+  | "order_cancelled" | "cancellation_requested" | "cancellation_approved" | "cancellation_denied"
+  | "refund_initiated" | "refund_completed" | "refund_failed"
+  | "return_requested" | "return_approved" | "return_denied" | "return_received" | "return_inspected";
 
 const defaults = {
   enabled: true, fromName: "KeyMoura", fromEmail: "orders@keymoura.com", replyTo: "support@keymoura.com",
