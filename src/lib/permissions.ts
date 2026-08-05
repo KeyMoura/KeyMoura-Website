@@ -18,6 +18,17 @@ export const PERMISSIONS = [
   "orders.manage",
   "production.view",
   "production.manage",
+  // Order lifecycle. Deciding a cancellation, deciding a return and moving
+  // money are separated from `orders.manage` on purpose: a shop hand who
+  // updates tracking should not thereby be able to refund a customer. None of
+  // these is granted to any non-admin role by default.
+  "fulfillment.view",
+  "fulfillment.manage",
+  "cancellations.review",
+  "returns.review",
+  "refunds.issue",
+  "inventory.view",
+  "inventory.manage",
   "appearance.manage",
   "emails.manage",
   // Reports
@@ -174,6 +185,45 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       label: "Manage production jobs",
       description:
         "Allows creating jobs, changing job status, editing checklists and files, and recording labour time.",
+    },
+    "fulfillment.view": {
+      category: "Commerce",
+      label: "View fulfillment",
+      description: "Allows seeing shipping, pickup and tracking details on orders.",
+    },
+    "fulfillment.manage": {
+      category: "Commerce",
+      label: "Manage fulfillment",
+      description:
+        "Allows marking orders processing, ready for pickup, picked up, shipped or delivered, and editing tracking details.",
+    },
+    "cancellations.review": {
+      category: "Commerce",
+      label: "Review cancellations",
+      description:
+        "Allows approving or declining customer cancellation requests. Issuing the refund additionally needs Issue refunds.",
+    },
+    "returns.review": {
+      category: "Commerce",
+      label: "Review returns",
+      description:
+        "Allows approving or declining returns, recording receipt and inspection, and choosing whether stock is restored.",
+    },
+    "refunds.issue": {
+      category: "Commerce",
+      label: "Issue refunds",
+      description:
+        "Allows sending money back to a customer through Stripe. Grant this narrowly: it is the only permission that moves funds out.",
+    },
+    "inventory.view": {
+      category: "Commerce",
+      label: "View inventory",
+      description: "Allows seeing stock levels and the history of every stock movement.",
+    },
+    "inventory.manage": {
+      category: "Commerce",
+      label: "Manage inventory",
+      description: "Allows adjusting stock levels by hand, with a reason recorded against each change.",
     },
     "appearance.manage": {
       category: "Site",

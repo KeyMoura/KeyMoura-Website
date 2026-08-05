@@ -29,6 +29,11 @@ export const RATE_LIMITS = {
   cartShare: { bucket: "cart.share", limit: 5, windowSeconds: 600 },
   cartShareCopy: { bucket: "cart.share.copy", limit: 20, windowSeconds: 600 },
   discountAttempt: { bucket: "discount.attempt", limit: 15, windowSeconds: 300 },
+  // Lifecycle writes. Generous enough that a customer correcting a mistake is
+  // never blocked, tight enough that a loop cannot fill the request tables or
+  // the staff notification queue.
+  orderCancel: { bucket: "order.cancel", limit: 10, windowSeconds: 300 },
+  orderReturn: { bucket: "order.return", limit: 10, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**

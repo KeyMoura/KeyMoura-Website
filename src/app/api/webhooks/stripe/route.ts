@@ -5,8 +5,107 @@ import { stripeClient } from "@/lib/stripe";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
 import { captureCommerceException } from "@/lib/monitoring";
+import {
+  logLifecycleAudit,
+  logLifecycleFailure,
+  moneyText,
+  sendLifecycleNotification,
+} from "@/lib/commerce/orderLifecycleServer";
 
 export const runtime = "nodejs";
+
+const REFUND_STATUS_MAP: Record<string, "succeeded" | "pending" | "failed" | "canceled"> = {
+  succeeded: "succeeded",
+  pending: "pending",
+  requires_action: "pending",
+  failed: "failed",
+  canceled: "canceled",
+};
+
+/**
+ * What happens once a refund is genuinely settled: finish any cancellation or
+ * return waiting on it, and tell the customer.
+ *
+ * Keyed on the refund id, so Stripe redelivering the same event cannot send a
+ * second email or reopen a closed cancellation.
+ */
+async function settleRefundSideEffects(stripeRefundId: string, status: "succeeded" | "failed", eventId: string) {
+  const { data: refund } = await routeServiceClient
+    .from("order_refunds")
+    .select("id,order_id,amount_cents,confirmed_amount_cents,cancellation_request_id,return_id,customer_note")
+    .eq("stripe_refund_id", stripeRefundId)
+    .maybeSingle();
+  if (!refund) return;
+
+  const { data: order } = await routeServiceClient
+    .from("orders")
+    .select("id,customer_id,product_name,order_number,cancellation_status,return_status")
+    .eq("id", refund.order_id)
+    .maybeSingle();
+  if (!order) return;
+
+  const amount = Number(refund.confirmed_amount_cents ?? refund.amount_cents ?? 0);
+  const succeeded = status === "succeeded";
+
+  if (refund.cancellation_request_id) {
+    await routeServiceClient
+      .from("order_cancellation_requests")
+      .update({
+        status: succeeded ? "completed" : "failed",
+        completed_at: succeeded ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", refund.cancellation_request_id)
+      .in("status", ["approved", "failed"]);
+    await routeServiceClient
+      .from("orders")
+      .update({ cancellation_status: succeeded ? "completed" : "refund_failed", updated_at: new Date().toISOString() })
+      .eq("id", refund.order_id)
+      .in("cancellation_status", ["approved", "refund_pending", "refund_failed"]);
+  }
+
+  if (refund.return_id) {
+    await routeServiceClient
+      .from("order_returns")
+      .update({
+        status: succeeded ? "completed" : "refund_pending",
+        closed_at: succeeded ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", refund.return_id)
+      .in("status", ["refund_pending", "inspected"]);
+    await routeServiceClient
+      .from("orders")
+      .update({ return_status: succeeded ? "completed" : "refund_pending", updated_at: new Date().toISOString() })
+      .eq("id", refund.order_id)
+      .in("return_status", ["refund_pending", "inspected"]);
+  }
+
+  await sendLifecycleNotification({
+    orderId: refund.order_id,
+    order: order as { customer_id: string; product_name: string; order_number: string | null },
+    actorUserId: null,
+    templateKey: succeeded ? "refund_completed" : "refund_failed",
+    eventKey: `refund-webhook-${stripeRefundId}-${status}`,
+    title: succeeded ? "Refund complete" : "Refund needs attention",
+    message: succeeded
+      ? `Your ${moneyText(amount)} refund has completed. Your bank may take a few more days to show it.`
+      : "A refund on this order did not complete. The team has been notified and will be in touch.",
+    detail: succeeded ? String(refund.customer_note || "") : "",
+    price: moneyText(amount),
+    notifyStaff: !succeeded,
+    staffTitle: "Refund failed at Stripe",
+    staffMessage: `A ${moneyText(amount)} refund on ${order.product_name} failed. Open the order to retry.`,
+  });
+
+  await logLifecycleAudit({
+    eventType: succeeded ? "staff.order.refund_confirmed" : "staff.order.refund_failed",
+    actorUserId: null,
+    actorRole: "system",
+    orderId: refund.order_id,
+    metadata: { refund_id: refund.id, amount_cents: amount, stripe_event_id: eventId },
+  });
+}
 
 export async function POST(req: NextRequest) {
   const signature = req.headers.get("stripe-signature");
@@ -15,6 +114,63 @@ export async function POST(req: NextRequest) {
   let event: Stripe.Event;
   try { event = stripeClient().webhooks.constructEvent(await req.text(), signature, secret); }
   catch { return NextResponse.json({ error: "Invalid signature" }, { status: 400 }); }
+  /**
+   * Refund events.
+   *
+   * Two jobs, both essential. First, a refund this application started is only
+   * *confirmed* here — the API call that created it may have come back
+   * "pending", and Stripe deciding later is what makes the money real. Second,
+   * a refund issued from the **Stripe Dashboard** never touched this
+   * application at all; without adopting it here, `amount_refunded_cents`
+   * stays behind and the staff refund form would happily send the same money a
+   * second time.
+   *
+   * Both `refund.*` and the older `charge.refund.updated` are handled, because
+   * which one an account receives depends on its API version.
+   */
+  if (event.type.startsWith("refund.") || event.type === "charge.refund.updated") {
+    const refundEvent = await routeServiceClient
+      .from("stripe_webhook_events")
+      .insert({ stripe_event_id: event.id, event_type: event.type });
+    if (refundEvent.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
+    if (refundEvent.error) {
+      captureCommerceException(refundEvent.error, { operation: "record_refund_event", stripeEventId: event.id });
+      return NextResponse.json({ error: "Could not record event" }, { status: 500 });
+    }
+
+    const refund = event.data.object as Stripe.Refund;
+    const paymentIntentId =
+      typeof refund.payment_intent === "string" ? refund.payment_intent : refund.payment_intent?.id || "";
+
+    const { data: reconciled, error: reconcileError } = await routeServiceClient.rpc("reconcile_stripe_refund", {
+      p_stripe_refund_id: refund.id,
+      p_payment_intent_id: paymentIntentId,
+      p_amount_cents: Number(refund.amount || 0),
+      p_status: REFUND_STATUS_MAP[String(refund.status)] ?? "pending",
+      p_reason: "Recorded from Stripe",
+      p_failure_message: refund.failure_reason ? String(refund.failure_reason).slice(0, 500) : null,
+    });
+
+    if (reconcileError) {
+      // Leave the event unmarked so a Stripe retry gets another attempt.
+      await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
+      captureCommerceException(reconcileError, { operation: "reconcile_refund", stripeEventId: event.id });
+      return NextResponse.json({ error: "Could not reconcile refund" }, { status: 500 });
+    }
+
+    const outcome = reconciled as { applied?: boolean; unmatched?: boolean; status?: string } | null;
+
+    if (outcome?.applied && (outcome.status === "succeeded" || outcome.status === "failed")) {
+      await settleRefundSideEffects(refund.id, outcome.status, event.id);
+    }
+
+    await routeServiceClient
+      .from("stripe_webhook_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("stripe_event_id", event.id);
+    return NextResponse.json({ received: true, unmatched: Boolean(outcome?.unmatched) });
+  }
+
   if (event.type === "checkout.session.async_payment_failed") {
     const failedEvent = await routeServiceClient.from("stripe_webhook_events").insert({ stripe_event_id: event.id, event_type: event.type });
     if (failedEvent.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
@@ -26,7 +182,10 @@ export async function POST(req: NextRequest) {
     const failedOrderId = failedSession.metadata?.order_id || failedSession.client_reference_id;
     const failedCustomerId = failedSession.metadata?.customer_id;
     if (failedOrderId && failedCustomerId) {
-      await routeServiceClient.from("orders").update({ stripe_checkout_session_id: null }).eq("id", failedOrderId).eq("stripe_checkout_session_id", failedSession.id);
+      // `payment_failed` rather than leaving it `unpaid`: the column previously
+      // could not tell "never tried" from "tried and was declined", which is
+      // the difference between a nudge and an apology.
+      await routeServiceClient.from("orders").update({ stripe_checkout_session_id: null, payment_status: "payment_failed" }).eq("id", failedOrderId).eq("stripe_checkout_session_id", failedSession.id);
       await Promise.all([
         notifyOrderUser({ orderId:failedOrderId, actorUserId:null, recipientUserId:failedCustomerId, title:"Payment failed", message:"Your payment did not complete. No successful payment was recorded; open the order to try again." }),
         notifyOrderStaff({ orderId:failedOrderId, actorUserId:null, title:"Customer payment failed", message:"A delayed payment failed. The order remains unpaid and the customer can try again." }),
@@ -77,6 +236,22 @@ export async function POST(req: NextRequest) {
   // A direct purchase empties its cart only now, once payment is confirmed.
   // Clearing it at session creation would lose the customer's items if they
   // abandoned Stripe; clearing it on the success redirect would trust a URL.
+  // Stock is committed here, at confirmed payment, and nowhere else.
+  //
+  // The direct-purchase path previously never touched inventory at all: a
+  // tracked product could be bought any number of times without its count
+  // moving. Committing at checkout instead would hold stock for every
+  // abandoned Stripe session; committing here means it moves exactly when the
+  // money does. `commit_order_inventory` keys each movement on the order item,
+  // so a webhook delivered five times decrements once.
+  const { error: inventoryError } = await routeServiceClient.rpc("commit_order_inventory", { p_order_id: orderId });
+  if (inventoryError) {
+    // Never fail the payment over this: the money is taken and the order is
+    // settled. A stock count that needs a nudge is a smaller problem than a
+    // customer charged for an order the system then disowns.
+    logLifecycleFailure("commit_order_inventory", inventoryError, { orderId, stripeEventId: event.id });
+  }
+
   if (order.order_kind === "direct_purchase") {
     const { data: convertedCart } = await routeServiceClient
       .from("carts")
