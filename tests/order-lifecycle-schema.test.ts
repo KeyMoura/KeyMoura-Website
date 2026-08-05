@@ -123,15 +123,24 @@ test("every new table has at least one policy", () => {
   }
 });
 
-test("anon is revoked on every new table, which also removes its inherited TRUNCATE", () => {
+test("every new table is revoked from both anon and authenticated before anything is granted back", () => {
   // TRUNCATE is in the default ACL and is *not* filtered by RLS, so a policy
-  // does not close it. Only a revoke does.
+  // does not close it — only a revoke does. Revoking `authenticated` as well
+  // and then granting back exactly SELECT is what leaves these tables with the
+  // one privilege they need and nothing else.
   for (const table of NEW_TABLES) {
-    assert.equal(
-      new RegExp(`revoke all on public\\.${table}[^;]*from[^;]*anon`, "s").test(statements),
-      true,
-      `${table} leaves anon its default privileges`
-    );
+    const revoke = new RegExp(`revoke all on public\\.${table} from anon, authenticated`, "s");
+    assert.equal(revoke.test(statements), true, `${table} leaves a role its default privileges`);
+  }
+});
+
+test("the SELECT grant comes after the revoke, or it would be revoked away", () => {
+  for (const table of ["order_cancellation_requests", "order_returns", "order_return_items"]) {
+    const revokeAt = statements.indexOf(`revoke all on public.${table} from anon, authenticated`);
+    const grantAt = statements.indexOf(`grant select on public.${table} to authenticated`);
+    assert.notEqual(revokeAt, -1, `${table} has no revoke`);
+    assert.notEqual(grantAt, -1, `${table} has no authenticated select grant`);
+    assert.equal(revokeAt < grantAt, true, `${table} grants SELECT before revoking, so it ends up with nothing`);
   }
 });
 

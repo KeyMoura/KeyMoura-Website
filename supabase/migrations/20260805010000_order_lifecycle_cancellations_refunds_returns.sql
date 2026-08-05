@@ -1098,9 +1098,14 @@ create policy "staff read inventory adjustments" on public.inventory_adjustments
 -- default ACL hands `anon` and `authenticated` TRUNCATE, which RLS does not
 -- filter.
 
-revoke all on public.order_cancellation_requests from anon;
-revoke all on public.order_returns from anon;
-revoke all on public.order_return_items from anon;
+-- Revoked from `authenticated` too, before the SELECT is granted back. The
+-- default ACL hands every role TRUNCATE, REFERENCES and TRIGGER, and
+-- **TRUNCATE is not filtered by RLS** — a policy does not close it, only a
+-- revoke does. Granting SELECT afterwards restores exactly the one privilege
+-- these tables need.
+revoke all on public.order_cancellation_requests from anon, authenticated;
+revoke all on public.order_returns from anon, authenticated;
+revoke all on public.order_return_items from anon, authenticated;
 revoke all on public.inventory_adjustments from anon, authenticated;
 
 grant select on public.order_cancellation_requests to authenticated;
