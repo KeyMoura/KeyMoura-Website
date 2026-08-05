@@ -10,6 +10,8 @@ const webhook = readFileSync("src/app/api/webhooks/stripe/route.ts", "utf8");
 const staffPage = readFileSync("src/app/staff/orders/[id]/page.tsx", "utf8");
 const footer = readFileSync("src/components/SiteFooter.tsx", "utf8");
 const accountingMigration = readFileSync("supabase/migrations/20260801080000_atomic_payment_accounting.sql", "utf8");
+const lifecycleServer = readFileSync("src/lib/commerce/orderLifecycleServer.ts", "utf8");
+const lifecyclePanel = readFileSync("src/components/staff/OrderLifecyclePanel.tsx", "utf8");
 
 test("payments and refunds have protected, itemized records", () => {
   assert.match(migration, /create table if not exists public\.order_payments/);
@@ -22,12 +24,26 @@ test("payments and refunds have protected, itemized records", () => {
 });
 
 test("staff refunds are permission checked, bounded, confirmed, and idempotent", () => {
-  assert.match(refundRoute, /requirePermission\(req, "orders\.manage"\)/);
-  assert.match(refundRoute, /Refund exceeds the refundable amount/);
-  assert.match(refundRoute, /idempotencyKey/);
-  assert.match(refundRoute, /record_stripe_order_refund/);
-  assert.match(staffPage, /This cannot be undone/);
-  assert.match(staffPage, /Cancelling an order does not move money/);
+  // Tightened by the order-lifecycle pass. `orders.manage` used to gate
+  // refunds, which meant anyone who could update tracking could also send
+  // money out; `refunds.issue` is a narrower key granted to nobody by default.
+  assert.match(refundRoute, /requirePermission\(req, "refunds\.issue"\)/);
+  assert.equal(/requirePermission\(req, "orders\.manage"\)/.test(refundRoute), false);
+
+  // Bounded — and now against a figure that also subtracts refunds still in
+  // flight, which the old `amount_paid - amount_refunded` did not.
+  assert.match(refundRoute, /is left to refund on this order/);
+  assert.match(refundRoute, /Number\(amount\) > lifecycle\.refundableCents/);
+
+  assert.match(refundRoute, /idempotency_key|idempotencyKey/);
+  assert.match(lifecycleServer, /idempotencyKey: leg\.idempotency_key/);
+
+  // The confirmation copy moved with the controls into OrderLifecyclePanel,
+  // which is the single place lifecycle actions now live.
+  assert.match(lifecyclePanel, /cannot be taken back/);
+  assert.match(lifecyclePanel, /Remaining refundable after this/);
+  assert.match(lifecyclePanel, /window\.confirm/);
+  assert.match(staffPage, /OrderLifecyclePanel/);
 });
 
 test("expired quotes cannot be approved or paid", () => {

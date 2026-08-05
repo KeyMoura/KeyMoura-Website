@@ -8,6 +8,7 @@ import { RequestSpecifications } from "@/components/RequestSpecifications";
 import { moneyFromCents, orderLabel, orderNeedsCustomerAction, orderNextStep } from "@/lib/orderHub";
 import { checkoutAmountCents } from "@/lib/paymentMath";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
+import { OrderLifecycleActions } from "@/components/commerce/OrderLifecycleActions";
 import { Badge, EmptyState, Notice, cx } from "@/components/ui/DesignSystem";
 
 const CUSTOMER_STAGES = ["Request", "Quote & payment", "Production", "Review", "Fulfillment", "Complete"] as const;
@@ -290,6 +291,7 @@ export default function OrderDetailPage() {
         </div>
       ) : null}
       </div>
+      <OrderLifecycleActions orderId={id} onChanged={() => void load()} />
       <details className="ui-card !p-0">
         <summary className="cursor-pointer list-none p-5 font-semibold">Request details <span className="ml-2 text-sm font-normal text-brand-textMuted">quantity, options, and original notes</span></summary>
       <section className="border-t border-zinc-800 p-5">

@@ -10,6 +10,18 @@ import { StaffOrderWorkspace } from "@/components/staff/StaffOrderWorkspace";
 import { OrderProductionJobs } from "@/components/staff/production/OrderProductionJobs";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
+import { OrderLifecyclePanel } from "@/components/staff/OrderLifecyclePanel";
+
+/**
+ * A settled quote is not editable.
+ *
+ * This was `payment_status === "paid"`, which stopped being the right question
+ * once the column gained `partially_refunded` and `refunded`: a paid order that
+ * was partly refunded would have become editable again, letting its price be
+ * rewritten underneath money that had already changed hands.
+ */
+const quoteLocked = (order: { payment_status: string }) =>
+  ["paid", "partially_refunded", "refunded"].includes(order.payment_status);
 
 type Order = {
   id: string;
@@ -130,8 +142,6 @@ export default function StaffOrderDetail() {
   const [deposit, setDeposit] = useState("");
   const [quoteNote, setQuoteNote] = useState("");
   const [quoteExpires, setQuoteExpires] = useState("");
-  const [refundAmount, setRefundAmount] = useState("");
-  const [refundReason, setRefundReason] = useState("");
   const [target, setTarget] = useState("");
   const [staffNotes, setStaffNotes] = useState("");
   const [method, setMethod] = useState<"shipping"|"pickup">("shipping");
@@ -178,8 +188,10 @@ export default function StaffOrderDetail() {
       setTrackingNumber(row.tracking_number ?? "");
       setTrackingUrl(row.tracking_url ?? "");
       setReviewNote(row.final_review_note ?? "");
-      const remainingRefundableCents = Math.max(0, row.amount_paid_cents - (row.amount_refunded_cents || 0));
-      setRefundAmount(remainingRefundableCents > 0 ? String(remainingRefundableCents / 100) : "");
+      // The refund amount is no longer seeded here. It lives in
+      // OrderLifecyclePanel, which computes what is refundable server-side with
+      // pending refunds already subtracted — this local subtraction did not
+      // know about refunds still in flight.
     }
     setError(o.error?.message ?? m.error?.message ?? e.error?.message ?? h.error?.message ?? p.error?.message ?? r.error?.message ?? "");
   }, [id, supabase]);
@@ -256,15 +268,6 @@ export default function StaffOrderDetail() {
     if (!response.ok) setError(result.error || "Could not send the review package");
     else { setReviewFiles([]); await load(); }
     setSendingReview(false);
-  }
-  async function issueRefund() {
-    const cents = Math.round(Number(refundAmount) * 100);
-    if (!Number.isInteger(cents) || cents < 1 || refundReason.trim().length < 3) { setError("Enter a refund amount and reason."); return; }
-    if (!window.confirm(`Issue a $${(cents/100).toFixed(2)} refund through Stripe?\n\nThis cannot be undone. The customer will be notified.`)) return;
-    const r = await fetch(`/api/staff/orders/${id}/refund`, { method:"POST", headers:await authHeaders(), body:JSON.stringify({ amount_cents:cents, reason:refundReason.trim() }) });
-    const result = await r.json();
-    if (!r.ok) setError(result.error || "Could not issue refund");
-    else { setRefundAmount(""); setRefundReason(""); setError(""); await load(); }
   }
   async function fulfillmentAction(shipment_action: "mark_shipped"|"mark_delivered") {
     const actionLabel = shipment_action === "mark_delivered" ? "mark this order completed" : method === "pickup" ? "mark this order ready for pickup" : "mark this order shipped";
@@ -359,6 +362,7 @@ export default function StaffOrderDetail() {
           <button disabled={sendingReview || reviewFiles.length < 1 || reviewNote.trim().length < 3} onClick={()=>void sendForReview()} className="ui-btn ui-btn-primary mt-5 disabled:cursor-not-allowed disabled:opacity-40">{sendingReview ? "Sending review…" : "Review & send to customer"}</button>
         </section> : null}
         {order.status === "final_review" ? <section className="ui-card lg:col-span-2"><p className="ui-eyebrow">Sent to customer</p><h2 className="mt-1 text-xl font-semibold">Finished-product review package</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : null}<OrderReviewGallery paths={order.final_review_asset_paths || []} /></section> : null}
+        <OrderLifecyclePanel orderId={id} productName={order.product_name} />
         <section id="quote" className="ui-card -order-1 scroll-mt-5 lg:col-span-2">
           <div className="flex items-start justify-between gap-4"><div><p className="ui-eyebrow">Customer quote</p><h2 className="mt-1 text-xl font-semibold">Price & schedule</h2></div><Badge>Revision {order.quote_revision}</Badge></div>
           <p className="mt-2 text-sm leading-6 text-brand-textMuted">This is the final price the customer pays—not your material or labor cost. Internal costs stay in the Production workspace.</p>
@@ -366,7 +370,7 @@ export default function StaffOrderDetail() {
             <label className="text-sm">
               Total customer price ($)
               <input
-                disabled={!canManage || order.payment_status === "paid"}
+                disabled={!canManage || quoteLocked(order)}
                 className={`${input} mt-1 w-full`}
                 type="number"
                 step=".01"
@@ -388,11 +392,11 @@ export default function StaffOrderDetail() {
             </label>
             <label className="text-sm">
               Deposit due first ($)
-              <input disabled={!canManage || order.payment_status === "paid"} className={`${input} mt-1 w-full`} type="number" min="0.5" step=".01" value={deposit} onChange={(e)=>setDeposit(e.target.value)} placeholder="Blank = collect full price" />
+              <input disabled={!canManage || quoteLocked(order)} className={`${input} mt-1 w-full`} type="number" min="0.5" step=".01" value={deposit} onChange={(e)=>setDeposit(e.target.value)} placeholder="Blank = collect full price" />
               <span className="mt-1 block text-[10px] text-brand-textMuted">Leave blank to collect the full quote. Editing price or deposit creates a new quote revision.</span>
             </label>
             <label className="text-sm sm:col-span-2">Quote note<textarea disabled={!canManage} className={`${input} mt-1 min-h-20 w-full`} value={quoteNote} onChange={e=>setQuoteNote(e.target.value)} placeholder="What changed or what is included in this quote?" /></label>
-            <label className="text-sm">Quote valid through<input disabled={!canManage || order.payment_status === "paid"} className={`${input} mt-1 w-full`} type="date" value={quoteExpires} onChange={e=>setQuoteExpires(e.target.value)} /><span className="mt-1 block text-[10px] text-brand-textMuted">Checkout is blocked after this date until a new quote is sent.</span></label>
+            <label className="text-sm">Quote valid through<input disabled={!canManage || quoteLocked(order)} className={`${input} mt-1 w-full`} type="date" value={quoteExpires} onChange={e=>setQuoteExpires(e.target.value)} /><span className="mt-1 block text-[10px] text-brand-textMuted">Checkout is blocked after this date until a new quote is sent.</span></label>
             <label className="text-sm">
               Target date
               <input
@@ -421,7 +425,10 @@ export default function StaffOrderDetail() {
               {price.trim() && Math.round(Number(price)*100)!==order.agreed_price_cents ? "Review & send quote" : "Save internal details"}
             </button>
           ) : null}
-          {canManage && order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <Notice tone="danger" className="mt-6"><h3 className="font-semibold">Cancellation & refund</h3><p className="mt-1 text-xs text-brand-textMuted">Cancelling an order does not move money. Refunds are separate, recorded actions sent through Stripe.</p><div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr_auto]"><label className="text-sm">Refund amount ($)<input className={`${input} mt-1 w-full`} type="number" min=".01" max={(order.amount_paid_cents-(order.amount_refunded_cents||0))/100} step=".01" value={refundAmount} onChange={e=>setRefundAmount(e.target.value)} /></label><label className="text-sm">Internal reason<input className={`${input} mt-1 w-full`} value={refundReason} onChange={e=>setRefundReason(e.target.value)} placeholder="Why is this refund being issued?" /></label><button onClick={()=>void issueRefund()} className="ui-btn ui-btn-danger self-end">Review & issue refund</button></div></Notice> : null}
+          {/* Refunds, cancellations and returns moved into OrderLifecyclePanel
+              below. They used to be three unrelated controls in three places;
+              refunding sensibly means seeing the production and fulfillment
+              state at the same moment. */}
           <dl className="mt-5 grid gap-3 border-t border-zinc-800 pt-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-brand-textMuted">Item</dt>

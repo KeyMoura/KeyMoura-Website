@@ -223,7 +223,12 @@ async function discountContextFor(customerId: string | null, codeId: string | nu
       .from("orders")
       .select("id", { count: "exact", head: true })
       .eq("customer_id", customerId)
-      .eq("payment_status", "paid"),
+      // "Has this customer bought before?" — which stays true after a partial
+      // refund. Matching only `paid` would let a first-order-only code be
+      // reused the moment any earlier order was partly refunded, because that
+      // order's payment status moves to `partially_refunded`. A fully refunded
+      // order is excluded: that purchase was undone.
+      .in("payment_status", ["paid", "partially_refunded"]),
   ]);
 
   return { customerUses: uses ?? 0, customerOrderCount: orders ?? 0 };
