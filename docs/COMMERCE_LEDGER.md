@@ -2154,3 +2154,134 @@ both. Every listed finding is pre-existing.
    is the one path no automated session can reach.
 4. Then pick up shipping configuration and the inventory surface, in that
    order — both now have their schema and their rules in place.
+
+---
+
+# Pass 8 — shipping, fulfillment, inventory reservations, commerce settings
+
+Branch `shipping-fulfillment-inventory-reservations-20260805`, from `e207fc5`.
+
+## Verified starting state — 2026-08-05
+
+| Check | Result |
+|-------|--------|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `e207fc5` |
+| Baseline present | `e207fc5` is HEAD, the pass-7 merge |
+| Production health | `/` 200, `/catalog` 200, `GET /api/cart` 200 |
+| Migration ledger | **exact** — 38 repo files, 38 rows, versions and names identical |
+| Refund webhook events | handler present: `event.type.startsWith("refund.")` covers `refund.created`, `refund.updated`, `refund.failed`, plus `charge.refund.updated` |
+
+The owner has since subscribed the Stripe endpoint to the three refund events,
+closing the item pass 7 recorded as external setup #2.
+
+## Phase 1 — audit of what actually exists
+
+Read from code, live schema, routes and grants — not from ledger labels.
+
+### The three misleading migration names
+
+`20260731170000_order_fulfillment`, `20260731180000_catalog_inventory_editor`
+and `20260731190000_checkout_inventory_reservations` are all applied, and pass
+4 recorded them as covering "shipping, inventory, fulfilment". They do not.
+
+**`checkout_inventory_reservations` is not a reservation system.** It adds
+`orders.checkout_token` and `orders.inventory_reserved_quantity`, and
+`create_checkout_order` decrements `products.inventory_quantity` *immediately*
+at custom-request order creation, restoring it by trigger on cancel/decline or
+delete. There is no expiry, no sweep, no checkout-session link, and no
+availability calculation. It is an eager decrement with a misleading name.
+
+**`order_fulfillment` is shipment columns only** — `fulfillment_method`
+(`shipping`/`pickup`), `shipping_address`, `shipping_carrier`,
+`tracking_number`, `tracking_url`, `shipped_at`, `delivered_at`, plus two email
+templates. No state machine, no price, no snapshots, no origin, no packages.
+
+### Two inventory writers already exist, and they do not overlap
+
+| Writer | Path | Moves stock |
+|--------|------|-------------|
+| `create_checkout_order` (pass 1) | custom request | at order creation, direct `update products` |
+| `commit_order_inventory` (pass 7) | direct purchase | at confirmed payment, through `inventory_adjustments` |
+
+They cannot double-count **because they cover disjoint order kinds**:
+`order_items` rows are written only by `/api/cart/checkout`, so
+`commit_order_inventory` finds nothing on a custom-request order, and
+`create_checkout_order` is never called for a direct purchase. That is a real
+invariant this pass must not break, not a coincidence to leave undocumented.
+
+### Lifecycle map — cart to restoration, as built today
+
+    cart add/update ........ no inventory check beyond display; no reservation
+    checkout creation ...... prices revalidated from live rows; order +
+                             order_items written; Stripe session created.
+                             NO inventory movement. NO address. NO shipping
+                             price. NO fulfillment method chosen.
+    payment confirmed ...... record_stripe_order_payment, then
+                             commit_order_inventory (idempotent per order item)
+    checkout abandoned ..... nothing happens. Order stays awaiting_payment
+                             forever; cart keeps its items
+    session expired ........ NOT HANDLED — no `checkout.session.expired` case
+    payment failed ......... payment_status = payment_failed; stock untouched
+                             (none was held)
+    repeated webhook ....... stripe_webhook_events unique on event id; the
+                             accounting RPC and the inventory commit are each
+                             independently idempotent
+    production complete .... does NOT touch fulfillment_status
+    cancellation ........... restores from the ledger, not the order lines
+    return inspection ...... restocks per line, on an explicit decision
+
+**The overselling window is real and open:** two customers can both check out
+the last unit, and both payments succeed.
+
+### Fulfillment state — the column exists and nothing writes it
+
+`orders.fulfillment_status` (pass 7) defaults to `unfulfilled` and has a
+transition graph and labels in `orderLifecycle.ts`. **No route writes it.**
+Fulfillment is still driven by `shipment_action` on
+`PATCH /api/staff/orders/[id]`, which sets `shipped_at`/`delivered_at` and
+moves `orders.status`, and never touches the new column. Customer-facing
+fulfillment state is therefore derived from timestamps, while the column that
+the cancellation and return eligibility rules *read* stays at `unfulfilled`
+forever — so a shipped order still looks cancellable to `evaluateCancellation`.
+
+### Field-by-field audit
+
+| Area | State |
+|------|-------|
+| Fulfillment states | enum + graph + labels exist; unwritten |
+| Shipment data | carrier, number, url, shipped_at, delivered_at on `orders` |
+| Local pickup | `fulfillment_method='pickup'` only; no location, no snapshot, no instructions |
+| Shipping-address snapshot | `orders.shipping_address` jsonb — written only by the custom-request RPC; **null on every direct purchase** |
+| Shipping prices | **nowhere.** No column on `orders`, no calculation anywhere |
+| Product shipping fields | `weight_grams`, `dimensions_text`, `package_dimensions_text`, `shipping_notes`, `return_notes` |
+| Product inventory fields | `sku`, `inventory_policy`, `inventory_quantity`, `low_stock_threshold` (default 2), `continue_selling_when_out_of_stock`, `made_to_order`, `lead_time_text` |
+| Order fulfillment UI | staff: tracking fields + two shipment actions on the order page. customer: read-only timestamps |
+| Inventory ledger | `inventory_adjustments` + `adjust_product_inventory` (pass 7) |
+| Inventory reservations | **none** |
+| Abandoned checkout | **none** |
+| Low-stock behavior | threshold column only; nothing reads it |
+| Commerce policies | `site_settings.commerce_policy` jsonb + total parser; **no editing surface** |
+| Return address | `commerce_policy.returns.returnAddress`, unset |
+| Shipping configuration | **none** |
+| Transactional emails | `email_templates` + `email_deliveries` (unique `event_key`) + `sendCommerceEmail`; 22 templates; **HTML only, no plain text** |
+| Staff notifications | `notifyOrderStaff` / `notifyOrderUser` |
+| Printable documents | production traveller/work order/QC only |
+| Audit events | `logAuditEvent` retains `staff.`-prefixed types; lifecycle events registered |
+| Staff permissions | `fulfillment.view/manage`, `inventory.view/manage` exist from pass 7 **with nothing behind them** |
+
+### Snapshots versus mutable references
+
+`order_items` snapshots name, slug, options and price. `order_returns`
+snapshots the return address at approval. Everything shipping-related is a
+**mutable reference or absent**: there is no method snapshot, no price
+snapshot, no origin snapshot, no package snapshot, and a direct-purchase order
+carries no address at all. Order addresses cannot currently change after
+purchase only because nothing writes them.
+
+Tracking URLs are validated for `https://` prefix and nothing else — no host
+allow-list and no template generation. Local pickup is a `fulfillment_method`
+value with no data behind it. Production completion does not affect
+fulfillment.
+
