@@ -107,12 +107,43 @@ test("the fulfillment method CHECK keeps both existing values", () => {
 });
 
 test("no existing commerce table is altered destructively", () => {
-  for (const table of ["order_items", "profiles", "carts", "cart_items", "order_refunds", "inventory_adjustments"]) {
+  // `inventory_adjustments` is excluded because this pass deliberately *widens*
+  // its reason CHECK, which the next test pins. Every other commerce table is
+  // untouched apart from column additions.
+  for (const table of ["order_items", "profiles", "carts", "cart_items", "order_refunds"]) {
     assert.doesNotMatch(
       both,
       new RegExp(`alter table (public\\.)?${table}\\b(?![\\s\\S]{0,40}add column)`),
       `${table} must not be altered`
     );
+  }
+});
+
+test("the inventory reason CHECK is widened, never narrowed", () => {
+  const check = reservations.slice(reservations.indexOf("inventory_adjustments_reason_check"));
+  // Every pass-7 value must still be legal, or a stored adjustment would start
+  // failing its own constraint.
+  for (const value of [
+    "order_committed", "order_cancelled", "return_restocked",
+    "manual_set", "manual_adjust", "correction",
+  ]) {
+    assert.match(check.slice(0, 900), new RegExp(`'${value}'`), `${value} was dropped from the CHECK`);
+  }
+  // And the operational reasons a person can choose.
+  for (const value of ["recount", "damage", "loss", "found", "production", "supplier_delivery", "other"]) {
+    assert.match(check.slice(0, 900), new RegExp(`'${value}'`), `${value} is missing`);
+  }
+});
+
+test("every reason the inventory route accepts is legal in the ledger", () => {
+  // A route offering a reason the CHECK refuses is a 500 waiting for the first
+  // staff member who picks it.
+  const route = read("src/app/api/staff/inventory/[productId]/route.ts");
+  const accepted = [...route.matchAll(/^\s*"(\w+)",$/gm)].map((match) => match[1]);
+  const check = reservations.slice(reservations.indexOf("inventory_adjustments_reason_check"), reservations.indexOf("inventory_adjustments_reason_check") + 900);
+  assert.ok(accepted.length >= 8, "expected the REASONS list to be found");
+  for (const reason of accepted) {
+    assert.match(check, new RegExp(`'${reason}'`), `the route accepts "${reason}" but the ledger CHECK refuses it`);
   }
 });
 

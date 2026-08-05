@@ -115,6 +115,26 @@ create policy "Staff read inventory alerts" on public.inventory_alerts
   for select using (public.is_staff_user());
 
 -- ---------------------------------------------------------------------------
+-- Adjustment reasons
+-- ---------------------------------------------------------------------------
+-- Widened, never narrowed. Pass 7 allowed six reasons, all of them mechanical
+-- ("this is what moved the stock"). A manual adjustment made by a person needs
+-- to say *why* — a recount and a breakage are the same delta and completely
+-- different facts, and "the count changed and nobody knows why" is the state
+-- this ledger exists to make impossible.
+--
+-- Every pass-7 value stays legal, so no stored row can begin to fail the CHECK.
+
+alter table public.inventory_adjustments drop constraint if exists inventory_adjustments_reason_check;
+alter table public.inventory_adjustments add constraint inventory_adjustments_reason_check check (
+  reason in (
+    'order_committed', 'order_cancelled', 'return_restocked',
+    'manual_set', 'manual_adjust', 'correction',
+    'recount', 'damage', 'loss', 'found', 'production', 'supplier_delivery', 'other'
+  )
+);
+
+-- ---------------------------------------------------------------------------
 -- Availability
 -- ---------------------------------------------------------------------------
 -- Available = on hand - what is actively held. Expired holds are excluded by
