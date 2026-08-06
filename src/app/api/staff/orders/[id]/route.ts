@@ -24,6 +24,49 @@ function customerStatusNotification(status: string, productName: string) {
   return notifications[status] ?? { title: "Order status updated", message: `Your order status changed to ${status.replaceAll("_", " ")}.` };
 }
 
+/**
+ * The state the browser rendered from, compared with the state on the row.
+ *
+ * Both halves matter. This early check produces a readable 409 naming the
+ * current status; the `.eq()` on the write below closes the remaining gap
+ * between this read and that write, where a colleague's request can land.
+ *
+ * `quote_revision` is checked as well as `status`, because two staff editing a
+ * price never change the status — they both sit on `accepted` — and a status
+ * comparison alone would let the second one's price silently win.
+ */
+function staleConflict(
+  body: Record<string, unknown>,
+  existing: { status: string; quote_revision: number | null }
+): NextResponse | null {
+  const expectedStatus = body.expected_status;
+  if (typeof expectedStatus === "string" && expectedStatus && expectedStatus !== existing.status) {
+    return NextResponse.json(
+      {
+        error: `This order is now “${String(existing.status).replaceAll("_", " ")}”, not “${expectedStatus.replaceAll("_", " ")}”. Reload the order before changing it.`,
+        conflict: true,
+        currentStatus: existing.status,
+      },
+      { status: 409 }
+    );
+  }
+  const expectedRevision = body.expected_quote_revision;
+  if (
+    Number.isInteger(expectedRevision) &&
+    Number(expectedRevision) !== Number(existing.quote_revision || 0)
+  ) {
+    return NextResponse.json(
+      {
+        error: `A newer quote (revision ${existing.quote_revision}) was sent while this page was open. Reload the order before quoting again.`,
+        conflict: true,
+        currentStatus: existing.status,
+      },
+      { status: 409 }
+    );
+  }
+  return null;
+}
+
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const actor = await requirePermission(req, "orders.manage");
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -32,6 +75,9 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   if (!body) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   const { data: existing } = await routeServiceClient.from("orders").select("*").eq("id", id).maybeSingle();
   if (!existing) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+  const conflict = staleConflict(body, existing);
+  if (conflict) return conflict;
 
   const update: Record<string, unknown> = {};
   if (typeof body.status === "string") {
@@ -74,19 +120,30 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     if (value !== undefined) update[key] = value;
   }
   if (update.tracking_url && !/^https:\/\//i.test(String(update.tracking_url))) return NextResponse.json({ error: "Tracking link must use https://" }, { status: 400 });
-  const shipmentAction = body.shipment_action;
-  if (shipmentAction === "mark_shipped") {
-    if (existing.status !== "ready") return NextResponse.json({ error: "The customer must approve the finished order before fulfillment." }, { status: 409 });
-    if (remainingBalanceCents(existing) > 0) return NextResponse.json({ error: "The remaining balance must be paid before fulfillment." }, { status: 409 });
-    if ((update.fulfillment_method || existing.fulfillment_method) === "shipping" && !(update.tracking_number || existing.tracking_number)) return NextResponse.json({ error: "Add a tracking number before marking this order shipped." }, { status: 400 });
-    update.shipped_at = existing.shipped_at || new Date().toISOString();
-    update.status = "ready";
-  } else if (shipmentAction === "mark_delivered") {
-    if (!existing.shipped_at) return NextResponse.json({ error: "Mark this order shipped or ready for pickup first." }, { status: 409 });
-    update.shipped_at = existing.shipped_at;
-    update.delivered_at = existing.delivered_at || new Date().toISOString();
-    update.completed_at = existing.completed_at || new Date().toISOString();
-    update.status = "completed";
+  /*
+   * `shipment_action` is gone.
+   *
+   * It was the pass-1 fulfillment path: `mark_shipped` / `mark_delivered` set
+   * `shipped_at`, moved `orders.status` and emailed the customer. Pass 8
+   * replaced it with `POST /api/staff/orders/[id]/fulfillment` and pass 9 built
+   * the UI, but the branch was left here, unreferenced by any caller, and it
+   * was worse than dead code on two counts:
+   *
+   * 1. **It bypassed the permission that guards shipping.** Handing goods over
+   *    needs `fulfillment.manage`; this route only asks for `orders.manage`. A
+   *    shop hand who may edit an order could post one JSON body and ship it.
+   * 2. **It never wrote `fulfillment_status`** — the column the cancellation and
+   *    return eligibility rules actually read — so an order shipped this way
+   *    stayed "unfulfilled" to every rule that asked, and still looked
+   *    cancellable.
+   *
+   * Fulfillment now has exactly one write path, and it is the guarded one.
+   */
+  if (typeof body.shipment_action === "string") {
+    return NextResponse.json(
+      { error: "Fulfillment is changed from the fulfillment panel, which records the transition and notifies the customer once." },
+      { status: 410 }
+    );
   }
   if (update.status === "final_review" && (existing.status !== "in_progress" || remainingBalanceCents(existing) > 0)) return NextResponse.json({ error: "Only a fully paid order in production can be sent for final review." }, { status: 409 });
   if (update.status === "final_review" && (!update.final_review_note || !Array.isArray(update.final_review_asset_paths) || update.final_review_asset_paths.length < 1)) return NextResponse.json({ error: "Add a customer note and at least one photo before sending this review." }, { status: 400 });
@@ -106,8 +163,39 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     update.cancellation_reason = reason;
     update.stripe_checkout_session_id = null;
   }
-  const { error } = await routeServiceClient.from("orders").update(update).eq("id", id);
+  /*
+   * The guarded write.
+   *
+   * Re-asserting the status — and the quote revision whenever this request
+   * creates a new one — closes the window between the `select` above and this
+   * `update`. Two staff members pressing "Accept & continue" a moment apart used
+   * to both succeed: each read `requested`, each wrote, and because each
+   * inserted its own `order_status_history` row the derived `eventKey` differed,
+   * so the customer received **two** emails. Now the second matches zero rows.
+   *
+   * `.select("id")` is what makes that visible. Without it Supabase reports
+   * success for an update that changed nothing, which is precisely the silent
+   * overwrite this pass exists to remove.
+   */
+  const base = routeServiceClient.from("orders").update(update).eq("id", id).eq("status", existing.status);
+  const guarded = typeof update.quote_revision === "number" ? base.eq("quote_revision", existing.quote_revision || 0) : base;
+  const { data: written, error } = await guarded.select("id").maybeSingle();
   if (error) return NextResponse.json({ error: "Could not update order" }, { status: 500 });
+  if (!written) {
+    // Re-read so the message names where the order actually is, rather than
+    // telling staff "something changed" and leaving them to find out.
+    const { data: current } = await routeServiceClient.from("orders").select("status,quote_revision").eq("id", id).maybeSingle();
+    return NextResponse.json(
+      {
+        error: current
+          ? `Somebody changed this order a moment ago — it is now “${String(current.status).replaceAll("_", " ")}”. Nothing was applied. Reload before trying again.`
+          : "This order changed a moment ago. Nothing was applied. Reload before trying again.",
+        conflict: true,
+        currentStatus: current?.status ?? null,
+      },
+      { status: 409 }
+    );
+  }
   if (typeof update.quote_revision === "number" && typeof update.agreed_price_cents === "number") {
     await routeServiceClient.from("order_quotes").insert({ order_id:id, revision:update.quote_revision, total_cents:update.agreed_price_cents, deposit_cents:update.deposit_amount_cents ?? existing.deposit_amount_cents, note:optionalText(body.quote_note,2000), created_by:actor.userId });
   }
@@ -120,7 +208,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   const { data: customer } = await routeServiceClient.auth.admin.getUserById(existing.customer_id);
   const priceBecamePayable = typeof update.quote_revision === "number" && typeof update.agreed_price_cents === "number" && update.agreed_price_cents > 0;
   const statusChanged = typeof update.status === "string" && update.status !== existing.status;
-  if (priceBecamePayable || (statusChanged && !shipmentAction)) {
+  if (priceBecamePayable || statusChanged) {
     const finalStatus = String(update.status || existing.status).replaceAll("_", " ");
     const statusNotification = customerStatusNotification(String(update.status || existing.status), existing.product_name);
     const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : statusNotification.message;
@@ -135,24 +223,13 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       message,
     });
   }
-  if ((shipmentAction === "mark_shipped" && !existing.shipped_at) || (shipmentAction === "mark_delivered" && !existing.delivered_at)) {
-    const delivered = shipmentAction === "mark_delivered";
-    const pickup = (update.fulfillment_method || existing.fulfillment_method) === "pickup";
-    const templateKey: CommerceEmailTemplateKey = delivered ? "order_delivered" : "order_shipped";
-    const carrier = String(update.shipping_carrier || existing.shipping_carrier || (update.fulfillment_method === "pickup" || existing.fulfillment_method === "pickup" ? "KeyMoura pickup" : "Carrier"));
-    const trackingNumber = String(update.tracking_number || existing.tracking_number || "Not applicable");
-    await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-fulfillment-${id}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your order", status:delivered ? "delivered" : "shipped", price:"", carrier, tracking_number:trackingNumber }, href:!delivered && String(update.tracking_url || existing.tracking_url || "").startsWith("https://") ? String(update.tracking_url || existing.tracking_url) : `/orders/${id}` });
-    await notifyOrderUser({
-      orderId:id,
-      actorUserId:actor.userId,
-      recipientUserId:existing.customer_id,
-      title: delivered ? (pickup ? "Pickup completed" : "Order delivered") : (pickup ? "Ready for pickup" : "Order shipped"),
-      message: delivered
-        ? `${existing.product_name} was marked ${pickup ? "picked up" : "delivered"}.`
-        : pickup
-          ? `${existing.product_name} is ready for pickup. Open the order for details.`
-          : `${existing.product_name} has shipped. Tracking: ${trackingNumber}`,
-    });
-  }
-  return NextResponse.json({ ok: true });
+  /*
+   * The shipped/delivered emails that used to live here went with
+   * `shipment_action`. `POST /api/staff/orders/[id]/fulfillment` sends them
+   * from `FULFILLMENT_CUSTOMER_EMAIL` — the same table it shows staff in the
+   * confirmation — so the preview and the send cannot disagree, and the event
+   * key is derived from the state rather than from a row id that changes on
+   * every click.
+   */
+  return NextResponse.json({ ok: true, status: update.status ?? existing.status, quote_revision: update.quote_revision ?? existing.quote_revision });
 }

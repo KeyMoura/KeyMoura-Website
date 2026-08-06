@@ -27,6 +27,7 @@ export const runtime = "nodejs";
 
 type ActionBody = {
   action?: unknown;
+  expected_status?: unknown;
   decision_note?: unknown;
   internal_note?: unknown;
   instructions?: unknown;
@@ -75,6 +76,28 @@ export async function POST(
     .eq("order_id", id)
     .maybeSingle();
   if (!record) return NextResponse.json({ error: "Return not found" }, { status: 404 });
+
+  /*
+   * The state the browser rendered the buttons from.
+   *
+   * The graph below already refuses an illegal move, but a *legal* move made
+   * from a stale page is the case it cannot see. A return sitting at `approved`
+   * that a colleague advances to `awaiting_shipment` still accepts "Mark
+   * received" from a page showing `approved` — legal, and wrong, because it
+   * skips the step that recorded the parcel was expected. Comparing what the
+   * page believed closes that.
+   */
+  const expected = typeof body?.expected_status === "string" ? body.expected_status : "";
+  if (expected && expected !== record.status) {
+    return NextResponse.json(
+      {
+        error: `This return is now “${String(record.status).replaceAll("_", " ")}”, not “${expected.replaceAll("_", " ")}”. Reload the order before deciding.`,
+        conflict: true,
+        currentStatus: record.status,
+      },
+      { status: 409 }
+    );
+  }
 
   const { data: lines } = await routeServiceClient
     .from("order_return_items")

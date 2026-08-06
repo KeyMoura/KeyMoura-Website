@@ -41,8 +41,19 @@ test("draft deletion is owner scoped and confirmed", () => {
 
 test("staff customer-facing changes require review and clarify quote totals", () => {
   const page = read("src/app/staff/orders/[id]/page.tsx");
-  assert.match(page, /Review & confirm update/);
-  assert.match(page, /The customer will be notified/);
+  /*
+   * "Review & confirm update" was one button that both reviewed and confirmed.
+   * Pass 11 split that: the named button opens a dialog that states the current
+   * status, the proposed one, and what the customer is told. The review is now a
+   * separate step rather than a word in a label.
+   */
+  assert.match(page, /label="Apply this status"/);
+  assert.match(page, /Choosing a status here changes nothing until you confirm/);
+  assert.match(page, /currentState=\{statusLabel\(order\.status\)\}/);
+  assert.match(page, /nextState=\{statusLabel\(pendingStatus \|\| order\.status\)\}/);
+  // The customer price and the shop's internal cost are still distinguished in
+  // the quote form and again in the dialog that sends it.
   assert.match(page, /Total customer price/);
-  assert.match(page, /Internal material and labor costs are not the customer price/);
+  assert.match(page, /not your material or labor cost/);
+  assert.match(page, /Material and labour costs are internal and are not this number/);
 });
