@@ -376,6 +376,33 @@ export function serializeOrderFilters(filters: OrderFilters): string {
 /** The href for a saved view, for the dashboard's deep links. */
 export const viewHref = (id: string): string => `/staff/orders?${PARAM.view}=${encodeURIComponent(id)}`;
 
+/**
+ * Which saved view an attention-queue item belongs to.
+ *
+ * The dashboard counts its attention queue with `attentionQueue()` and this maps
+ * each kind onto the list that contains exactly those orders — so "3
+ * cancellations to decide" opens a list of those 3, not a general order list the
+ * reader then has to filter by hand.
+ *
+ * Keyed by `AttentionKind` from `operationsQueues.ts`. A test asserts every kind
+ * has an entry, so adding a kind without a destination fails rather than
+ * silently linking nowhere.
+ */
+export const ATTENTION_VIEW: Readonly<Record<string, string>> = {
+  cancellation: "cancellation_requests",
+  return: "return_requests",
+  unfulfilled: "ready_to_fulfill",
+  in_transit: "shipped",
+  quote: "needs_review",
+  request: "needs_review",
+  unpaid: "awaiting_payment",
+  overdue: "overdue",
+  tracking: "shipped",
+};
+
+/** Everything that wants a human, as one filtered list. */
+export const REQUIRES_ACTION_HREF = `/staff/orders?${PARAM.flags}=requires_action`;
+
 // ---------------------------------------------------------------------------
 // Active-filter description
 // ---------------------------------------------------------------------------

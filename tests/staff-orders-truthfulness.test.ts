@@ -18,8 +18,10 @@ import {
   rowsOrNull,
 } from "../src/lib/staff/loadState.ts";
 import {
+  ATTENTION_VIEW,
   DEFAULT_PAGE_SIZE,
   FLAGS,
+  REQUIRES_ACTION_HREF,
   MAX_PAGE_SIZE,
   PARAM,
   PRODUCTION_STATES,
@@ -42,7 +44,7 @@ import {
   searchClause,
 } from "../src/lib/staff/orderQueryPlan.ts";
 import { PRODUCTION_STATUSES } from "../src/lib/production/jobs.ts";
-import { fulfillmentBucket, type QueueOrder } from "../src/lib/staff/operationsQueues.ts";
+import { fulfillmentBucket, type AttentionKind, type QueueOrder } from "../src/lib/staff/operationsQueues.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -293,6 +295,32 @@ test("an explicit filter beats the view's preset rather than being overwritten",
   // `accepted` must get `accepted`.
   const filters = applyView({ ...emptyFilters(), view: "needs_review", status: ["accepted"] });
   assert.deepEqual(filters.status, ["accepted"]);
+});
+
+test("every attention kind deep-links to a queue that exists", () => {
+  // The dashboard counts its attention queue with `attentionQueue()`. A kind
+  // with no destination — or one pointing at a view id that was later renamed —
+  // is a card that counts work and then cannot show it.
+  const kinds: AttentionKind[] = [
+    "cancellation", "return", "unfulfilled", "in_transit",
+    "quote", "request", "unpaid", "overdue", "tracking",
+  ];
+  for (const kind of kinds) {
+    const viewId = ATTENTION_VIEW[kind];
+    assert.ok(viewId, `attention kind "${kind}" has no destination view`);
+    assert.ok(savedView(viewId), `attention kind "${kind}" points at "${viewId}", which is not a saved view`);
+  }
+});
+
+test("the dashboard links to the exact queue it counted, not a general list", () => {
+  const source = read("src/app/staff/page.tsx");
+  assert.ok(source.includes("REQUIRES_ACTION_HREF"), "the overflow link must open the attention queue");
+  assert.ok(
+    !/href="\/staff\/orders"/.test(source),
+    "a bare /staff/orders link sends the reader to All orders and makes them re-filter by hand"
+  );
+  // And that href must parse back into the filter it claims to apply.
+  assert.deepEqual(parseOrderFilters(params(REQUIRES_ACTION_HREF.split("?")[1])).flags, ["requires_action"]);
 });
 
 test("viewHref points at the orders page with a parseable view parameter", () => {
