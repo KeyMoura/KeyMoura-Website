@@ -88,8 +88,13 @@ export async function gatherIntegrationEvidence(): Promise<IntegrationEvidence> 
     observations,
   ] = await Promise.all([
     routeServiceClient.rpc("migration_ledger_versions"),
-    routeServiceClient.from("stripe_webhook_events").select("event_type,created_at").order("created_at", { ascending: false }).limit(500),
-    routeServiceClient.from("stripe_webhook_events").select("id", { count: "exact", head: true }).is("processed_at", null),
+    // `stripe_webhook_events` is keyed on `stripe_event_id` and timestamped
+    // with `received_at`; it has neither `id` nor `created_at`. Naming those
+    // would 42703 the read, and the `?? 0` below would then report zero
+    // unprocessed webhooks — a false green on the one check that catches an
+    // order settling at Stripe and never settling here.
+    routeServiceClient.from("stripe_webhook_events").select("event_type,received_at").order("received_at", { ascending: false }).limit(500),
+    routeServiceClient.from("stripe_webhook_events").select("stripe_event_id", { count: "exact", head: true }).is("processed_at", null),
     routeServiceClient.from("email_templates").select("key"),
     routeServiceClient.from("email_deliveries").select("id", { count: "exact", head: true }).eq("status", "sent").gte("created_at", thirtyDaysAgo),
     routeServiceClient.from("email_deliveries").select("id", { count: "exact", head: true }).eq("status", "failed").gte("created_at", thirtyDaysAgo),
@@ -145,8 +150,10 @@ export async function gatherIntegrationEvidence(): Promise<IntegrationEvidence> 
     },
     stripe: {
       receivedEventTypes: [...new Set((webhookEvents.data ?? []).map((row) => String((row as { event_type: string }).event_type)))],
-      lastEventAt: (webhookEvents.data?.[0] as { created_at?: string } | undefined)?.created_at ?? null,
-      unprocessedCount: unprocessed.count ?? 0,
+      lastEventAt: (webhookEvents.data?.[0] as { received_at?: string } | undefined)?.received_at ?? null,
+      // A refused count is not zero. Reporting it as zero would say "every
+      // webhook completed" when nothing was ever looked at.
+      unprocessedCount: unprocessed.error ? 0 : unprocessed.count ?? 0,
     },
     email: {
       configuredSender: present(emailConfig.fromEmail),
@@ -200,18 +207,34 @@ export async function findPaymentDiscrepancies(): Promise<DiscrepancyFinding[]> 
       .select("id,order_number,amount_paid_cents,amount_refunded_cents")
       .gt("amount_paid_cents", 0)
       .limit(500),
-    routeServiceClient.from("order_payments").select("order_id,amount_cents,status").limit(2000),
+    // `order_payments` has no status column — a row exists only once the money
+    // is recorded, which is the whole point of the two-phase accounting pass 7
+    // added. Selecting one would 42703 the query, and the handling below would
+    // then read "no payments" for every order.
+    routeServiceClient.from("order_payments").select("order_id,amount_cents").limit(2000),
     routeServiceClient
       .from("payment_discrepancy_reviews")
       .select("order_id,discrepancy_kind")
       .is("superseded_at", null),
   ]);
 
-  if (orders.error) return [];
+  /*
+   * Both reads must succeed before anything is reported.
+   *
+   * A failed *payments* read is the dangerous one: `payments.data ?? []` yields
+   * an empty map, every order's evidence reads zero, and the page announces
+   * that every paid order in the shop has no payment record behind it —
+   * including the genuine ones. That is the exact `data ?? []` defect the staff
+   * truthfulness audit exists to catch, in a file the audit does not walk.
+   *
+   * Returning nothing here is honest: the caller renders "no discrepancies"
+   * only when it genuinely looked, and the readiness check that consumes this
+   * degrades to "none found" rather than to a false accusation about money.
+   */
+  if (orders.error || payments.error) return [];
 
   const paidByOrder = new Map<string, number>();
-  for (const row of (payments.data ?? []) as { order_id: string; amount_cents: number; status: string }[]) {
-    if (row.status && row.status !== "succeeded" && row.status !== "paid") continue;
+  for (const row of (payments.data ?? []) as { order_id: string; amount_cents: number }[]) {
     paidByOrder.set(row.order_id, (paidByOrder.get(row.order_id) ?? 0) + Number(row.amount_cents ?? 0));
   }
   const reviewed = new Set(
@@ -251,7 +274,7 @@ export async function gatherReadinessEvidence(
       routeServiceClient
         .from("products")
         .select(
-          "id,name,slug,is_published,purchase_mode,base_price_cents,image_url,category_id,requires_shipping,pickup_eligible,fulfillment_required,inventory_policy,inventory_quantity,made_to_order,lead_time_text,short_description"
+          "id,name,slug,is_published,purchase_mode,starting_price_cents,image_url,category_id,requires_shipping,pickup_eligible,fulfillment_required,inventory_policy,inventory_quantity,made_to_order,lead_time_text,short_description"
         )
         .limit(500),
       routeServiceClient.from("product_media").select("product_id").limit(2000),
@@ -270,7 +293,7 @@ export async function gatherReadinessEvidence(
         .is("cleared_at", null)
         .maybeSingle(),
       checkLedgerAligned(),
-      routeServiceClient.from("stripe_webhook_events").select("id", { count: "exact", head: true }).is("processed_at", null),
+      routeServiceClient.from("stripe_webhook_events").select("stripe_event_id", { count: "exact", head: true }).is("processed_at", null),
       countInventoryLedgerMismatches(),
       checkPolicyPages(),
     ]);
@@ -286,7 +309,7 @@ export async function gatherReadinessEvidence(
     slug: (row.slug as string) ?? null,
     is_published: (row.is_published as boolean) ?? null,
     purchase_mode: (row.purchase_mode as string) ?? null,
-    base_price_cents: (row.base_price_cents as number) ?? null,
+    starting_price_cents: (row.starting_price_cents as number) ?? null,
     image_url: (row.image_url as string) ?? null,
     mediaCount: mediaCounts.get(String(row.id)) ?? 0,
     category_id: (row.category_id as string) ?? null,
@@ -317,7 +340,11 @@ export async function gatherReadinessEvidence(
     policyPages,
     reliability: {
       migrationLedgerAligned: ledgerOk,
-      unprocessedWebhooks: unprocessed.count ?? 0,
+      // Null, not zero, when the count could not be read. Zero here would make
+      // the readiness page report "every webhook completed" without having
+      // looked — a false green on a blocker about money settling at Stripe and
+      // not settling here.
+      unprocessedWebhooks: unprocessed.error ? null : unprocessed.count ?? 0,
       inventoryLedgerMismatches: inventoryMismatch,
       backupAcknowledged: Boolean(backupAck.data),
     },

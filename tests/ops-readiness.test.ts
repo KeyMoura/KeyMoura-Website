@@ -238,7 +238,7 @@ function product(overrides: Partial<ReadinessProduct> = {}): ReadinessProduct {
     slug: "shift-knob",
     is_published: true,
     purchase_mode: "direct",
-    base_price_cents: 12000,
+    starting_price_cents: 12000,
     image_url: "https://example.test/a.png",
     mediaCount: 1,
     category_id: "c1",
@@ -397,7 +397,7 @@ test("a product that can neither ship nor be collected is a blocker", () => {
 });
 
 test("a directly purchasable product with no price is a blocker", () => {
-  const checks = buildReadinessChecks(readiness({ products: [product({ base_price_cents: 0 })] }));
+  const checks = buildReadinessChecks(readiness({ products: [product({ starting_price_cents: 0 })] }));
   assert.equal(find(checks, "storefront.direct_price").state, "blocker");
 });
 
@@ -786,4 +786,29 @@ test("an unknown status renders without throwing and is not resendable", () => {
   const view = toDeliveryView(delivery({ status: "something-else" }));
   assert.equal(view.status, "unknown");
   assert.equal(view.statusLabel, "Unknown");
+});
+
+test("REGRESSION an unreadable webhook count is a warning, never a pass", () => {
+  /*
+   * `count ?? 0` would report "every received webhook completed" without having
+   * counted anything — a false green on the one check that catches an order
+   * settling at Stripe and never settling here.
+   */
+  const unknown = buildReadinessChecks(
+    readiness({ reliability: { migrationLedgerAligned: true, unprocessedWebhooks: null, inventoryLedgerMismatches: 0, backupAcknowledged: true } })
+  );
+  const check = find(unknown, "payments.webhook_processing");
+  assert.equal(check.state, "warning");
+  assert.match(check.detail, /could not be checked/);
+  assert.notEqual(check.state, "passed");
+
+  // A real zero still passes, so the warning means something.
+  const counted = buildReadinessChecks(readiness());
+  assert.equal(find(counted, "payments.webhook_processing").state, "passed");
+});
+
+test("REGRESSION the evidence gatherer distinguishes a refused count from zero", () => {
+  const source = read("src/lib/ops/evidence.ts");
+  assert.match(source, /unprocessedWebhooks: unprocessed\.error \? null : unprocessed\.count \?\? 0/);
+  assert.match(source, /unprocessedCount: unprocessed\.error \? 0 : unprocessed\.count \?\? 0/);
 });

@@ -309,3 +309,134 @@ test("nothing in the migration touches an order, a payment or a refund", () => {
     assert.ok(!forbidden.test(SQL), `the migration writes to financial data: ${forbidden}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Selected columns must exist
+// ---------------------------------------------------------------------------
+
+/**
+ * A column that does not exist is a 42703, and a 42703 handled by `data ?? []`
+ * is a confident wrong answer.
+ *
+ * This pass shipped `select("order_id,amount_cents,status")` against
+ * `order_payments`, which has no `status` column — the two-phase accounting
+ * added in pass 7 records a payment row only once the money is real, so there
+ * is no status to carry. The read would have failed on every request, the
+ * discrepancy finder would have read zero payments for every order, and the
+ * launch-readiness page would have announced that **every paid order in the
+ * shop** has no payment record behind it. Caught by a live production probe.
+ *
+ * `installer.test.ts` already proves every `.from("…")` relation exists. This is
+ * the column-level equivalent, scoped to the modules this pass added — which is
+ * where the defect was, and where a false claim about money would surface.
+ */
+
+const SCOPED_DIRS = [
+  "src/lib/ops",
+  "src/lib/comms",
+  "src/app/api/staff/emails/deliveries",
+  "src/app/api/staff/integrations",
+  "src/app/api/staff/launch-readiness",
+];
+
+function walk(dir: string): string[] {
+  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+  const out: string[] = [];
+  for (const entry of readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...walk(path));
+    else if (/\.tsx?$/.test(entry.name)) out.push(path);
+  }
+  return out;
+}
+
+/** Columns each table is given by any migration or installer file in the repo. */
+function schemaColumns(): Map<string, Set<string>> {
+  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+  const files: string[] = [];
+  for (const dir of ["supabase/migrations", "supabase/installer"]) {
+    const collect = (d: string) => {
+      for (const entry of readdirSync(new URL(`../${d}`, import.meta.url), { withFileTypes: true })) {
+        if (entry.isDirectory()) collect(`${d}/${entry.name}`);
+        else if (entry.name.endsWith(".sql")) files.push(`${d}/${entry.name}`);
+      }
+    };
+    try { collect(dir); } catch { /* installer subdirs vary */ }
+  }
+  const sql = files.map(read).join("\n").replace(/--[^\n]*/g, "");
+  const map = new Map<string, Set<string>>();
+  const add = (table: string, column: string) => {
+    if (!map.has(table)) map.set(table, new Set());
+    map.get(table)!.add(column);
+  };
+
+  for (const match of sql.matchAll(/create table (?:if not exists )?public\.(\w+)\s*\(([\s\S]*?)\n\s*\);/g)) {
+    const [, table, body] = match;
+    for (const line of body.split("\n")) {
+      const column = /^\s*(\w+)\s+(uuid|text|boolean|integer|bigint|numeric|jsonb|timestamptz|timestamp|date|serial|bigserial)/i.exec(line);
+      if (column) add(table, column[1]);
+      const identity = /^\s*(\w+)\s+bigint generated always as identity/i.exec(line);
+      if (identity) add(table, identity[1]);
+    }
+  }
+  for (const match of sql.matchAll(/alter table (?:only )?public\.(\w+)([\s\S]*?);/g)) {
+    const [, table, body] = match;
+    for (const col of body.matchAll(/add column (?:if not exists )?(\w+)/g)) add(table, col[1]);
+  }
+  return map;
+}
+
+test("no scoped module selects a column its table does not have", () => {
+  const columns = schemaColumns();
+  const offenders: string[] = [];
+
+  for (const file of SCOPED_DIRS.flatMap(walk)) {
+    const source = read(file);
+    for (const call of source.matchAll(/\.from\("(\w+)"\)\s*\n?\s*\.select\(\s*"([^"]+)"/g)) {
+      const [, table, selection] = call;
+      const known = columns.get(table);
+      // A table this repo never creates is the installer test's problem, not this one.
+      if (!known || known.size === 0) continue;
+      for (const raw of selection.split(",")) {
+        const column = raw.trim().split(/[:(!]/)[0].trim();
+        // `*`, embedded resources and counts are not plain columns.
+        if (!column || column === "*" || column.includes("*")) continue;
+        if (!known.has(column)) offenders.push(`${file}: ${table}.${column}`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `these selects name a column the schema never creates, which is a 42703 on every request:\n${offenders.join("\n")}`
+  );
+});
+
+test("REGRESSION order_payments has no status column, and nothing selects one", () => {
+  const columns = schemaColumns().get("order_payments");
+  assert.ok(columns, "order_payments should be created by a migration");
+  assert.ok(!columns!.has("status"), "order_payments has no status column");
+  assert.ok(columns!.has("amount_cents") && columns!.has("received_at"));
+
+  for (const file of SCOPED_DIRS.flatMap(walk)) {
+    // Whitespace is collapsed first so the check reaches the `.select(...)`
+    // that belongs to this `.from(...)`, and only that one — an unbounded
+    // lookahead runs straight into the next query's `order_status_history`.
+    const collapsed = read(file).replace(/\s+/g, " ");
+    assert.ok(
+      !/from\("order_payments"\) ?\.select\( ?"[^"]*status/.test(collapsed),
+      `${file} still selects a status column from order_payments`
+    );
+  }
+});
+
+test("REGRESSION a failed payments read is not reported as 'no payments exist'", () => {
+  /*
+   * The finder guards *both* reads. Guarding only `orders` was what would have
+   * turned a 42703 into "every paid order has no payment record" — the
+   * `data ?? []` defect, in a file the staff-page audit does not walk.
+   */
+  const source = read("src/lib/ops/evidence.ts");
+  assert.match(source, /if \(orders\.error \|\| payments\.error\) return \[\];/);
+});

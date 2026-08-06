@@ -52,7 +52,9 @@ export async function GET(req: NextRequest) {
         .from("orders")
         .select("id,order_number,status,payment_status,order_kind,product_name,agreed_price_cents,amount_paid_cents,amount_refunded_cents,created_at,stripe_checkout_session_id")
         .in("id", orderIds),
-      routeServiceClient.from("order_payments").select("order_id,amount_cents,status,created_at").in("order_id", orderIds),
+      // No status column on this table: a payment row exists only once the
+      // money is recorded. `received_at` is when.
+      routeServiceClient.from("order_payments").select("order_id,amount_cents,received_at").in("order_id", orderIds),
       routeServiceClient
         .from("order_status_history")
         .select("order_id,from_status,to_status,created_at")

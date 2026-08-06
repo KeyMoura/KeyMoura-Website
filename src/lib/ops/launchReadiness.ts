@@ -82,7 +82,8 @@ export type ReadinessProduct = {
   slug: string | null;
   is_published: boolean | null;
   purchase_mode: string | null;
-  base_price_cents: number | null;
+  /** Named for the column: `products.starting_price_cents`. */
+  starting_price_cents: number | null;
   image_url: string | null;
   mediaCount: number;
   category_id: string | null;
@@ -121,7 +122,8 @@ export type ReadinessEvidence = {
   policyPages: { slug: string; present: boolean }[];
   reliability: {
     migrationLedgerAligned: boolean;
-    unprocessedWebhooks: number;
+    /** Null when the count could not be read. Not the same answer as zero. */
+    unprocessedWebhooks: number | null;
     inventoryLedgerMismatches: number;
     backupAcknowledged: boolean;
   };
@@ -160,7 +162,7 @@ export function buildReadinessChecks(evidence: ReadinessEvidence): ReadinessChec
   });
 
   const missingPrice = directSellable.filter(
-    (product) => !product.base_price_cents || product.base_price_cents <= 0
+    (product) => !product.starting_price_cents || product.starting_price_cents <= 0
   );
   add({
     id: "storefront.direct_price",
@@ -460,10 +462,14 @@ export function buildReadinessChecks(evidence: ReadinessEvidence): ReadinessChec
     id: "payments.webhook_processing",
     group: "payments",
     title: "No webhook was left unprocessed",
-    state: unprocessed === 0 ? "passed" : "blocker",
-    detail: unprocessed === 0
-      ? "Every received webhook completed."
-      : `${unprocessed} received webhook(s) were never marked processed, so an order may have settled at Stripe and not here.`,
+    // Unknown is a warning, never a pass. "Every webhook completed" has to mean
+    // somebody counted them.
+    state: unprocessed === null ? "warning" : unprocessed === 0 ? "passed" : "blocker",
+    detail: unprocessed === null
+      ? "This could not be checked — the webhook log did not answer."
+      : unprocessed === 0
+        ? "Every received webhook completed."
+        : `${unprocessed} received webhook(s) were never marked processed, so an order may have settled at Stripe and not here.`,
     because: "A half-processed payment event is the one failure that leaves the money and the order disagreeing.",
     fixHref: "/staff/reconciliation",
     fixLabel: "Reconciliation",
