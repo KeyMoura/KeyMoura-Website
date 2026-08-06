@@ -15,6 +15,9 @@ import {
   recordJobAction,
   type JobRow,
 } from "@/lib/production/server";
+import { sendLifecycleNotification } from "@/lib/commerce/orderLifecycleServer";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
+import type { CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 
 /**
  * Moving a job through the workflow.
@@ -142,7 +145,82 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     metadata: { reopened: reopen },
   });
 
+  await announceProductionStatus(updated, to, actor.userId);
+
   return NextResponse.json({ job: updated });
+}
+
+/**
+ * Which production states the customer hears about, and which stay internal.
+ *
+ * Production is an internal system. Scrap reasons, rework counts, materials
+ * cost and hold reasons are not customer information, and pass 5 built the job
+ * timeline separately from the audit log precisely so operational detail could
+ * stay in one place. Announcing every transition would leak the shop floor into
+ * the customer's inbox — "rework required" tells a customer their part was made
+ * wrong, which is a conversation, not a notification.
+ *
+ * Three states are genuinely customer news and are announced. Everything else
+ * is deliberately silent, and the reason is stated here rather than left as an
+ * omission somebody later "fixes".
+ */
+const CUSTOMER_VISIBLE_PRODUCTION: Partial<Record<ProductionStatus, { template: CommerceEmailTemplateKey; title: string; message: string }>> = {
+  in_progress: {
+    template: "production_started",
+    title: "Work has started",
+    message: "We have started making your order.",
+  },
+  waiting_on_customer: {
+    template: "production_waiting_on_customer",
+    title: "We are waiting on you",
+    message: "Work is paused until we hear back from you. Reply on your order page and we will pick it straight back up.",
+  },
+  completed: {
+    template: "production_completed",
+    title: "Your order is finished",
+    message: "Your order is finished and moving to dispatch.",
+  },
+};
+
+/**
+ * Tell the customer, when the state is one they should hear about.
+ *
+ * Keyed on the job and the state, so a job that goes in_progress → on_hold →
+ * in_progress does not send "we have started" twice. Nothing from the job
+ * itself is interpolated: no note, no hold reason, no failure reason, no cost.
+ * A test asserts those column names never appear in this file.
+ */
+async function announceProductionStatus(job: JobRow, to: ProductionStatus, actorUserId: string) {
+  const spec = CUSTOMER_VISIBLE_PRODUCTION[to];
+  if (!spec || !job.order_id) return;
+
+  const { data: order } = await routeServiceClient
+    .from("orders")
+    .select("id,customer_id,product_name,order_number")
+    .eq("id", job.order_id)
+    .maybeSingle();
+  if (!order?.customer_id) return;
+
+  await sendLifecycleNotification({
+    orderId: String(order.id),
+    order: order as { customer_id: string; product_name: string; order_number: string | null },
+    actorUserId,
+    templateKey: spec.template,
+    eventKey: `production-${job.id}-${to}`,
+    title: spec.title,
+    message: spec.message,
+  });
+
+  // Finished work is the fulfillment desk's cue, and it is a different reader
+  // from the machinist who just ticked the box.
+  if (to === "completed") {
+    await raiseOperationalAlert({
+      kind: "order.ready_to_fulfill",
+      subjectId: String(order.id),
+      actorUserId,
+      message: `${order.order_number || "An order"} has finished production and is ready to prepare.`,
+    });
+  }
 }
 
 export const dynamic = "force-dynamic";

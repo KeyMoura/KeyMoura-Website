@@ -9,8 +9,10 @@ import {
   loadOrderLifecycleContext,
   logLifecycleAudit,
   logLifecycleFailure,
+  notifyStaffEmail,
   sendLifecycleNotification,
 } from "@/lib/commerce/orderLifecycleServer";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import { RATE_LIMITS, consumeRateLimit, rateLimitMessage } from "@/lib/commerce/rateLimit";
 
 /**
@@ -196,6 +198,23 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       orderId: id,
       metadata: { request_id: request.id, reason_code: reasonCode, refundable_cents: lifecycle.refundableCents },
     }),
+    // Routed to `cancellations.review` rather than `orders.manage`: the people
+    // who need to see this are the people who can decide it.
+    raiseOperationalAlert({
+      kind: "cancellation.requested",
+      subjectId: id,
+      discriminator: request.id,
+      actorUserId: user.id,
+      message: `A customer asked to cancel ${lifecycle.order.product_name}. Nothing has been refunded.`,
+    }),
+    notifyStaffEmail({
+      templateKey: "staff_cancellation_request",
+      eventKey: `cancel-request-staff-${request.id}`,
+      orderId: id,
+      order: lifecycle.order,
+      detail: "Approving it is a decision, and any refund is a separate choice within it.",
+      href: `/staff/orders/${id}`,
+    }),
   ]);
 
   return NextResponse.json({ ok: true, outcome: "requested", requestId: request.id });
@@ -252,7 +271,7 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
       orderId: id,
       order: lifecycle.order,
       actorUserId: user.id,
-      templateKey: "status_update",
+      templateKey: "cancellation_withdrawn",
       eventKey: `cancel-withdraw-${withdrawn.id}`,
       title: "Cancellation withdrawn",
       message: "Your cancellation request was withdrawn and the order continues as normal.",

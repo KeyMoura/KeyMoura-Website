@@ -4,6 +4,7 @@ import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
+import { raiseOperationalAlert, recordIntegrationObservation } from "@/lib/comms/operationalAlerts";
 import { captureCommerceException } from "@/lib/monitoring";
 import {
   logLifecycleAudit,
@@ -45,13 +46,26 @@ async function settleRefundSideEffects(stripeRefundId: string, status: "succeede
 
   const { data: order } = await routeServiceClient
     .from("orders")
-    .select("id,customer_id,product_name,order_number,cancellation_status,return_status")
+    .select("id,customer_id,product_name,order_number,cancellation_status,return_status,amount_paid_cents,amount_refunded_cents")
     .eq("id", refund.order_id)
     .maybeSingle();
   if (!order) return;
 
   const amount = Number(refund.confirmed_amount_cents ?? refund.amount_cents ?? 0);
   const succeeded = status === "succeeded";
+  /**
+   * Partial and full refunds are different news and get different templates.
+   *
+   * A customer told "your refund is complete" about a $20 refund on a $300
+   * order will reasonably conclude the order is cancelled. The comparison is
+   * made against what the order has actually collected and returned, read after
+   * settlement, rather than against the refund amount alone — a second partial
+   * refund that happens to clear the balance is a full refund from the
+   * customer's point of view even though its own amount is not the total.
+   */
+  const paidCents = Number(order.amount_paid_cents ?? 0);
+  const refundedCents = Number(order.amount_refunded_cents ?? 0);
+  const fullyRefunded = paidCents > 0 && refundedCents >= paidCents;
 
   if (refund.cancellation_request_id) {
     await routeServiceClient
@@ -91,11 +105,13 @@ async function settleRefundSideEffects(stripeRefundId: string, status: "succeede
     orderId: refund.order_id,
     order: order as { customer_id: string; product_name: string; order_number: string | null },
     actorUserId: null,
-    templateKey: succeeded ? "refund_completed" : "refund_failed",
+    templateKey: succeeded ? (fullyRefunded ? "refund_completed" : "refund_partial_completed") : "refund_failed",
     eventKey: `refund-webhook-${stripeRefundId}-${status}`,
-    title: succeeded ? "Refund complete" : "Refund needs attention",
+    title: succeeded ? (fullyRefunded ? "Refund complete" : "Partial refund complete") : "Refund needs attention",
     message: succeeded
-      ? `Your ${moneyText(amount)} refund has completed. Your bank may take a few more days to show it.`
+      ? fullyRefunded
+        ? `Your ${moneyText(amount)} refund has completed. Your bank may take a few more days to show it.`
+        : `A partial refund of ${moneyText(amount)} has completed. The rest of the order is unaffected.`
       : "A refund on this order did not complete. The team has been notified and will be in touch.",
     detail: succeeded ? String(refund.customer_note || "") : "",
     price: moneyText(amount),
@@ -113,13 +129,55 @@ async function settleRefundSideEffects(stripeRefundId: string, status: "succeede
   });
 }
 
+/**
+ * A webhook that arrived but could not be processed.
+ *
+ * This is the failure that is invisible without an alert: Stripe records a
+ * non-2xx and retries for a while, and if nobody is watching, an order settles
+ * in Stripe and never settles here. The alert is keyed on the Stripe event id,
+ * so Stripe's own retries of the same event produce one entry rather than one
+ * per attempt.
+ *
+ * The summary carries the operation and the event type and nothing else — no
+ * Postgres `details`, which is the field that echoes row values back, and on
+ * this schema a row value can be an address or a private note.
+ */
+async function webhookFailed(event: Stripe.Event, operation: string): Promise<NextResponse> {
+  await Promise.all([
+    recordIntegrationObservation({
+      integrationKey: "stripe_webhook",
+      outcome: "failure",
+      summary: `${operation} failed for ${event.type}`,
+    }),
+    raiseOperationalAlert({
+      kind: "ops.webhook_failure",
+      subjectId: event.id,
+      message: `A Stripe ${event.type} webhook could not be processed (${operation}). Stripe will retry; if it keeps failing the order will not settle here.`,
+    }),
+  ]);
+  return NextResponse.json({ error: "Could not record event" }, { status: 500 });
+}
+
 export async function POST(req: NextRequest) {
   const signature = req.headers.get("stripe-signature");
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!signature || !secret) return NextResponse.json({ error: "Webhook not configured" }, { status: 400 });
   let event: Stripe.Event;
   try { event = stripeClient().webhooks.constructEvent(await req.text(), signature, secret); }
+  // A bad signature is deliberately *not* recorded or alerted on. Anybody can
+  // POST to this URL, so counting those would be counting the internet — and
+  // an alert anybody can trigger is an alert staff learn to dismiss.
   catch { return NextResponse.json({ error: "Invalid signature" }, { status: 400 }); }
+
+  // A verified signature is the strongest available proof that the endpoint is
+  // reachable, subscribed and holding the right secret. This is what lets the
+  // health page say Stripe webhooks are *verified* working rather than merely
+  // configured — an environment variable being present proves neither.
+  await recordIntegrationObservation({
+    integrationKey: "stripe_webhook",
+    outcome: "success",
+    summary: event.type,
+  });
   /**
    * Refund events.
    *
@@ -141,7 +199,7 @@ export async function POST(req: NextRequest) {
     if (refundEvent.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
     if (refundEvent.error) {
       captureCommerceException(refundEvent.error, { operation: "record_refund_event", stripeEventId: event.id });
-      return NextResponse.json({ error: "Could not record event" }, { status: 500 });
+      return webhookFailed(event, "record_refund_event");
     }
 
     const refund = event.data.object as Stripe.Refund;
@@ -197,7 +255,7 @@ export async function POST(req: NextRequest) {
     if (expiredEvent.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
     if (expiredEvent.error) {
       captureCommerceException(expiredEvent.error, { operation: "record_expired_event", stripeEventId: event.id });
-      return NextResponse.json({ error: "Could not record event" }, { status: 500 });
+      return webhookFailed(event, "record_expired_event");
     }
 
     const expiredSession = event.data.object as Stripe.Checkout.Session;
@@ -227,7 +285,7 @@ export async function POST(req: NextRequest) {
     if (failedEvent.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
     if (failedEvent.error) {
       captureCommerceException(failedEvent.error, { operation: "record_failed_payment_event", stripeEventId: event.id });
-      return NextResponse.json({ error: "Could not record event" }, { status: 500 });
+      return webhookFailed(event, "record_failed_payment_event");
     }
     const failedSession = event.data.object as Stripe.Checkout.Session;
     const failedOrderId = failedSession.metadata?.order_id || failedSession.client_reference_id;
@@ -249,9 +307,61 @@ export async function POST(req: NextRequest) {
       if (settings.inventory.releaseOnPaymentFailure) {
         await releaseReservations({ reason: "payment_failed", orderId: failedOrderId });
       }
+      const failedOrder = await routeServiceClient
+        .from("orders")
+        .select("product_name,order_number")
+        .eq("id", failedOrderId)
+        .maybeSingle();
+      const failedProduct = String(failedOrder.data?.product_name || "your order");
+      const failedLabel = String(failedOrder.data?.order_number || "your KeyMoura order");
+      const { data: failedAuthUser } = await routeServiceClient.auth.admin.getUserById(failedCustomerId);
+      const failedConfig = await getCommerceEmailConfig();
+
       await Promise.all([
         notifyOrderUser({ orderId:failedOrderId, actorUserId:null, recipientUserId:failedCustomerId, title:"Payment failed", message:"Your payment did not complete. No successful payment was recorded; open the order to try again." }),
-        notifyOrderStaff({ orderId:failedOrderId, actorUserId:null, title:"Customer payment failed", message:"A delayed payment failed. The order remains unpaid and the customer can try again." }),
+        // Deduplicated on the order rather than the Stripe event, so a customer
+        // who fails twice does not fill the staff bell with the same line.
+        raiseOperationalAlert({
+          kind: "order.payment_failed",
+          subjectId: failedOrderId,
+          discriminator: event.id,
+          message: `A delayed payment for ${failedLabel} failed. The order is unpaid and the customer can try again.`,
+        }),
+        // The customer is told once, keyed on the Stripe event so a redelivery
+        // of the same failure is silent.
+        failedConfig.sendPaymentUpdates
+          ? sendCommerceEmail({
+              to: failedAuthUser.user?.email,
+              orderId: failedOrderId,
+              templateKey: "payment_failed",
+              eventKey: `stripe-payment-failed-${event.id}`,
+              variables: {
+                customer_name: failedAuthUser.user?.user_metadata?.display_name || failedAuthUser.user?.email?.split("@")[0] || "Customer",
+                product_name: failedProduct,
+                order_label: failedLabel,
+                status: "payment failed",
+                price: "",
+                detail: "Nothing has been charged.",
+              },
+            })
+          : Promise.resolve(),
+        failedConfig.staffNotificationEmail
+          ? sendCommerceEmail({
+              to: failedConfig.staffNotificationEmail,
+              orderId: failedOrderId,
+              templateKey: "staff_payment_failed",
+              eventKey: `stripe-payment-failed-staff-${event.id}`,
+              href: `/staff/orders/${failedOrderId}`,
+              variables: {
+                customer_name: "",
+                product_name: failedProduct,
+                order_label: failedLabel,
+                status: "payment failed",
+                price: "",
+                detail: "The hold on any reserved stock has been released per policy.",
+              },
+            })
+          : Promise.resolve(),
       ]);
     }
     await routeServiceClient.from("stripe_webhook_events").update({ processed_at: new Date().toISOString() }).eq("stripe_event_id", event.id);
@@ -266,7 +376,7 @@ export async function POST(req: NextRequest) {
 
   const inserted = await routeServiceClient.from("stripe_webhook_events").insert({ stripe_event_id: event.id, event_type: event.type });
   if (inserted.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
-  if (inserted.error) return NextResponse.json({ error: "Could not record event" }, { status: 500 });
+  if (inserted.error) return webhookFailed(event, "record_checkout_event");
 
   const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,agreed_price_cents,order_kind").eq("id", orderId).maybeSingle();
   if (!order || !order.agreed_price_cents || session.metadata?.customer_id !== order.customer_id) {
@@ -383,8 +493,73 @@ export async function POST(req: NextRequest) {
   }
   const { data: authUser } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
   const config = await getCommerceEmailConfig();
-  if (config.sendPaymentUpdates) await sendCommerceEmail({ to:authUser.user?.email, orderId, templateKey:"payment_received", eventKey:`stripe-paid-${event.id}`, variables:{ customer_name:authUser.user?.user_metadata?.display_name || authUser.user?.email?.split("@")[0] || "Customer", product_name:order.product_name, order_label:order.order_number || "your KeyMoura order", status:fullyPaid ? "paid in full" : "deposit received", price:`$${(session.amount_total/100).toFixed(2)}` } });
+  const paidAmount = `$${(session.amount_total / 100).toFixed(2)}`;
+  const customerName =
+    authUser.user?.user_metadata?.display_name || authUser.user?.email?.split("@")[0] || "Customer";
+  const orderLabel = order.order_number || "your KeyMoura order";
+  const isDirectPurchase = order.order_kind === "direct_purchase";
+
+  /**
+   * A direct purchase gets `order_received`; everything else gets
+   * `payment_received`.
+   *
+   * They are the same moment for a direct purchase — the order only becomes an
+   * order when the money lands — so sending both would be two emails about one
+   * event. A custom request has already had `request_received` at submission
+   * and `quote_ready` at pricing, so the thing that is news here is the
+   * payment, not the order.
+   *
+   * Before this pass a direct purchase received `payment_received` alone and
+   * never a word acknowledging the order itself.
+   */
+  if (config.sendPaymentUpdates) {
+    await sendCommerceEmail({
+      to: authUser.user?.email,
+      orderId,
+      templateKey: isDirectPurchase ? "order_received" : "payment_received",
+      eventKey: isDirectPurchase ? `order-received-${orderId}` : `stripe-paid-${event.id}`,
+      variables: {
+        customer_name: customerName,
+        product_name: order.product_name,
+        order_label: orderLabel,
+        status: fullyPaid ? "paid in full" : "deposit received",
+        price: paidAmount,
+        detail: isDirectPurchase
+          ? `Your payment of ${paidAmount} has been received.`
+          : "",
+      },
+    });
+  }
+
+  // Staff hear about a new direct order by email as well as in the bell. A
+  // custom request already sent `staff_new_request` at submission; sending a
+  // second alert for the same order would train staff to ignore the first.
+  if (isDirectPurchase && config.staffNotificationEmail) {
+    await sendCommerceEmail({
+      to: config.staffNotificationEmail,
+      orderId,
+      templateKey: "staff_new_order",
+      eventKey: `order-received-staff-${orderId}`,
+      href: `/staff/orders/${orderId}`,
+      variables: {
+        customer_name: "",
+        product_name: order.product_name,
+        order_label: orderLabel,
+        status: fullyPaid ? "paid in full" : "deposit received",
+        price: paidAmount,
+        detail: "Stock has been committed and the order is ready to prepare.",
+      },
+    });
+  }
+
   await Promise.all([
+    raiseOperationalAlert({
+      kind: isDirectPurchase ? "order.new_direct" : "order.payment_received",
+      subjectId: orderId,
+      message: isDirectPurchase
+        ? `${orderLabel} — ${paidAmount} paid for ${order.product_name}. Ready to prepare.`
+        : `${paidAmount} was received for ${orderLabel}.${fullyPaid ? " Paid in full." : ""}`,
+    }),
     notifyOrderUser({
       orderId,
       actorUserId: null,

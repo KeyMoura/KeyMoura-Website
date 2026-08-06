@@ -7,6 +7,7 @@ import {
   moneyText,
   sendLifecycleNotification,
 } from "@/lib/commerce/orderLifecycleServer";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 
 /**
  * Staff-issued refund.
@@ -120,23 +121,35 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
 
   const { data: fresh } = await routeServiceClient
     .from("orders")
-    .select("amount_refunded_cents,payment_status")
+    .select("amount_paid_cents,amount_refunded_cents,payment_status")
     .eq("id", id)
     .maybeSingle();
 
   if (result.settledCents > 0 || result.pendingCents > 0) {
     const settled = result.settledCents > 0 && result.pendingCents === 0;
+    /**
+     * Partial and full refunds are different news.
+     *
+     * Telling a customer "your refund is complete" about $20 of a $300 order
+     * invites them to conclude the whole order is off. The comparison is made
+     * against what the order has actually collected and returned, read back
+     * after settlement, so a partial refund that happens to clear the balance
+     * is correctly reported as a full one.
+     */
+    const paidCents = Number(fresh?.amount_paid_cents ?? 0);
+    const refundedCents = Number(fresh?.amount_refunded_cents ?? 0);
+    const fullyRefunded = paidCents > 0 && refundedCents >= paidCents;
     await sendLifecycleNotification({
       orderId: id,
       order: lifecycle.order,
       actorUserId: actor.userId,
-      templateKey: settled ? "refund_completed" : "refund_initiated",
+      templateKey: settled ? (fullyRefunded ? "refund_completed" : "refund_partial_completed") : "refund_initiated",
       // Keyed on the refund itself, so a webhook confirming the same refund
       // later does not send the customer a second copy of this message.
       eventKey: `refund-${settled ? "done" : "sent"}-${result.legs.map((leg) => leg.refund_id).join("-")}`,
-      title: settled ? "Refund issued" : "Refund on its way",
+      title: settled ? (fullyRefunded ? "Refund issued" : "Partial refund issued") : "Refund on its way",
       message: settled
-        ? `A ${moneyText(result.settledCents)} refund was issued. Your bank may take several business days to post it.`
+        ? `A ${moneyText(result.settledCents)} refund was issued.${fullyRefunded ? "" : " The rest of the order is unaffected."} Your bank may take several business days to post it.`
         : `A ${moneyText(Number(amount))} refund has been sent to your bank. We will confirm once it completes.`,
       detail: reason,
       price: moneyText(Number(amount)),
@@ -155,6 +168,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       notifyStaff: true,
       staffTitle: "Refund failed",
       staffMessage: `A ${moneyText(result.failedCents)} refund on ${lifecycle.order.product_name} failed at Stripe. Open the order to retry.`,
+    });
+    // Routed to `refunds.issue`: only somebody who can retry it can act on it.
+    await raiseOperationalAlert({
+      kind: "refund.failed",
+      subjectId: id,
+      discriminator: result.legs.map((leg) => leg.refund_id).join("-"),
+      actorUserId: actor.userId,
+      message: `A ${moneyText(result.failedCents)} refund on ${lifecycle.order.product_name} failed at Stripe. The customer is still owed it.`,
     });
   }
 

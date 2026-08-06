@@ -10,6 +10,7 @@ import {
   logLifecycleFailure,
   sendLifecycleNotification,
 } from "@/lib/commerce/orderLifecycleServer";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import {
   FULFILLMENT_CUSTOMER_EMAIL,
   FULFILLMENT_LABELS,
@@ -448,10 +449,35 @@ async function updateTracking(input: {
       message: `The tracking details for your order have been corrected. The new number is ${number}.`,
       detail: "",
       price: "",
+      // The `tracking_corrected` template interpolates both of these. Without
+      // them it reads "the new tracking number is  with ."
+      extraVariables: { carrier, tracking_number: number },
     });
   }
 
   return NextResponse.json({ ok: true, corrected: isCorrection });
+}
+
+/**
+ * The collection address, as one readable block.
+ *
+ * Only ever built for a pickup order and only for the ready-to-collect and
+ * collected messages — which is the point at which the customer needs to know
+ * where to come. The commerce settings keep `revealAddressBeforeReady` off by
+ * default for exactly this reason: until an order is ready, a customer has no
+ * reason to be given the address of the building the stock is in.
+ */
+function pickupLocationText(settings: Awaited<ReturnType<typeof loadCommerceSettings>>): string {
+  const address = settings.pickup.address;
+  return [
+    settings.pickup.locationName,
+    address.line1,
+    address.line2,
+    [address.city, address.region, address.postalCode].filter(Boolean).join(", "),
+  ]
+    .map((line) => String(line ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
@@ -499,5 +525,48 @@ async function notifyCustomer(input: {
     detail: input.customerNote || "",
     price: "",
     href: input.to === "shipped" && tracking ? tracking : undefined,
+    /**
+     * The delivery facts the seeded templates actually interpolate.
+     *
+     * Pass 8 seeded `order_shipped` as "has shipped with {{carrier}}. Tracking
+     * number: {{tracking_number}}." and `order_ready_for_pickup` with
+     * `{{pickup_location}}` and `{{pickup_instructions}}` — and nothing ever
+     * supplied any of them, so those interpolated to empty strings and the
+     * customer received "has shipped with . Tracking number: ." and a pickup
+     * notice with two blank paragraphs where the address belongs.
+     *
+     * The pickup *location* here is the address the customer is being told to
+     * come to, which is a different value from the shipping origin. The origin
+     * is deliberately never sent anywhere.
+     */
+    extraVariables: {
+      carrier: String(input.order.shipping_carrier || ""),
+      tracking_number: String(input.order.tracking_number || ""),
+      fulfillment_method: input.method === "pickup" ? "collection" : "delivery",
+      pickup_location: input.method === "pickup" ? pickupLocationText(input.settings) : "",
+      pickup_instructions: input.method === "pickup" ? String(input.settings.pickup.instructions || "") : "",
+      date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    },
   });
+
+  /**
+   * Two states are also a cue for somebody else in the shop.
+   *
+   * `ready_to_fulfill` is the packing bench's signal and `ready_for_pickup` is
+   * the counter's; both are routed to `fulfillment.view` rather than to
+   * whoever moved the state, and both are keyed on the order and the state so a
+   * repeat is silent. Nothing else in the graph earns an alert — announcing
+   * "processing" to the people who just pressed Processing is noise.
+   */
+  if (input.to === "ready_to_fulfill" || input.to === "ready_for_pickup") {
+    await raiseOperationalAlert({
+      kind: input.to === "ready_to_fulfill" ? "order.ready_to_fulfill" : "order.ready_for_pickup",
+      subjectId: input.order.id,
+      actorUserId: input.actorUserId,
+      message:
+        input.to === "ready_to_fulfill"
+          ? `${input.order.order_number || "An order"} is ready to pack.`
+          : `${input.order.order_number || "An order"} is ready for the customer to collect.`,
+    });
+  }
 }

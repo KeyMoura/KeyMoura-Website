@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, routeServiceClient } from "@/lib/api/routeAuth";
 import { normalizeShippingAddress } from "@/lib/checkout";
-import { notifyOrderStaff } from "@/lib/orderNotifications";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 
 const clean = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
   }).select("id,product_name").single();
   if (error || !order) return NextResponse.json({ error: "Could not create custom request." }, { status: 500 });
   if (typeof body.draft_id === "string") await routeServiceClient.from("order_request_drafts").delete().eq("id", body.draft_id).eq("customer_id", user.id);
-  await notifyOrderStaff({ orderId: order.id, actorUserId: user.id, title: "New custom CNC request", message: `${order.product_name} is ready for review.` });
+  // Deduplicated on the order, so a retried submit cannot ring the bell twice.
+  await raiseOperationalAlert({ kind: "order.new_request", subjectId: order.id, actorUserId: user.id, message: `${order.product_name} is ready for review.` });
   const config = await getCommerceEmailConfig();
   const variables = { customer_name:user.email?.split("@")[0] || "Customer", product_name:order.product_name, order_label:"your custom request", status:"requested", price:"Price pending" };
   await Promise.all([
