@@ -5,8 +5,10 @@ import {
   loadOrderLifecycleContext,
   logLifecycleAudit,
   logLifecycleFailure,
+  notifyStaffEmail,
   sendLifecycleNotification,
 } from "@/lib/commerce/orderLifecycleServer";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import { RATE_LIMITS, consumeRateLimit, rateLimitMessage } from "@/lib/commerce/rateLimit";
 
 /**
@@ -134,6 +136,23 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       notifyStaff: true,
       staffTitle: "Return requested",
       staffMessage: `A customer asked to return ${result?.item_count ?? 1} item(s) from ${lifecycle.order.product_name}.`,
+    }),
+    // Routed to `returns.review`, not `orders.manage`: the reader who can act
+    // on this is the one who decides returns.
+    raiseOperationalAlert({
+      kind: "return.requested",
+      subjectId: id,
+      discriminator: result?.return_id ?? undefined,
+      actorUserId: user.id,
+      message: `A customer asked to return ${result?.item_count ?? 1} item(s) from ${lifecycle.order.product_name}.`,
+    }),
+    notifyStaffEmail({
+      templateKey: "staff_return_request",
+      eventKey: `return-request-staff-${result?.return_id}`,
+      orderId: id,
+      order: lifecycle.order,
+      detail: "Nothing has been refunded and no stock has moved. Approving it sends the return instructions.",
+      href: `/staff/orders/${id}`,
     }),
     logLifecycleAudit({
       eventType: "staff.order.return_requested",

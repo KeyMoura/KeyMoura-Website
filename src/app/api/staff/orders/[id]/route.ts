@@ -213,8 +213,24 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     const statusNotification = customerStatusNotification(String(update.status || existing.status), existing.product_name);
     const message = priceBecamePayable ? `Quote revision ${update.quote_revision} is ready: $${(Number(update.agreed_price_cents) / 100).toFixed(2)}. Review and approve it from your order page.` : statusNotification.message;
     const config = await getCommerceEmailConfig();
-    const templateKey: CommerceEmailTemplateKey = priceBecamePayable ? "quote_ready" : update.status === "needs_information" ? "needs_information" : "status_update";
-    if ((priceBecamePayable || update.status === "awaiting_payment") ? config.sendPaymentUpdates : config.sendStatusUpdates) await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey:`order-update-${id}-${historyId}-${templateKey}`, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your request", status:finalStatus, price:typeof update.agreed_price_cents === "number" ? `$${(update.agreed_price_cents/100).toFixed(2)}` : "Price pending" } });
+    /**
+     * A first quote and a revised quote are different news.
+     *
+     * "Your quote is ready" arriving for the third time, each with a different
+     * number, reads as a system that cannot make up its mind. `quote_updated`
+     * says plainly that this replaces what was sent before. The revision number
+     * is what distinguishes them, and it is also what keys the send — so a
+     * repeat of the same revision is suppressed while a genuinely new revision
+     * is a new event.
+     */
+    const isQuoteRevision = priceBecamePayable && Number(existing.quote_revision ?? 0) > 0;
+    const templateKey: CommerceEmailTemplateKey = priceBecamePayable
+      ? (isQuoteRevision ? "quote_updated" : "quote_ready")
+      : update.status === "needs_information" ? "needs_information" : "status_update";
+    const eventKey = priceBecamePayable
+      ? `order-quote-${id}-rev${update.quote_revision}`
+      : `order-update-${id}-${historyId}-${templateKey}`;
+    if ((priceBecamePayable || update.status === "awaiting_payment") ? config.sendPaymentUpdates : config.sendStatusUpdates) await sendCommerceEmail({ to:customer.user?.email, orderId:id, templateKey, eventKey, variables:{ customer_name:customer.user?.user_metadata?.display_name || customer.user?.email?.split("@")[0] || "Customer", product_name:existing.product_name, order_label:existing.order_number || "your request", status:finalStatus, price:typeof update.agreed_price_cents === "number" ? `$${(update.agreed_price_cents/100).toFixed(2)}` : "Price pending" } });
     await notifyOrderUser({
       orderId: id,
       actorUserId: actor.userId,

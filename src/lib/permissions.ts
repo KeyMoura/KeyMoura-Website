@@ -38,6 +38,21 @@ export const PERMISSIONS = [
   "commerce.settings.manage",
   "appearance.manage",
   "emails.manage",
+  // Communications, added in pass 12. Reading delivery history and re-sending
+  // a message to a customer are separated from `emails.manage`, which is the
+  // permission that edits template wording. They are three different powers:
+  // editing what future messages say, seeing who was written to, and causing a
+  // real email to leave the building again. None is granted to any non-admin
+  // role by default.
+  "emails.view",
+  "emails.resend",
+  // Operational readiness. Read-only surfaces plus the two decisions they
+  // offer — acknowledging a launch warning and recording a conclusion about a
+  // historical payment discrepancy. Neither writes a financial value.
+  "operations.health.view",
+  "launch.readiness.view",
+  "launch.readiness.acknowledge",
+  "payments.discrepancy.review",
   // Reports
   "moderation.reports.view",
   "moderation.reports.moderate",
@@ -251,7 +266,42 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
     "emails.manage": {
       category: "Commerce",
       label: "Manage email",
-      description: "Allows configuring transactional email, editing templates, and reviewing delivery history.",
+      description: "Allows configuring transactional email and editing template wording.",
+    },
+    "emails.view": {
+      category: "Commerce",
+      label: "View email delivery history",
+      description:
+        "Allows seeing which transactional emails were sent, to a masked address, and whether they succeeded. Does not allow sending anything.",
+    },
+    "emails.resend": {
+      category: "Commerce",
+      label: "Re-send transactional email",
+      description:
+        "Allows re-sending a transactional email to its original recipient. The recipient and the wording are taken from the record and cannot be edited. Grant this narrowly: it causes a real email to leave the building.",
+    },
+    "operations.health.view": {
+      category: "Operations",
+      label: "View integration health",
+      description:
+        "Allows seeing whether the database, Stripe, Resend, analytics and authentication providers are configured and working. Shows no secret values.",
+    },
+    "launch.readiness.view": {
+      category: "Operations",
+      label: "View launch readiness",
+      description: "Allows seeing the launch checklist and which items are blocking, warning or passed.",
+    },
+    "launch.readiness.acknowledge": {
+      category: "Operations",
+      label: "Acknowledge launch warnings",
+      description:
+        "Allows recording that a launch warning has been seen and accepted. Acknowledging changes no setting, order or financial value.",
+    },
+    "payments.discrepancy.review": {
+      category: "Operations",
+      label: "Review payment discrepancies",
+      description:
+        "Allows recording a conclusion about a historical order whose recorded total and payment rows disagree. Records the review only: it never creates a payment row or changes a total.",
     },
 
     "security.view": {

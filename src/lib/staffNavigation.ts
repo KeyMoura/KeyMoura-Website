@@ -227,6 +227,20 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["orders.view", "orders.manage", "inventory.view", "refunds.issue"],
       },
       {
+        href: "/staff/integrations",
+        label: "Integration health",
+        description: "Database, Stripe, email, analytics and sign-in, with what is proven and what is assumed.",
+        icon: "reconcile",
+        anyOf: ["operations.health.view"],
+      },
+      {
+        href: "/staff/launch-readiness",
+        label: "Launch readiness",
+        description: "What would stop this shop taking a real order today.",
+        icon: "settings",
+        anyOf: ["launch.readiness.view", "operations.health.view"],
+      },
+      {
         href: "/staff/security/audit",
         label: "Audit log",
         description: "Sensitive staff and system actions, newest first.",
@@ -249,6 +263,7 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
           "commerce.settings.manage",
           "appearance.manage",
           "emails.manage",
+          "emails.view",
           "security.view",
           "roles.view",
           "audit.view",
@@ -275,7 +290,7 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         label: "Email & notifications",
         description: "Sender details, templates, staff alerts and delivery history.",
         icon: "email",
-        anyOf: ["emails.manage"],
+        anyOf: ["emails.manage", "emails.view", "emails.resend"],
       },
       {
         href: "/staff/security",
@@ -418,6 +433,8 @@ export type StaffCrumb = { href: string; label: string; current: boolean };
 const LEAF_LABELS: Readonly<Record<string, string>> = {
   "/staff/orders/new": "New proposal",
   "/staff/production/new": "New job",
+  "/staff/emails/deliveries": "Delivery history",
+  "/staff/launch-readiness/discrepancies": "Payment discrepancies",
 };
 
 const LEAF_PATTERNS: readonly { test: RegExp; label: string }[] = [

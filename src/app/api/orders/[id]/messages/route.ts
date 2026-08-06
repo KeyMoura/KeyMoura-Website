@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActorAccessFromRequest, routeServiceClient } from "@/lib/api/routeAuth";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const actor = await getActorAccessFromRequest(req);
@@ -67,12 +68,27 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         message: `KeyMoura sent a message about ${order.product_name}.`,
       });
     } else {
-      await notifyOrderStaff({
-        orderId: id,
-        actorUserId: actor.userId,
-        title: "New customer message",
-        message: `A customer sent a message about ${order.product_name}.`,
-      });
+      // Two readers, two alerts. `notifyOrderStaff` keeps the existing
+      // orders.manage fan-out; the operational alert is the deduplicated one
+      // that says a reply arrived, keyed on the message so a retried send does
+      // not ring twice. Neither carries the message body — a customer's words
+      // are on the order page, not in a preview line that appears in a bell,
+      // a badge and potentially a push.
+      await Promise.all([
+        notifyOrderStaff({
+          orderId: id,
+          actorUserId: actor.userId,
+          title: "New customer message",
+          message: `A customer sent a message about ${order.product_name}.`,
+        }),
+        raiseOperationalAlert({
+          kind: "order.customer_information_received",
+          subjectId: id,
+          discriminator: String(inserted.id),
+          actorUserId: actor.userId,
+          message: `A customer replied about ${order.product_name}.`,
+        }),
+      ]);
     }
   }
   return NextResponse.json({ ok: true });

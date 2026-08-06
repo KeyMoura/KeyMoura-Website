@@ -5,6 +5,7 @@ import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { captureCommerceException } from "@/lib/monitoring";
 import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKey } from "@/lib/commerceEmail";
+import { filterCustomerVariables } from "@/lib/comms/emailEvents";
 import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
 import { logAuditEvent } from "@/lib/audit";
 import {
@@ -490,6 +491,20 @@ export type LifecycleNotification = {
   staffTitle?: string;
   staffMessage?: string;
   notifyStaff?: boolean;
+  /**
+   * Extra template variables, filtered through `filterCustomerVariables`.
+   *
+   * Pass 8 seeded five templates interpolating `{{carrier}}`,
+   * `{{tracking_number}}`, `{{pickup_location}}`, `{{pickup_instructions}}`,
+   * `{{fulfillment_method}}` and `{{date}}` — and nothing ever supplied any of
+   * them, so a real shipped email read "has shipped with . Tracking number: ."
+   * and the ready-for-pickup email had two blank paragraphs where the address
+   * belongs. This is the channel that fills them.
+   *
+   * Deliberately filtered rather than spread: an open extras bag is how an
+   * internal note reaches a customer under a new name.
+   */
+  extraVariables?: Record<string, string>;
 };
 
 /**
@@ -521,6 +536,7 @@ export async function sendLifecycleNotification(input: LifecycleNotification) {
           detail: input.detail || "",
           price: input.price || "",
           status: input.title,
+          ...filterCustomerVariables(input.extraVariables ?? {}),
         },
       });
     }
@@ -544,6 +560,51 @@ export async function sendLifecycleNotification(input: LifecycleNotification) {
   } catch (error) {
     // A notification failure must never undo a completed financial action.
     logLifecycleFailure("lifecycle_notification", error, { orderId: input.orderId, template: input.templateKey });
+  }
+}
+
+/**
+ * One email to the configured staff alert address.
+ *
+ * Separate from `sendLifecycleNotification`, which is the *customer* path. A
+ * staff alert has a different recipient, a different template, a different
+ * deep link and — importantly — a different privacy rule: it may name the
+ * order, but it still carries no internal note, no customer address and no
+ * Stripe identifier, because the alert mailbox is not the order page.
+ *
+ * Silent when no staff address is configured. That is not a failure: a shop
+ * that has not set one has chosen the in-app bell, which always fires.
+ */
+export async function notifyStaffEmail(input: {
+  templateKey: CommerceEmailTemplateKey;
+  eventKey: string;
+  orderId: string;
+  order: Pick<OrderLifecycleRow, "product_name" | "order_number">;
+  detail?: string;
+  price?: string;
+  status?: string;
+  href?: string;
+}): Promise<void> {
+  try {
+    const config = await getCommerceEmailConfig();
+    if (!config.staffNotificationEmail) return;
+    await sendCommerceEmail({
+      to: config.staffNotificationEmail,
+      orderId: input.orderId,
+      templateKey: input.templateKey,
+      eventKey: input.eventKey,
+      href: input.href ?? `/staff/orders/${input.orderId}`,
+      variables: {
+        customer_name: "",
+        product_name: input.order.product_name,
+        order_label: input.order.order_number || "an order",
+        status: input.status || "",
+        price: input.price || "",
+        detail: input.detail || "",
+      },
+    });
+  } catch (error) {
+    logLifecycleFailure("staff_email", error, { orderId: input.orderId, template: input.templateKey });
   }
 }
 

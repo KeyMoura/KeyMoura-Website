@@ -396,3 +396,61 @@ test("monitoring test is staff-only on both the page and API", () => {
   assert.match(route, /Sentry\.captureException/);
   assert.match(route, /Sentry\.flush/);
 });
+
+// ---------------------------------------------------------------------------
+// Pass 12 — the communications and readiness destinations
+// ---------------------------------------------------------------------------
+
+test("the operational surfaces are reachable from the navigation", () => {
+  /*
+   * `/staff/settings/commerce` shipped in pass 8 reachable only by typing the
+   * URL, because it was in neither of the two navigation lists that existed
+   * then. These three are the pass-12 equivalents, so they are asserted by name
+   * rather than left to the generic href check.
+   */
+  const hrefs = STAFF_NAV_ITEMS.map((item) => item.href);
+  for (const href of ["/staff/integrations", "/staff/launch-readiness"]) {
+    assert.ok(hrefs.includes(href), `${href} is not reachable from the staff navigation`);
+  }
+});
+
+test("the delivery centre is owned by the email entry rather than listed twice", () => {
+  // `/staff/emails` owns `/staff/emails/...` by prefix. A second entry would
+  // light two rows for one page.
+  const hrefs = STAFF_NAV_ITEMS.map((item) => item.href);
+  assert.ok(!hrefs.includes("/staff/emails/deliveries"));
+  assert.equal(activeStaffNavItem("/staff/emails/deliveries")?.item.href, "/staff/emails");
+  assert.equal(activeStaffNavItem("/staff/launch-readiness/discrepancies")?.item.href, "/staff/launch-readiness");
+});
+
+test("the new entries are permission-gated, and a holder of none sees none of them", () => {
+  const integrations = STAFF_NAV_ITEMS.find((item) => item.href === "/staff/integrations");
+  const readiness = STAFF_NAV_ITEMS.find((item) => item.href === "/staff/launch-readiness");
+  assert.deepEqual([...(integrations?.anyOf ?? [])], ["operations.health.view"]);
+  assert.deepEqual([...(readiness?.anyOf ?? [])], ["launch.readiness.view", "operations.health.view"]);
+
+  const ordersOnly = new Set(["orders.view"]);
+  const visible = visibleStaffHrefs(ordersOnly);
+  assert.ok(!visible.includes("/staff/integrations"));
+  assert.ok(!visible.includes("/staff/launch-readiness"));
+
+  // And a holder of exactly the new permissions does see them.
+  const opsOnly = new Set(["operations.health.view", "launch.readiness.view"]);
+  const opsVisible = visibleStaffHrefs(opsOnly);
+  assert.ok(opsVisible.includes("/staff/integrations"));
+  assert.ok(opsVisible.includes("/staff/launch-readiness"));
+});
+
+test("a holder of emails.view alone can reach the email section", () => {
+  // Read access to delivery history is a real reason to open `/staff/emails`,
+  // so the entry admits it rather than requiring the template-editing key.
+  const visible = visibleStaffHrefs(new Set(["emails.view"]));
+  assert.ok(visible.includes("/staff/emails"));
+});
+
+test("the new breadcrumb leaves are labelled rather than guessed", () => {
+  const delivery = staffBreadcrumbs("/staff/emails/deliveries");
+  assert.equal(delivery[delivery.length - 1].label, "Delivery history");
+  const discrepancies = staffBreadcrumbs("/staff/launch-readiness/discrepancies");
+  assert.equal(discrepancies[discrepancies.length - 1].label, "Payment discrepancies");
+});

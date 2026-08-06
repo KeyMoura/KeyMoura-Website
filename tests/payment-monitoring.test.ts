@@ -48,8 +48,26 @@ test("refund accounting is atomic after Stripe accepts the refund", () => {
 test("checkout retries are idempotent and delayed failures notify both sides", () => {
   assert.match(checkout, /idempotencyKey: `checkout-\$\{order\.id\}-\$\{amountDue\}-\$\{collectedBeforeCheckout\}`/);
   assert.match(webhook, /checkout\.session\.async_payment_failed/);
+  // The customer is still told in-app.
   assert.match(webhook, /title:"Payment failed"/);
-  assert.match(webhook, /title:"Customer payment failed"/);
+  /*
+   * The staff side moved in pass 12 and got stricter on the way.
+   *
+   * It used to be `notifyOrderStaff({ title: "Customer payment failed" })`,
+   * which fanned out unconditionally — two deliveries of the same Stripe event,
+   * or a retried request, produced two identical rows in the bell. It is now an
+   * `order.payment_failed` operational alert carrying a durable event key, so
+   * the duplicate is refused by the database rather than merely unlikely.
+   *
+   * Asserting the *kind* rather than a title string is also what makes this
+   * test able to fail: the title now comes from the catalogue, so pinning it
+   * here would pin a constant that lives somewhere else.
+   */
+  assert.match(webhook, /kind: "order\.payment_failed"/);
+  assert.match(webhook, /discriminator: event\.id/);
+  // And the customer now gets a real email about it, not only a bell entry.
+  assert.match(webhook, /templateKey: "payment_failed"/);
+  assert.match(webhook, /templateKey: "staff_payment_failed"/);
   assert.match(webhook, /session\.currency !== "usd"/);
   assert.match(webhook, /session\.metadata\?\.customer_id !== order\.customer_id/);
 });

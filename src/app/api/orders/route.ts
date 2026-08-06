@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, routeServiceClient } from "@/lib/api/routeAuth";
-import { notifyOrderStaff } from "@/lib/orderNotifications";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 import { normalizeShippingAddress } from "@/lib/checkout";
 
@@ -81,10 +81,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not create order request" }, { status: 500 });
   }
 
-  await notifyOrderStaff({
-    orderId,
+  // Deduplicated on the order, so a retried submit cannot ring the bell twice.
+  await raiseOperationalAlert({
+    kind: "order.new_request",
+    subjectId: orderId,
     actorUserId: user.id,
-    title: "New order request",
     message: `${product.name} was requested and is ready for review.`,
   });
   const [{ data: profile }, config] = await Promise.all([

@@ -28,7 +28,21 @@ export type CreateNotificationArgs = {
    * Use sparingly for system-critical notifications (e.g. moderation/report updates).
    */
   bypassBlock?: boolean;
+  /**
+   * Durable identifier for the logical event, from `notificationEventKey()`.
+   *
+   * When supplied, a second insert for the same recipient and key is refused by
+   * `notifications_user_event_key_idx` and treated as a no-op — so a retried
+   * fetch, two tabs, or a route called twice produce one bell entry rather than
+   * two identical ones. Omitting it keeps the old unconditional behaviour,
+   * which is correct for the community notifications (a second reply to your
+   * thread genuinely is a second event).
+   */
+  eventKey?: string | null;
 };
+
+/** True when the error is the event-key unique violation, i.e. a suppressed duplicate. */
+const isDuplicateEvent = (error: { code?: string } | null) => error?.code === "23505";
 
 /**
  * Returns true if either user has blocked the other.
@@ -61,15 +75,15 @@ export async function isBlockedEitherDirection(
  * Single server-side helper for inserting notifications.
  * Enforces: no self-notifs, skip if blocked either direction.
  */
-export async function createNotification(args: CreateNotificationArgs) {
-  const { recipientUserId, actorUserId, type, threadId, postId, payload, bypassBlock } = args;
+export async function createNotification(args: CreateNotificationArgs): Promise<{ created: boolean }> {
+  const { recipientUserId, actorUserId, type, threadId, postId, payload, bypassBlock, eventKey } = args;
 
-  if (!recipientUserId) return;
-  if (actorUserId && recipientUserId === actorUserId) return;
+  if (!recipientUserId) return { created: false };
+  if (actorUserId && recipientUserId === actorUserId) return { created: false };
 
   if (!bypassBlock && actorUserId) {
     const blocked = await isBlockedEitherDirection(recipientUserId, actorUserId);
-    if (blocked) return;
+    if (blocked) return { created: false };
   }
 
   const { error } = await supabaseAdmin.from("notifications").insert({
@@ -80,11 +94,18 @@ export async function createNotification(args: CreateNotificationArgs) {
     post_id: postId ?? null,
     payload: payload ?? null,
     is_read: false,
+    event_key: eventKey ?? null,
   });
+
+  // A duplicate event key is the mechanism working, not a failure. Logging it
+  // as an error would fill the logs with successful deduplication.
+  if (isDuplicateEvent(error)) return { created: false };
 
   if (error) {
     console.error("createNotification insert error", error);
+    return { created: false };
   }
+  return { created: true };
 }
 
 export type BroadcastNotificationArgs = {

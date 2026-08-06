@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 import { sendCommerceEmail } from "@/lib/commerceEmail";
-import { notifyStaffByPermission } from "@/lib/orderNotifications";
+import { raiseOperationalAlert, resolveOperationalAlert } from "@/lib/comms/operationalAlerts";
 import { logLifecycleFailure } from "./orderLifecycleServer";
 import {
   DEFAULT_COMMERCE_SETTINGS,
@@ -218,6 +218,24 @@ export async function evaluateAndAnnounceStock(productId: string): Promise<Inven
     return { action: "none" };
   }
   const outcome = (data ?? { action: "none" }) as InventoryAlertOutcome;
+
+  /**
+   * Stock coming back is news too.
+   *
+   * An alert nobody ever sees close teaches staff that the bell is a list of
+   * things that were once true, which is how a real blocker gets scrolled past.
+   * The resolution is keyed off the same alert row, so it lands once.
+   */
+  if (outcome.action === "resolved" && outcome.alert_id) {
+    await resolveOperationalAlert({
+      kind: "inventory.low_stock",
+      subjectId: productId,
+      discriminator: outcome.alert_id,
+      message: `${outcome.product_name || "A product"} is back above its low-stock threshold.`,
+    });
+    return outcome;
+  }
+
   if (outcome.action !== "opened" && outcome.action !== "escalated") return outcome;
   if (!outcome.alert_id) return outcome;
 
@@ -233,14 +251,18 @@ export async function evaluateAndAnnounceStock(productId: string): Promise<Inven
 
   // Gated on `inventory.view`, not `orders.manage`: the people who need to know
   // stock is running out are the people who can act on it.
-  await notifyStaffByPermission({
-    permissionKey: "inventory.view",
-    actorUserId: null,
-    title: out ? "Out of stock" : "Low stock",
+  //
+  // The alert row id is the discriminator, so an escalation from low to out is
+  // a genuinely new event while a redelivery of the same level is silent —
+  // `mark_inventory_alert_notified` already claims the send, and the event key
+  // is the second, durable guard behind it.
+  await raiseOperationalAlert({
+    kind: out ? "inventory.out_of_stock" : "inventory.low_stock",
+    subjectId: productId,
+    discriminator: outcome.alert_id,
     message: out
       ? `${name} is out of stock. Direct purchase will be refused until it is restocked.`
       : `${name} is down to ${outcome.quantity ?? 0}, at or below its threshold of ${outcome.threshold ?? 0}.`,
-    href: `/staff/inventory/${productId}`,
   }).catch((error) => logLifecycleFailure("notify_low_stock", error, { productId }));
 
   const recipients = settings.inventory.lowStockRecipients.length
