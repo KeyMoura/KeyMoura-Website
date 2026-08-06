@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { AccessDenied } from "@/components/AccessDenied";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { getServerActorAccess } from "@/lib/production/access";
+import { getServerActorAccess } from "@/lib/staff/serverAccess";
 import {
   FILE_KIND_META,
   PRIORITY_META,

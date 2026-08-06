@@ -16,9 +16,14 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
  * cookie store instead: same admission check, same permission store, same
  * operator override — so a page and its API agree about who the caller is.
  *
- * Only the printable documents need this today. It is separate from
- * `routeAuth` rather than added to it because that module is imported by every
- * API route and pulls in `NextRequest`; this one is imported by pages.
+ * Used by the printable documents. It is separate from `routeAuth` rather than
+ * added to it because that module is imported by every API route and pulls in
+ * `NextRequest`; this one is imported by pages.
+ *
+ * It lived at `lib/production/access.ts` until the order documents needed it
+ * too. Nothing about it was production-specific, and a second copy under a
+ * second name is how two staff surfaces end up disagreeing about who a caller
+ * is.
  */
 export async function getServerActorAccess(): Promise<ActorAccess | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
