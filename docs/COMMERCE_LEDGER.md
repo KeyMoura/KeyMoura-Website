@@ -2996,3 +2996,88 @@ page from the ones this pass rebuilt and was left alone rather than widened into
    paper and that no internal note appears on it.
 4. Open `/staff/reconciliation` and confirm every check reports clean against
    real data.
+
+## Pass 9 — merged and in production
+
+Branch `staff-command-center-fulfillment-ui-20260805` → merged as **`ff198cc`**,
+which is the current production SHA. Merged with `--no-ff`, never force-pushed.
+
+| SHA | What |
+|-----|------|
+| `b07d8fa` | Rebuild the staff navigation around one definition |
+| `a921d12` | Add the staff dashboard and the fulfillment queue |
+| `6476e83` | Drive fulfillment from the state machine, on both sides |
+| `743f580` | Expose the product delivery fields that checkout already reads |
+| `368a59c` | Add printable order documents and the reconciliation report |
+| `87b7d41` | Record pass 9 |
+| `ff198cc` | Merge commit |
+
+- Vercel **preview build: success** (checked on the final branch head, not only
+  on the first push).
+- Vercel **production deployment: Ready** on `ff198cc`.
+- **No migration was applied, because none exists.** This pass added no schema
+  change. The ledger stays at 40 repo files and 40 rows.
+
+### Post-deploy verification — on `ff198cc`
+
+| Check | Result |
+|-------|--------|
+| Storefront | `/` 200 (0.80 s), `/catalog` 200, `/cart` 200, `/shipping` 200, `/refunds` 200 |
+| `GET /api/cart` | 200 against the real database |
+| Staff routes gated | `/staff`, `/staff/fulfillment`, `/staff/reconciliation`, `/staff/settings/commerce`, `/staff/inventory`, `/staff/production`, `/staff/orders` all **307 → `/auth/login`** |
+| New APIs gated | `/api/staff/reconciliation` and `/api/staff/orders/[id]/fulfillment` both **307** |
+| New CSS deployed | The production chunk carries `.staff-drawer-panel`, `.staff-drawer-trigger`, `.staff-nav-group-toggle`, `.staff-breadcrumbs`, `.staff-nav-link-icon`, `.staff-drawer-item-description` |
+| Print CSS deployed | `@media print{header,footer,nav,.skip-link,.staff-nav,.print-hidden{display:none!important}` |
+| Reduced motion deployed | `prefers-reduced-motion` block present |
+| Every reconciliation query, as `service_role` | **All seven OK** — orders, payments, refunds, active reservations, products, adjustments and **`inventory_alerts`**, the table the pre-fix code named wrongly |
+| Production data | **unchanged** — 6 orders, 2 products, 1 order item, 2 carts, 0 refunds/returns/jobs/adjustments/reservations/alerts/fulfillment events, 40 migrations |
+
+**A route-existence probe is not possible in production, and saying otherwise
+would be false.** Middleware 307s everything under `/staff/*` before routing, so
+`/staff/definitely-not-a-route` answers 307 exactly like a real page. Deployment
+of the new routes is evidenced instead by the build output (which lists all five)
+and by the new CSS being served from the production chunk.
+
+### The reconciliation report found two real discrepancies on its first run
+
+Run against live production data using the same comparison
+`checkPaymentTotals` performs:
+
+| Order | `amount_paid_cents` | Sum of its payment rows |
+|-------|--------------------|--------------------------|
+| KM-0001 | 2500 | **0** |
+| KM-0002 | 100 | **0** |
+
+Both would be reported as `payment_total_mismatch`, critical. KM-0001 also
+carries `payment_status = 'unpaid'` alongside a non-zero collected amount.
+
+These are almost certainly manual or early-development orders — both predate the
+pass-7 atomic payment accounting, which is what made the order field and the
+payment rows move together. **Nothing was changed.** The tool is read-only by
+design and historical records are an owner decision; this is recorded so the
+owner can decide, which is exactly what the report is for.
+
+It is also the first evidence that the report does real work rather than
+returning a vacuous pass.
+
+### Noticed, not acted on
+
+- `.staff-nav-title` remains in `globals.css` with no component referencing it
+  after the sidebar rewrite. Dead CSS, one rule, harmless.
+- `/staff/orders` still renders "Needs action (0)" when its orders query is
+  refused — the same class of defect fixed on the dashboard and the fulfillment
+  queue. It is a different page from the ones this pass rebuilt and was left
+  alone rather than widened into.
+
+### Owner checks worth five minutes
+
+1. Sign in as staff and open `/staff`. Real counts should appear, and the
+   delivery-configuration warning should be absent if a fulfillment method is
+   configured.
+2. Open `/staff/reconciliation` and confirm the two payment-total findings
+   above, then decide what should happen to those two historical orders.
+3. Open an order and drive one fulfillment transition. Confirm the email preview
+   on the button matches what the customer receives, and that marking delivered
+   moves the order to Completed.
+4. Print a packing slip and confirm navigation and the sidebar are absent on
+   paper and no internal note appears.
