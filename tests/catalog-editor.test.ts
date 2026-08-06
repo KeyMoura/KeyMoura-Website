@@ -40,8 +40,14 @@ test("storefront and order API enforce catalog availability", () => {
   const card = readFileSync("src/components/ProductCard.tsx", "utf8");
   assert.match(card, /productCanBeRequested/);
   assert.match(card, /availabilityLabel/);
-  assert.match(storefront, /ProductCard/);
-  assert.match(storefront, /\.is\("archived_at", null\)/);
+  // The catalog query and the grid moved out of the page when category routes
+  // arrived: every catalog surface — /catalog, /catalog/[category] and
+  // /catalog/[category]/[subcategory] — now shares one loader and one grid.
+  // Asserting them where they live is what keeps all three covered instead of
+  // one.
+  assert.match(readFileSync("src/components/catalog/CatalogBrowser.tsx", "utf8"), /ProductCard/);
+  assert.match(readFileSync("src/lib/commerce/catalogData.ts", "utf8"), /\.is\("archived_at", null\)/);
+  assert.match(storefront, /loadCatalogData/, "the page must still load through that shared loader");
   assert.match(orderRoute, /inventory_quantity < quantity/);
   assert.match(orderRoute, /product\.archived_at/);
 });

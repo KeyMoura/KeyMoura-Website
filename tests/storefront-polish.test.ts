@@ -14,16 +14,30 @@ test("homepage covers what KeyMoura does, sells, and how custom work runs", () =
 });
 test("catalog supports discovery controls and clear empty states", () => {
   // Filtering moved into CatalogClient when /catalog became a server
-  // component. "Customizable only" became a purchase-type filter, which is
-  // the distinction a customer actually shops on.
-  const client = read("src/app/catalog/CatalogClient.tsx");
-  for (const token of ["Search products", "All categories", "Any availability", "Any purchase type", "No products match"]) {
+  // component, and then into CatalogBrowser, which every category page shares.
+  // "All categories" became a route rather than a dropdown value, so the
+  // category list is asserted where it now lives: the browse menu.
+  const client = read("src/components/catalog/CatalogBrowser.tsx");
+  for (const token of ["Search products", "No products match"]) {
     assert.match(client, new RegExp(token));
   }
+  assert.match(client, /Product categories/, "the browse menu is its own labelled nav");
+  // The filter labels moved beside the values they belong to, so a control
+  // cannot offer a value the parser drops.
+  const rules = read("src/lib/commerce/catalogBrowse.ts");
+  for (const token of ["All products", "Any availability", "Any purchase type"]) {
+    assert.match(rules, new RegExp(token));
+  }
+
   // Native selects on a page where every other dropdown is a MenuSelect made
   // the catalog look like a different application. Comments are stripped first:
   // the file's own prose names the tag in order to say it is not used.
-  const code = client.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.doesNotMatch(code, /<select/);
+  for (const path of [
+    "src/components/catalog/CatalogBrowser.tsx",
+    "src/components/catalog/CatalogBrowseDrawer.tsx",
+  ]) {
+    const code = read(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /<select/, `${path} must use MenuSelect`);
+  }
 });
 test("root metadata includes social previews", () => { const layout = read("src/app/layout.tsx"); assert.match(layout, /openGraph/); assert.match(layout, /twitter/); });

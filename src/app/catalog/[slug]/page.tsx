@@ -1,6 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import CatalogPageView from "@/components/catalog/CatalogPageView";
+import { categoryPath, productsInCategory, resolveCategoryPath } from "@/lib/commerce/catalogBrowse";
+import { loadCatalogData } from "@/lib/commerce/catalogData";
 import ProductGallery, { type GalleryImage } from "@/components/product/ProductGallery";
 import ProductPurchasePanel from "@/components/product/ProductPurchasePanel";
 import ProductSections from "@/components/product/ProductSections";
@@ -28,6 +31,39 @@ import {
 export const revalidate = 300;
 
 type CategoryRow = { id: string; name: string; slug: string; parent_id: string | null };
+
+/**
+ * One dynamic segment, two kinds of page.
+ *
+ * `/catalog/[slug]` is a **category** when the slug names one, and a product
+ * otherwise. Next.js cannot have two different dynamic segments in one
+ * position, and products were not moved to make room: `/catalog/premade-shift-knob`
+ * is live, indexed, and linked from the cart, the wishlist, order pages and
+ * transactional email. Breaking those to gain a URL shape a customer cannot
+ * see is not a trade worth making.
+ *
+ * The ambiguity that would normally make this fragile is closed in the
+ * database: `20260806040000_catalog_slug_namespace.sql` refuses a category
+ * slug a product already uses and a product slug a category already uses, so a
+ * path can never name two things. The order below is therefore a formality
+ * rather than a precedence rule — but categories are checked first so that if
+ * the guard were ever dropped, the failure would be a visibly wrong page
+ * rather than a silently shadowed category.
+ *
+ * The category lookup is one indexed query on a small table. A product page
+ * pays for it and nothing else; the full catalog load happens only when the
+ * slug really is a category.
+ */
+async function loadCategoryBySlug(slug: string): Promise<{ id: string } | null> {
+  const { data } = await supabasePublicServer()
+    .from("product_categories")
+    .select("id")
+    .eq("slug", slug)
+    .eq("is_active", true)
+    .is("archived_at", null)
+    .maybeSingle();
+  return (data as { id: string } | null) ?? null;
+}
 
 type LoadedProduct = {
   product: CatalogProduct & Record<string, unknown>;
@@ -137,6 +173,30 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
+
+  if (await loadCategoryBySlug(slug)) {
+    const [{ categories }, settings] = await Promise.all([loadCatalogData(), getSiteSettings()]);
+    const category = resolveCategoryPath([slug], categories);
+    if (category) {
+      const description =
+        category.description?.trim() ||
+        `${category.name} from ${settings.name}. Buy what is ready, or ask us to make a version that fits.`;
+      return {
+        title: category.name,
+        description,
+        // The canonical is the category's own path and never carries filters:
+        // a sort order is how you are looking at a page, not a different page.
+        alternates: { canonical: categoryPath(category, categories) },
+        openGraph: {
+          title: category.name,
+          description,
+          type: "website",
+          url: categoryPath(category, categories),
+        },
+      };
+    }
+  }
+
   const [loaded, settings] = await Promise.all([loadProduct(slug), getSiteSettings()]);
   if (!loaded) return { title: "Product not found" };
 
@@ -170,8 +230,29 @@ export async function generateMetadata({
   };
 }
 
-export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CatalogSlugPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+
+  if (await loadCategoryBySlug(slug)) {
+    const { products, categories } = await loadCatalogData();
+    const category = resolveCategoryPath([slug], categories);
+    // A *sub*category reached by its own slug alone is not a 404 — it exists —
+    // but it has one canonical address, under its parent. Redirecting keeps a
+    // single indexable URL per view and puts the right parent in the crumb.
+    if (category?.parent_id) redirect(categoryPath(category, categories));
+    if (category) {
+      return (
+        <CatalogPageView
+          allProducts={products}
+          scopedProducts={productsInCategory(products, category.id, categories)}
+          categories={categories}
+          category={category}
+          parent={null}
+        />
+      );
+    }
+  }
+
   const [loaded, settings] = await Promise.all([loadProduct(slug), getSiteSettings()]);
   if (!loaded) notFound();
 
@@ -228,16 +309,25 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <li>
             <Link href="/catalog">Products</Link>
           </li>
+          {/* Real category routes now, not `?category=<name>`. The old links
+              still work — `/catalog` redirects them here — but a breadcrumb
+              should point at the canonical address of the thing it names. */}
           {parentCategory ? (
             <li>
-              <Link href={`/catalog?category=${encodeURIComponent(parentCategory.name)}`}>
-                {parentCategory.name}
-              </Link>
+              <Link href={`/catalog/${parentCategory.slug}`}>{parentCategory.name}</Link>
             </li>
           ) : null}
           {category ? (
             <li>
-              <Link href={`/catalog?category=${encodeURIComponent(category.name)}`}>{category.name}</Link>
+              <Link
+                href={
+                  parentCategory
+                    ? `/catalog/${parentCategory.slug}/${category.slug}`
+                    : `/catalog/${category.slug}`
+                }
+              >
+                {category.name}
+              </Link>
             </li>
           ) : null}
           <li aria-current="page">{product.name}</li>

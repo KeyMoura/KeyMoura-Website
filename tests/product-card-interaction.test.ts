@@ -197,9 +197,14 @@ test("a directly purchasable price is exact, a request price is a starting point
 // ---------------------------------------------------------------------------
 
 test("every product grid renders the shared card rather than its own markup", () => {
-  // The catalog grid moved into CatalogClient when /catalog became a server
-  // component; the requirement that every grid uses the one card did not.
-  for (const path of ["src/app/page.tsx", "src/app/catalog/CatalogClient.tsx", "src/app/catalog/[slug]/page.tsx"]) {
+  // The catalog grid has moved twice — into CatalogClient when /catalog became
+  // a server component, and now into CatalogBrowser, which every category page
+  // shares. The requirement that every grid uses the one card did not move.
+  for (const path of [
+    "src/app/page.tsx",
+    "src/components/catalog/CatalogBrowser.tsx",
+    "src/app/catalog/[slug]/page.tsx",
+  ]) {
     const source = read(path);
     assert.match(source, /<ProductCard\b/, `${path} must render the shared card`);
     assert.doesNotMatch(
