@@ -53,6 +53,11 @@ type OrderRow = {
   customer_id: string;
   product_name: string;
   order_number: string | null;
+  status: string;
+  payment_status: string;
+  agreed_price_cents: number | null;
+  amount_paid_cents: number;
+  amount_refunded_cents: number | null;
   fulfillment_status: string;
   fulfillment_method: string;
   shipping_address: unknown;
@@ -72,6 +77,37 @@ type OrderRow = {
   shipping_cents: number | null;
   fulfillment_updated_at: string | null;
 };
+
+/**
+ * Transitions that hand the goods over — posted, or across the counter.
+ *
+ * These are gated on the balance being settled. The rule is not new: the legacy
+ * `shipment_action` on `PATCH /api/staff/orders/[id]` refused to ship an order
+ * with money outstanding, and moving fulfillment onto its own state machine
+ * must not quietly drop a guard that stops stock leaving unpaid. `processing`
+ * is deliberately *not* in this list — packing an order early is normal, and
+ * only the handover is consequential.
+ */
+const RELEASES_GOODS: readonly FulfillmentState[] = ["shipped", "ready_for_pickup", "picked_up", "delivered"];
+
+/**
+ * Fulfillment states that mean the customer has the goods.
+ *
+ * Reaching one closes out a custom-request order, which is what the legacy
+ * `mark_delivered` action did. Without this, an order could be delivered and
+ * still read "Ready" to its customer forever, because `orders.status` and
+ * `orders.fulfillment_status` are separate fields and only one of them moved.
+ */
+const COMPLETES_ORDER: readonly FulfillmentState[] = ["delivered", "picked_up"];
+
+function outstandingBalanceCents(order: {
+  agreed_price_cents: number | null;
+  amount_paid_cents: number;
+  amount_refunded_cents: number | null;
+}): number {
+  const net = Math.max(0, (order.amount_paid_cents || 0) - (order.amount_refunded_cents || 0));
+  return Math.max(0, (order.agreed_price_cents || 0) - net);
+}
 
 async function loadOrder(id: string): Promise<OrderRow | null> {
   const { data, error } = await routeServiceClient.from("orders").select(ORDER_COLUMNS).eq("id", id).maybeSingle();
@@ -94,6 +130,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
   const method = String(order.fulfillment_method || "shipping");
   const from = String(order.fulfillment_status || "unfulfilled");
 
+  const balance = outstandingBalanceCents(order);
+
   const transitions = fulfillmentTransitionsFor(from, method).map((to) => ({
     to,
     staffLabel: FULFILLMENT_STAFF_LABELS[to],
@@ -101,12 +139,19 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     // Exactly what the customer will be sent, surfaced before confirming.
     emailTemplate: FULFILLMENT_CUSTOMER_EMAIL[to] ?? null,
     requiresTracking: to === "shipped" && method === "shipping",
+    // Answered here rather than recomputed in the browser, so the button the
+    // page disables and the transition the route refuses are the same set.
+    blockedReason: RELEASES_GOODS.includes(to) && balance > 0
+      ? `$${(balance / 100).toFixed(2)} is still owed on this order.`
+      : null,
   }));
 
   return NextResponse.json({
     order: {
       id: order.id,
       orderNumber: order.order_number,
+      orderStatus: order.status,
+      outstandingBalanceCents: balance,
       fulfillmentStatus: from,
       fulfillmentMethod: method,
       staffLabel: lifecycleLabel(FULFILLMENT_STAFF_LABELS, from),
@@ -178,6 +223,21 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     );
   }
 
+  // Stock does not leave the building against an unpaid balance. Checked
+  // server-side rather than only by disabling the button, because the button is
+  // a convenience and this is the control.
+  if (RELEASES_GOODS.includes(to)) {
+    const balance = outstandingBalanceCents(order);
+    if (balance > 0) {
+      return NextResponse.json(
+        {
+          error: `$${(balance / 100).toFixed(2)} is still owed on this order. Collect the balance before releasing the goods.`,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   // A parcel is not shipped without a way to find it. Refused before the state
   // moves, so the order does not end up "shipped" with nothing to tell the
   // customer.
@@ -232,6 +292,27 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       .update({ pickup_confirmed_at: new Date().toISOString() })
       .eq("id", order.id)
       .is("pickup_confirmed_at", null);
+  }
+
+  /*
+   * Close out the order when the customer has the goods.
+   *
+   * `orders.status` and `orders.fulfillment_status` are independent fields, and
+   * `transition_order_fulfillment` deliberately only writes the latter. The
+   * legacy `shipment_action` moved a `ready` custom-request order to
+   * `completed`; that is the one status movement fulfillment genuinely owns, so
+   * it is carried here rather than left behind with the control that replaced
+   * it. It is conditional on the order still being `ready`, so a cancelled or
+   * already-completed order is not resurrected, and the `.eq("status","ready")`
+   * makes a concurrent change match zero rows rather than overwrite it.
+   */
+  if (COMPLETES_ORDER.includes(to) && order.status === "ready") {
+    const stamp = new Date().toISOString();
+    await routeServiceClient
+      .from("orders")
+      .update({ status: "completed", completed_at: stamp })
+      .eq("id", order.id)
+      .eq("status", "ready");
   }
 
   await notifyCustomer({ order, to, method, settings, actorUserId: actor.userId, customerNote });
