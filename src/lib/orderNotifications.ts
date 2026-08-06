@@ -62,31 +62,15 @@ export async function notifyOrderStaff(input: Omit<OrderNotification, "recipient
   })));
 }
 
-/**
- * A staff notification that is not about an order.
+/*
+ * `notifyStaffByPermission` lived here from pass 8 until pass 12, when
+ * `raiseOperationalAlert` in `lib/comms/operationalAlerts.ts` replaced it.
  *
- * Deliberately routed through `createNotification` with the same `type` and
- * shape the order notifications use, so it lands in the one notification
- * centre staff already read rather than in a parallel inbox. `href` is supplied
- * by the caller because the deep link is the whole point of the alert.
+ * It is gone rather than kept alongside its replacement. The two did the same
+ * job — fan a staff notification out by permission — but only one of them
+ * deduplicates, carries a priority, and takes its title and deep link from a
+ * catalogue instead of from whatever the caller typed. Leaving both would mean
+ * two ways to notify staff, which is precisely the drift this pass exists to
+ * remove: the next alert would be written against whichever one the author
+ * found first, and half of them would be undeduplicated.
  */
-export async function notifyStaffByPermission(input: {
-  permissionKey: string;
-  actorUserId: string | null;
-  title: string;
-  message: string;
-  href: string;
-}) {
-  const recipients = await resolveStaffRecipients(input.permissionKey, input.actorUserId);
-  await Promise.all(
-    recipients.map((recipientUserId) =>
-      createNotification({
-        recipientUserId,
-        actorUserId: input.actorUserId,
-        type: "order",
-        bypassBlock: true,
-        payload: { title: input.title, message: input.message, href: input.href },
-      })
-    )
-  );
-}
