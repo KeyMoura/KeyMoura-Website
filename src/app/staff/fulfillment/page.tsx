@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { Badge, EmptyState, Notice } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
+import { classifySupabaseError } from "@/lib/staff/loadState";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { FULFILLMENT_STAFF_LABELS, lifecycleLabel } from "@/lib/commerce/orderLifecycle";
 import {
@@ -83,15 +84,20 @@ function FulfillmentQueueContent() {
           .from("profiles")
           .select("id,username,display_name")
           .in("id", [...new Set(rows.map((row) => row.customer_id))]);
+        // A refused profile read is not "these orders have no customers": the
+        // rows fall back to a generic label, and the orders themselves — which
+        // is what this queue is for — are unaffected.
         setProfiles(
           Object.fromEntries(
-            ((profileResult.data ?? []) as { id: string; username: string | null; display_name: string | null }[]).map(
+            ((profileResult.error ? [] : (profileResult.data ?? [])) as { id: string; username: string | null; display_name: string | null }[]).map(
               (profile) => [profile.id, profile]
             )
           )
         );
       }
-      setError(result.error?.message ?? "");
+      // Classified, not echoed: a Postgres message names schema objects and can
+      // quote row values, and this string is rendered into the page.
+      setError(result.error ? classifySupabaseError(result.error).message : "");
       setLoading(false);
     })();
   }, [canView, supabase]);

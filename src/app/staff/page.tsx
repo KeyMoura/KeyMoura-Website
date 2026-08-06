@@ -11,6 +11,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { canUseStaffArea, visibleStaffNav } from "@/lib/staffNavigation";
+import { classifySupabaseError } from "@/lib/staff/loadState";
 import {
   buildDashboardSummary,
   type DashboardOrder,
@@ -118,10 +119,14 @@ export default function StaffDashboardPage() {
           .from("profiles")
           .select("id,username,display_name")
           .in("id", [...new Set(orderRows.map((row) => row.customer_id))]);
-        setProfiles(Object.fromEntries(((profileResult.data ?? []) as Profile[]).map((p) => [p.id, p])));
+        // A refused profile read leaves the names generic; it does not mean the
+        // orders have no customers.
+        setProfiles(Object.fromEntries(((profileResult.error ? [] : (profileResult.data ?? [])) as Profile[]).map((p) => [p.id, p])));
       }
-      setOrdersError(orderResult.error?.message ?? "");
-      setProductsError(productResult.error?.message ?? "");
+      // Classified rather than echoed — a Postgres message names schema objects
+      // and can quote row values, and these strings are rendered into panels.
+      setOrdersError(orderResult.error ? classifySupabaseError(orderResult.error).message : "");
+      setProductsError(productResult.error ? classifySupabaseError(productResult.error).message : "");
       setLoading(false);
     })();
   }, [canUseStaff, canViewCatalog, canViewInventory, canViewOrders, supabase]);

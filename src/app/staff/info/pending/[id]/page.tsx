@@ -156,6 +156,8 @@ export default function AdminPendingInfoDetailPage() {
 
   // HISTORY STATE
   const [events, setEvents] = useState<ReviewEvent[]>([]);
+  /** Distinguishes "no review history" from "the history could not be read". */
+  const [eventsFailed, setEventsFailed] = useState(false);
   const [undoLoadingId, setUndoLoadingId] = useState<string | null>(null);
 
   // SUBMITTER LABEL
@@ -279,7 +281,11 @@ export default function AdminPendingInfoDetailPage() {
       }
 
       const pageData = pageRes.data as InfoPage;
-      const eventsData = (eventsRes.data || []) as ReviewEvent[];
+      // A refused review-history read is not "this submission has no history".
+      // The page continues — the submission itself loaded — but the history is
+      // reported as unavailable rather than rendered as an empty list.
+      const eventsData = (eventsRes.error ? [] : (eventsRes.data || [])) as ReviewEvent[];
+      setEventsFailed(Boolean(eventsRes.error));
 
       setPage(pageData);
       setEditTitle(pageData.title);
@@ -1095,10 +1101,14 @@ return (
 
             <div className="flex items-baseline justify-between gap-2">
               <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">Review history</p>
-              <p className="text-[11px] text-brand-textMuted">{reviewEvents.length} event{reviewEvents.length === 1 ? "" : "s"}</p>
+              <p className="text-[11px] text-brand-textMuted">{eventsFailed ? "Count unavailable" : `${reviewEvents.length} event${reviewEvents.length === 1 ? "" : "s"}`}</p>
             </div>
 
-            {reviewEvents.length === 0 ? (
+            {eventsFailed ? (
+              <p className="mt-2 text-[12px] text-amber-200" role="status">
+                The review history could not be loaded, so none is shown. This submission may still have one.
+              </p>
+            ) : reviewEvents.length === 0 ? (
               <p className="mt-2 text-[12px] text-brand-textMuted">No review history yet.</p>
             ) : (
               <div className="mt-2 space-y-2">

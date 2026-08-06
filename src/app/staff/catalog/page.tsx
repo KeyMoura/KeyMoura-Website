@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
+import { classifySupabaseError } from "@/lib/staff/loadState";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { CatalogProduct, optionKey, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { MenuSelect } from "@/components/ui/MenuSelect";
@@ -41,6 +42,10 @@ export default function StaffCatalogPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "draft" | "published" | "archived" | "all">("active");
   const [savedSnapshot, setSavedSnapshot] = useState("");
+  /** True when this product's media or options could not be read. Gates option editing. */
+  const [editorLoadFailed, setEditorLoadFailed] = useState(false);
+  /** True when the product list itself could not be read. Distinguishes empty from failed. */
+  const [productsFailed, setProductsFailed] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [content, setContent] = useState<ProductDetailContent>(EMPTY_DETAIL_CONTENT);
@@ -69,7 +74,10 @@ export default function StaffCatalogPage() {
     { label: "Short description", complete: Boolean(draft.short_description?.trim()) },
     { label: "Starting price", complete: draft.starting_price_cents != null },
     { label: "Product image", complete: imageCount > 0 || Boolean(draft.image_url) },
-    { label: "Customization choices", complete: !draft.is_custom || groups.length > 0 },
+    // `unknown` when the option list could not be read: reporting a custom
+    // product as missing its choices, when the truth is that nobody could tell,
+    // is a false blocker on publishing.
+    { label: "Customization choices", complete: !draft.is_custom || groups.length > 0, unknown: editorLoadFailed && draft.is_custom },
     // A directly purchasable product with no fixed price silently falls back to
     // the request path, which is not what the staff member chose.
     { label: "Purchase mode", complete: !allowsDirectPurchase(draft.purchase_mode ?? "request_only") || draft.starting_price_cents != null },
@@ -81,9 +89,12 @@ export default function StaffCatalogPage() {
       supabase.from("products").select("*").order("sort_order").order("created_at", { ascending: false }),
       supabase.from("product_categories").select("id,name,slug,description,parent_id,image_url,display_order,is_active,archived_at").order("display_order"),
     ]);
-    setProducts((data ?? []) as CatalogProduct[]);
+    // A refused product query clears the list rather than leaving a previous
+    // load on screen as though it were current.
+    setProducts((queryError ? [] : (data ?? [])) as CatalogProduct[]);
     setCategories(visibleCategories((categoryRows ?? []) as CategoryRow[]));
-    setError(queryError?.message ?? "");
+    setProductsFailed(Boolean(queryError));
+    setError(queryError ? "The product catalog could not be loaded. No products are shown; none have been changed." : "");
   }, [supabase]);
 
   const loadEditor = useCallback(async (product: CatalogProduct) => {
@@ -94,15 +105,33 @@ export default function StaffCatalogPage() {
       supabase.from("product_media").select("*").eq("product_id", product.id).order("sort_order"),
       supabase.from("product_option_groups").select("*,product_option_values(*)").eq("product_id", product.id).order("sort_order"),
     ]);
-    setMedia((mediaResult.data ?? []) as ProductMedia[]);
-    const loadedGroups = ((optionResult.data ?? []) as ProductOptionGroup[]).map(group => ({
+    setMedia((mediaResult.error ? [] : (mediaResult.data ?? [])) as ProductMedia[]);
+    const loadedGroups = ((optionResult.error ? [] : (optionResult.data ?? [])) as ProductOptionGroup[]).map(group => ({
       ...group,
       product_option_values: [...(group.product_option_values ?? [])].sort((a, b) => a.sort_order - b.sort_order),
     }));
     setGroups(loadedGroups);
     setSavedSnapshot(editorSnapshot(product, loadedGroups, loadedContent));
     setSaveMessage("");
-    setError(mediaResult.error?.message ?? optionResult.error?.message ?? "");
+    /*
+     * A failed option read is reported as a failure, not as "this product has
+     * no options".
+     *
+     * Three things went wrong when it was silently an empty list: the readiness
+     * checklist marked a custom product's "Customization choices" incomplete
+     * when it was not; the editor showed no option groups, inviting a staff
+     * member to re-create ones that already exist; and `addGroup` takes its new
+     * `sort_order` from `groups.length`, so the next group added would have
+     * collided with the existing ones at position 0.
+     */
+    setEditorLoadFailed(Boolean(mediaResult.error || optionResult.error));
+    setError(
+      optionResult.error
+        ? "This product's options could not be loaded. They are not shown, and adding options is disabled until the list loads — the product still has whatever options it had."
+        : mediaResult.error
+          ? "This product's images could not be loaded. They are not shown here, and are unchanged."
+          : ""
+    );
   }, [supabase]);
 
   useEffect(() => {
@@ -374,7 +403,7 @@ export default function StaffCatalogPage() {
       cancellation_notes: draft.cancellation_notes || null, dimensions_text: draft.dimensions_text || null,
       package_dimensions_text: draft.package_dimensions_text || null,
     }).select("*").single();
-    if (copyError || !copy) { setBusy(false); return setError(copyError?.message || "Could not duplicate product"); }
+    if (copyError || !copy) { setBusy(false); return setError(copyError ? classifySupabaseError(copyError).message : "Could not duplicate product"); }
     if (media.length) await supabase.from("product_media").insert(media.map(item => ({ product_id: copy.id, kind: item.kind, url: item.url, alt_text: item.alt_text, sort_order: item.sort_order })));
     for (const group of groups) {
       const { data: newGroup, error: groupError } = await supabase.from("product_option_groups").insert({
@@ -439,7 +468,12 @@ export default function StaffCatalogPage() {
             <span className="flex items-center justify-between gap-2"><span className="font-semibold">{product.name}</span>{product.inventory_policy === "track" && product.inventory_quantity <= product.low_stock_threshold ? <span className="text-xs text-amber-300">{product.inventory_quantity} left</span> : null}</span>
             <span className="mt-1 block text-xs text-brand-textMuted">{product.sku ? `${product.sku} · ` : ""}/{product.slug} · {product.archived_at ? "Archived" : product.is_published ? "Published" : "Draft"}</span>
           </button>)}
-          {filteredProducts.length === 0 ? <EmptyState>No products match this view.</EmptyState> : null}
+          {/* "None match" is a claim about a successful query. A failed one gets
+              its own sentence, because an empty catalog and an unreadable one
+              look identical otherwise. */}
+          {productsFailed
+            ? <EmptyState>Products are not shown because the catalog could not be loaded. This is not the same as the catalog being empty.</EmptyState>
+            : filteredProducts.length === 0 ? <EmptyState>No products match this view.</EmptyState> : null}
           </div>
         </aside>
 
@@ -457,7 +491,7 @@ export default function StaffCatalogPage() {
 
           <div className="ui-card">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Publish checklist</h2><p className="mt-1 text-sm text-brand-textMuted">Finish these essentials before making the product visible to customers.</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${readyToPublish ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-400/10 text-amber-200"}`}>{publishChecks.filter(check => check.complete).length}/{publishChecks.length} ready</span></div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">{publishChecks.map(check => <div key={check.label} className={`rounded-xl border px-3 py-2 text-sm ${check.complete ? "border-emerald-500/30 text-emerald-200" : "border-zinc-700 text-brand-textMuted"}`}><span aria-hidden="true">{check.complete ? "✓" : "○"}</span> {check.label}</div>)}</div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">{publishChecks.map(check => <div key={check.label} className={`rounded-xl border px-3 py-2 text-sm ${check.unknown ? "border-amber-500/40 text-amber-200" : check.complete ? "border-emerald-500/30 text-emerald-200" : "border-zinc-700 text-brand-textMuted"}`}><span aria-hidden="true">{check.unknown ? "?" : check.complete ? "✓" : "○"}</span> {check.label}{check.unknown ? " — could not be checked" : ""}</div>)}</div>
           </div>
           <div className="ui-card">
             <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Product details</h2><div className="flex items-center gap-3"><span className={draft.archived_at ? "text-sm text-amber-300" : draft.is_published ? "text-sm text-emerald-300" : "text-sm text-brand-textMuted"}>{draft.archived_at ? "Archived" : draft.is_published ? "Published" : "Draft"}</span>{draft.slug && draft.is_published && !draft.archived_at ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>View live ↗</Link> : null}</div></div>
@@ -553,7 +587,10 @@ export default function StaffCatalogPage() {
           </div>
 
           <div className="ui-card">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Customization options</h2><p className="mt-1 text-sm text-brand-textMuted">These fields appear on this product’s request form.</p></div><button disabled={!canManage || !draft.is_custom} onClick={() => void addGroup()} className={subtle}>Add option</button></div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Customization options</h2><p className="mt-1 text-sm text-brand-textMuted">These fields appear on this product’s request form.</p></div>{/* Disabled after a failed read: `addGroup` derives the new sort_order from
+                `groups.length`, so adding one to a list that failed to load would
+                collide with the options the product actually has. */}
+              <button disabled={!canManage || !draft.is_custom || editorLoadFailed} title={editorLoadFailed ? "The existing options could not be loaded, so a new one cannot be positioned safely." : undefined} onClick={() => void addGroup()} className={subtle}>Add option</button></div>
             {!draft.is_custom ? <p className="mt-4 rounded-xl border border-zinc-800 p-4 text-sm text-brand-textMuted">Customization is disabled. Enable it in Product details to show configured options.</p> : null}
             <div className="mt-4 space-y-4">
               {groups.map((group, groupIndex) => <div key={group.id} className="rounded-xl border border-zinc-800 p-4">
