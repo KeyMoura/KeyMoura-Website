@@ -3682,3 +3682,363 @@ free-form recipient field.
 - Email delivery is single-attempt. A failure is recorded in `email_deliveries`
   and visible on the order, but there is no retry — the other half of the resend
   gap above.
+
+---
+
+# Pass 12 — transactional communications, notification deduplication, integration health, launch readiness
+
+Branch `communications-notifications-launch-readiness-20260806`, from `0bd6ccf`
+→ merged as **`0cc2ab8`**, with a follow-up fix at **`299912d`**, which is the
+current production SHA. Merged with `--no-ff`, never force-pushed.
+
+## Verified starting state — 2026-08-06
+
+| Check | Result |
+|---|---|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `0bd6ccf` |
+| Production health | `/` 200 (0.43 s), `/catalog` 200, `/cart` 200, `GET /api/cart` 200 |
+| Migration ledger | **exact** — 42 repo files, 42 rows, versions and names identical |
+
+## What the audit found
+
+`sendCommerceEmail` existed and worked, and three things about it were wrong.
+
+1. **It sent before it recorded.** The `email_deliveries` upsert ran *after* the
+   provider call, so two concurrent calls carrying the same event key both sent.
+   The only thing between a customer and two identical emails was Resend's own
+   `idempotencyKey` — a provider-side 24-hour window, not a durable guarantee,
+   and absent entirely for any provider swapped in later.
+2. **Thirteen events had no email at all**, and several had the wrong one. A
+   direct purchase received a payment receipt and never an order acknowledgement.
+   A failed payment rang a bell and told nobody. A revised quote announced
+   "your quote is ready" for the third time with a different number.
+3. **`notifications` had no `event_key`**, so `createNotification` inserted
+   unconditionally. Stripe replays were caught upstream by
+   `stripe_webhook_events`, so no duplicate had been observed — but every
+   non-Stripe path could produce two identical rows in a staff member's bell.
+
+## The transactional email matrix
+
+`src/lib/comms/emailEvents.ts` is the catalogue **as data**, and
+`docs/TRANSACTIONAL_EMAIL_MATRIX.md` is generated from it. That arrangement is
+deliberate: this ledger's own count of the email catalogue was wrong in three
+consecutive passes, because a matrix kept only as prose drifts the moment
+somebody adds a send call. `tests/transactional-emails.test.ts` asserts the
+module against the routes, so an uncatalogued send fails the suite and a
+catalogued template with no seeded row fails it too.
+
+**51 events across 43 templates; 47 wired, 4 recorded-not-built.** The four
+unbuilt ones — quote expiry, payment reminders, fulfillment-overdue email and
+reservation-inconsistency email — all need the same missing thing: a scheduled
+job runner. Sending any of them from a page load would mean whoever opened the
+page triggered the customer's email. They are specified and unbuilt rather than
+half-wired.
+
+### A live defect the matrix test found
+
+Pass 8 seeded five templates interpolating `{{carrier}}`, `{{tracking_number}}`,
+`{{pickup_location}}`, `{{pickup_instructions}}`, `{{fulfillment_method}}` and
+`{{date}}` — and **nothing ever supplied any of them**. A real shipped email
+read *"has shipped with . Tracking number: ."* and the ready-for-pickup notice
+had two blank paragraphs where the collection address belongs. The variables are
+now supplied, filtered through `filterCustomerVariables` so a route cannot
+smuggle an internal note into a template by inventing a variable name for it.
+
+## Claim before send
+
+The sender now claims the event with an insert against the unique `event_key`
+*before* the provider is reached. Exactly one caller wins; the loser reads what
+the winner recorded:
+
+- `sent` or `delivered` — the customer already has it. Never sent again.
+- `queued` — somebody is sending it right now. Suppressed rather than raced.
+- `failed` or `skipped` — nothing reached the customer, so a retry is correct.
+  The row is re-claimed with a guarded update and `attempt_count` goes up.
+
+Failures are classified into a category staff may safely be shown; the raw
+provider string is stored for diagnosis and never rendered, because it can quote
+the address it refused. Subject lines strip CR/LF from interpolated values —
+`customer_name` comes from user metadata, which the customer controls, and the
+subject is the one interpolated string that does not pass through `escapeHtml`.
+
+A failed **customer** email raises an in-app alert and never another email.
+Emailing about a broken mailer is how a failure loop starts.
+
+## One way to notify staff
+
+`raiseOperationalAlert` replaces `notifyStaffByPermission`, which is **removed**
+rather than kept beside it. Both fanned a notification out by permission, but
+only one deduplicates, carries a priority, and takes its title and deep link
+from a catalogue. Two ways to notify staff is how half the alerts end up
+undeduplicated: the next one gets written against whichever helper the author
+finds first.
+
+Every alert is routed to the permission that can act on it — `refunds.issue`
+for a failed refund, `returns.review` for a return, `inventory.view` for stock —
+rather than to `orders.manage` for everything. Stock coming back announces a
+resolution, because an alert nobody ever sees close teaches staff that the bell
+is a list of things that were once true.
+
+## Four staff surfaces
+
+**Delivery history** (`/staff/emails/deliveries`) shows a masked recipient, not a
+full address; a failure *category*, not the provider's message; and neither the
+event key nor the provider id — a key on a screen is a key somebody can reuse.
+No message body appears anywhere. Search matches the order number and never the
+recipient: matching on an address would turn this into a way to ask "is this
+person a customer".
+
+**Resend** is deliberately not a composer. There is no recipient field, no
+subject field and no body field anywhere in the request. A resend control that
+accepts a recipient is an open relay behind a staff permission. The event key is
+derived from the original's plus an attempt number, so two staff pressing the
+button in the same moment compute the same key and the customer gets one copy.
+The original row is never modified.
+
+**Integration health** (`/staff/integrations`) exists for one distinction:
+*verified* versus *assumed*. An environment variable being present proves
+configuration, and every previous pass here was caught by that gap — pass 5a's
+missing grants behind correct RLS, pass 7's deployed-but-unsubscribed refund
+handler, pass 5's analytics script that refuses to run under automation. Nothing
+on the page charges, refunds, emails or probes. Stripe Tax reports as
+deliberately not integrated and can never read as healthy.
+
+**Launch readiness** (`/staff/launch-readiness`) links every issue to the exact
+setting that fixes it and says which workflow depends on it. It refuses to claim
+legal, tax, accessibility or security compliance, and **a blocker cannot be
+acknowledged away** — that would make the one part of the page that has to be
+believed the part that can be silenced.
+
+**Discrepancy review** (`/staff/launch-readiness/discrepancies`) records a
+conclusion about KM-0001 and KM-0002 and nothing else. It never writes a payment
+row, never changes a total and never contacts Stripe. A missing payment row is
+not proof that no payment was taken — it is at least as likely that money changed
+hands and the record was never written, which is exactly the bug pass 7 fixed.
+
+## Migration `20260806030000_communications_center` — applied 2026-08-06
+
+Applied with approval through `execute_sql` in **one guarded transaction**, not
+`apply_migration` — that tool stamps its own timestamp as the version, which
+caused six of the seven ledger drifts repaired in pass 3. The ledger row was
+inserted by hand inside the same transaction under the repository filename's
+version.
+
+### The status constraint, and the probe that caught it
+
+`email_deliveries_status_check` admitted only `sent`, `failed`, `skipped`. The
+new claim writes **`queued` first** — so every transactional email would have
+died with `23514` at the claim, before the provider was reached. **Found by a
+live dry-run probe against production**, not by the test suite: every assertion
+in this pass reads source or migration text, and none of them knew what the live
+constraint held.
+
+Widened to `queued`, `sent`, `delivered`, `failed`, `skipped`, by
+**add-then-drop-then-rename**: the wider constraint validates every stored row
+while the narrower one is still in force, so a row that could not satisfy it
+fails the `ADD` rather than leaving the table unconstrained.
+
+`delivered` is admitted but **nothing writes it** — Resend delivery webhooks are
+not wired. It is legal so the claim treats it as "the customer has it" and so
+wiring that webhook later is a code change rather than another constraint change
+on a live table. It is excluded from the UI filter, because a filter returning
+nothing reads as "nothing has been delivered" when the truth is that delivery is
+not tracked. No `sending` (duplicates `queued`) and no `retried` (a retry
+re-claims to `queued`; the count lives in `attempt_count`). "Suppressed" is a
+*label* on the stored `skipped` — a rename would migrate 26 live rows to say the
+same thing.
+
+### Guards and verification
+
+Before: 42 migration rows, `event_key` absent, constraint un-widened, 26
+deliveries, 30 templates. After: 43 rows, 8 columns, 3 tables, 1 function, 10
+explicit indexes (plus 3 primary keys), 3 policies, 43 templates, and
+orders/notifications/deliveries all unchanged. All held; committed.
+
+**The ledger is exact: 43 repo files, 43 rows**, newest
+`20260806030000 / communications_center`.
+
+Two full dry-runs preceded it, each ended with a sentinel exception, with
+production verified untouched after each.
+
+### Grants, verified role-switched
+
+`execute_sql` connects as the table owner, who bypasses grants entirely — the
+pass-8 lesson. Re-checked under `set local role`:
+
+| Role | Result |
+|---|---|
+| `anon` | **refused** SELECT on all three tables; **refused** EXECUTE on the function |
+| `authenticated` | SELECT only, behind the staff RLS policy; **refused** INSERT; **refused** EXECUTE on the function |
+| `service_role` | SELECT/INSERT/UPDATE on two tables, SELECT/INSERT only on `integration_health_events`; **refused** UPDATE on an observation; **refused** DELETE on all three |
+
+**Supabase security advisors: no new findings.** None of the three new tables
+appears in `rls_enabled_no_policy`, and `migration_ledger_versions` appears in
+neither the anon nor the authenticated security-definer warning, because the
+revoke ran.
+
+### Live behavioural probes, rolled back
+
+Queued claim accepted; duplicate event key refused; failure recorded with a
+category; retry incremented `attempt_count` to 2; resend created a linked row
+with the original untouched; a double-clicked resend refused; an invented status
+(`sending`) refused; notification dedup per recipient with nulls still accepted.
+Production verified unchanged afterwards, and **no email was sent** — no delivery
+row exists in the deployment window.
+
+## Four columns the schema does not have — `299912d`
+
+Found by running the new routes' own queries against production as
+`service_role`, which is the check a passing suite could not make.
+
+| Named | Reality |
+|---|---|
+| `order_payments.status` | no status column; a row exists only once money is recorded |
+| `stripe_webhook_events.id` | keyed on `stripe_event_id` |
+| `stripe_webhook_events.created_at` | timestamped `received_at` |
+| `products.base_price_cents` | the column is `starting_price_cents` |
+
+Each would have been **silent and confidently wrong**, which is worse than an
+error:
+
+- The discrepancy finder guarded `orders.error` but not `payments.error`, so an
+  empty map would have made **every paid order** read as having no payment
+  record behind it — the readiness page announcing the whole shop's takings
+  unaccounted for. That is the `data ?? []` defect the staff-page audit exists to
+  catch, in a directory the audit does not walk.
+- A refused unprocessed-webhook count fell to `?? 0`, so the blocker that catches
+  an order settling at Stripe and never settling here would have read "every
+  received webhook completed" without counting anything. It is now
+  null-when-unknown and reports a warning rather than a pass.
+- A failed products read would have reported an empty catalog: "nothing is
+  published" plus several downstream blockers, all false.
+
+The generalizable fix is a test that parses every `.from(t).select(c)` in the
+modules this pass added and checks each column against what the migrations
+create. `installer.test.ts` has proved *relations* exist since pass 9; this is
+the column-level equivalent, and it found all four.
+
+Verified after the fix against real data: the finder now reports **exactly
+KM-0001 and KM-0002**, not every paid order.
+
+## Validation
+
+- **1202 tests pass, 0 fail** (1063 at `0bd6ccf`; 139 added across four new
+  suites, plus two existing suites re-pointed and made stricter).
+- Typecheck clean. Production build clean from a cleared `.next`, exit 0; all 7
+  new API routes and 4 new pages present.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings), measured by
+  running the same command on a worktree of `main` and on this branch. Every new
+  and changed file lints **completely clean**.
+- Vercel **preview build: success**. Vercel **production deployment: success** on
+  both `0cc2ab8` and `299912d`.
+
+### Two existing suites re-pointed, not weakened
+
+- `payment-monitoring` pinned `title:"Customer payment failed"`, a string that
+  moved into the alert catalogue. It now asserts the alert *kind* and its durable
+  key — which is what makes it able to fail — plus the two new payment-failure
+  emails.
+- `staff-navigation` now proves the new entries are permission-gated and that the
+  delivery centre is owned by the email entry rather than listed twice.
+
+### Driven in a real browser
+
+The staff area needs a real session (middleware redirects `/staff/*` to
+`/auth/login` even locally, and signing in means handling a password), so the
+page components were mounted on a temporary local-only route, driven, and the
+route deleted. The working tree is clean; nothing probe-related is in the diff.
+
+| Check | Result |
+|---|---|
+| **Three clicks in one tick** | **exactly 1 submit** — the synchronous `inFlight` ref |
+| 409 conflict | confirm button **replaced** by Close / Reload; "Nothing was applied" |
+| Dialog semantics | portalled to `body`, `aria-modal`, labelled, body scroll locked |
+| **No recipient field** | 1 input in the resend dialog — the internal note |
+| Escape / Tab | closes and restores focus to the trigger; trap wraps both ways |
+| Masking | no full address, no provider id, no event key in the DOM |
+| Failed load | `role="alert"`, dashes not zeros, no "no messages match" |
+| Genuinely empty | "That is a complete answer" |
+| Read-only staff | page renders; **no resend button**; "Needs the re-send permission" |
+| Unauthorized staff | access-denied card naming the permission; no table |
+| Anonymous | every new page and API **403 locally / 307 in production** |
+| Blocker | offers no acknowledge control and says why |
+| Mobile 375 | no sideways scroll on any of the four pages; the wide table scrolls in its own container |
+| Accessibility | one `h1` each, no heading skips, every control named, named regions |
+
+**One defect found by measuring rather than reading:** the card action links were
+**16px** tall — the primary action on each integration and readiness card. Now
+44px, matching the queue chips pass 10 raised for the same reason.
+
+Console carried only the **pre-existing** `data-motion` hydration mismatch on the
+root `<html>`, which reproduces on `/`, plus the local 503 from the deliberately
+fake service-role key.
+
+### Production smoke test — on `299912d`
+
+| Check | Result |
+|---|---|
+| Storefront | `/` 200 (0.79 s), `/catalog`, `/cart`, `/shipping`, `/refunds`, `/terms`, `/privacy` all 200 |
+| Public API | `GET /api/cart` and `/api/cart/fulfillment` both 200 |
+| Staff pages gated | `/staff`, `/staff/emails`, `/staff/emails/deliveries`, `/staff/integrations`, `/staff/launch-readiness`, `/staff/launch-readiness/discrepancies` all **307** |
+| New APIs gated | all four **307** on GET and POST |
+| Every new route query as `service_role` | **all OK** against real production data |
+| Production data | 26 deliveries, 10 notifications, 9 orders, 43 templates, 43 migrations; new tables all empty |
+| KM-0001 / KM-0002 | **untouched** at 2500 and 100 |
+| Emails sent | **zero** in the deployment window |
+
+## What the health page currently reports
+
+Honest readings against real production state, worth knowing before an owner
+opens it for the first time:
+
+- **Stripe webhooks: degraded.** Only `checkout.session.completed` has ever been
+  received. The other six handled types have not — which is *not* proof they are
+  unsubscribed, and the page says so: a shop with no refunds has no refund
+  events. Confirm the subscription in the Stripe dashboard.
+- **Resend: healthy and verified** — 25 sent, 0 failed in 30 days.
+- **Stripe Tax: not configured**, deliberately, and never presented otherwise.
+- **Vercel Analytics: assumed**, permanently. The served script refuses to run
+  under automation, so a recorded pageview is only observable in a normal browser.
+- **Two historical discrepancies awaiting review:** KM-0001 and KM-0002.
+
+## External setup still required
+
+1. **Grant the six new permissions** to whichever non-admin roles should hold
+   them, in `/staff/security/roles`. Admins already have all six. **Be
+   deliberate with `emails.resend`** — it is the one that causes a real email to
+   leave the building.
+2. **Configure a staff alert address** at `/staff/emails`. Until it is set, the
+   new staff alerts (new order, cancellation request, return request, payment
+   failure) reach the in-app bell only, which needs somebody signed in to see.
+3. **Review KM-0001 and KM-0002** at `/staff/launch-readiness/discrepancies`.
+   Nothing automated will ever touch them.
+4. **Resend delivery webhooks are not wired**, so no message reaches `delivered`.
+
+## Deferred, honestly
+
+1. **Support tickets** and **verified-purchase reviews** — the brief gates both
+   behind communications and launch readiness being complete, and both are their
+   own systems.
+2. **Scheduled work**: quote expiry, payment reminders, fulfillment-overdue and
+   reservation-inconsistency emails. All four are specified in the matrix with
+   `wired: false` and the reason stated.
+3. **Delivery confirmation** — a Resend webhook endpoint. The `delivered` status
+   is legal so this becomes a code change, not a migration.
+
+## Residual risks
+
+- **`service_role` retains TRUNCATE** on the three new tables, inherited from
+  Supabase's default ACL on the public schema. DELETE is revoked everywhere and
+  the application never truncates, but TRUNCATE is not filtered by RLS and would
+  remove acknowledgement, review and observation history. This is the
+  pre-existing pattern on every table in this database, and closing it is a
+  one-line `revoke truncate ... from service_role` — deliberately **not** done
+  here, because it is a permission change outside the approved migration.
+- The discrepancy route's *evidence display* reads payment rows a second time
+  without its own error guard. The authoritative amounts come from the guarded
+  finder, so a failure there under-reports a row count rather than inventing a
+  discrepancy.
+- Email delivery remains single-attempt at the point of sending. A failure is
+  recorded, alerted, and re-sendable by hand; there is no automatic retry.
