@@ -291,15 +291,44 @@ test("a denial requires a customer-visible reason", () => {
   assert.match(staffReturn, /decisionNote\.length < 5[\s\S]{0,300}?status: 400/);
 });
 
+/**
+ * Strengthened, not relaxed.
+ *
+ * `window.confirm` was the confirmation for these actions until pass 11. It
+ * could state a consequence in one paragraph, but it could not separate the
+ * money from the stock from the email, could not hold a 409 where the decision
+ * was made, and could not collect the reason it needed. All three now come from
+ * `ConsequentialAction`, so the assertion is that these actions *use* it and
+ * that the figures still appear.
+ */
 test("consequential staff actions confirm with the amount and the consequence spelled out", () => {
-  assert.match(staffPanel, /window\.confirm/);
-  assert.match(staffPanel, /Remaining refundable after this/);
+  assert.match(staffPanel, /<ConsequentialAction/, "money actions must go through the confirmation dialog");
   assert.match(staffPanel, /cannot be taken back/);
+  assert.match(staffPanel, /would remain refundable/, "the remaining balance must be stated before refunding");
+  assert.match(staffPanel, /tone="money"/, "a refund must be marked as moving money");
+
+  // The four effect axes are named for every one of these decisions, so no
+  // action can quietly move stock or send an email without saying so.
+  for (const axis of ["customer:", "financial:", "inventory:", "notification:"]) {
+    assert.ok(staffPanel.includes(axis), `the effect summary is missing "${axis}"`);
+  }
 });
 
 test("the staff panel disables its controls while a request is in flight", () => {
-  const disabled = staffPanel.match(/disabled=\{Boolean\(busy\)/g) ?? [];
-  assert.equal(disabled.length >= 4, true, `expected several busy-guarded buttons, found ${disabled.length}`);
+  /*
+   * The per-button `busy` string is gone: the dialog owns its own pending state,
+   * which is stricter than what it replaced. `busy` was React state, and two
+   * clicks landing in one batch both read the stale value; the dialog checks and
+   * sets a ref synchronously, so the second call cannot start at all.
+   */
+  const dialog = read("src/components/staff/ConsequentialAction.tsx");
+  assert.match(dialog, /const inFlight = useRef\(false\)/);
+  assert.match(dialog, /if \(inFlight\.current \|\| !canSubmit\) return/);
+  assert.match(dialog, /disabled=\{!canSubmit\}/);
+  assert.match(dialog, /disabled=\{disabled \|\| pending\}/, "the trigger disables too, not just the confirm");
+
+  const actions = staffPanel.match(/<ConsequentialAction/g) ?? [];
+  assert.ok(actions.length >= 6, `expected the lifecycle actions to be guarded, found ${actions.length}`);
 });
 
 test("the customer panel confirms before submitting and never promises a refund", () => {

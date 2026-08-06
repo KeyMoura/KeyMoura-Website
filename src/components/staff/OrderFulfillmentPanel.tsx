@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { Badge, EmptyState, Notice } from "@/components/ui/DesignSystem";
+import {
+  ConsequentialAction,
+  resultFromResponse,
+  type ActionResult,
+} from "@/components/staff/ConsequentialAction";
 import { formatAddressLines, type Address } from "@/lib/commerce/commerceSettings";
 import { documentsForMethod } from "@/lib/staff/orderDocuments";
 
@@ -103,7 +108,6 @@ export function OrderFulfillmentPanel({
   const [data, setData] = useState<FulfillmentPayload | null>(null);
   const [denied, setDenied] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -185,9 +189,7 @@ export function OrderFulfillmentPanel({
   const address = order.shippingAddress as Address | null;
   const addressLines = address ? formatAddressLines(address) : [];
 
-  async function post(body: Record<string, unknown>, confirmation: string) {
-    if (!window.confirm(confirmation)) return;
-    setBusy(true);
+  async function post(body: Record<string, unknown>): Promise<ActionResult> {
     setError("");
     setNotice("");
     const response = await fetch(`/api/staff/orders/${orderId}/fulfillment`, {
@@ -197,47 +199,34 @@ export function OrderFulfillmentPanel({
       // is refused rather than overwritten.
       body: JSON.stringify({ expectedStatus: order.fulfillmentStatus, ...body }),
     });
-    const result = (await response.json().catch(() => ({}))) as { error?: string; already?: boolean };
-    setBusy(false);
-    if (!response.ok) {
-      setError(result.error || "Could not update fulfillment.");
-      return;
-    }
-    setNotice(result.already ? "That was already done — nothing was sent twice." : "Fulfillment updated.");
+    const payload = (await response.clone().json().catch(() => ({}))) as { already?: boolean };
+    const result = await resultFromResponse(response, "Could not update fulfillment.");
+    if (!result.ok) return result;
+    setNotice(payload.already ? "That was already done — nothing was sent twice." : "Fulfillment updated.");
     setCustomerNote("");
     await load();
     onChanged?.();
+    return result;
   }
 
-  const transition = (option: Transition) => {
-    const email = option.emailTemplate ? EMAIL_SUMMARY[option.emailTemplate] ?? "a customer email" : null;
-    const lines = [
-      `Move this order to “${option.staffLabel}”?`,
-      "",
-      `The customer will see: ${option.customerLabel}.`,
-      email ? `They will be emailed: ${email}` : "No email is sent for this step.",
-      customerNote.trim() ? `Your note to them: “${customerNote.trim()}”` : "",
-    ].filter(Boolean);
-    void post(
-      {
-        action: "transition",
-        to: option.to,
-        carrier: carrier.trim() || undefined,
-        trackingNumber: trackingNumber.trim() || undefined,
-        trackingUrl: trackingUrl.trim() || undefined,
-        customerNote: customerNote.trim() || undefined,
-        internalNote,
-      },
-      lines.join("\n")
-    );
-  };
+  const transition = (option: Transition) =>
+    post({
+      action: "transition",
+      to: option.to,
+      carrier: carrier.trim() || undefined,
+      trackingNumber: trackingNumber.trim() || undefined,
+      trackingUrl: trackingUrl.trim() || undefined,
+      customerNote: customerNote.trim() || undefined,
+      internalNote,
+    });
 
-  const saveTracking = () => {
-    void post(
-      { action: "update_tracking", carrier: carrier.trim(), trackingNumber: trackingNumber.trim(), trackingUrl: trackingUrl.trim() || undefined },
-      `Update the tracking on this order to ${carrier.trim()} ${trackingNumber.trim()}?\n\nChanging a number that has already been sent emails the customer the correction.`
-    );
-  };
+  const saveTracking = () =>
+    post({
+      action: "update_tracking",
+      carrier: carrier.trim(),
+      trackingNumber: trackingNumber.trim(),
+      trackingUrl: trackingUrl.trim() || undefined,
+    });
 
   return (
     <section id="fulfillment" className="ui-card scroll-mt-5 lg:col-span-2">
@@ -392,14 +381,27 @@ export function OrderFulfillmentPanel({
             </label>
           </div>
           {hasShipped ? (
-            <button
-              type="button"
-              disabled={busy || !carrier.trim() || !trackingNumber.trim()}
-              onClick={saveTracking}
-              className="ui-btn ui-btn-secondary mt-3 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {busy ? "Saving…" : "Correct the tracking details"}
-            </button>
+            <ConsequentialAction
+              className="mt-3"
+              label="Correct the tracking"
+              title="Correct the tracking on this order?"
+              summary="The parcel stays shipped. Changing a number the customer already has emails them the correction, so only do this when the old one was wrong."
+              currentState={`${order.shippingCarrier ?? "—"} ${order.trackingNumber ?? ""}`.trim()}
+              nextState={`${carrier.trim()} ${trackingNumber.trim()}`.trim()}
+              confirmLabel="Save the correction"
+              buttonClassName="!ui-btn-secondary"
+              disabled={!carrier.trim() || !trackingNumber.trim()}
+              disabledReason={
+                !carrier.trim() || !trackingNumber.trim() ? "A carrier and a number are both required." : null
+              }
+              effects={{
+                customer: "Their order page shows the new tracking link.",
+                financial: null,
+                inventory: null,
+                notification: "“Tracking updated”, naming the new number — only if it actually changed.",
+              }}
+              onConfirm={() => saveTracking()}
+            />
           ) : (
             <p className="mt-3 text-xs text-brand-textMuted">
               These are saved with the order when you mark it shipped.
@@ -438,31 +440,55 @@ export function OrderFulfillmentPanel({
                   />
                 </label>
               </div>
+              {/*
+                One dialog per legal transition, built from what the server said
+                is legal. The email line is read from the same table the route
+                sends from, so the preview and the send cannot disagree.
+              */}
               <div className="ui-action-row mt-4">
                 {data.transitions.map((option) => {
                   const missingTracking =
                     option.requiresTracking && (!carrier.trim() || !trackingNumber.trim());
-                  const disabled = busy || Boolean(option.blockedReason) || missingTracking;
+                  const email = option.emailTemplate
+                    ? EMAIL_SUMMARY[option.emailTemplate] ?? "a customer email"
+                    : null;
                   return (
-                    <span key={option.to} className="inline-flex flex-col gap-1">
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => transition(option)}
-                        className={`ui-btn ${option.to === "canceled" ? "ui-btn-danger" : "ui-btn-primary"} disabled:cursor-not-allowed disabled:opacity-40`}
-                      >
-                        {option.staffLabel}
-                      </button>
-                      {option.blockedReason ? (
-                        <span className="text-xs text-amber-200">{option.blockedReason}</span>
-                      ) : missingTracking ? (
-                        <span className="text-xs text-amber-200">Add a carrier and tracking number first.</span>
-                      ) : option.emailTemplate ? (
-                        <span className="text-xs text-brand-textMuted">Emails the customer</span>
-                      ) : (
-                        <span className="text-xs text-brand-textMuted">No email</span>
-                      )}
-                    </span>
+                    <ConsequentialAction
+                      key={option.to}
+                      label={option.staffLabel}
+                      title={`Move this order to “${option.staffLabel}”?`}
+                      summary={
+                        option.requiresTracking
+                          ? "The parcel is handed over. The customer gets the tracking number below, so check it is the right one."
+                          : "This moves the order on and is recorded in the fulfillment history."
+                      }
+                      currentState={order.staffLabel}
+                      nextState={option.staffLabel}
+                      tone={option.to === "canceled" ? "danger" : "default"}
+                      confirmLabel={option.staffLabel}
+                      disabled={Boolean(option.blockedReason) || missingTracking}
+                      disabledReason={
+                        option.blockedReason
+                          ? option.blockedReason
+                          : missingTracking
+                            ? "Add a carrier and tracking number first."
+                            : email
+                              ? "Emails the customer"
+                              : "No email"
+                      }
+                      effects={{
+                        customer: `Their order reads “${option.customerLabel}”.`,
+                        financial: null,
+                        inventory: null,
+                        notification: email,
+                      }}
+                      notificationPreview={
+                        option.requiresTracking
+                          ? `${carrier.trim()} ${trackingNumber.trim()}${customerNote.trim() ? `\n\n${customerNote.trim()}` : ""}`
+                          : customerNote.trim() || undefined
+                      }
+                      onConfirm={() => transition(option)}
+                    />
                   );
                 })}
               </div>

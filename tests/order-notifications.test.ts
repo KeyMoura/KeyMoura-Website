@@ -24,10 +24,39 @@ test("notification center presents customer order updates as KeyMoura activity",
   assert.match(page, /isCustomerOrderUpdate/);
 });
 
+/**
+ * Re-pointed at the fulfillment route.
+ *
+ * The old assertion pinned a ternary in `PATCH /api/staff/orders/[id]` that
+ * chose pickup or shipping wording. That branch went with `shipment_action` in
+ * pass 11 — it was a second, unguarded fulfillment path that skipped the
+ * `fulfillment.manage` permission.
+ *
+ * The distinction it protected is now structural rather than a ternary: pickup
+ * and shipping are different *states* with their own labels and their own
+ * message lines, so the two cannot be conflated by editing one condition.
+ */
 test("shipping and pickup notifications use distinct customer language", () => {
-  const route = read("src/app/api/staff/orders/[id]/route.ts");
-  assert.match(route, /title: delivered \? \(pickup \? "Pickup completed" : "Order delivered"\)/);
-  assert.match(route, /pickup \? "Ready for pickup" : "Order shipped"/);
+  const route = read("src/app/api/staff/orders/[id]/fulfillment/route.ts");
+  const labels = read("src/lib/commerce/orderLifecycle.ts");
+
+  assert.match(route, /ready_for_pickup: "Your order is ready to collect\."/);
+  assert.match(route, /picked_up: "Your order was collected\. Thank you\."/);
+  assert.match(route, /shipped: tracking \?/);
+  assert.match(route, /delivered: "Your order was marked delivered\."/);
+
+  for (const [state, label] of [
+    ["ready_for_pickup", "Ready for pickup"],
+    ["picked_up", "Picked up"],
+    ["shipped", "Shipped"],
+    ["delivered", "Delivered"],
+  ]) {
+    assert.match(labels, new RegExp(`${state}: "${label}"`), `${state} needs its own customer label`);
+  }
+
+  // A pickup order can never reach the shipped wording, because it can never
+  // reach the shipped state.
+  assert.match(route, /canTransitionFulfillmentForMethod/);
 });
 
 test("private Workshop updates do not create order notifications", () => {

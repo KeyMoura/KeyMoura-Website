@@ -39,10 +39,13 @@ test("staff refunds are permission checked, bounded, confirmed, and idempotent",
   assert.match(lifecycleServer, /idempotencyKey: leg\.idempotency_key/);
 
   // The confirmation copy moved with the controls into OrderLifecyclePanel,
-  // which is the single place lifecycle actions now live.
+  // which is the single place lifecycle actions now live. Pass 11 moved the
+  // confirmation itself off `window.confirm` and into a dialog that states the
+  // remaining balance on its own line rather than inside a paragraph.
   assert.match(lifecyclePanel, /cannot be taken back/);
-  assert.match(lifecyclePanel, /Remaining refundable after this/);
-  assert.match(lifecyclePanel, /window\.confirm/);
+  assert.match(lifecyclePanel, /would remain refundable/);
+  assert.match(lifecyclePanel, /<ConsequentialAction/);
+  assert.match(lifecyclePanel, /tone="money"/);
   assert.match(staffPage, /OrderLifecyclePanel/);
 });
 

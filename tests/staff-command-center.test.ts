@@ -368,8 +368,11 @@ test("the transition list tells the page why a button is unavailable", () => {
   assert.match(fulfillmentRoute, /blockedReason/);
   const panel = read("src/components/staff/OrderFulfillmentPanel.tsx");
   assert.match(panel, /option\.blockedReason/);
-  // The server decides; the disabled button is a courtesy.
-  assert.match(panel, /disabled=\{disabled\}/);
+  // The server decides; the disabled button is a courtesy. Pass 11 moved the
+  // disabling into `ConsequentialAction`, which also renders the reason under
+  // the button instead of leaving it to each caller to remember.
+  assert.match(panel, /disabled=\{Boolean\(option\.blockedReason\) \|\| missingTracking\}/);
+  assert.match(panel, /disabledReason=\{/);
 });
 
 test("the panel previews the exact email each step sends", () => {

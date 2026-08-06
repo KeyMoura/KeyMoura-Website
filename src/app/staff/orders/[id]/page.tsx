@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
@@ -12,6 +12,11 @@ import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 import { OrderLifecyclePanel } from "@/components/staff/OrderLifecyclePanel";
 import { OrderFulfillmentPanel } from "@/components/staff/OrderFulfillmentPanel";
+import {
+  ConsequentialAction,
+  resultFromResponse,
+  type ActionResult,
+} from "@/components/staff/ConsequentialAction";
 import {
   classifySupabaseError,
   fromSupabase,
@@ -193,7 +198,13 @@ export default function StaffOrderDetail() {
   const [pendingStatus, setPendingStatus] = useState("");
   const [reviewNote, setReviewNote] = useState("");
   const [reviewFiles, setReviewFiles] = useState<File[]>([]);
-  const [sendingReview, setSendingReview] = useState(false);
+  const [savingInternal, setSavingInternal] = useState(false);
+  const [sending, setSending] = useState(false);
+  /**
+   * Minted once per composed message and cleared when it lands. Retrying the
+   * same text reuses it; a genuinely new message gets a new one.
+   */
+  const [messageToken, setMessageToken] = useState("");
   const load = useCallback(async () => {
     const [o, m, e, h, p, r] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
@@ -251,79 +262,137 @@ export default function StaffOrderDetail() {
         : {}),
     };
   }
-  async function updateStatus(status: string) {
-    if (status === order?.status) return;
-    const cancellationReason = status === "cancelled" ? window.prompt("Why is this order being cancelled? This reason is kept with the order.")?.trim() : "";
-    if (status === "cancelled" && !cancellationReason) return;
-    if (!window.confirm(`Change this order from ${pretty(order?.status || "current")} to ${pretty(status)}?\n\nThe customer will be notified and may receive an email.${order?.amount_paid_cents ? " This does not issue a refund; use the refund control separately." : ""}`)) return;
-    const r = await fetch(`/api/staff/orders/${id}`, {
-      method: "PATCH",
-      headers: await authHeaders(),
-      body: JSON.stringify({ status, cancellation_reason: cancellationReason || undefined }),
+  /**
+   * Every write to the order row, through one place.
+   *
+   * The two things that make it safe are here rather than at each call site, so
+   * a control added later cannot forget them:
+   *
+   * - **`expected_status`** is always sent. The route puts it in the `WHERE`
+   *   clause, so a colleague's change that landed since this page rendered is a
+   *   409 rather than a silent overwrite.
+   * - **A 409 becomes a conflict**, which `ConsequentialAction` shows in place
+   *   and refuses to retry. Retrying a consequential action against state that
+   *   has moved is the failure this whole pass is about.
+   */
+  const patchOrder = useCallback(
+    async (payload: Record<string, unknown>): Promise<ActionResult> => {
+      if (!order) return { ok: false, error: "The order is not loaded." };
+      const response = await fetch(`/api/staff/orders/${id}`, {
+        method: "PATCH",
+        headers: await authHeaders(),
+        body: JSON.stringify({ expected_status: order.status, ...payload }),
+      });
+      const result = await resultFromResponse(response, "Could not update the order.");
+      if (result.ok) await load();
+      return result;
+    },
+    // `authHeaders` is stable enough for this — it reads the session on every
+    // call rather than closing over one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [id, order, load]
+  );
+
+  async function changeStatus(status: string, reason: string): Promise<ActionResult> {
+    const result = await patchOrder({
+      status,
+      cancellation_reason: status === "cancelled" ? reason : undefined,
     });
-    const result = await r.json();
-    if (!r.ok) {
-      setError(result.error || "Could not update status");
-      return;
-    }
-    setPendingStatus("");
-    await load();
+    if (result.ok) setPendingStatus("");
+    return result;
   }
-  async function save() {
-    const priceCents = price.trim() ? Math.round(Number(price) * 100) : null;
-    const depositCents = deposit.trim() ? Math.round(Number(deposit) * 100) : null;
-    const quoteChanged = priceCents !== order?.agreed_price_cents || depositCents !== order?.deposit_amount_cents;
-    if (quoteChanged && priceCents && !window.confirm(`Send quote revision ${(order?.quote_revision ?? 0) + 1} for $${(priceCents / 100).toFixed(2)}?\n\nThis moves the order to Customer Review and notifies the customer. Internal material and labor costs are not the customer price.`)) return;
-    const r = await fetch(`/api/staff/orders/${id}`, {
-      method: "PATCH",
-      headers: await authHeaders(),
-      body: JSON.stringify({
-        agreed_price_cents: priceCents,
-        deposit_amount_cents: depositCents,
-        quote_note: quoteNote.trim() || null,
-        quote_expires_at: quoteExpires ? new Date(`${quoteExpires}T23:59:59.999Z`).toISOString() : null,
-        target_date: target || null,
-        staff_notes: staffNotes || null,
-      }),
+
+  /**
+   * Sending a new quote.
+   *
+   * Carries `expected_quote_revision` on top of the status guard, because two
+   * staff repricing the same order never change its status — they both sit on
+   * `accepted` — so a status comparison alone would let the second price win
+   * silently. The customer would then be quoted a number nobody chose.
+   */
+  async function sendQuote(): Promise<ActionResult> {
+    return patchOrder({
+      expected_quote_revision: order?.quote_revision ?? 0,
+      agreed_price_cents: price.trim() ? Math.round(Number(price) * 100) : null,
+      deposit_amount_cents: deposit.trim() ? Math.round(Number(deposit) * 100) : null,
+      quote_note: quoteNote.trim() || null,
+      quote_expires_at: quoteExpires ? new Date(`${quoteExpires}T23:59:59.999Z`).toISOString() : null,
+      target_date: target || null,
+      staff_notes: staffNotes || null,
     });
-    const result = await r.json();
-    if (!r.ok) setError(result.error || "Could not save details");
-    else await load();
   }
-  async function sendForReview() {
+
+  /**
+   * Saving details that no customer ever sees.
+   *
+   * Deliberately not a confirmed action: an internal note and a target date
+   * change nothing outside the shop, and putting a dialog in front of them would
+   * teach staff to click through dialogs. It still takes the status guard and
+   * still disables while saving.
+   */
+  async function saveInternal() {
+    if (savingInternal) return;
+    setSavingInternal(true);
+    setError("");
+    const result = await patchOrder({
+      target_date: target || null,
+      staff_notes: staffNotes || null,
+      quote_expires_at: quoteExpires ? new Date(`${quoteExpires}T23:59:59.999Z`).toISOString() : null,
+    });
+    if (!result.ok) setError("conflict" in result ? result.conflict.message : result.error);
+    setSavingInternal(false);
+  }
+  async function sendForReview(): Promise<ActionResult> {
     if (!order || reviewNote.trim().length < 3 || reviewFiles.length < 1) {
-      setError("Add a customer note and at least one finished-product photo.");
-      return;
+      return { ok: false, error: "Add a customer note and at least one finished-product photo." };
     }
-    if (!window.confirm(`Send ${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} and this note to the customer for approval?`)) return;
-    setSendingReview(true); setError("");
     const uploaded: string[] = [];
     for (const file of reviewFiles) {
       const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase() || "jpg";
       const path = `${order.customer_id}/${order.id}/final-review/${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage.from("order-assets").upload(path, file, { contentType:file.type, upsert:false });
-      if (uploadError) { setError(`Could not upload ${file.name}: ${uploadError.message}`); setSendingReview(false); return; }
+      // The upload message is the storage layer's own and names the file the
+      // operator chose, so it is safe to show and genuinely useful.
+      if (uploadError) return { ok: false, error: `Could not upload ${file.name}: ${uploadError.message}` };
       uploaded.push(path);
     }
-    const response = await fetch(`/api/staff/orders/${id}`, { method:"PATCH", headers:await authHeaders(), body:JSON.stringify({ status:"final_review", final_review_note:reviewNote.trim(), final_review_asset_paths:uploaded }) });
-    const result = await response.json();
-    if (!response.ok) setError(result.error || "Could not send the review package");
-    else { setReviewFiles([]); await load(); }
-    setSendingReview(false);
+    const result = await patchOrder({
+      status: "final_review",
+      final_review_note: reviewNote.trim(),
+      final_review_asset_paths: uploaded,
+    });
+    if (result.ok) setReviewFiles([]);
+    return result;
   }
-  async function send(e: FormEvent) {
-    e.preventDefault();
-    const r = await fetch(`/api/orders/${id}/messages`, {
+
+  /**
+   * One send, one message.
+   *
+   * The token is minted when the text is composed and reused for every attempt
+   * at that same text, so a double click, a retried fetch and a resubmitted form
+   * all collapse into the first message at the unique index. `sending` stops the
+   * common case in the browser; the token is what actually holds.
+   */
+  async function send() {
+    if (sending || !body.trim()) return;
+    setSending(true);
+    setError("");
+    const token = messageToken || crypto.randomUUID();
+    setMessageToken(token);
+    const response = await fetch(`/api/orders/${id}/messages`, {
       method: "POST",
       headers: await authHeaders(),
-      body: JSON.stringify({ body: body.trim(), internal }),
+      body: JSON.stringify({ body: body.trim(), internal, client_token: token }),
     });
-    const result = await r.json();
-    if (!r.ok) setError(result.error || "Could not send message");
+    const result = await resultFromResponse(response, "Could not send the message.");
+    if (!result.ok) setError("conflict" in result ? result.conflict.message : result.error);
     else {
       setBody("");
+      setMessageToken("");
       await load();
     }
+    setSending(false);
+    return result;
   }
   if (isLoading) return <div className="ui-card">Loading…</div>;
   if (!canView)
@@ -369,8 +438,45 @@ export default function StaffOrderDetail() {
         <div className="mt-4 flex shrink-0 flex-wrap gap-2 sm:mt-0">
           {(order.status === "requested" || order.status === "needs_information") && canManage ? <>
             <a href="#conversation" className="ui-btn ui-btn-secondary">Message customer</a>
-            <button onClick={() => void updateStatus("cancelled")} className="ui-btn ui-btn-danger">Cancel request</button>
-            <button onClick={() => void updateStatus("accepted")} className="ui-btn ui-btn-primary">Accept & continue</button>
+            <ConsequentialAction
+              label="Cancel request"
+              title="Cancel this request?"
+              summary="The request is closed and the customer is told. This does not move any money — a refund is issued separately from the lifecycle panel."
+              currentState={statusLabel(order.status)}
+              nextState="Cancelled"
+              tone="danger"
+              confirmLabel="Cancel the request"
+              reason={{
+                label: "Why is this being cancelled?",
+                placeholder: "Kept with the order and shown to the customer.",
+                required: true,
+                help: "Stored on the order permanently and included in what the customer is told.",
+              }}
+              effects={{
+                customer: "The order reads Cancelled on their order page.",
+                financial: order.amount_paid_cents
+                  ? `No refund is issued here. ${`$${(order.amount_paid_cents / 100).toFixed(2)}`} remains collected until you refund it below.`
+                  : null,
+                inventory: null,
+                notification: "“Order cancelled”, with the reason above.",
+              }}
+              onConfirm={({ reason }) => changeStatus("cancelled", reason)}
+            />
+            <ConsequentialAction
+              label="Accept & continue"
+              title="Accept this request?"
+              summary="Moves the request into quoting. The customer is told you have taken it on; no price is sent yet."
+              currentState={statusLabel(order.status)}
+              nextState="Accepted"
+              confirmLabel="Accept the request"
+              effects={{
+                customer: "The order reads Accepted, with quote and payment details to follow.",
+                financial: null,
+                inventory: null,
+                notification: "“Order request accepted”.",
+              }}
+              onConfirm={() => changeStatus("accepted", "")}
+            />
           </> : null}
           {order.status === "in_progress" && canManage ? <a href="#customer-review-package" className="ui-btn ui-btn-primary">Prepare customer review</a> : null}
           {order.status !== "requested" && order.status !== "needs_information" && order.status !== "in_progress" ? <a href={nextStep.href} className="ui-btn ui-btn-primary">{order.status === "accepted" ? "Continue to quote" : "View current stage"}</a> : null}
@@ -408,7 +514,29 @@ export default function StaffOrderDetail() {
           {reviewFiles.length ? <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">{reviewFiles.map((file,index)=><div key={`${file.name}-${index}`} className="rounded-xl border border-zinc-700 bg-black/30 p-3"><p className="truncate text-sm font-medium">{file.name}</p><p className="mt-1 text-xs text-brand-textMuted">{(file.size/1024/1024).toFixed(1)} MB</p></div>)}</div> : null}
           <label className="mt-5 block text-sm font-medium">Note to customer<textarea value={reviewNote} onChange={event=>setReviewNote(event.target.value)} maxLength={3000} className={`${input} mt-2 min-h-28 w-full`} placeholder="Here is the finished piece. Please review the photos, finish, color, and details…" /></label>
           <div className="mt-5 rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">Customer preview</p><p className="mt-2 whitespace-pre-wrap text-sm">{reviewNote.trim() || "Your note will appear here."}</p><p className="mt-3 text-xs text-brand-textMuted">{reviewFiles.length ? `${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} attached` : "No photos attached yet"}</p></div>
-          <button disabled={sendingReview || reviewFiles.length < 1 || reviewNote.trim().length < 3} onClick={()=>void sendForReview()} className="ui-btn ui-btn-primary mt-5 disabled:cursor-not-allowed disabled:opacity-40">{sendingReview ? "Sending review…" : "Review & send to customer"}</button>
+          <ConsequentialAction
+            className="mt-5"
+            label="Send to customer"
+            title="Send the finished product for approval?"
+            summary={`${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} and your note go to the customer. Fulfillment unlocks once they approve.`}
+            currentState={statusLabel(order.status)}
+            nextState="Finished Product Review"
+            confirmLabel="Send for approval"
+            disabled={reviewFiles.length < 1 || reviewNote.trim().length < 3}
+            disabledReason={
+              reviewFiles.length < 1 || reviewNote.trim().length < 3
+                ? "Add a note and at least one photo first."
+                : null
+            }
+            effects={{
+              customer: "They see the photos and your note, and can approve or ask for revisions.",
+              financial: null,
+              inventory: null,
+              notification: "“Finished product ready for review”.",
+            }}
+            notificationPreview={reviewNote.trim()}
+            onConfirm={() => sendForReview()}
+          />
         </section> : null}
         {order.status === "final_review" ? <section className="ui-card lg:col-span-2"><p className="ui-eyebrow">Sent to customer</p><h2 className="mt-1 text-xl font-semibold">Finished-product review package</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : null}<OrderReviewGallery paths={order.final_review_asset_paths || []} /></section> : null}
         <OrderLifecyclePanel orderId={id} productName={order.product_name} />
@@ -466,13 +594,50 @@ export default function StaffOrderDetail() {
               />
             </label>
           </div>
+          {/*
+            Two buttons, because these are two different actions.
+
+            One button whose label changed between "Review & send quote" and
+            "Save internal details" depending on whether a number had been typed
+            meant the consequence of pressing it depended on a field above it.
+            Sending a customer a price and jotting a target date are not the same
+            act and no longer share a control.
+          */}
           {canManage ? (
-            <button
-              onClick={() => void save()}
-              className="ui-btn ui-btn-primary mt-3"
-            >
-              {price.trim() && Math.round(Number(price)*100)!==order.agreed_price_cents ? "Review & send quote" : "Save internal details"}
-            </button>
+            <div className="ui-action-row mt-4">
+              <button
+                type="button"
+                onClick={() => void saveInternal()}
+                disabled={savingInternal}
+                className="ui-btn ui-btn-secondary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {savingInternal ? "Saving…" : "Save internal details"}
+              </button>
+              <ConsequentialAction
+                label="Send quote"
+                title={`Send quote revision ${(order.quote_revision ?? 0) + 1}?`}
+                summary="This is the price the customer pays. It moves the order to Quote Review and asks them to approve it. Material and labour costs are internal and are not this number."
+                currentState={statusLabel(order.status)}
+                nextState="Quote Review"
+                confirmLabel="Send the quote"
+                disabled={quoteLocked(order) || !price.trim() || Number(price) <= 0}
+                disabledReason={
+                  quoteLocked(order)
+                    ? "This order has been paid, so its price cannot be rewritten."
+                    : !price.trim() || Number(price) <= 0
+                      ? "Enter a customer price first."
+                      : null
+                }
+                effects={{
+                  customer: `They are asked to approve ${price.trim() ? `$${(Math.round(Number(price) * 100) / 100).toFixed(2)}` : "the quote"}${deposit.trim() ? `, paying $${Number(deposit).toFixed(2)} up front` : ""}.`,
+                  financial: "Nothing is charged now. The customer pays at checkout after approving.",
+                  inventory: null,
+                  notification: "“Quote ready for review”, with the amount.",
+                }}
+                notificationPreview={quoteNote.trim() || undefined}
+                onConfirm={() => sendQuote()}
+              />
+            </div>
           ) : null}
           {/* Refunds, cancellations and returns moved into OrderLifecyclePanel
               below. They used to be three unrelated controls in three places;
@@ -548,14 +713,25 @@ export default function StaffOrderDetail() {
               </div>
             ))}
           </div>
+          {/*
+            The checkbox decided whether text left the building, and the button
+            said "Send" either way. Now the choice repaints the composer — the
+            border, the label under it and the button all change — so which of
+            the two things you are about to do is readable without re-reading the
+            checkbox.
+          */}
           {canManage ? (
-            <form onSubmit={send} className="mt-3">
+            <div className="mt-3">
               <textarea
-                required
-                className={`${input} min-h-24 w-full`}
+                className={cx(
+                  input,
+                  "min-h-24 w-full",
+                  internal ? "!border-sky-500/50" : "!border-brand-primary/40"
+                )}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="Reply to customer or add an internal note…"
+                placeholder={internal ? "Note for staff only…" : "Reply to the customer…"}
+                aria-label={internal ? "Internal note" : "Message to the customer"}
               />
               <label className="mt-2 flex items-center gap-2 text-xs text-brand-textMuted">
                 <input
@@ -565,10 +741,43 @@ export default function StaffOrderDetail() {
                 />{" "}
                 Internal note (customer cannot see)
               </label>
-              <button className="ui-btn ui-btn-primary mt-3">
-                Send
-              </button>
-            </form>
+              <p className="mt-1 text-xs">
+                {internal ? (
+                  <span className="text-sky-300">Stays on this order. No email, no notification.</span>
+                ) : (
+                  <span className="text-amber-200">The customer reads this and is emailed a copy.</span>
+                )}
+              </p>
+              <div className="ui-action-row mt-3">
+                {internal ? (
+                  <button
+                    type="button"
+                    onClick={() => void send()}
+                    disabled={sending || !body.trim()}
+                    className="ui-btn ui-btn-secondary disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {sending ? "Saving…" : "Save internal note"}
+                  </button>
+                ) : (
+                  <ConsequentialAction
+                    label="Send to customer"
+                    title="Send this message to the customer?"
+                    summary="It appears on their order page and is emailed to them. A sent message cannot be unsent."
+                    confirmLabel="Send the message"
+                    disabled={!body.trim()}
+                    disabledReason={!body.trim() ? "Write the message first." : null}
+                    effects={{
+                      customer: "The message appears in their order conversation.",
+                      financial: null,
+                      inventory: null,
+                      notification: "“New order message”, with a link to the order.",
+                    }}
+                    notificationPreview={body.trim()}
+                    onConfirm={async () => (await send()) ?? { ok: true }}
+                  />
+                )}
+              </div>
+            </div>
           ) : null}
         </section>
         <section id="activity" className="scroll-mt-5 md:col-span-2">
@@ -600,7 +809,67 @@ export default function StaffOrderDetail() {
             {isTrulyEmpty(emails)?<div className="px-4 py-6 text-center text-sm text-brand-textMuted">No email attempts for this order yet.</div>:null}
           </div>
         </section>
-        {canManage ? <details className="ui-card md:col-span-2"><summary className="cursor-pointer font-semibold">Advanced status override</summary><p className="mt-2 text-xs text-brand-textMuted">Use this only when the normal quote, payment, review, or fulfillment buttons cannot represent what happened. The customer will be notified.</p><div className="mt-3 sm:flex sm:items-end sm:gap-4"><label className="block flex-1 text-sm font-medium">Customer-facing status<select value={pendingStatus || order.status} onChange={e=>setPendingStatus(e.target.value)} className="ui-input mt-2 w-full">{statuses.map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></label><button disabled={!pendingStatus || pendingStatus===order.status} onClick={()=>void updateStatus(pendingStatus)} className="ui-btn ui-btn-secondary mt-3 disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0">Review & confirm update</button></div></details> : null}
+        {/*
+          The override stays, and stays explicit. Choosing in the dropdown still
+          writes nothing; the named button and the dialog behind it do. The
+          selection is what the dialog then describes, so "Now → After" is read
+          from the same value that will be posted.
+        */}
+        {canManage ? (
+          <details className="ui-card md:col-span-2">
+            <summary className="cursor-pointer font-semibold">Advanced status override</summary>
+            <p className="mt-2 text-xs text-brand-textMuted">
+              Use this only when the normal quote, payment, review, or fulfillment buttons cannot represent what
+              happened. Choosing a status here changes nothing until you confirm.
+            </p>
+            <div className="mt-3 sm:flex sm:items-end sm:gap-4">
+              <label className="block flex-1 text-sm font-medium">
+                Customer-facing status
+                <select
+                  value={pendingStatus || order.status}
+                  onChange={(e) => setPendingStatus(e.target.value)}
+                  className="ui-input mt-2 w-full"
+                >
+                  {statuses.map((s) => (
+                    <option key={s} value={s}>
+                      {statusLabel(s)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <ConsequentialAction
+                className="mt-3 sm:mt-0"
+                label="Apply this status"
+                title={`Move this order to ${statusLabel(pendingStatus || order.status)}?`}
+                summary="An override skips the checks the normal buttons make. The customer is told, and this cannot be undone by choosing the old status again — that would send a second message."
+                currentState={statusLabel(order.status)}
+                nextState={statusLabel(pendingStatus || order.status)}
+                tone={pendingStatus === "cancelled" || pendingStatus === "declined" ? "danger" : "default"}
+                confirmLabel="Apply the override"
+                disabled={!pendingStatus || pendingStatus === order.status}
+                disabledReason={!pendingStatus || pendingStatus === order.status ? "Choose a different status first." : null}
+                reason={
+                  pendingStatus === "cancelled"
+                    ? {
+                        label: "Why is this being cancelled?",
+                        required: true,
+                        help: "Stored on the order permanently.",
+                      }
+                    : undefined
+                }
+                effects={{
+                  customer: `Their order page reads ${statusLabel(pendingStatus || order.status)}.`,
+                  financial: order.amount_paid_cents
+                    ? "No money moves. Refunds are issued from the lifecycle panel."
+                    : null,
+                  inventory: null,
+                  notification: "A status-update email and an on-site notification.",
+                }}
+                onConfirm={({ reason }) => changeStatus(pendingStatus, reason)}
+              />
+            </div>
+          </details>
+        ) : null}
       </div>
       {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
     </main>

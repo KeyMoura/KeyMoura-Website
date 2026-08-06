@@ -11,15 +11,37 @@ test("fulfillment migration adds protected shipping data and email templates", (
   assert.match(sql, /order_delivered/);
 });
 
+/**
+ * Re-pointed at the route that now owns shipping.
+ *
+ * These properties were asserted against `PATCH /api/staff/orders/[id]`, whose
+ * `shipment_action` branch was the pass-1 fulfillment path. Pass 11 removed it:
+ * it only required `orders.manage` while handing goods over needs
+ * `fulfillment.manage`, and it never wrote `fulfillment_status`, so an order
+ * shipped through it stayed "unfulfilled" to the cancellation and return rules.
+ *
+ * Every guard it carried is asserted here against
+ * `POST /api/staff/orders/[id]/fulfillment`, and each is stricter than the
+ * version it replaces — the tracking number is validated for shape as well as
+ * presence, the balance guard covers pickup as well as posting, and the email
+ * key is derived from the state rather than from a row id.
+ */
 test("staff fulfillment actions validate tracking and send idempotent emails", () => {
-  const route = read("src/app/api/staff/orders/[id]/route.ts");
-  assert.match(route, /Add a tracking number before marking this order shipped/);
-  assert.match(route, /order-fulfillment-\$\{id\}-\$\{templateKey\}/);
-  assert.match(route, /Tracking link must use https:\/\//);
-  assert.match(route, /customer must approve the finished order before fulfillment/i);
-  assert.match(route, /remaining balance must be paid before fulfillment/i);
-  assert.match(route, /Mark this order shipped or ready for pickup first/);
-  assert.match(route, /update\.completed_at/);
+  const route = read("src/app/api/staff/orders/[id]/fulfillment/route.ts");
+  const legacy = read("src/app/api/staff/orders/[id]/route.ts");
+
+  assert.match(route, /Add a carrier and tracking number before marking this shipped/);
+  assert.match(route, /isValidTrackingNumber/, "the number is checked for shape, not just presence");
+  assert.match(route, /eventKey: `fulfillment-\$\{input\.order\.id\}-\$\{input\.to\}`/);
+  assert.match(route, /isSafeTrackingUrl/);
+  assert.match(route, /https:\/\/ address with no embedded credentials/);
+  assert.match(route, /is still owed on this order/i, "goods do not leave against an unpaid balance");
+  assert.match(route, /canTransitionFulfillmentForMethod/, "a pickup order cannot be shipped, and the reverse");
+  assert.match(route, /status: "completed", completed_at: stamp/);
+
+  // And the retired path stays retired.
+  assert.match(legacy, /status: 410/);
+  assert.doesNotMatch(legacy, /order-fulfillment-\$\{id\}/, "shipping emails must have exactly one sender");
 });
 
 /**
@@ -108,7 +130,11 @@ test("production review package requires private photos and a customer note", ()
   assert.match(migration, /final_review_asset_paths/);
   assert.match(migration, /staff upload order review assets/);
   assert.match(staff, /Customer preview/);
-  assert.match(staff, /Review & send to customer/);
+  // The label changed when the control became a confirmed action: the composer
+  // is the review step now, and the button is what sends. Asserting the send
+  // exists and previews what goes out is the property; the wording is not.
+  assert.match(staff, /label="Send to customer"/);
+  assert.match(staff, /notificationPreview=\{reviewNote\.trim\(\)\}/);
   assert.match(route, /Add a customer note and at least one photo/);
   assert.match(customer, /OrderReviewGallery/);
 });

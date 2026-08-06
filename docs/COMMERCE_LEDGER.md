@@ -3513,3 +3513,172 @@ wrote to production**; the only write was the migration above.
 3. Open `/staff` and click one of the attention chips. It should land on a
    filtered list containing exactly the orders that chip counted.
 4. On a phone, confirm the queue chips are comfortable to tap.
+
+## Pass 11 — consequential action safety on the staff order workspace
+
+Branch `staff-order-action-safety-20260806`, from `03127b3`. The action matrix
+lives in [`docs/STAFF_ORDER_ACTIONS.md`](STAFF_ORDER_ACTIONS.md) and is the
+reference for what each control does; this section records what changed and what
+was verified.
+
+### What the audit found
+
+Passes 8–10 had already made the *lifecycle* routes safe: fulfillment,
+cancellations, returns, refunds and production all carry guarded transitions,
+409 conflicts, server-recomputed amounts and idempotency keys. Re-read them all;
+none needed loosening and none was loosened. Three real gaps remained.
+
+**1. The order row itself had no expected-state guard.** `PATCH
+/api/staff/orders/[id]` did a blind `update().eq("id", id)`. Two staff pressing
+"Accept & continue" a moment apart both succeeded — each read `requested`, each
+wrote — and because each inserted its own `order_status_history` row, the derived
+email `eventKey` differed and the customer got **two emails**. Now `status` and
+`quote_revision` are both asserted in the `WHERE` clause and the write reports
+whether it matched, so the second request is a 409 naming where the order
+actually is. `quote_revision` matters separately: two staff repricing an order
+never change its status, so a status comparison alone would let the second price
+win silently.
+
+**2. `shipment_action` was a second, unguarded fulfillment path.** Dead since
+pass 8 — no caller — but still live as an endpoint, and worse than dead code. It
+required only `orders.manage` where handing goods over needs
+`fulfillment.manage`, so anyone who could edit an order could ship one; and it
+never wrote `fulfillment_status`, the column the cancellation and return rules
+read, so an order shipped through it stayed "unfulfilled" and still looked
+cancellable. It now answers **410**. Fulfillment has exactly one write path.
+
+**3. Confirmation was `window.confirm`,** with the cancellation reason collected
+by a separate `window.prompt`. That cannot separate the money from the stock from
+the email, cannot validate the reason, and cannot hold a 409 where the decision
+was made.
+
+### The shared framework
+
+`ConsequentialAction` (`src/components/staff/ConsequentialAction.tsx`) replaces
+every `window.confirm` and `window.prompt` in the workspace. It renders the
+current and proposed state, four named effect lines — customer / money / stock /
+email — a notification preview, an optional required reason, and separate
+customer-visible and internal note fields that say which is which.
+
+It is deliberately **not** an abstraction over business rules. It knows how to
+ask; the server decides what is legal, and every caller still posts to a route
+that re-checks everything.
+
+Two properties are load-bearing:
+
+- **A ref, not state, blocks the second submit.** `pending` is React state, and
+  two clicks in one batch both read the stale value. `inFlight` is checked and
+  set synchronously.
+- **A conflict removes the confirm button** rather than re-arming it. A stale
+  consequential action must never be retried, so the dialog offers Close and
+  Reload instead.
+
+`resultFromResponse` lives in `src/lib/staff/actionResult.ts` — plain TypeScript
+so it can be tested directly — and is where "may this be retried, and may this
+message be shown" is decided. A 500's text is dropped rather than displayed:
+that is the status a route returns when something unplanned happened, which is
+exactly when the message is most likely to name a constraint or a row value.
+
+### Duplicate messages, closed at the database
+
+The send button had no pending state and the email's event key was the row id of
+the message just inserted — a *different* id on the second click. Two clicks
+meant two customer messages and two emails. A per-order `client_token` now
+collapses a double-click, a retried fetch and a resubmitted form into one
+message. The token is sanitised before it reaches the index.
+
+### Migration `20260806020000_order_message_client_token` — applied 2026-08-06
+
+Additive: one nullable column, one **partial** unique index
+(`where client_token is not null`), so the existing rows all carry null, never
+collide, and need no backfill.
+
+Dry-run first, in a transaction ended with a sentinel exception to force
+rollback. Three proofs: existing rows untouched and all null; a duplicate token
+on the same order is refused; the same token on a *different* order, and
+multiple nulls on the same order, are all accepted. Then a separate **rollback
+rehearsal** — apply, run the down statements, compare the column list — which
+came back byte-for-byte identical.
+
+Applied with approval through `execute_sql` in one guarded transaction, not
+`apply_migration`; that tool stamps its own timestamp as the version, which
+caused six of the seven ledger drifts repaired in pass 3. The ledger row was
+inserted by hand under the repository filename's version inside the same
+transaction.
+
+Guards before: 41 migration rows, column absent. Guards after: 42 rows, column
+and index present, **message count 2 and order count 8 unchanged**, and no
+existing row gained a token. All held.
+
+**The ledger is exact: 42 repo files, 42 rows**, newest
+`20260806020000 / order_message_client_token`.
+
+Grants re-checked under `set local role service_role`, rolled back: the insert
+with a token succeeds and the duplicate is refused. Table-level grants cover a
+new column; `anon` holds only the inert REFERENCES/TRIGGER/TRUNCATE.
+
+### Tests
+
+**1063 passing, 0 failing.** 33 are new (`tests/staff-order-action-safety.test.ts`),
+including real exercises of the response mapping — a 409 becomes a conflict, a
+500 never surfaces `constraint`/`DETAIL`/a table name, the fulfillment route's
+`status` key and the order route's `currentStatus` key both land in the same
+place.
+
+Eight existing tests failed against the new code and were **re-pointed, not
+deleted** — each now asserts the property where it moved to, and in several cases
+more strictly than before:
+
+| Test | Was | Now |
+|------|-----|-----|
+| fulfillment validates tracking | asserted the `shipment_action` branch | asserts the fulfillment route, plus tracking *shape* and method narrowing |
+| shipping vs pickup language | pinned a ternary in the order route | asserts distinct states and labels, which cannot be conflated by editing one condition |
+| staff panel disables in flight | counted `disabled={Boolean(busy)}` | asserts the synchronous `inFlight` ref, which is stricter than the state it replaces |
+| refunds confirmed | required `window.confirm` | requires the dialog, `tone="money"`, and all four effect axes |
+| review package / status override | pinned button labels | assert the send and the current→proposed state pair |
+
+### Browser verification — the dialog, live
+
+The staff area needs a real session (middleware redirects `/staff/*` to
+`/auth/login` even locally, and signing in would mean handling a password), so
+the component was mounted on a temporary local-only page, driven in a real
+browser, and the page deleted. The working tree is clean; nothing probe-related
+is in the diff.
+
+| Check | Result |
+|-------|--------|
+| Portalled to `document.body` | ✔ — `get_page_text` reads `<main>` and could not see it |
+| `role="dialog"`, `aria-modal`, `aria-labelledby` | ✔ all present, heading resolves |
+| Body scroll locked while open, released on close | ✔ |
+| Focus moves into the dialog on open | ✔ lands on the reason field |
+| Required reason gates the confirm | ✔ disabled until typed, then enabled |
+| **Three clicks in one tick** | ✔ **exactly 1 submit**; button reads "Working…" and is disabled |
+| 409 conflict | ✔ confirm button **replaced** by Close / Reload; "Nothing was applied" |
+| Escape closes, focus returns to the trigger | ✔ |
+| Tab trap wraps both directions | ✔ 4 focusables, last→first and first→last |
+| Mobile 375×812 | ✔ full-width bottom sheet, no horizontal scroll, 46px touch target |
+
+Console carries a pre-existing `data-motion` hydration mismatch on the root
+layout — present on `/` as well, unrelated to this pass and not fixed here.
+
+### Not done, and why
+
+**Manual email resend does not exist and was not built.** `/staff/emails` edits
+templates and sends a *test* to the signed-in staff address; there is no route
+that re-sends a transactional email to a customer. Adding one is a new
+outbound-email capability rather than a safety fix — it is the single item in the
+brief whose absence is safer than a hurried implementation. Recorded with the
+constraints it would have to meet: recipient taken from the order and never from
+input, event key derived from the original delivery, an explicit audit event, no
+free-form recipient field.
+
+### Residual risks
+
+- The quote/status route still writes several concerns in one PATCH. Guarded
+  now, but "send a quote" and "save a note" deserve separate routes.
+- `restore_order_inventory` is idempotent by ledger arithmetic (`having sum(delta)
+  < 0` plus a per-leg idempotency key) rather than by a constraint. Verified by
+  reading it; worth a regression test if the reason codes ever change.
+- Email delivery is single-attempt. A failure is recorded in `email_deliveries`
+  and visible on the order, but there is no retry — the other half of the resend
+  gap above.
