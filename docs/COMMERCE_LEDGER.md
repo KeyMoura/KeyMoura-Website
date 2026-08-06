@@ -3081,3 +3081,344 @@ returning a vacuous pass.
    moves the order to Completed.
 4. Print a packing slip and confirm navigation and the sidebar are absent on
    paper and no internal note appears.
+
+---
+
+# Pass 10 — staff order truthfulness, server-side filtering, staff-area audit
+
+Branch `staff-orders-reliability-communications-20260806`, from `7e0453a`.
+
+## Verified starting state — 2026-08-06
+
+| Check | Result |
+|-------|--------|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `7e0453a` |
+| Baseline present | `7e0453a` is HEAD, the pass-9 verification commit |
+| Production health | `/` 200 (0.32 s), `/catalog` 200, `/shipping` 200, `GET /api/cart` 200, `/staff/orders` 307 to login |
+| Migration ledger | **exact** — 40 repo files, 40 rows, versions and names identical |
+
+## Scope actually delivered, and why it stops where it does
+
+The brief listed fifteen phases. This pass completes its **first three** —
+staff truthfulness, the order list, and order-detail reliability — end to end
+and verified, and **does not start** the communications layer (transactional
+emails, delivery centre, notifications, integration health, launch readiness).
+
+That is a deliberate stop, not drift. The brief's own rule is "do not merge
+partially wired communications systems", and each of those five needs its own
+schema, grants, permissions and idempotency work. Half of an email-resend
+surface is worse than none: it is a button that appears to have sent something.
+
+What ships here is independently valuable and independently deployable — it
+fixes the defect the brief opens with and the one pass 9 recorded as
+outstanding.
+
+## Phase 1 — the defect, precisely
+
+`/staff/orders` did this:
+
+    const rows = (orderResult.data ?? []) as Order[];
+    setOrders(rows);
+    const counts = { action: orders.filter(needsStaffAction).length, ... };
+
+A refused query is `[]`. So the page rendered **"Needs action (0)"**,
+**"Waiting (0)"**, **"All (0)"** and **"Nothing in this view."** underneath its
+own red error banner — and it rendered `orderResult.error.message`, a raw
+Postgres string, straight into the page.
+
+Three consequences, not one:
+
+1. A staff member scanning the page reads the zeros, not the sentence above
+   them. This is the pass-5a mistake in its fourth location.
+2. Every staff client received **every order row** — product names, prices,
+   customer ids, payment and fulfillment state — regardless of which
+   twenty-five it displayed.
+3. It does not scale past a few hundred orders.
+
+### `loadState.ts` — the reusable primitive
+
+The brief asked for "reusable result-state handling rather than duplicating
+fragile patterns". Pass 9 fixed two pages with hand-written `xError` strings
+and `xUsable` booleans, and the copy was never made to the third — so the fix
+that generalizes is not another careful `if`.
+
+`LoadState<T>` is `idle | loading | error | ready`, and **`data` exists only on
+the `ready` variant**. `state.data.length` does not compile on a state that
+might have failed. A count is therefore *structurally* unable to come from a
+failure, which is a stronger guarantee than remembering to check.
+
+- `countOrNull` returns `null`, not `0`, when the answer is unknown.
+- `rowsOrNull` deliberately does **not** `?? []` — that expression is behind
+  every instance of this defect in the codebase's history.
+- `isTrulyEmpty` is true only for a *successful* query that returned no rows,
+  which is the only state in which "nothing needs attention" is a true sentence.
+- `allReady` yields `null` unless every panel succeeded, because a summary over
+  a partly failed set is the subtlest form of the same lie.
+- `classifySupabaseError` maps SQLSTATE to a safe sentence and **drops** the
+  provider message. A Postgres error names schema objects and on a constraint
+  violation quotes the offending value, which on this schema can be an address
+  or a private note.
+
+`idle` is a real fourth state: a panel the viewer lacks permission to load was
+never told the answer, which is not zero either.
+
+## Phase 2 — server-authoritative filtering
+
+Fixing the counts needs the filtering on the server. Moving it there needs the
+derived predicates to be expressible in SQL — and the fulfillment bucket,
+"requires action" and "overdue" all depend on the outstanding balance, which is
+`agreed_price - (paid - refunded)`: a comparison **between columns** that
+PostgREST cannot filter on.
+
+### The view
+
+`20260806010000_staff_order_queue_view.sql` creates `public.staff_order_queue`,
+projecting the order columns plus:
+
+`outstanding_cents`, `fulfillment_bucket`, `missing_tracking`, `is_overdue`,
+`has_failed_refund`, `has_inventory_issue`, `cancellation_open`, `return_open`,
+`production_status`, `priority`, `priority_rank`, `assigned_to`.
+
+**The CASE arms mirror `fulfillmentBucket()` in `operationsQueues.ts` in
+order**, and a test evaluates the SQL logic in TypeScript across **198 state
+combinations** (11 fulfillment states x 6 order statuses x 3 payment shapes) and
+asserts the two never disagree. Approximating the rule in PostgREST while
+computing the true one in TypeScript would have reproduced exactly what pass 9
+warned about: a card reading 3 that opens a list of 5.
+
+`priority_rank` exists because Postgres sorts the *words*, which orders them
+"high, low, normal, urgent" — alphabetical and meaningless.
+
+`security_invoker = true`, so the caller's own rights on `orders` still apply
+and this cannot become a way around RLS on the base table.
+
+**Grants:** `revoke all` from `public`, `anon`, `authenticated`; `grant select`
+to `service_role` only. The single caller is a server route that has already
+checked `orders.view`/`orders.manage`.
+
+### `orderFilters.ts` — one definition, read by everything
+
+Pure and dependency-free, so the page, the route, the dashboard's deep links
+and the tests all read the same rules.
+
+- Every filter is an enum over values the CHECK constraints already enumerate.
+  Unknown values are **dropped**, never interpolated into a query.
+- Parsing is **canonical** (arrays sorted) and **total** — any input yields
+  usable filters. An impossible date like `2026-02-31` is refused rather than
+  silently shifted; an inverted range is swapped, because that is a typo, not a
+  request for zero rows.
+- **15 saved views** are presets over those same filters, not a second
+  mechanism, so a view cannot drift from the filters it claims to apply.
+- Filters live in the **URL and nowhere else** — no `useState` mirror, which is
+  what makes the back button disagree with the list.
+
+**A defect the schema caught:** the first draft guessed the production-job
+vocabulary and got **nine of thirteen values wrong** (`queued`,
+`materials_pending`, `awaiting_customer`, `rework`, `ready`, `failed`,
+`blocked` are not states this schema has). Every wrong value is a filter that
+silently matches nothing, which on screen is indistinguishable from "no orders
+are in production". Now imported from `production/jobs.ts` and pinned by a test.
+
+### `GET /api/staff/orders`
+
+Behind `orders.view` or `orders.manage`; anonymous gets 403, verified live.
+
+- One page of rows plus an exact `count`, in one round trip.
+- **Counts for all 15 views** as a *fixed* number of parallel `head`-only count
+  queries — fixed, so it does not grow with the number of orders.
+- If **any** count fails, `counts` is withheld **entirely**. A tab strip where
+  one number is missing and the rest are present invites reading the gap as zero.
+- A failed list is **502**, never a 200 with an empty array.
+- Free-text search is escaped for PostgREST's `or` grammar; `%` and `_` are
+  neutralised so searching for `%` looks for a percent sign rather than matching
+  everything.
+- Degradations are **reported** (`degraded.customerSearch`, `.customerNames`,
+  `.counts`), because a page that quietly dropped customer-name matching shows
+  fewer results than exist and calls it a complete answer.
+- Failure logs take a **pre-stripped shape object**, so the logger has no access
+  to the filters at all — a logger that merely promises not to read the search
+  box is one edit away from reading it, and that box is where a staff member
+  types a customer's name.
+- The list selects **named columns**; no email, address, customer note or staff
+  note is in the payload.
+
+## Phase 3 — order-detail reliability
+
+The staff order workspace loaded six sections and collapsed them into one
+`??`-chained error string. Three consequences on a page about money:
+
+1. A failed payments query rendered as **"no payments"**.
+2. The **activity timeline** is assembled from four of those lists, so a failed
+   source silently vanished while the timeline still looked complete and
+   chronological — the one place a partial failure is genuinely invisible.
+3. Only the first failure showed, with a raw message, and nothing said which
+   section it belonged to.
+
+Each section now carries its own `LoadState` and renders its own failure. The
+timeline names the sources it is missing, with **payments and refunds called out
+individually** because those are the two omissions that change what a staff
+member believes about money.
+
+## Phase 1, continued — the audit as a test, not a sweep
+
+Pass 9 fixed two pages, wrote down that a third still had the defect, and this
+pass had to find it again. `tests/staff-page-truthfulness-audit.test.ts` walks
+**every** page under `src/app/staff` (36 found) and fails on the *shape*, so a
+new page is covered without being added to a list.
+
+Seven more instances found and fixed:
+
+| Page | What it claimed on failure |
+|------|----------------------------|
+| `/staff/inventory` | "No products match this view." and "**0 products**" |
+| `/staff/emails` | "Loading email settings..." **for ever** — a `.then` with no `.catch` |
+| `/staff/orders/[id]` | "no payments"; a silently-incomplete timeline |
+| `/staff/catalog` (editor) | "no options" — see below |
+| `/staff/catalog` (list) | an empty catalog |
+| `/staff/page.tsx`, `/staff/fulfillment` | profile lookups from unchecked results |
+| `/staff/community`, `/staff/info/pending/[id]` | link maps and review history |
+
+**The catalog editor was the most consequential.** A failed option read
+presented as "no options", which (a) marked a custom product's publish checklist
+*incomplete* when nobody could tell, and (b) `addGroup` takes its `sort_order`
+from `groups.length`, so the next option added would have collided at position 0
+with the options the product actually has. Adding is now disabled while the list
+is unknown, and the checklist reports "could not be checked" rather than a false
+blocker.
+
+A permanent loading spinner is worth naming as its own case: it is the quietest
+version of the same lie, because unlike a zero it never even invites a second
+look.
+
+## Dashboard deep links
+
+The attention panel's overflow link went to a bare `/staff/orders`, which since
+the rebuild opens *All orders* — so "5 more in the order cockpit" landed the
+reader on an unfiltered list. It now opens the `requires_action` queue, and each
+kind of work present gets a chip opening the queue holding exactly that kind.
+`ATTENTION_VIEW` maps every `AttentionKind` to a saved view and a test asserts
+each resolves to one that exists.
+
+## Files changed
+
+New:
+
+- `supabase/migrations/20260806010000_staff_order_queue_view.sql`
+- `src/lib/staff/loadState.ts`, `orderFilters.ts`, `orderQueryPlan.ts`
+- `src/app/api/staff/orders/route.ts`
+- `tests/staff-orders-truthfulness.test.ts` (60), `staff-page-truthfulness-audit.test.ts` (12)
+
+Modified: `src/app/staff/orders/page.tsx` (rewritten), `staff/orders/[id]/page.tsx`,
+`staff/page.tsx`, `staff/inventory/page.tsx`, `staff/emails/page.tsx`,
+`staff/catalog/page.tsx`, `staff/fulfillment/page.tsx`, `staff/community/page.tsx`,
+`staff/info/pending/[id]/page.tsx`, and two existing suites.
+
+**No new permission. No new dependency.** One additive migration, one view.
+
+## Validation
+
+- **1030 tests pass, 0 fail** (958 at `7e0453a`; 72 added).
+- Typecheck clean. Production build clean from a cleared `.next`, exit 0;
+  `/api/staff/orders` present as a dynamic route, `/staff/orders` still
+  prerendering behind its Suspense boundary.
+- **Lint baseline unchanged at 186 errors / 1667 warnings**, measured by running
+  the same command on `main` and on this branch. Every new and changed file
+  lints clean.
+- Migration **dry-run against production inside a rolled-back transaction**:
+  guards held, view created, 6 rows readable, rollback confirmed by re-checking
+  `pg_views`.
+
+### The regression tests fail against the pre-fix page
+
+Six assertions, checked against `git show HEAD:src/app/staff/orders/page.tsx`:
+**6/6 fail** against the old code. They test the bug, not the fix.
+
+### Driven in a real browser
+
+Dev server, staff permissions seeded through the React fiber and the API stubbed
+so each state could be reached deterministically. Local only: production
+middleware 307s `/staff/*` before any HTML.
+
+| Check | Result |
+|-------|--------|
+| Populated | **Passes.** Rows, badges, derived next-actions, "Showing 1-25 of 57" |
+| **True zero vs unknown** | **Passes.** "Completed **0**" renders its zero because the server counted zero; queues the server sent no count for render **no number at all** |
+| Failed load | **Passes.** `role="alert"` + reference; **every chip loses its number**; no "No orders match", no pagination, no rows |
+| Retry | **Passes.** Recovers from the failure state |
+| Genuinely empty | **Passes.** "No orders match these filters. That is a complete answer — the query succeeded and found none." |
+| Partial failure | **Passes.** Counts withheld with a warning **while the list still renders** |
+| Back / forward | **Passes.** URL and active chip both track history across two views |
+| Anonymous API | **Passes.** `GET /api/staff/orders` gets **403** |
+| 375px | **Passes.** No horizontal overflow, zero overflowing elements |
+| Accessibility | Labelled queues/pagination nav, labelled selects, live region, Previous disabled on page 1 |
+
+**One defect found by measuring rather than reading:** the queue chips were
+**30px** tall at 375 — a comfortable click with a mouse and a miss with a thumb,
+on the page's primary mobile navigation. Now `min-h-11` (44px), matching the
+staff drawer.
+
+Console carried only the **pre-existing** `data-motion` hydration mismatch on
+the root `<html>`, the 403 from the anonymous probe, and the local 503 from the
+deliberately fake service-role key.
+
+### What could not be verified, and why
+
+- **A real signed-in staff session.** Unchanged limitation from passes 3-9:
+  signing in means handling a password. The page was driven with permissions
+  seeded and the API stubbed, which exercises every real component and every
+  real state transition but not the real query.
+- **A screenshot.** The Browser pane was not displayed, so the page was not
+  compositing frames. The DOM and geometry assertions above are the evidence.
+
+## Deployment order matters
+
+`/staff/orders` reads `staff_order_queue`. **The migration must be applied
+before or with the merge, or the page 502s in production.** It has not been
+applied — production migrations need explicit approval.
+
+## Deferred, honestly
+
+Not started in this pass. Each is specified in the brief; none is half-wired:
+
+1. **Transactional email catalogue.** 30 templates seeded; `sendCommerceEmail`
+   already does HTML + plain text + `event_key` idempotency + Resend
+   `idempotencyKey`. The brief's ~40-event matrix is not written.
+2. **Email delivery centre**, resend, and `emails.view` / `emails.resend`.
+   `email_deliveries` has no `updated_at`, no attempt count, no `delivered_at`
+   and no resend linkage.
+3. **Notification deduplication.** `notifications` has **no `event_key`
+   column**, so `createNotification` inserts unconditionally — repeated
+   lifecycle calls can produce duplicates. Stripe replays are caught upstream by
+   `stripe_webhook_events`, so this is a latent gap rather than a live one.
+4. **Integration health** and **launch readiness** pages.
+5. **Historical payment review** for KM-0001 / KM-0002.
+6. **Support tickets** and **verified-purchase reviews.**
+
+Also noticed, not acted on: about **fifteen catalog *write* paths** still
+surface `insertError.message` directly. All pre-existing, all behind
+`catalog.manage`, several genuinely actionable ("duplicate slug"). The audit
+test's scope is stated as load paths rather than quietly widened.
+
+## KM-0001 and KM-0002 — untouched
+
+Confirmed unchanged while reading the schema. KM-0001 carries
+`agreed_price_cents = 100` against `amount_paid_cents = 2500` with
+`payment_status = 'unpaid'`; KM-0002 carries 100 against 100. The new view
+floors `outstanding_cents` at zero rather than reporting a negative balance, and
+**writes nothing**. No automated process in this pass touches either row.
+
+## Exact continuation steps
+
+1. **Apply `20260806010000` with approval, before or with the merge.** Use
+   `execute_sql` in a guarded transaction, not `apply_migration` — that tool
+   stamps its own timestamp as the version, which caused six of the seven ledger
+   drifts repaired in pass 3. Insert the ledger row by hand under the filename's
+   version.
+2. Verify `staff_order_queue` exists, returns 6 rows as `service_role`, and that
+   `anon` and `authenticated` are refused SELECT under `set local role`.
+3. Then pick up the communications layer in the brief's order: transactional
+   emails, then delivery/resend, then notification deduplication, then
+   integration health, then launch readiness. Add `notifications.event_key`
+   (additive, partial unique index) as the first step of the notification work.
