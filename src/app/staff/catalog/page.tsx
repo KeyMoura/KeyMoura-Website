@@ -13,6 +13,7 @@ import { CategorySelect } from "@/components/staff/CategorySelect";
 import { visibleCategories, type CategoryRow } from "@/lib/commerce/categories";
 import { allowsDirectPurchase, PURCHASE_MODE_COPY, PURCHASE_MODES, type PurchaseMode } from "@/lib/commerce/purchaseModes";
 import ProductContentEditor from "@/components/staff/ProductContentEditor";
+import { ProductShippingEditor } from "@/components/staff/ProductShippingEditor";
 import { EMPTY_DETAIL_CONTENT, parseDetailContent, serializeDetailContent, type ProductDetailContent } from "@/lib/commerce/productContent";
 
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -167,6 +168,32 @@ export default function StaffCatalogPage() {
       dimensions_text: draft.dimensions_text?.trim() || null,
       package_dimensions_text: draft.package_dimensions_text?.trim() || null,
       weight_grams: draft.weight_grams == null ? null : Math.max(0, Number(draft.weight_grams)),
+      /*
+       * Delivery, packaging and tax, added by `20260805020000`.
+       *
+       * The booleans are written with `?? true` rather than `Boolean(...)`:
+       * `Boolean(undefined)` is `false`, so a product loaded before these
+       * columns were selected — or simply never touched — would have been
+       * silently marked unshippable and uncollectable by the first save of any
+       * unrelated field. Their database defaults are all true, and this
+       * matches them.
+       *
+       * The measurements are written as null when blank. `Number("")` is 0, and
+       * a 0-gram package is a real value the shipping calculator would price as
+       * weightless instead of falling back to the configured default.
+       */
+      requires_shipping: draft.requires_shipping ?? true,
+      pickup_eligible: draft.pickup_eligible ?? true,
+      fulfillment_required: draft.fulfillment_required ?? true,
+      is_returnable: draft.is_returnable ?? true,
+      package_weight_grams: draft.package_weight_grams ?? null,
+      package_length_mm: draft.package_length_mm ?? null,
+      package_width_mm: draft.package_width_mm ?? null,
+      package_height_mm: draft.package_height_mm ?? null,
+      length_mm: draft.length_mm ?? null,
+      width_mm: draft.width_mm ?? null,
+      height_mm: draft.height_mm ?? null,
+      tax_code: draft.tax_code?.trim() || null,
       // Serialized through the same parser the product page reads with, so the
       // editor cannot save a shape the page would then discard.
       detail_content: serializeDetailContent(content),
@@ -332,6 +359,20 @@ export default function StaffCatalogPage() {
       image_url: draft.image_url || null, model_url: draft.model_url || null, model_poster_url: draft.model_poster_url || null,
       inventory_policy: draft.inventory_policy || "unlimited", inventory_quantity: draft.inventory_quantity || 0,
       low_stock_threshold: draft.low_stock_threshold || 0, continue_selling_when_out_of_stock: Boolean(draft.continue_selling_when_out_of_stock), archived_at: null,
+      // Delivery and packaging travel with the copy. A duplicate that quietly
+      // reverted to the shop defaults would be priced and routed differently
+      // from the product it was copied from, which is the opposite of what
+      // "Duplicate" means.
+      made_to_order: Boolean(draft.made_to_order),
+      requires_shipping: draft.requires_shipping ?? true, pickup_eligible: draft.pickup_eligible ?? true,
+      fulfillment_required: draft.fulfillment_required ?? true, is_returnable: draft.is_returnable ?? true,
+      package_weight_grams: draft.package_weight_grams ?? null, package_length_mm: draft.package_length_mm ?? null,
+      package_width_mm: draft.package_width_mm ?? null, package_height_mm: draft.package_height_mm ?? null,
+      length_mm: draft.length_mm ?? null, width_mm: draft.width_mm ?? null, height_mm: draft.height_mm ?? null,
+      weight_grams: draft.weight_grams ?? null, tax_code: draft.tax_code ?? null,
+      shipping_notes: draft.shipping_notes || null, return_notes: draft.return_notes || null,
+      cancellation_notes: draft.cancellation_notes || null, dimensions_text: draft.dimensions_text || null,
+      package_dimensions_text: draft.package_dimensions_text || null,
     }).select("*").single();
     if (copyError || !copy) { setBusy(false); return setError(copyError?.message || "Could not duplicate product"); }
     if (media.length) await supabase.from("product_media").insert(media.map(item => ({ product_id: copy.id, kind: item.kind, url: item.url, alt_text: item.alt_text, sort_order: item.sort_order })));
@@ -461,13 +502,38 @@ export default function StaffCatalogPage() {
           </div>
 
           <div className="ui-card">
-            <h2 className="text-xl font-semibold">Inventory</h2>
-            <p className="mt-1 text-sm text-brand-textMuted">Use made-to-order for custom work, or track a real quantity for ready-to-ship items.</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold">Inventory</h2>
+                <p className="mt-1 text-sm text-brand-textMuted">Use made-to-order for custom work, or track a real quantity for ready-to-ship items.</p>
+              </div>
+              {/* Setting a quantity here is a *definition*; moving stock is an
+                  event with a reason and a ledger entry. They are different
+                  actions, so the editor points at the surface that records the
+                  second rather than pretending this field is it. */}
+              {selectedId && permissions.has("inventory.view") ? <Link href={`/staff/inventory/${selectedId}`} className={subtle}>Stock, holds & history →</Link> : null}
+            </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <label className="text-sm">Inventory mode<MenuSelect className="ui-select-trigger mt-1" value={draft.inventory_policy ?? "unlimited"} onChange={value => setDraft(current => ({ ...current, inventory_policy: value as CatalogProduct["inventory_policy"] }))} options={[{value:"unlimited",label:"Made to order / unlimited"},{value:"track",label:"Track quantity"}]} /></label>
               <label className="text-sm">Quantity<input disabled={draft.inventory_policy !== "track"} className={`${input} mt-1 disabled:opacity-50`} type="number" min="0" value={draft.inventory_quantity ?? 0} onChange={e => setDraft(current => ({ ...current, inventory_quantity: Number(e.target.value) }))} /></label>
               <label className="text-sm">Low-stock warning<input disabled={draft.inventory_policy !== "track"} className={`${input} mt-1 disabled:opacity-50`} type="number" min="0" value={draft.low_stock_threshold ?? 2} onChange={e => setDraft(current => ({ ...current, low_stock_threshold: Number(e.target.value) }))} /></label>
               {draft.inventory_policy === "track" ? <label className="flex items-center gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={Boolean(draft.continue_selling_when_out_of_stock)} onChange={e => setDraft(current => ({ ...current, continue_selling_when_out_of_stock: e.target.checked }))} /> Keep accepting requests when quantity reaches zero</label> : null}
+              <label className="flex items-center gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={Boolean(draft.made_to_order)} onChange={e => setDraft(current => ({ ...current, made_to_order: e.target.checked }))} /> Made to order — never reserved at checkout, and never raises a low-stock alert</label>
+            </div>
+          </div>
+
+          <div className="ui-card">
+            <h2 className="text-xl font-semibold">Delivery, packaging &amp; returns</h2>
+            <p className="mt-1 text-sm text-brand-textMuted">
+              These decide which delivery methods a cart may offer and what a parcel is priced as. They have been
+              live since the shipping system shipped; this is the first surface that lets you set them.
+            </p>
+            <div className="mt-5">
+              <ProductShippingEditor
+                draft={draft}
+                onChange={patch => setDraft(current => ({ ...current, ...patch }))}
+                disabled={!canManage}
+              />
             </div>
           </div>
 
