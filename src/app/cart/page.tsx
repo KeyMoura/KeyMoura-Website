@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useState } from "react";
 import ProductImage from "@/components/ProductImage";
 import CartSharePanel from "@/components/commerce/CartSharePanel";
+import QuantityField from "@/components/commerce/QuantityField";
 import CheckoutFulfillmentPanel, {
   type FulfillmentSelection,
   type QuotedTotals,
@@ -211,21 +212,21 @@ export default function CartPage() {
                     ) : null}
                     <p className="mt-1 text-sm text-brand-textMuted">{formatCents(item.unitPriceCents)} each</p>
 
-                    <div className="mt-3 flex items-center gap-3">
-                      <label className="text-sm" htmlFor={`cart-qty-${item.itemId}`}>
-                        Quantity
-                      </label>
-                      <input
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      {/* Committed on blur, Enter or a step button — never per
+                          keystroke. The old field posted a mutation on every
+                          character, so clearing the box asked the server for
+                          `quantity: 0` and typing "12" asked for a 1 first. */}
+                      <QuantityField
                         id={`cart-qty-${item.itemId}`}
-                        type="number"
-                        min={1}
-                        max={99}
                         value={item.quantity}
+                        max={item.maxQuantity ?? null}
+                        describedItem={item.name}
                         disabled={!item.itemId || setQuantity.isPending}
-                        onChange={(event) =>
-                          item.itemId && setQuantity.mutate({ itemId: item.itemId, quantity: Number(event.target.value) })
+                        showMax={false}
+                        onCommit={(quantity) =>
+                          item.itemId && setQuantity.mutate({ itemId: item.itemId, quantity })
                         }
-                        className="ui-input h-9 w-20"
                       />
                       <button
                         type="button"

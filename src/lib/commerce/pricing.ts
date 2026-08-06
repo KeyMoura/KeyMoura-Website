@@ -122,6 +122,23 @@ export function purchasableQuantity(product: PricedProduct): number {
 }
 
 /**
+ * The ceiling a quantity field should show, or `null` when stock is not what
+ * limits it.
+ *
+ * Distinct from `purchasableQuantity`, which always answers with a number
+ * because the checkout path needs one. A *field* needs to know the difference
+ * between "5 available" and "as many as you like, up to the per-line cap":
+ * rendering "99 available" for an unlimited product states a stock level the
+ * shop never claimed to have.
+ */
+export function displayableLineCeiling(product: PricedProduct): number | null {
+  if (product.availability_status === "unavailable") return 0;
+  if (product.inventory_policy === "unlimited") return null;
+  if (product.continue_selling_when_out_of_stock) return null;
+  return Math.min(Math.max(product.inventory_quantity, 0), MAX_LINE_QUANTITY);
+}
+
+/**
  * Resolves one requested line against the live product.
  *
  * Returns either a priced line or the specific reason it cannot be bought

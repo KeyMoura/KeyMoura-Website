@@ -254,60 +254,65 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           />
         </div>
 
+        {/*
+          One box, in normal document flow. There is no inner scroll wrapper:
+          this column used to be a sticky, `max-height`-bounded, `overflow-y:
+          auto` card, which gave the purchase controls their own scrollbar
+          inside the page's. See the note on `.product-info-column` in
+          globals.css for why sticky was removed rather than repaired.
+        */}
         <div className="product-info-column">
-          <div className="product-info-sticky">
-            <div className="product-eyebrow-row">
-              <span className="ui-badge ui-badge-accent">{PURCHASE_MODE_COPY[purchaseMode].label}</span>
-              <span className={`ui-badge ${available ? "ui-badge-success" : "ui-badge-danger"}`}>
-                {availabilityLabel(product.availability_status)}
-              </span>
-              {product.inventory_policy === "track" ? (
-                <span className="ui-badge">{inventoryLabel(product)}</span>
-              ) : null}
-            </div>
-
-            <h1 className="product-title">{product.name}</h1>
-
-            {product.short_description ? (
-              <p className="product-summary">{product.short_description}</p>
+          <div className="product-eyebrow-row">
+            <span className="ui-badge ui-badge-accent">{PURCHASE_MODE_COPY[purchaseMode].label}</span>
+            <span className={`ui-badge ${available ? "ui-badge-success" : "ui-badge-danger"}`}>
+              {availabilityLabel(product.availability_status)}
+            </span>
+            {product.inventory_policy === "track" ? (
+              <span className="ui-badge">{inventoryLabel(product)}</span>
             ) : null}
-
-            {/* No rating is rendered. `product_reviews` exists but holds no
-                rows and there is no review UI yet, so any star row here would
-                be decoration standing in for data that does not exist. */}
-
-            <ProductPurchasePanel
-              productId={product.id}
-              productName={product.name}
-              purchaseMode={purchaseMode}
-              startingPriceCents={product.starting_price_cents}
-              available={available}
-              inStock={inStock}
-              maxQuantity={maxQuantity}
-              groups={groups}
-              requestHref="#request-form"
-              shareUrl={shareUrl}
-            />
-
-            {factsRow.length ? (
-              <dl className="product-quick-facts">
-                {factsRow.map((fact) => (
-                  <div key={fact.label} className="product-quick-fact">
-                    <dt>{fact.label}</dt>
-                    <dd>{fact.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            ) : null}
-
-            <ul className="product-assurances">
-              <li>Every custom request is reviewed by a person before any payment.</li>
-              <li>
-                Questions about material or tolerance? Read the{" "}
-                <Link href="/design-guide">design guide</Link> or <Link href="/contact">ask first</Link>.
-              </li>
-            </ul>
           </div>
+
+          <h1 className="product-title">{product.name}</h1>
+
+          {product.short_description ? (
+            <p className="product-summary">{product.short_description}</p>
+          ) : null}
+
+          {/* No rating is rendered. `product_reviews` exists but holds no
+              rows and there is no review UI yet, so any star row here would
+              be decoration standing in for data that does not exist. */}
+
+          <ProductPurchasePanel
+            productId={product.id}
+            productName={product.name}
+            purchaseMode={purchaseMode}
+            startingPriceCents={product.starting_price_cents}
+            available={available}
+            inStock={inStock}
+            maxQuantity={maxQuantity}
+            groups={groups}
+            requestHref="#request-form"
+            shareUrl={shareUrl}
+          />
+
+          {factsRow.length ? (
+            <dl className="product-quick-facts">
+              {factsRow.map((fact) => (
+                <div key={fact.label} className="product-quick-fact">
+                  <dt>{fact.label}</dt>
+                  <dd>{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+
+          <ul className="product-assurances">
+            <li>Every custom request is reviewed by a person before any payment.</li>
+            <li>
+              Questions about material or tolerance? Read the{" "}
+              <Link href="/design-guide">design guide</Link> or <Link href="/contact">ask first</Link>.
+            </li>
+          </ul>
         </div>
       </div>
 

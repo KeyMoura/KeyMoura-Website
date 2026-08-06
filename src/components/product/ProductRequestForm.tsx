@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
+import QuantityField from "@/components/commerce/QuantityField";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { money, type CatalogProduct, type ProductOptionGroup } from "@/lib/commerceTypes";
 import { supabaseBrowser } from "@/lib/supabaseClient";
@@ -224,22 +225,23 @@ export default function ProductRequestForm({
 
         {step === 1 ? (
           <>
-            <label className="product-request-field">
-              Quantity
-              <input
-                required
-                className={`${input} mt-1`}
-                type="number"
-                min={1}
-                max={
-                  product.inventory_policy === "track" && !product.continue_selling_when_out_of_stock
-                    ? product.inventory_quantity
-                    : 1000
-                }
-                value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-              />
-            </label>
+            {/* `absoluteMax` is 1000 because that is what
+                `/api/orders/custom` enforces — a request is not a cart line and
+                is not bound by the 99-unit line cap. Stating the server's own
+                number is what stops the field accepting more than the route
+                will keep. */}
+            <QuantityField
+              label="Quantity"
+              value={quantity}
+              max={
+                product.inventory_policy === "track" && !product.continue_selling_when_out_of_stock
+                  ? product.inventory_quantity
+                  : null
+              }
+              absoluteMax={1000}
+              showMax={false}
+              onCommit={setQuantity}
+            />
 
             {groups.length ? (
               <div className="mt-5 space-y-4">

@@ -2303,20 +2303,33 @@
   .product-lightbox-counter { color: #fff; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
 
   /* ---- Purchase panel ---- */
-  @media (min-width: 1024px) {
-    /* Sticky only where the column is genuinely shorter than the gallery, and
-       bounded by the viewport so a tall panel can still be scrolled through
-       rather than having its foot cut off. `--km-header-height` is the one
-       definition of the bar's height, so a density change moves this too. */
-    .product-info-sticky {
-      position: sticky;
-      top: calc(var(--km-header-height, 3.75rem) + 1.5rem);
-      max-height: calc(100dvh - var(--km-header-height, 3.75rem) - 3rem);
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      scrollbar-width: thin;
-    }
-  }
+  /*
+    Ordinary page content. The page is the only thing that scrolls.
+
+    This column used to be `position: sticky` with
+    `max-height: calc(100dvh - …)` and `overflow-y: auto`, which gave the price,
+    quantity, Add to cart and Request a custom version their own scrollbar
+    inside the page's. Two nested scrollers is a trap on every input device: a
+    wheel over the panel moves one distance and a wheel two pixels to the left
+    moves another, a trackpad chains unpredictably between them, and on a touch
+    screen the page stops responding entirely while a finger is on the panel.
+    `overscroll-behavior: contain` made that deliberate — reaching the panel's
+    end stopped the page rather than handing the scroll back.
+
+    **Sticky was removed rather than repaired.** It could only have been kept if
+    the panel were reliably shorter than the viewport, and it is not: this
+    column carries the title, summary, badges, options, actions, quick facts and
+    every structured section. A sticky box taller than the viewport pins its top
+    and puts its own foot permanently out of reach — which is the failure the
+    `max-height` was papering over, and the reason a second scrollbar appeared
+    at all. Whitespace beside a long gallery is a smaller cost than a purchase
+    control that cannot be scrolled to.
+
+    `min-width: 0` stays: a grid child defaults to `min-width: auto`, so one
+    long unbroken product code would otherwise widen the column and push the
+    page sideways.
+  */
+  .product-info-column { min-width: 0; }
 
   .product-eyebrow-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .product-title {
@@ -2389,18 +2402,45 @@
     line-height: 1.5;
   }
 
-  .product-quantity { display: flex; align-items: center; gap: 0.75rem; }
-  .product-quantity-label { font-size: 0.875rem; font-weight: 600; }
-  .product-quantity-input {
-    width: 5rem;
-    min-height: 2.75rem;
+  /* ---- Quantity field (product page, cart page, cart drawer) ---- */
+  /* One control in three places. The stepper buttons replace the native
+     spinner arrows, which have no accessible name and are far under the 44px
+     target; `min-height: 2.75rem` on all three parts is what keeps them
+     tappable. */
+  .quantity-field { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+  .quantity-field-label { font-size: 0.875rem; font-weight: 600; }
+  .quantity-stepper {
+    display: inline-flex;
+    align-items: stretch;
     border-radius: 0.625rem;
     border: 1px solid var(--border);
     background: var(--panel);
-    padding-inline: 0.75rem;
-    font-variant-numeric: tabular-nums;
+    overflow: hidden;
   }
-  .product-quantity-max { font-size: 0.75rem; color: var(--muted); }
+  .quantity-step {
+    display: grid;
+    place-items: center;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    font-size: 1.125rem;
+    line-height: 1;
+    color: var(--text);
+  }
+  .quantity-step:hover:not(:disabled) { background: var(--km-surface-strong, rgb(255 255 255 / 0.06)); }
+  .quantity-step:disabled { opacity: 0.4; cursor: not-allowed; }
+  .quantity-input {
+    width: 3.5rem;
+    min-height: 2.75rem;
+    border-inline: 1px solid var(--border);
+    background: transparent;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .quantity-stepper.is-compact .quantity-step { min-height: 2.75rem; min-width: 2.5rem; }
+  .quantity-stepper.is-compact .quantity-input { width: 2.75rem; font-size: 0.875rem; }
+  .quantity-max { font-size: 0.75rem; color: var(--muted); }
+  .quantity-message { flex-basis: 100%; font-size: 0.75rem; color: #fcd34d; }
 
   .product-actions { display: grid; gap: 0.625rem; }
   @media (min-width: 480px) {

@@ -395,16 +395,37 @@ test("the sticky bar never covers a dialog or the header", () => {
   assert.ok(lightbox > drawer, `the fullscreen viewer (${lightbox}) must paint over the drawer (${drawer})`);
 });
 
-test("the sticky purchase panel cannot outgrow the viewport", () => {
-  const rule = css.match(/\.product-info-sticky \{([^}]*)\}/);
-  assert.ok(rule, "the sticky rule must exist");
-  assert.match(rule[1], /position: sticky/);
-  assert.match(rule[1], /max-height: calc\(100dvh/, "a tall panel must scroll rather than lose its foot");
-  assert.match(rule[1], /var\(--km-header-height/, "one definition of the header height");
+/**
+ * Re-pointed, not deleted.
+ *
+ * This test used to *require* `max-height: calc(100dvh …)` on the purchase
+ * column — it pinned the defect. The column is ordinary page content now, so
+ * the property that has to hold is the opposite one: no nested scroll region
+ * anywhere around the price, quantity and buy actions.
+ */
+test("the purchase column is in normal document flow, with no nested scroller", () => {
+  assert.doesNotMatch(css, /\.product-info-sticky/, "the sticky wrapper is gone from the stylesheet");
+  assert.doesNotMatch(code(page), /product-info-sticky/, "and from the page");
+
+  const rule = css.match(/\.product-info-column \{([^}]*)\}/);
+  assert.ok(rule, "globals.css must still define the column");
+  assert.doesNotMatch(rule[1], /overflow/, "no overflow: that is what produced the second scrollbar");
+  assert.doesNotMatch(rule[1], /max-height/, "no height bound: that is what forced the overflow");
+  assert.doesNotMatch(rule[1], /position: sticky/);
+
+  // The guard that matters most is the general one: nothing in the product
+  // page's own styles may reintroduce a bounded scroller around the purchase
+  // controls under any breakpoint.
+  for (const selector of ["product-info-column", "product-purchase", "product-actions", "product-options"]) {
+    for (const block of css.matchAll(new RegExp(`\\.${selector}[^{]*\\{([^}]*)\\}`, "g"))) {
+      assert.doesNotMatch(block[1], /overflow-y:\s*(auto|scroll)/, `.${selector} must not scroll independently`);
+      assert.doesNotMatch(block[1], /overscroll-behavior/, `.${selector} must not trap a scroll`);
+    }
+  }
 });
 
 test("hit targets meet 44px", () => {
-  for (const selector of ["product-option-choice", "product-quantity-input", "product-share", "product-sticky-action"]) {
+  for (const selector of ["product-option-choice", "quantity-input", "product-share", "product-sticky-action"]) {
     const rule = css.match(new RegExp(`\\.${selector} \\{([^}]*)\\}`));
     assert.ok(rule, `globals.css must define .${selector}`);
     assert.match(rule[1], /min-height: 2\.75rem/, `.${selector} must be at least 44px`);
