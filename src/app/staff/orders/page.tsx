@@ -125,7 +125,13 @@ function nextAction(order: OrderRow): string {
   return "View order";
 }
 
-const CHIP = "rounded-full border px-3 py-1.5 text-xs font-semibold transition";
+/*
+ * `min-h-11` is 44px — the touch target the staff drawer already uses. Measured
+ * at 375 the chips came out 30px tall, which is a comfortable click with a mouse
+ * and a miss with a thumb, and this queue strip is the primary navigation of the
+ * page on a phone.
+ */
+const CHIP = "inline-flex min-h-11 items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition";
 
 function StaffOrdersContent() {
   const supabase = useMemo(() => supabaseBrowser(), []);
