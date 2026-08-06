@@ -635,12 +635,67 @@
     margin-bottom: 0.5rem;
   }
 
-  .staff-nav-link {
+  .staff-nav-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0.25rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.75rem;
+  }
+  .staff-nav-brand {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--brand-accent);
+  }
+  .staff-nav-brand-sub { margin-top: 0.125rem; font-size: 0.75rem; color: var(--muted); }
+  .staff-nav-compact-toggle {
+    display: inline-flex;
+    height: 2rem;
+    width: 2rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .staff-nav-compact-toggle:hover { background: var(--panel-strong); color: var(--text); }
+
+  .staff-nav-groups { display: grid; gap: 1rem; }
+  .staff-nav-group { display: grid; gap: 0.25rem; }
+  .staff-nav-group-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .staff-nav-group-toggle:hover { color: var(--text); }
+  .staff-nav-chevron { transition: transform 140ms ease-out; }
+  .staff-nav-chevron.is-collapsed { transform: rotate(-90deg); }
+  .staff-nav-list { display: grid; gap: 0.125rem; }
+
+  .staff-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    /* 40px, so a sidebar row is a comfortable pointer target without making a
+       six-group menu taller than the viewport. */
+    min-height: 2.5rem;
     border-radius: 0.5rem;
     padding: 0.5rem 0.625rem;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--text);
     border: 1px solid transparent;
   }
@@ -654,6 +709,169 @@
     background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
     border-color: color-mix(in srgb, var(--brand-primary) 30%, transparent);
     color: var(--brand-primary);
+  }
+  .staff-nav-link-icon { flex: none; opacity: 0.75; }
+  .staff-nav-link[aria-current="page"] .staff-nav-link-icon { opacity: 1; }
+  /* The label may shrink and ellipsise; the icon never does, so a long section
+     name cannot push the rail wider than its column and cause a horizontal
+     scrollbar on the whole page. */
+  .staff-nav-link-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Compact rail: icons only, labels available to screen readers and as titles. */
+  .staff-nav[data-compact="true"] .staff-nav-link { justify-content: center; padding-inline: 0.5rem; }
+  .staff-nav[data-compact="true"] .staff-nav-groups { gap: 0.75rem; }
+  .staff-nav[data-compact="true"] .staff-nav-head { justify-content: center; }
+  .staff-nav[data-compact="true"] .staff-nav-group + .staff-nav-group {
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    padding-top: 0.75rem;
+  }
+
+  .staff-nav-in-drawer { border: 0; background: transparent; padding: 0; }
+
+  /* ---- Staff breadcrumbs ---- */
+  .staff-breadcrumbs { margin-bottom: 1.25rem; font-size: 0.75rem; color: var(--muted); }
+  .staff-breadcrumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+  .staff-breadcrumbs li { display: flex; align-items: center; gap: 0.375rem; }
+  .staff-breadcrumb-separator { opacity: 0.5; }
+  .staff-breadcrumb-link { transition: color 120ms ease-out; }
+  .staff-breadcrumb-link:hover { color: var(--brand-accent); text-decoration: underline; }
+  .staff-breadcrumb-group { color: var(--muted); }
+  .staff-breadcrumb-current { color: var(--text); font-weight: 500; }
+
+  /* ---- Staff mobile drawer ---- */
+  .staff-drawer-trigger {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    text-align: left;
+  }
+  .staff-drawer-trigger:hover { background: var(--panel-strong); }
+  .staff-drawer-trigger-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .staff-drawer-trigger-here {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .staff-drawer-root { position: fixed; inset: 0; z-index: 70; }
+  .staff-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / 0.6);
+    backdrop-filter: blur(2px);
+    animation: nav-fade-in 150ms ease-out;
+  }
+  @keyframes staff-drawer-slide-in { from { transform: translateX(-100%) } to { transform: translateX(0) } }
+  .staff-drawer-panel {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    width: min(20rem, 92vw);
+    max-height: 100dvh;
+    background: var(--panel);
+    color: var(--text);
+    border-right: 1px solid var(--border);
+    box-shadow: 20px 0 60px rgb(0 0 0 / 0.5);
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: staff-drawer-slide-in 200ms ease-out;
+  }
+  .staff-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .staff-drawer-title {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--brand-accent);
+  }
+  .staff-drawer-close {
+    display: inline-flex;
+    height: 2.75rem;
+    width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+  }
+  .staff-drawer-close:hover { background: var(--panel-strong); }
+  .staff-drawer-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.5rem 0.75rem 1.5rem;
+  }
+  .staff-drawer-group { display: grid; gap: 0.125rem; padding-block: 0.5rem; }
+  .staff-drawer-group + .staff-drawer-group {
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    margin-top: 0.5rem;
+  }
+  .staff-drawer-heading {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  /* 44px minimum target on every row. */
+  .staff-drawer-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.75rem;
+    transition: background-color 120ms ease-out, color 120ms ease-out;
+  }
+  .staff-drawer-item:hover,
+  .staff-drawer-item:focus-visible { background: var(--panel-strong); }
+  .staff-drawer-item[aria-current="page"] {
+    background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+    color: var(--brand-primary);
+  }
+  .staff-drawer-item-icon { flex: none; margin-top: 0.1875rem; opacity: 0.75; }
+  .staff-drawer-item-label { display: block; font-size: 0.9375rem; font-weight: 500; }
+  .staff-drawer-item-description {
+    display: block;
+    margin-top: 0.125rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .staff-drawer-panel,
+    .staff-drawer-backdrop,
+    .staff-nav-chevron { animation: none; transition: none; }
   }
 
   /* Public navbar is intentionally independent from the page/component theme. */

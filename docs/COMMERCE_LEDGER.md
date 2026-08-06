@@ -2607,3 +2607,392 @@ but it makes configuring a method a **launch step, not a follow-up**.
 - **A real reservation through a real checkout.** Reaching one needs an
   authenticated customer and a configured fulfillment method. The reservation
   *mechanics* were exercised against the live schema with synthetic carts.
+
+---
+
+# Pass 9 — staff command centre, navigation, fulfillment UI, documents, reconciliation
+
+Branch `staff-command-center-fulfillment-ui-20260805`, from `3aa5684`.
+
+## Verified starting state — 2026-08-06
+
+| Check | Result |
+|-------|--------|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `3aa5684` |
+| Baseline present | `3aa5684` is HEAD, the pass-8 verification commit |
+| Production health | `/` 200 (0.36 s), `/catalog` 200, `GET /api/cart` 200, `/staff` 307 → login |
+| Migration ledger | **exact** — 40 repo files, 40 rows, versions and names identical |
+
+## Phase 1 — the information architecture audit
+
+Read from the routes themselves, not from the brief's assumed list. Three of the
+routes the brief named do not exist (`/staff/dashboard`, `/staff/updates`,
+`/staff/analytics`); the real ones are `/staff`, `/staff/info/updates` and
+`/staff/info/analytics`. Two are redirects (`/staff/moderation` →
+`/staff/moderation/reports`, `/staff/info/users` → `/staff/security/users`).
+
+**What was actually wrong.**
+
+1. **Two route lists, already drifted.** `StaffNav` held one and
+   `StaffContextBar` held a second, overlapping one. The context bar knew about
+   ten routes; the sidebar knew about twenty; neither knew about
+   `/staff/settings/commerce`, and the settings index was the only surface that
+   did. That page was therefore reachable from exactly one card or by typing the
+   URL — the defect the brief opens with, and a direct consequence of having
+   more than one list.
+2. **Active state needed hand-written exceptions.** `/staff`, `/staff/settings`
+   and `/staff/security` each had a bespoke rule, and `/staff/catalog/discounts`
+   still lit *Products* as well as itself.
+3. **The mobile menu was a second render of the desktop sidebar** inside a
+   `<details>`. Every link existed twice in the accessibility tree at all widths,
+   the disclosure was announced as a disclosure rather than a navigation, and on
+   a phone it pushed the page content a screen down.
+4. **`/staff` answered the wrong question.** A revenue chart and a workshop bar
+   list — "how did the month go", which is Analytics. Cancellations, returns,
+   fulfillment state and stock holds were absent from it despite all four being
+   live systems since pass 7.
+5. **The pass-8 fulfillment API had no UI at all**, exactly as pass 8 recorded.
+
+### The final information architecture
+
+Six groups. Every entry is a route that exists; there are no placeholders and no
+disabled "coming later" rows.
+
+| Group | Destinations |
+|-------|--------------|
+| Overview | Dashboard `/staff`, To-do board `/staff/info/todo` |
+| Commerce | Orders, **Fulfillment** (new), Production |
+| Catalog | Products, Discount codes, Inventory |
+| Customers & content | Customers & users, Reports & moderation, Community, Shops, Pending submissions, Content updates |
+| Business | Analytics, **Reconciliation** (new), Audit log |
+| Settings | Settings overview, **Shipping, pickup & policy**, Appearance, Email & notifications, Security controls, Roles & permissions, Verified perks, Recycle bin |
+
+**Deliberately absent**, because the routes do not exist and a menu entry that
+goes nowhere costs a staff member the same click every day: Notifications,
+Payments, Cancellations, Returns and Refunds as standalone pages (they live in
+the order lifecycle panel), Categories (API only), Reviews (no UI), Support
+tickets, Reports, Exports, Customers-as-commerce-records.
+
+## Phase 2 — navigation
+
+`src/lib/staffNavigation.ts` is the one definition, read by the sidebar, the
+drawer, the breadcrumbs and the settings index. Pure and dependency-free — no
+React, no `next/*` — so the routing rules are unit-testable rather than only
+observable by rendering a page. A test asserts no staff surface hard-codes a
+`/staff` href any more.
+
+**Longest-prefix matching replaces the exception list.** One rule: the entry
+whose href is the longest prefix of the path wins. `/staff/catalog/discounts`
+lights Discount codes, `/staff/settings/commerce` lights itself rather than
+Settings, `/staff` lights only the dashboard, and `/staff/orders/<id>` falls back
+to Orders. Matching is `=== href || startsWith(href + "/")`, so
+`/staff/ordersomething` is not a sibling match. A test asserts exactly one entry
+is ever active across ten paths.
+
+**Permission filtering is derived.** `STAFF_AREA_PERMISSIONS` is computed from
+the menu rather than hand-maintained, so a new section cannot ship with its
+holders locked out of the shell. A viewer holding no staff permission gets **no
+sidebar at all** rather than one row leading to a page that refuses them.
+
+**The drawer is a real dialog.** Portalled onto `document.body` — the header
+carries `transition-transform`, and a transformed ancestor becomes the containing
+block for a `position: fixed` descendant (CSS Transforms L1 §3), which is what
+rendered the customer drawer 60px tall in pass 6. Focus trap, Escape, focus
+restoration, body-scroll lock at the offset, `100dvh` bound, 44px rows,
+safe-area padding.
+
+**Open state is derived, not set from an effect.** The drawer stores *the path it
+was opened on*; navigating closes it by derivation. That removes a render after
+every navigation and also handles the back button, which the per-link `onClick`
+alone did not.
+
+**Sidebar preferences go through `useSyncExternalStore`**
+(`useStoredPreference.ts`). Reading `localStorage` during render is a hydration
+mismatch and this project already carries one; reading it in an effect and
+calling `setState` is a cascading render on every mount. The hook serves the
+default for SSR and hydration and switches afterwards, and subscribes to
+`storage` so two tabs do not disagree.
+
+Breadcrumbs are derived from the same tree. The group crumb is **text, not a
+link** — a group is an organisational heading, and the old context bar linked it
+to the first page inside it, which sent a reader somewhere they had not asked to
+go. An unlabelled leaf gets no crumb rather than a guessed one.
+
+## Phase 3 — the dashboard
+
+Reads in the order a shop works: configuration blockers, then open decisions,
+then what has to go out, then production, money and stock.
+
+**Configuration blockers come first because they are outages, not metrics.**
+Pass 8 ships shipping and pickup both disabled and refuses checkout for a
+physical product until one is on. That refusal is correct, but with nothing
+surfacing it the only symptom is customers failing to check out. The dashboard
+now says so, with a link to the settings page.
+
+**The attention queue and the fulfillment counts come from
+`operationsQueues.ts`**, which the fulfillment queue also reads — so a card
+reading 3 opening a list of 5 is not representable. Every order lands in exactly
+one bucket, asserted exhaustively over the fulfillment state enum, so the counts
+add up.
+
+Two ordering decisions in the bucketing worth naming: payment is checked *after*
+the departed states, so a shipped order that was later partly refunded does not
+reappear on the packing bench; and a closed order that had already shipped keeps
+its real delivery state, so a parcel in the post does not vanish from the queue
+that would have confirmed it arrived.
+
+### A refused query is never rendered as a zero
+
+Found by driving the page rather than by reading it. The first cut surfaced the
+error in a banner *and* rendered "0 To prepare", "Nothing is waiting on a
+decision", "$0 revenue" and "Stock levels look healthy" underneath it. That is
+the pass-5a mistake in a new place — a staff member scanning the page reads the
+zeros, not the sentence above them.
+
+Fixed on both surfaces, and pinned by tests:
+
+- A refused query clears the rows rather than keeping `data ?? []`.
+- Nothing is derived from a failed load: `buildDashboardSummary([])` will happily
+  report $0 and zero overdue, which is a confident wrong answer rather than a
+  missing one.
+- Each dependent panel renders the failure **in the panel** — the attention list,
+  the fulfillment cards, the revenue panel and the stock panel — and the count
+  badge disappears rather than reading 0.
+- The fulfillment queue likewise withholds its bucket counts, its summary line
+  and its "Nothing is waiting to go out" empty state when the load failed.
+
+## Phase 4 — fulfillment, driven by the state machine
+
+The staff order page posted `shipment_action` to `PATCH /api/staff/orders/[id]`,
+which set `shipped_at` and moved `orders.status` but **never wrote
+`orders.fulfillment_status`** — so the column the cancellation and return
+eligibility rules read stayed at `unfulfilled` forever and a shipped order still
+looked cancellable. `OrderFulfillmentPanel` replaces it and drives the pass-8
+endpoint.
+
+- **The consequence is shown before it is chosen.** `GET` returns the legal
+  transitions *and the email each would send*, from the same table the send
+  reads, so the preview and the send cannot disagree.
+- **The staleness guard is honoured.** The state the page rendered from goes back
+  as `expectedStatus`; a mismatch is refused with 409 and a sentence.
+- **Nothing client-side decides what is legal.** The buttons are what the server
+  said was possible; `blockedReason` comes from the route, so the button the page
+  disables and the transition the route refuses are the same set.
+- Always mounted, rather than gated on `status === "ready"` — a direct purchase
+  never passes through `ready`, which is why direct purchases previously had no
+  fulfillment surface at all.
+
+**Two guards moved with the control rather than being left behind with it.**
+
+1. `RELEASES_GOODS` — shipped, ready-for-pickup, picked-up and delivered are
+   refused while a balance is outstanding, server-side. The legacy action had
+   this rule and dropping it silently would let stock leave unpaid. `processing`
+   is deliberately excluded: packing early is normal, only the handover is
+   consequential.
+2. `COMPLETES_ORDER` — reaching delivered or picked-up completes a `ready` order.
+   `transition_order_fulfillment` writes only `fulfillment_status`, so without
+   this an order could be delivered and still read "Ready" to its customer
+   forever. Conditional on both sides (`.eq("status", "ready")`), so a concurrent
+   change matches zero rows.
+
+**Customer side.** The old block rendered only for pickup orders or once a
+tracking number existed, and described the state by inspecting timestamps — so an
+order being packed showed nothing, and every direct purchase had no delivery
+section at all. `OrderFulfillmentStatus` reads `fulfillment_status` and renders
+from `FULFILLMENT_LABELS`, the same table the emails are titled from. It renders
+no second progress stepper: the page already has one, and two disagreeing about
+which step you are on is worse than one. A test asserts `fulfillment_notes` is
+never referenced there — only `customer_shipment_note` reaches a customer.
+
+## Phase 5 — product delivery fields
+
+`checkoutFulfillment.ts` reads `requires_shipping`, `pickup_eligible`,
+`fulfillment_required` and the package dimensions to decide which delivery
+methods a cart may offer and what a parcel weighs. Pass 8 shipped all twelve
+columns with **no editing surface**, so every product sat on the column defaults.
+
+Two hazards the editor states rather than leaving to be discovered: turning off
+"Can be collected" removes local pickup from every *other* item in the same cart,
+and a product that needs fulfilling but can neither ship nor be collected refuses
+at checkout — that pairing is called out where it is set.
+
+**Two ways this could have silently corrupted live products, both closed.**
+`Boolean(undefined)` is `false`, so saving with `Boolean(draft.requires_shipping)`
+would have marked a product unshippable on the first save of an unrelated field;
+the payload uses `?? true`, matching the column defaults. And `Number("")` is
+`0`, so a cleared package weight would have been priced as a weightless parcel
+instead of falling back to the configured default; blank stores `null`.
+
+## Phase 6 — printable documents
+
+Packing slip, pickup slip, invoice, refund record. Server-rendered, because
+Ctrl+P on a half-hydrated page is a blank sheet.
+
+**Three of the four physically reach a customer.** Whether internal notes and
+cost detail may appear is a property of the document (`reachesCustomer` in
+`orderDocuments.ts`) that the renderer reads, not a habit each template has to
+remember. Prices never print on a sheet that travels with the goods — a packing
+slip with prices is a receipt in the box, which is what a gift order must not
+contain.
+
+**The invoice never recomputes the total the customer was charged.**
+`agreed_price_cents` is printed as-is and the components are shown as a breakdown
+of it where one was recorded; a quoted custom order prints one line, which is
+honest because nothing else was ever stored.
+
+The `[doc]` segment is validated against the known set, so a path segment cannot
+reach the loader.
+
+## Phase 7 — reconciliation
+
+Six checks over money, stock and delivery: payment totals against payment rows,
+refund totals against settled legs, holds that lapsed or outlived their order's
+payment, stock against its own ledger, alerts against the stock they describe,
+and fulfillment that stalled or shipped untrackable. Each states the question it
+asks, so a clean pass means something, and every finding names the fix and links
+to the record.
+
+Pending refund legs are excluded from the settled sum on purpose — pass 7 only
+grows `amount_refunded_cents` at settlement, so counting them would report every
+in-flight refund as a discrepancy. A leg pending over a day is reported
+separately, because it is still holding down what the order can refund.
+
+**Read-only, with no POST.** The refund settlement and inventory commit paths are
+the only writers of these numbers and both are idempotent and guarded; a repair
+button here would be a third writer with neither property, and the failure mode
+of getting it wrong is moving money. A test asserts the route contains no
+`insert`, `update`, `delete` or `rpc`.
+
+The loads are bounded and the bound is reported, so a truncated pass is not
+presented as a clean bill of health.
+
+## A defect the tests caught before it shipped
+
+The reconciliation route was written against a table called `low_stock_alerts`.
+**No such table exists** — pass 8 created `inventory_alerts`, with a `level`
+column rather than `severity`. Every request would have failed with `42P01`.
+
+It was caught by `tests/installer.test.ts`, which derives the set of application
+relations from every `.from("…")` in `src/` and requires each to be created by
+some SQL in the repository. That test was written for the installer baseline and
+had nothing to do with this work; it is the generalizable kind, and it earned its
+keep here.
+
+## Files changed
+
+New:
+
+- `src/lib/staffNavigation.ts`, `src/lib/hooks/useStoredPreference.ts`
+- `src/lib/staff/operationsQueues.ts`, `orderDocuments.ts`, `reconciliation.ts`
+- `src/components/staff/StaffMobileNav.tsx`, `StaffBreadcrumbs.tsx`,
+  `StaffNavIcon.tsx`, `OrderFulfillmentPanel.tsx`, `ProductShippingEditor.tsx`
+- `src/components/commerce/OrderFulfillmentStatus.tsx`
+- `src/app/staff/fulfillment/page.tsx`, `src/app/staff/reconciliation/page.tsx`
+- `src/app/staff/orders/[id]/print/[doc]/page.tsx`
+- `src/app/api/staff/reconciliation/route.ts`
+- `tests/staff-command-center.test.ts`, `tests/staff-reconciliation.test.ts`
+
+Renamed: `src/lib/production/access.ts` → `src/lib/staff/serverAccess.ts`.
+Nothing about it was production-specific, and a second copy under a second name
+is how two staff surfaces come to disagree about who a caller is.
+
+Deleted: `src/components/staff/StaffContextBar.tsx`.
+
+Modified: `StaffNav.tsx` (rewritten), `src/app/staff/layout.tsx`,
+`src/app/staff/page.tsx` (rewritten), `src/app/staff/settings/page.tsx`,
+`src/app/staff/catalog/page.tsx`, `src/app/staff/orders/[id]/page.tsx`,
+`src/app/orders/[id]/page.tsx`,
+`src/app/api/staff/orders/[id]/fulfillment/route.ts`,
+`src/lib/commerceTypes.ts`, `src/app/globals.css`, and four existing suites.
+
+**No migration. No schema change. No new dependency.**
+
+## Validation
+
+- **958 tests pass, 0 fail** (847 at `3aa5684`; 111 added across two new suites,
+  plus a rewritten `staff-navigation` suite).
+- Typecheck clean. Production build clean from a cleared `.next`, exit 0.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings). Every new
+  and changed file lints **completely clean** under a focused run.
+- All new routes present in the build output: `/staff/fulfillment` and
+  `/staff/reconciliation` static, `/staff/orders/[id]/print/[doc]`,
+  `/api/staff/reconciliation` and `/api/staff/orders/[id]/fulfillment` dynamic.
+
+One build failure found and fixed: `/staff/fulfillment` reads `useSearchParams`
+for its URL filters, which needs a Suspense boundary or the route opts into
+client-side rendering and prerendering refuses it. Wrapped the same way
+`/staff/production` already does, since it puts its filters in the URL for the
+same reason.
+
+### Three existing suites re-pointed, not weakened
+
+Each asserted a property that moved. All three were re-pointed at where it now
+lives and made **stricter**:
+
+- `staff-navigation` — was string-matching group labels out of the sidebar's JSX.
+  Now asserts the rules against the module: every href resolves to a page that
+  exists, no entry is listed twice, exactly one entry is active per path, and the
+  menu never offers a page the viewer would be refused.
+- `order-fulfillment` — pinned two hard-coded button labels that *were* the whole
+  control. Now asserts the panel is mounted, drives the real endpoint, and that
+  the customer's section reads the state field.
+- `production-surfaces` — read the navigation out of the component. Now also
+  proves the entry is genuinely filtered for a viewer holding neither production
+  permission, which the string match could not have caught.
+
+### Driven in a real browser
+
+Dev server, staff permissions seeded into the React Query cache. Local only:
+production middleware 307s `/staff/*` before any HTML is served.
+
+| Check | Result |
+|-------|--------|
+| Sidebar | **Passes.** Six groups, 25 links, `/staff` marked current, `/staff/settings/commerce` present. |
+| Old chrome gone | **Passes.** Zero context bars, zero "Staff menu" disclosures, exactly one staff nav in the tree. |
+| Active state | **Passes.** `/staff/settings` lights Settings overview; `/staff/settings/commerce` lights itself; one active link on every page tested. |
+| Breadcrumbs | **Passes.** "Staff / Settings / Shipping, pickup & policy", "Staff / Commerce / Orders / Order", "Staff / Catalog / Inventory". |
+| Mobile drawer at 375 | **Passes.** `role="dialog"`, `aria-modal`, portalled to `body`, panel **320×812** (not the 60px pass-6 failure), focus to Close, body locked, 25 links. |
+| Escape | **Passes.** Closes, portal removed, focus restored to the trigger, body and scroll restored. |
+| Permission filtering | **Passes.** Limited staff (`orders.view` + `fulfillment.view`) sees 3 groups and 4 links and no refusals; an unauthorized viewer and a signed-out viewer get **no sidebar and no drawer trigger**. |
+| Dashboard honesty | **Passes.** With orders refused: no metric cards, no bucket counts, no attention badge, four explicit failure notices. |
+| Fulfillment queue honesty | **Passes.** No bucket cards, no zeros on screen, no "Nothing is waiting to go out". |
+| Reconciliation | **Passes.** Renders, correct breadcrumb and active link, re-run control, **zero forms**. |
+| Printable document | **Passes.** Unauthenticated request renders the refusal and leaks **none** of the document body. |
+| Print CSS live in the CSSOM | **Passes.** `header, footer, nav, .skip-link, .staff-nav, .print-hidden { display: none !important }`. Breadcrumbs are a `nav`; the drawer trigger carries `print-hidden`. |
+| New APIs refuse anonymous | **Passes.** `/api/staff/reconciliation`, both methods on `…/fulfillment`, `/api/staff/commerce/settings` and `/api/staff/inventory` all **403**. |
+| Horizontal overflow | **None** at 375 or desktop. |
+| Console | Only the **pre-existing** `data-motion` hydration mismatch on the root `<html>` — confirmed to reproduce on `/` with no staff nav present — plus the local 503 from the deliberately fake service-role key and the expected 401/403 refusals. |
+
+### What could not be verified, and why
+
+- **A signed-in staff or customer session.** Unchanged limitation from passes 3
+  to 8: signing in means handling a password. The **populated** fulfillment
+  panel, a real transition, a populated queue and a populated printable were
+  therefore not driven. Their rules are covered by the new tests; the rendering
+  of populated states is not.
+- **The Vercel preview.** The build **succeeded**, which is what is verifiable.
+  Every route on the preview deployment answers **302** to the Vercel SSO gate,
+  so the running preview cannot be driven from here.
+
+## Noticed, not acted on
+
+`/staff/orders` — the pre-existing order cockpit, untouched by this pass — has
+the same "zeros beside a failure" behaviour the dashboard and the fulfillment
+queue were fixed for: its view tabs read "Needs action (0)" when the orders query
+was refused. It is a one-line change of the same shape, but it is a different
+page from the ones this pass rebuilt and was left alone rather than widened into.
+
+## Owner checks worth five minutes
+
+1. Sign in as staff and open `/staff`. It should show real counts, and the
+   delivery-configuration warning should be **absent** if a fulfillment method is
+   configured and present if not.
+2. Open an order and drive one fulfillment transition. Confirm the email preview
+   on the button matches what the customer receives, and that marking delivered
+   moves the order to Completed.
+3. Print a packing slip and confirm the navigation and sidebar are absent on
+   paper and that no internal note appears on it.
+4. Open `/staff/reconciliation` and confirm every check reports clean against
+   real data.

@@ -22,13 +22,42 @@ test("staff fulfillment actions validate tracking and send idempotent emails", (
   assert.match(route, /update\.completed_at/);
 });
 
+/**
+ * Re-pointed, not weakened.
+ *
+ * The staff fulfillment form and the customer's tracking button moved out of
+ * the two page files into `OrderFulfillmentPanel` and `OrderFulfillmentStatus`
+ * during the staff-command-center pass. The properties the old assertions cared
+ * about — that staff can move fulfillment on, and that a customer can follow a
+ * parcel — are asserted where they now live, and each is now stricter than the
+ * hard-coded button label it replaces.
+ *
+ * The two hard-coded labels were also the *whole* control: they were the only
+ * two fulfillment actions there were. The panel derives its buttons from the
+ * transitions the server returns, so asserting a label would now pin the UI to
+ * one state's wording rather than to the behaviour.
+ */
 test("staff and customer order pages expose the fulfillment workflow", () => {
   const staff = read("src/app/staff/orders/[id]/page.tsx");
   const customer = read("src/app/orders/[id]/page.tsx");
+  const panel = read("src/components/staff/OrderFulfillmentPanel.tsx");
+  const status = read("src/components/commerce/OrderFulfillmentStatus.tsx");
+
   assert.match(staff, /Activity timeline/);
-  assert.match(staff, /Confirm shipment & notify customer/);
-  assert.match(staff, /Confirm delivery & complete order/);
-  assert.match(customer, /Track shipment/);
+
+  // Staff: the control is mounted, and it drives the state machine rather than
+  // the two hard-coded actions it replaced.
+  assert.match(staff, /<OrderFulfillmentPanel/);
+  assert.match(panel, /\/api\/staff\/orders\/\$\{orderId\}\/fulfillment/);
+  assert.match(panel, /action: "transition"/);
+  assert.match(panel, /data\.transitions\.map/);
+
+  // Customer: a parcel is followable, and the section is driven by the state
+  // field rather than by whether a tracking number happens to exist.
+  assert.match(customer, /<OrderFulfillmentStatus/);
+  assert.match(status, /Track your parcel/);
+  assert.match(status, /order\.tracking_url/);
+  assert.match(status, /order\.fulfillment_status/);
 });
 
 test("staff and customer activity timelines show each recorded payment", () => {

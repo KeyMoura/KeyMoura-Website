@@ -31,7 +31,11 @@ test("customer hub exposes actions, activity, fulfillment, files, and chat", () 
   assert.match(ordersPage, /Start a new request/);
   assert.match(orderDetailPage, /What happens next/);
   assert.match(orderDetailPage, /RequestSpecifications/);
-  assert.match(orderDetailPage, /Track shipment/);
+  // The tracking control moved into `OrderFulfillmentStatus`, which renders for
+  // every state rather than only once a tracking number exists. Asserting the
+  // mount here and the button in its own suite keeps this test about the hub's
+  // composition, which is what it is for.
+  assert.match(orderDetailPage, /<OrderFulfillmentStatus/);
   assert.match(orderDetailPage, /Order chat/);
   assert.match(orderDetailPage, /Activity/);
 });

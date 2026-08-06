@@ -1,12 +1,22 @@
 import type { ReactNode } from "react";
 
 import { StaffNav } from "@/components/staff/StaffNav";
-import { StaffContextBar } from "@/components/staff/StaffContextBar";
+import { StaffMobileNav } from "@/components/staff/StaffMobileNav";
+import { StaffBreadcrumbs } from "@/components/staff/StaffBreadcrumbs";
 
 /**
- * Shared staff layout.
+ * The staff shell.
  *
- * On mobile, the staff navigation is collapsible to match the main site UX.
+ * One navigation definition drives three surfaces: the desktop sidebar, the
+ * mobile drawer and the breadcrumbs. Previously the sidebar was rendered twice
+ * — once in the rail and once again inside a `<details>` for small screens —
+ * which meant every link existed twice in the accessibility tree at all widths,
+ * and the `<details>` copy was announced as a disclosure rather than a
+ * navigation. The two are now separate components with separate semantics, and
+ * each is hidden at the width where the other is correct.
+ *
+ * `.staff-nav` is already in the print stylesheet's blanket hide rule; the
+ * drawer trigger carries `print-hidden` for the same reason.
  */
 export default function StaffLayout({ children }: { children: ReactNode }) {
   return (
@@ -17,17 +27,11 @@ export default function StaffLayout({ children }: { children: ReactNode }) {
         </div>
 
         <div className="min-w-0">
-          <details className="ui-card mb-4 lg:hidden">
-            <summary className="flex list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--text)]">
-              <span>Staff menu</span>
-              <span className="text-xs text-[var(--muted)]">Tap to open</span>
-            </summary>
-            <div className="mt-3">
-              <StaffNav />
-            </div>
-          </details>
+          <div className="print-hidden mb-4 lg:hidden">
+            <StaffMobileNav />
+          </div>
 
-          <StaffContextBar />
+          <StaffBreadcrumbs />
           {children}
         </div>
       </div>

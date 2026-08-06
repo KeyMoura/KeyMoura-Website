@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { PERMISSIONS, PERMISSION_META } from "../src/lib/permissions.ts";
+import { visibleStaffHrefs } from "../src/lib/staffNavigation.ts";
 import {
   PRODUCTION_FILE_KINDS,
   PRODUCTION_STATUSES,
@@ -29,7 +30,9 @@ const filesRoute = read("src/app/api/staff/production/jobs/[id]/files/route.ts")
 const summaryRoute = read("src/app/api/staff/production/summary/route.ts");
 const printPage = read("src/app/staff/production/[id]/print/page.tsx");
 const jobPage = read("src/app/staff/production/[id]/page.tsx");
-const staffNav = read("src/components/staff/StaffNav.tsx");
+// The navigation moved out of the component and into a pure module in the
+// staff-command-center pass, so this reads the definition rather than the JSX.
+const staffNav = read("src/lib/staffNavigation.ts");
 const dashboardPanel = read("src/components/staff/production/ProductionDashboardPanel.tsx");
 const jobForm = read("src/components/staff/production/JobForm.tsx");
 const globals = read("src/app/globals.css");
@@ -292,6 +295,12 @@ test("free-text note bodies are not copied into audit metadata", () => {
 test("production appears in the staff navigation behind its permission", () => {
   assert.match(staffNav, /href: "\/staff\/production"/);
   assert.match(staffNav, /anyOf: \["production\.view", "production\.manage"\]/);
+  // Stronger than the string match: the entry is actually filtered out for a
+  // staff member who holds neither permission, and shown to one who holds
+  // either. The old assertion could not have caught a broken filter.
+  assert.ok(visibleStaffHrefs(new Set(["production.view"])).includes("/staff/production"));
+  assert.ok(visibleStaffHrefs(new Set(["production.manage"])).includes("/staff/production"));
+  assert.ok(!visibleStaffHrefs(new Set(["orders.view"])).includes("/staff/production"));
 });
 
 test("every dashboard card links to a queue filter the API understands", () => {

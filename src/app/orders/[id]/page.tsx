@@ -9,6 +9,7 @@ import { moneyFromCents, orderLabel, orderNeedsCustomerAction, orderNextStep } f
 import { checkoutAmountCents } from "@/lib/paymentMath";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { OrderLifecycleActions } from "@/components/commerce/OrderLifecycleActions";
+import { OrderFulfillmentStatus } from "@/components/commerce/OrderFulfillmentStatus";
 import { Badge, EmptyState, Notice, cx } from "@/components/ui/DesignSystem";
 
 const CUSTOMER_STAGES = ["Request", "Quote & payment", "Production", "Review", "Fulfillment", "Complete"] as const;
@@ -42,10 +43,17 @@ type Order = {
   target_date: string | null;
   created_at: string;
   fulfillment_method: "shipping" | "pickup";
+  fulfillment_status: string | null;
   shipping_address: Record<string,string> | null;
+  pickup_location_snapshot: Record<string, unknown> | null;
+  shipping_method_snapshot: Record<string, unknown> | null;
+  shipping_cents: number | null;
+  customer_shipment_note: string | null;
   shipping_carrier: string | null;
   tracking_number: string | null;
   tracking_url: string | null;
+  ready_at: string | null;
+  picked_up_at: string | null;
   shipped_at: string | null;
   delivered_at: string | null;
   final_review_note: string | null;
@@ -309,7 +317,13 @@ export default function OrderDetailPage() {
         ) : null}
       </section>
       </details>
-      {(order.fulfillment_method === "pickup" || order.tracking_number || order.shipped_at) ? <section className="mt-6 rounded-2xl border border-zinc-800 bg-black/30 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">Fulfillment</h2><p className="mt-1 text-sm text-brand-textMuted">{order.delivered_at ? order.fulfillment_method === "pickup" ? "Pickup complete" : "Delivered" : order.shipped_at ? order.fulfillment_method === "pickup" ? "Ready for pickup" : "Shipped" : order.fulfillment_method === "pickup" ? "Customer pickup" : "Shipping details"}</p></div>{order.tracking_url ? <a className="ui-btn ui-btn-primary" href={order.tracking_url} target="_blank" rel="noreferrer">Track shipment</a> : null}</div>{order.tracking_number ? <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-brand-textMuted">Carrier</dt><dd>{order.shipping_carrier || "Carrier"}</dd></div><div><dt className="text-brand-textMuted">Tracking number</dt><dd className="break-all">{order.tracking_number}</dd></div></dl> : null}</section> : null}
+      {/*
+        Delivery, driven by `fulfillment_status` rather than by inspecting
+        timestamps. The block this replaces rendered only for pickup orders or
+        once a tracking number existed, so an order being packed showed nothing
+        and every direct purchase had no delivery section at all.
+      */}
+      <OrderFulfillmentStatus order={order} />
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1.4fr_.8fr]">
       <section id="order-conversation" className="ui-card scroll-mt-24">
         <h2 className="text-xl font-semibold">Order chat</h2>

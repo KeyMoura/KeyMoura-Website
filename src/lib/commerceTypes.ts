@@ -96,6 +96,32 @@ export type CatalogProduct = {
   package_dimensions_text?: string | null;
   weight_grams?: number | null;
   detail_content?: unknown;
+
+  /**
+   * Delivery and packaging, added by `20260805020000`.
+   *
+   * These already drive checkout — `checkoutFulfillment.ts` reads every one of
+   * them to decide which delivery methods a cart may offer and what a parcel
+   * weighs — and until this pass they had no editing surface at all, so every
+   * product silently sat on the column defaults.
+   *
+   * All optional here, and every reader defaults the same way the database
+   * does (`requires_shipping`, `pickup_eligible`, `fulfillment_required` and
+   * `is_returnable` default true), so a row selected before these columns
+   * existed behaves exactly as it did.
+   */
+  requires_shipping?: boolean | null;
+  pickup_eligible?: boolean | null;
+  fulfillment_required?: boolean | null;
+  is_returnable?: boolean | null;
+  package_weight_grams?: number | null;
+  package_length_mm?: number | null;
+  package_width_mm?: number | null;
+  package_height_mm?: number | null;
+  length_mm?: number | null;
+  width_mm?: number | null;
+  height_mm?: number | null;
+  tax_code?: string | null;
 };
 
 export const productCanBeRequested = (product: Pick<CatalogProduct, "availability_status" | "inventory_policy" | "inventory_quantity" | "continue_selling_when_out_of_stock">) =>

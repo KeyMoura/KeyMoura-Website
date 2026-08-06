@@ -11,6 +11,7 @@ import { OrderProductionJobs } from "@/components/staff/production/OrderProducti
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 import { OrderLifecyclePanel } from "@/components/staff/OrderLifecyclePanel";
+import { OrderFulfillmentPanel } from "@/components/staff/OrderFulfillmentPanel";
 
 /**
  * A settled quote is not editable.
@@ -144,11 +145,6 @@ export default function StaffOrderDetail() {
   const [quoteExpires, setQuoteExpires] = useState("");
   const [target, setTarget] = useState("");
   const [staffNotes, setStaffNotes] = useState("");
-  const [method, setMethod] = useState<"shipping"|"pickup">("shipping");
-  const [address, setAddress] = useState({ name:"", line1:"", line2:"", city:"", state:"", postal_code:"", country:"US" });
-  const [carrier, setCarrier] = useState("");
-  const [trackingNumber, setTrackingNumber] = useState("");
-  const [trackingUrl, setTrackingUrl] = useState("");
   const [error, setError] = useState("");
   const [pendingStatus, setPendingStatus] = useState("");
   const [reviewNote, setReviewNote] = useState("");
@@ -182,11 +178,6 @@ export default function StaffOrderDetail() {
       setQuoteExpires(row.quote_expires_at?.slice(0, 10) ?? "");
       setTarget(row.target_date ?? "");
       setStaffNotes(row.staff_notes ?? "");
-      setMethod(row.fulfillment_method ?? "shipping");
-      setAddress({ name:"", line1:"", line2:"", city:"", state:"", postal_code:"", country:"US", ...(row.shipping_address ?? {}) });
-      setCarrier(row.shipping_carrier ?? "");
-      setTrackingNumber(row.tracking_number ?? "");
-      setTrackingUrl(row.tracking_url ?? "");
       setReviewNote(row.final_review_note ?? "");
       // The refund amount is no longer seeded here. It lives in
       // OrderLifecyclePanel, which computes what is refundable server-side with
@@ -268,13 +259,6 @@ export default function StaffOrderDetail() {
     if (!response.ok) setError(result.error || "Could not send the review package");
     else { setReviewFiles([]); await load(); }
     setSendingReview(false);
-  }
-  async function fulfillmentAction(shipment_action: "mark_shipped"|"mark_delivered") {
-    const actionLabel = shipment_action === "mark_delivered" ? "mark this order completed" : method === "pickup" ? "mark this order ready for pickup" : "mark this order shipped";
-    if (!window.confirm(`Confirm you want to ${actionLabel}?\n\nThe status will change and the customer will be notified by email.`)) return;
-    const r = await fetch(`/api/staff/orders/${id}`, { method:"PATCH", headers:await authHeaders(), body:JSON.stringify({ shipment_action, fulfillment_method:method, shipping_address:method === "shipping" ? address : null, shipping_carrier:carrier || null, tracking_number:trackingNumber || null, tracking_url:trackingUrl || null }) });
-    const result = await r.json();
-    if (!r.ok) setError(result.error || "Could not update fulfillment"); else { setError(""); await load(); }
   }
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -461,63 +445,23 @@ export default function StaffOrderDetail() {
             </p>
           </div>
         </section>
-        {(order.status === "ready" || Boolean(order.shipped_at) || Boolean(order.delivered_at)) ? (
-          <section id="fulfillment" className="scroll-mt-5 rounded-2xl border border-zinc-800 bg-black/30 p-5 lg:col-span-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Current step</p>
-              <h2 className="mt-1 text-xl font-semibold">{order.delivered_at ? "Fulfillment complete" : order.shipped_at ? (method === "pickup" ? "Awaiting pickup" : "Shipment in transit") : "Fulfill this order"}</h2>
-              <p className="mt-2 text-sm text-brand-textMuted">
-                {order.delivered_at ? "This order has been completed." : order.shipped_at ? "Confirm delivery or pickup when the customer has received the order." : "Choose how the customer will receive the order, add the required details, then review and confirm."}
-              </p>
-            </div>
+        {/*
+          The fulfillment control.
 
-            {!order.shipped_at ? (
-              <div className="mt-5 space-y-5">
-                <div className="rounded-xl border border-zinc-800 bg-black/25 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">1 · Delivery method</p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <button type="button" disabled={!canManage} onClick={() => setMethod("shipping")} className={`ui-card ui-card-hover text-left ${method === "shipping" ? "!border-brand-primary !bg-brand-primary/10" : ""}`}>
-                      <span className="block font-semibold">Ship to customer</span>
-                      <span className="mt-1 block text-xs text-brand-textMuted">Add the destination and tracking details.</span>
-                    </button>
-                    <button type="button" disabled={!canManage} onClick={() => setMethod("pickup")} className={`ui-card ui-card-hover text-left ${method === "pickup" ? "!border-brand-primary !bg-brand-primary/10" : ""}`}>
-                      <span className="block font-semibold">Customer pickup</span>
-                      <span className="mt-1 block text-xs text-brand-textMuted">No address, carrier, or tracking required.</span>
-                    </button>
-                  </div>
-                </div>
+          This replaces a local form that posted `shipment_action` to
+          `PATCH /api/staff/orders/[id]`. That path set `shipped_at` and moved
+          `orders.status`, but never wrote `orders.fulfillment_status` — the
+          column the cancellation and return eligibility rules actually read —
+          so a shipped order stayed "unfulfilled" to every rule that asked, and
+          still looked cancellable. The panel drives the pass-8 state machine,
+          which enforces the transition graph, the method narrowing, the
+          tracking requirement and the balance guard server-side.
 
-                {method === "shipping" ? (
-                  <div className="rounded-xl border border-zinc-800 bg-black/25 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">2 · Shipping details</p>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <label className="text-sm sm:col-span-2">Recipient<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.name} onChange={e=>setAddress({...address,name:e.target.value})} /></label>
-                      <label className="text-sm sm:col-span-2">Street address<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.line1} onChange={e=>setAddress({...address,line1:e.target.value})} /></label>
-                      <label className="text-sm">City<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.city} onChange={e=>setAddress({...address,city:e.target.value})} /></label>
-                      <label className="text-sm">State / region<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.state} onChange={e=>setAddress({...address,state:e.target.value})} /></label>
-                      <label className="text-sm">Postal code<input disabled={!canManage} className={`${input} mt-1 w-full`} value={address.postal_code} onChange={e=>setAddress({...address,postal_code:e.target.value})} /></label>
-                      <label className="text-sm">Carrier<input disabled={!canManage} className={`${input} mt-1 w-full`} value={carrier} onChange={e=>setCarrier(e.target.value)} placeholder="USPS, UPS, FedEx…" /></label>
-                      <label className="text-sm">Tracking number<input disabled={!canManage} className={`${input} mt-1 w-full`} value={trackingNumber} onChange={e=>setTrackingNumber(e.target.value)} /></label>
-                      <label className="text-sm">Tracking link<input disabled={!canManage} type="url" className={`${input} mt-1 w-full`} value={trackingUrl} onChange={e=>setTrackingUrl(e.target.value)} placeholder="https://…" /></label>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="rounded-xl border border-brand-primary/30 bg-brand-primary/5 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-primary">{method === "shipping" ? "3" : "2"} · Review & confirm</p>
-                  <p className="mt-2 text-sm text-brand-textMuted">
-                    {method === "shipping"
-                      ? `This will mark the order shipped${carrier ? ` with ${carrier}` : ""}${trackingNumber ? ` (tracking ${trackingNumber})` : ""} and email the customer.`
-                      : "This will mark the order ready for pickup and email the customer."}
-                  </p>
-                  {canManage ? <button disabled={order.amount_paid_cents - (order.amount_refunded_cents || 0) < (order.agreed_price_cents || 0)} onClick={()=>void fulfillmentAction("mark_shipped")} className="ui-btn ui-btn-primary mt-4 disabled:cursor-not-allowed disabled:opacity-40">{method === "pickup" ? "Confirm ready for pickup" : "Confirm shipment & notify customer"}</button> : null}
-                </div>
-              </div>
-            ) : !order.delivered_at && canManage ? (
-              <button onClick={()=>void fulfillmentAction("mark_delivered")} className="ui-btn ui-btn-primary mt-5">{method === "pickup" ? "Confirm customer picked it up" : "Confirm delivery & complete order"}</button>
-            ) : null}
-          </section>
-        ) : null}
+          It is always mounted rather than gated on `status === "ready"`: a
+          direct purchase never passes through `ready`, and gating on it is why
+          direct purchases had no fulfillment surface at all.
+        */}
+        <OrderFulfillmentPanel orderId={id} canManage={canManage} onChanged={() => void load()} />
         <section id="conversation" className="scroll-mt-5">
           <h2 className="font-semibold">Conversation</h2>
           <div className="mt-3 max-h-[480px] space-y-3 overflow-y-auto">
@@ -564,7 +508,7 @@ export default function StaffOrderDetail() {
         <section id="activity" className="scroll-mt-5 md:col-span-2">
           <h2 className="font-semibold">Activity timeline</h2>
           <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 p-4">
-            {[...history.map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...messages.map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...payments.map(payment=>({id:`p-${payment.id}`,at:payment.received_at,label:"Payment received",detail:`$${(payment.amount_cents/100).toFixed(2)}`})),...refunds.map(refund=>({id:`r-${refund.id}`,at:refund.created_at,label:"Refund issued",detail:`$${(refund.amount_cents/100).toFixed(2)} — ${refund.reason}`})),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:method==="pickup"?"Ready for pickup":"Order shipped",detail:trackingNumber || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className={`border-l-2 pl-4 ${item.id.startsWith("r-") ? "border-rose-400/70" : item.id.startsWith("p-") ? "border-emerald-400/70" : "border-brand-accent/60"}`}><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
+            {[...history.map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...messages.map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...payments.map(payment=>({id:`p-${payment.id}`,at:payment.received_at,label:"Payment received",detail:`$${(payment.amount_cents/100).toFixed(2)}`})),...refunds.map(refund=>({id:`r-${refund.id}`,at:refund.created_at,label:"Refund issued",detail:`$${(refund.amount_cents/100).toFixed(2)} — ${refund.reason}`})),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:order.fulfillment_method==="pickup"?"Ready for pickup":"Order shipped",detail:order.tracking_number || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className={`border-l-2 pl-4 ${item.id.startsWith("r-") ? "border-rose-400/70" : item.id.startsWith("p-") ? "border-emerald-400/70" : "border-brand-accent/60"}`}><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
           </div>
         </section>
         <section className="md:col-span-2">
