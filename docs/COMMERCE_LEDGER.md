@@ -3422,3 +3422,94 @@ floors `outstanding_cents` at zero rather than reporting a negative balance, and
    emails, then delivery/resend, then notification deduplication, then
    integration health, then launch readiness. Add `notifications.event_key`
    (additive, partial unique index) as the first step of the notification work.
+
+## Pass 10 — merged and in production
+
+Branch `staff-orders-reliability-communications-20260806` merged as **`f280abd`**,
+which is the current production SHA. Merged with `--no-ff`, never force-pushed.
+
+| SHA | What |
+|-----|------|
+| `ae252a0` | Rebuild `/staff/orders` so a failed query can never read as zero |
+| `eb8f578` | Audit the whole staff area for the same defect |
+| `d755500` | Point the dashboard's attention queue at the lists it counted |
+| `d3c6b53` | 44px touch target on the queue chips |
+| `b979024` | Record pass 10 |
+| `f280abd` | Merge commit |
+
+Vercel **production deployment: success** on `f280abd` (confirmed through the
+GitHub deployments API, state `success`).
+
+### Migration application — 2026-08-06
+
+Applied with approval through `execute_sql` in **one guarded transaction**, not
+`apply_migration` — that tool stamps its own timestamp as the version, which
+caused six of the seven ledger drifts repaired in pass 3. The ledger row was
+inserted by hand inside the same transaction under the repository filename's
+version.
+
+Guards before: view absent, exactly 40 migration rows, order and product counts
+captured. Guards after: view present, exactly 41 rows, order and product counts
+**unchanged**, and view row count equal to the order count. All held; committed.
+
+**The ledger is exact: 41 repo files, 41 rows**, newest row
+`20260806010000 / staff_order_queue_view`.
+
+### Grants, verified role-switched
+
+`execute_sql` connects as the table owner, who bypasses grants entirely — the
+pass-8 lesson. Re-checked under `set local role`:
+
+| Role | Result |
+|------|--------|
+| `service_role` | **SELECT succeeds** — 7 rows, which the API route depends on |
+| `anon` | **refused** (`insufficient_privilege`) |
+| `authenticated` | **refused** (`insufficient_privilege`) |
+
+The probe ran inside a transaction ended with a sentinel exception to force
+rollback.
+
+`information_schema.role_table_grants` shows `anon` and `authenticated` with
+**zero** privileges. `service_role` holds SELECT plus the inert
+REFERENCES/TRIGGER/TRUNCATE that Supabase's default privileges grant on the
+public schema — none of which is meaningful on a view, and no INSERT, UPDATE or
+DELETE anywhere.
+
+### Production smoke test — on `f280abd`
+
+| Check | Result |
+|-------|--------|
+| Storefront | `/` 200 (0.47 s), `/catalog` 200, `/cart` 200, `/shipping` 200, `/refunds` 200 |
+| `GET /api/cart`, `/api/cart/fulfillment` | both 200 against the real database |
+| Staff routes gated | `/staff`, `/staff/orders`, `/staff/fulfillment`, `/staff/inventory`, `/staff/reconciliation`, `/staff/emails`, `/staff/catalog` all **307** |
+| New API gated | `/api/staff/orders` and `/api/staff/orders?view=needs_review` both **307** |
+| `staff_order_queue` as `service_role` | **7 rows**, matching 7 orders |
+| Production data | orders 7, products 2, order_items 2, carts 3, refunds 0, returns 0, jobs 0, adjustments 2, reservations 1, notifications 8, templates 30, migrations 41 |
+| KM-0001 / KM-0002 | **untouched** at 2500 and 100 |
+
+**A route-existence probe is still not possible in production**, and a chunk
+fingerprint is not either: middleware 307s `/staff/*` before routing, so the
+staff bundle's chunk names are never served and cannot be searched for the new
+strings. Deployment is evidenced by the GitHub deployment state and the local
+build output instead. Two probes that measured nothing were discarded rather
+than reported: the served HTML carries no `buildId`, so polling it for a change
+compared an empty string with an empty string.
+
+### Production is busier than pass 9 recorded
+
+Pass 9 recorded 6 orders and 1 order item. Production now holds **7 orders and 2
+order items**, plus 2 inventory adjustments and 1 reservation. KM-0007 is a
+genuine **paid direct purchase** created 2026-08-06 11:25 UTC — the first real
+order through the pass-8 reservation and checkout path. **Nothing in this pass
+wrote to production**; the only write was the migration above.
+
+### Owner checks worth five minutes
+
+1. Sign in as staff and open `/staff/orders`. The queue chips should carry real
+   counts, and KM-0007 should appear under **Ready to fulfill** or **In
+   production** depending on its job state.
+2. Click a saved view, then use the browser Back button. The list and the
+   highlighted chip should both return to the previous queue.
+3. Open `/staff` and click one of the attention chips. It should land on a
+   filtered list containing exactly the orders that chip counted.
+4. On a phone, confirm the queue chips are comfortable to tap.
