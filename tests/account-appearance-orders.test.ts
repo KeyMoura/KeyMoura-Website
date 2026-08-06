@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { SORTS, emptyFilters } from "../src/lib/staff/orderFilters.ts";
+import { buildQueryPlan } from "../src/lib/staff/orderQueryPlan.ts";
+
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("staff order queue supports useful independent sort modes", () => {
@@ -9,7 +12,22 @@ test("staff order queue supports useful independent sort modes", () => {
   for (const label of ["Recently updated", "Newest orders", "Oldest orders", "Highest priority", "Target date", "Highest price"]) {
     assert.match(page, new RegExp(label));
   }
-  assert.match(page, /\.toSorted\(/);
+  /*
+   * Sorting is server-authoritative now, so `.toSorted(` — which this used to
+   * pin — is the wrong property: it could only ever have sorted the rows the
+   * browser happened to hold, which was the whole page's worth of orders.
+   *
+   * Re-pointed and made stricter: every offered sort must resolve to a real
+   * database ordering, and each must carry a stable tiebreak. Sorting a page at
+   * a time without one lets two rows sharing a sort key swap places between
+   * page 1 and page 2, so a row can be seen twice and another never.
+   */
+  assert.doesNotMatch(page, /\.toSorted\(/, "sorting a single page in the browser reorders only that page");
+  for (const sort of SORTS) {
+    const order = buildQueryPlan({ ...emptyFilters(), sort }).order;
+    assert.ok(order.length >= 1, `${sort} produces no database ordering`);
+    assert.equal(order.at(-1)?.column, "id", `${sort} has no stable tiebreak`);
+  }
 });
 
 test("customer order hub supports customer-safe sort modes", () => {
