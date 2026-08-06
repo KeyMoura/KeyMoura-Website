@@ -65,6 +65,8 @@ export default function StaffInventoryPage() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  /** Distinguishes "the query succeeded and matched nothing" from "the query failed". */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [page, setPage] = useState(0);
@@ -84,15 +86,35 @@ export default function StaffInventoryPage() {
           const payload = await response.json();
           if (cancelled) return;
           if (!response.ok) {
+            /*
+             * A refused load clears the rows and the total.
+             *
+             * Leaving them behind is how this page showed "No products match
+             * this view." and a total of 0 underneath its own error banner —
+             * the same defect fixed on the dashboard in pass 9 and on
+             * /staff/orders in this one. Nothing is a claim the page can make
+             * about stock it could not read.
+             */
             setError(payload?.error || "Could not load inventory.");
+            setItems([]);
+            setTotal(0);
+            setHasMore(false);
+            setLoadFailed(true);
             return;
           }
           setError("");
+          setLoadFailed(false);
           setItems(payload.items ?? []);
           setHasMore(Boolean(payload.hasMore));
           setTotal(Number(payload.total ?? 0));
         } catch {
-          if (!cancelled) setError("Could not load inventory.");
+          if (!cancelled) {
+            setError("Inventory could not be reached. Check your connection and retry.");
+            setItems([]);
+            setTotal(0);
+            setHasMore(false);
+            setLoadFailed(true);
+          }
         } finally {
           if (!cancelled) setLoading(false);
         }
@@ -165,6 +187,11 @@ export default function StaffInventoryPage() {
       <section aria-label="Inventory">
         {loading ? (
           <p className="ui-card text-sm text-brand-textMuted">Loading…</p>
+        ) : loadFailed ? (
+          // No table, and no "none match" — the answer is unknown, not empty.
+          <p className="ui-card text-sm text-brand-textMuted">
+            Stock levels are not shown because they could not be loaded. This is not the same as there being none.
+          </p>
         ) : !items.length ? (
           <p className="ui-card text-sm text-brand-textMuted">
             No products match this view.
@@ -229,7 +256,8 @@ export default function StaffInventoryPage() {
           Previous
         </button>
         <span className="text-xs text-brand-textMuted">
-          {total} product{total === 1 ? "" : "s"}
+          {/* Withheld rather than shown as 0: an unknown count is not a count. */}
+          {loadFailed || loading ? "Count unavailable" : `${total} product${total === 1 ? "" : "s"}`}
         </span>
         <button
           type="button"

@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { emptyFilters, savedView } from "../src/lib/staff/orderFilters.ts";
+import { buildQueryPlan } from "../src/lib/staff/orderQueryPlan.ts";
+
 const read = (path:string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("workspace migration keeps operational data staff-only", () => {
@@ -30,18 +33,47 @@ test("staff UI exposes planning, costs, job sheet, and priority filtering", () =
   const list = read("src/app/staff/orders/page.tsx");
   for (const label of ["Production workspace", "Production checklist", "Materials & costs", "Print job sheet", "Assigned to"]) assert.match(detail, new RegExp(label));
   assert.match(detail, /window\.print\(\)/);
-  assert.match(list, /All priorities/);
-  assert.match(list, /order_workspaces/);
+
+  /*
+   * Priority filtering moved to the server, so the old "All priorities" option
+   * label and the page's own `order_workspaces` select are gone. The property
+   * worth pinning is not the wording — it is that priority is *filterable* and
+   * that the workspace row still reaches the queue.
+   */
+  assert.match(list, /PRIORITIES/, "the queue must still offer priority filtering");
+  assert.match(list, /Any priority/);
+  const plan = buildQueryPlan({ ...emptyFilters(), priority: ["urgent"] });
+  assert.deepEqual(plan.predicates, [{ op: "in", column: "priority", values: ["urgent"] }]);
+  const sql = read("supabase/migrations/20260806010000_staff_order_queue_view.sql");
+  assert.match(sql, /left join public\.order_workspaces/, "priority comes from the workspace row");
 });
 
 test("staff order queue separates staff actions from customer waits", () => {
-  const list = read("src/app/staff/orders/page.tsx");
-  assert.match(list, /Needs action/);
-  assert.match(list, /Waiting on customer/);
-  assert.match(list, /Quote Review/);
-  assert.match(list, /Finished Product Review/);
-  assert.match(list, /needsStaffAction/);
-  assert.match(list, /isWaitingOnCustomer/);
+  /*
+   * Re-pointed from the old two-tab strip ("Needs action" / "Waiting") onto the
+   * saved views, and made stricter: the distinction is now asserted against the
+   * filter module rather than against JSX wording, and it checks the *rule*
+   * rather than the label — work the shop owes the customer is separated from
+   * work the shop is waiting on the customer for.
+   */
+  const needsReview = savedView("needs_review");
+  const awaitingInformation = savedView("awaiting_information");
+  const awaitingPayment = savedView("awaiting_payment");
+  assert.ok(needsReview && awaitingInformation && awaitingPayment);
+
+  // Staff-owed work: a new request nobody has looked at.
+  assert.deepEqual(needsReview.filters.status, ["requested"]);
+  assert.equal(needsReview.group, "Attention");
+
+  // Customer-owed waits: distinct views, and neither is in the Attention queue,
+  // because nothing on them is actionable by staff today.
+  assert.deepEqual(awaitingInformation.filters.status, ["needs_information"]);
+  assert.deepEqual(awaitingPayment.filters.status, ["awaiting_payment"]);
+
+  // The two must never resolve to the same set of orders.
+  const staffWork = new Set(buildQueryPlan({ ...emptyFilters(), view: "needs_review" } as never).predicates.map((p) => JSON.stringify(p)));
+  const customerWait = buildQueryPlan({ ...emptyFilters(), view: "awaiting_information" } as never).predicates.map((p) => JSON.stringify(p));
+  assert.ok(customerWait.every((p) => !staffWork.has(p)), "the two queues must not select the same orders");
 });
 
 test("staff order detail leads with the next action and hides manual overrides", () => {

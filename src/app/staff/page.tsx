@@ -11,6 +11,8 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { canUseStaffArea, visibleStaffNav } from "@/lib/staffNavigation";
+import { classifySupabaseError } from "@/lib/staff/loadState";
+import { ATTENTION_VIEW, REQUIRES_ACTION_HREF, savedView, viewHref, type SavedView } from "@/lib/staff/orderFilters";
 import {
   buildDashboardSummary,
   type DashboardOrder,
@@ -22,6 +24,7 @@ import {
   FULFILLMENT_BUCKET_COPY,
   attentionQueue,
   groupByFulfillmentBucket,
+  type AttentionKind,
   type QueueOrder,
 } from "@/lib/staff/operationsQueues";
 
@@ -118,10 +121,14 @@ export default function StaffDashboardPage() {
           .from("profiles")
           .select("id,username,display_name")
           .in("id", [...new Set(orderRows.map((row) => row.customer_id))]);
-        setProfiles(Object.fromEntries(((profileResult.data ?? []) as Profile[]).map((p) => [p.id, p])));
+        // A refused profile read leaves the names generic; it does not mean the
+        // orders have no customers.
+        setProfiles(Object.fromEntries(((profileResult.error ? [] : (profileResult.data ?? [])) as Profile[]).map((p) => [p.id, p])));
       }
-      setOrdersError(orderResult.error?.message ?? "");
-      setProductsError(productResult.error?.message ?? "");
+      // Classified rather than echoed — a Postgres message names schema objects
+      // and can quote row values, and these strings are rendered into panels.
+      setOrdersError(orderResult.error ? classifySupabaseError(orderResult.error).message : "");
+      setProductsError(productResult.error ? classifySupabaseError(productResult.error).message : "");
       setLoading(false);
     })();
   }, [canUseStaff, canViewCatalog, canViewInventory, canViewOrders, supabase]);
@@ -274,6 +281,27 @@ export default function StaffDashboardPage() {
               );
             })}
           </div>
+          {/*
+            One link per kind of work present, each opening the queue that holds
+            exactly that kind. A dashboard that can only say "here are eight
+            things" makes a staff member re-find the ninth by hand.
+          */}
+          {ordersUsable && attention.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[...new Set(attention.map((item) => item.kind))]
+                .map((kind) => ({ kind, view: savedView(ATTENTION_VIEW[kind]) as SavedView | null }))
+                .filter((entry): entry is { kind: AttentionKind; view: SavedView } => entry.view !== null)
+                .map(({ kind, view }) => (
+                  <Link
+                    key={kind}
+                    href={viewHref(view.id)}
+                    className="rounded-full border border-brand-border px-3 py-1 text-xs font-medium text-brand-textMuted transition hover:border-brand-accent hover:text-brand-accent"
+                  >
+                    {view.label} ({attention.filter((item) => item.kind === kind).length})
+                  </Link>
+                ))}
+            </div>
+          ) : null}
           {ordersError ? (
             <Notice tone="danger" className="mt-5">
               Open work could not be loaded, so this list is not a statement that there is none.
@@ -282,8 +310,10 @@ export default function StaffDashboardPage() {
             <EmptyState className="mt-5">Nothing is waiting on a decision.</EmptyState>
           ) : null}
           {loading ? <EmptyState className="mt-5">Loading open work…</EmptyState> : null}
+          {/* The exact list this panel counted, not a general order list the
+              reader then has to filter by hand. */}
           {attention.length > 8 ? (
-            <Link href="/staff/orders" className="mt-4 inline-block text-xs font-medium text-brand-accent hover:underline">
+            <Link href={REQUIRES_ACTION_HREF} className="mt-4 inline-block text-xs font-medium text-brand-accent hover:underline">
               {attention.length - 8} more in the order cockpit →
             </Link>
           ) : null}

@@ -12,6 +12,32 @@ import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 import { OrderLifecyclePanel } from "@/components/staff/OrderLifecyclePanel";
 import { OrderFulfillmentPanel } from "@/components/staff/OrderFulfillmentPanel";
+import {
+  classifySupabaseError,
+  fromSupabase,
+  isFailed,
+  isTrulyEmpty,
+  loading as loadingState,
+  rowsOrNull,
+  type LoadState,
+} from "@/lib/staff/loadState";
+
+/**
+ * One section's failure, stated in the section.
+ *
+ * A page-level banner is not enough when the panels underneath keep rendering:
+ * a staff member scanning an order workspace reads the panel, not the sentence
+ * at the bottom of the page.
+ */
+function SectionFailure({ state, what }: { state: LoadState<unknown>; what: string }) {
+  if (!isFailed(state)) return null;
+  return (
+    <Notice tone="danger" role="alert" className="mt-3">
+      {what} could not be loaded, so nothing is shown here. This is not the same as there being none —
+      {" "}{state.failure.message}
+    </Notice>
+  );
+}
 
 /**
  * A settled quote is not editable.
@@ -131,11 +157,29 @@ export default function StaffOrderDetail() {
   const canView = perms.has("orders.view") || perms.has("orders.manage");
   const canManage = perms.has("orders.manage");
   const [order, setOrder] = useState<Order | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [emails, setEmails] = useState<EmailDelivery[]>([]);
-  const [history, setHistory] = useState<History[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [refunds, setRefunds] = useState<Refund[]>([]);
+  /*
+   * Six independent loads, six independent states.
+   *
+   * These used to be six `useState<T[]>([])` filled with `result.data ?? []`
+   * and one shared `error` string built by `??`-chaining the six messages. That
+   * had three separate consequences on a page that shows money:
+   *
+   * 1. A failed payments query rendered as *no payments*, which on an order
+   *    workspace reads as "this customer has not paid".
+   * 2. The activity timeline is assembled from four of these lists, so one
+   *    failed source silently vanished from the history and the timeline still
+   *    looked complete and chronological.
+   * 3. Only the first failure was shown, with a raw Postgres message, and
+   *    nothing said which section it belonged to.
+   *
+   * `LoadState` makes (1) and (2) unrepresentable — rows cannot be read without
+   * narrowing to `ready` — and the panels below name their own failure.
+   */
+  const [messages, setMessages] = useState<LoadState<Message[]>>(loadingState<Message[]>());
+  const [emails, setEmails] = useState<LoadState<EmailDelivery[]>>(loadingState<EmailDelivery[]>());
+  const [history, setHistory] = useState<LoadState<History[]>>(loadingState<History[]>());
+  const [payments, setPayments] = useState<LoadState<Payment[]>>(loadingState<Payment[]>());
+  const [refunds, setRefunds] = useState<LoadState<Refund[]>>(loadingState<Refund[]>());
   const [body, setBody] = useState("");
   const [internal, setInternal] = useState(false);
   const [price, setPrice] = useState("");
@@ -165,11 +209,11 @@ export default function StaffOrderDetail() {
     ]);
     const row = o.data as Order | null;
     setOrder(row);
-    setMessages((m.data ?? []) as Message[]);
-    setEmails((e.data ?? []) as EmailDelivery[]);
-    setHistory((h.data ?? []) as History[]);
-    setPayments((p.data ?? []) as Payment[]);
-    setRefunds((r.data ?? []) as Refund[]);
+    setMessages(fromSupabase<Message>(m as never));
+    setEmails(fromSupabase<EmailDelivery>(e as never));
+    setHistory(fromSupabase<History>(h as never));
+    setPayments(fromSupabase<Payment>(p as never));
+    setRefunds(fromSupabase<Refund>(r as never));
     if (row) {
       const initialCustomerPrice = row.agreed_price_cents ?? requestedEstimateCents(row);
       setPrice(initialCustomerPrice == null ? "" : String(initialCustomerPrice / 100));
@@ -184,7 +228,14 @@ export default function StaffOrderDetail() {
       // pending refunds already subtracted — this local subtraction did not
       // know about refunds still in flight.
     }
-    setError(o.error?.message ?? m.error?.message ?? e.error?.message ?? h.error?.message ?? p.error?.message ?? r.error?.message ?? "");
+    /*
+     * Only the order's own failure becomes the page-level error, and it is
+     * classified rather than echoed — a Postgres message names schema objects
+     * and can quote row values. The other five report inside their own panels,
+     * because "which section is missing" is the thing a staff member needs to
+     * know and a single chained string cannot say it.
+     */
+    setError(o.error ? classifySupabaseError(o.error).message : "");
   }, [id, supabase]);
   useEffect(() => {
     if (!canView) return;
@@ -281,6 +332,20 @@ export default function StaffOrderDetail() {
     return <p className="text-rose-200">{error || "Order not found."}</p>;
   const input = "ui-input";
   const nextStep = nextStaffStep(order);
+  /*
+   * Which of the timeline's four sources are missing.
+   *
+   * Named in the order they appear so the notice reads the way the list does.
+   * Payments and refunds are called out by name rather than as "some data",
+   * because a missing payment entry is the one omission that changes what a
+   * staff member believes about money.
+   */
+  const missingTimelineSources = [
+    isFailed(history) ? "status history" : null,
+    isFailed(messages) ? "messages" : null,
+    isFailed(payments) ? "payments" : null,
+    isFailed(refunds) ? "refunds" : null,
+  ].filter((source): source is string => source !== null);
   const activeStep = workflowStepIndex(order.status);
   const isClosed = order.status === "cancelled" || order.status === "declined";
   const requestedTotalCents = requestedEstimateCents(order);
@@ -464,8 +529,9 @@ export default function StaffOrderDetail() {
         <OrderFulfillmentPanel orderId={id} canManage={canManage} onChanged={() => void load()} />
         <section id="conversation" className="scroll-mt-5">
           <h2 className="font-semibold">Conversation</h2>
+          <SectionFailure state={messages} what="The conversation" />
           <div className="mt-3 max-h-[480px] space-y-3 overflow-y-auto">
-            {messages.map((m) => (
+            {(rowsOrNull(messages) ?? []).map((m) => (
               <div
                 key={m.id}
                 className={`rounded-xl border p-3 text-sm ${m.is_internal ? "border-sky-500/40 bg-sky-500/10" : "border-zinc-800 bg-black/30"}`}
@@ -507,15 +573,31 @@ export default function StaffOrderDetail() {
         </section>
         <section id="activity" className="scroll-mt-5 md:col-span-2">
           <h2 className="font-semibold">Activity timeline</h2>
+          {/*
+            A timeline assembled from four independent sources is the one place
+            a partial failure is genuinely invisible: the entries that did load
+            still render in order and still look like a complete history. So the
+            sources that failed are named *above* the timeline, and the timeline
+            is explicitly labelled incomplete rather than being left to imply
+            that nothing else happened.
+          */}
+          {missingTimelineSources.length ? (
+            <Notice tone="warning" role="status" className="mt-3">
+              This timeline is incomplete: {missingTimelineSources.join(", ")} could not be loaded. Entries of that kind
+              are missing from the list below — they are not absent from the order.
+            </Notice>
+          ) : null}
           <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 p-4">
-            {[...history.map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...messages.map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...payments.map(payment=>({id:`p-${payment.id}`,at:payment.received_at,label:"Payment received",detail:`$${(payment.amount_cents/100).toFixed(2)}`})),...refunds.map(refund=>({id:`r-${refund.id}`,at:refund.created_at,label:"Refund issued",detail:`$${(refund.amount_cents/100).toFixed(2)} — ${refund.reason}`})),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:order.fulfillment_method==="pickup"?"Ready for pickup":"Order shipped",detail:order.tracking_number || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className={`border-l-2 pl-4 ${item.id.startsWith("r-") ? "border-rose-400/70" : item.id.startsWith("p-") ? "border-emerald-400/70" : "border-brand-accent/60"}`}><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
+            {[...(rowsOrNull(history) ?? []).map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...(rowsOrNull(messages) ?? []).map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...(rowsOrNull(payments) ?? []).map(payment=>({id:`p-${payment.id}`,at:payment.received_at,label:"Payment received",detail:`$${(payment.amount_cents/100).toFixed(2)}`})),...(rowsOrNull(refunds) ?? []).map(refund=>({id:`r-${refund.id}`,at:refund.created_at,label:"Refund issued",detail:`$${(refund.amount_cents/100).toFixed(2)} — ${refund.reason}`})),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:order.fulfillment_method==="pickup"?"Ready for pickup":"Order shipped",detail:order.tracking_number || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className={`border-l-2 pl-4 ${item.id.startsWith("r-") ? "border-rose-400/70" : item.id.startsWith("p-") ? "border-emerald-400/70" : "border-brand-accent/60"}`}><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
           </div>
         </section>
         <section className="md:col-span-2">
           <h2 className="font-semibold">Email history</h2>
+          <SectionFailure state={emails} what="The email history" />
           <div className="mt-3 overflow-hidden rounded-xl border border-zinc-800">
-            {emails.map(email=><div key={email.id} className="grid gap-1 border-b border-zinc-800 bg-black/20 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[1fr_1.4fr_auto]"><div><span className="text-brand-textMuted">To </span>{email.recipient}</div><div>{email.subject}</div><div className={email.status==="sent"?"text-emerald-300":email.status==="failed"?"text-rose-300":"text-amber-200"}>{pretty(email.status)} · {new Date(email.created_at).toLocaleString()}</div>{email.error_message?<div className="text-xs text-rose-200 md:col-span-3">{email.error_message}</div>:null}</div>)}
-            {emails.length===0?<div className="px-4 py-6 text-center text-sm text-brand-textMuted">No email attempts for this order yet.</div>:null}
+            {(rowsOrNull(emails) ?? []).map(email=><div key={email.id} className="grid gap-1 border-b border-zinc-800 bg-black/20 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[1fr_1.4fr_auto]"><div><span className="text-brand-textMuted">To </span>{email.recipient}</div><div>{email.subject}</div><div className={email.status==="sent"?"text-emerald-300":email.status==="failed"?"text-rose-300":"text-amber-200"}>{pretty(email.status)} · {new Date(email.created_at).toLocaleString()}</div>{email.error_message?<div className="text-xs text-rose-200 md:col-span-3">{email.error_message}</div>:null}</div>)}
+            {/* Only a successful query that returned nothing earns this sentence. */}
+            {isTrulyEmpty(emails)?<div className="px-4 py-6 text-center text-sm text-brand-textMuted">No email attempts for this order yet.</div>:null}
           </div>
         </section>
         {canManage ? <details className="ui-card md:col-span-2"><summary className="cursor-pointer font-semibold">Advanced status override</summary><p className="mt-2 text-xs text-brand-textMuted">Use this only when the normal quote, payment, review, or fulfillment buttons cannot represent what happened. The customer will be notified.</p><div className="mt-3 sm:flex sm:items-end sm:gap-4"><label className="block flex-1 text-sm font-medium">Customer-facing status<select value={pendingStatus || order.status} onChange={e=>setPendingStatus(e.target.value)} className="ui-input mt-2 w-full">{statuses.map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></label><button disabled={!pendingStatus || pendingStatus===order.status} onClick={()=>void updateStatus(pendingStatus)} className="ui-btn ui-btn-secondary mt-3 disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0">Review & confirm update</button></div></details> : null}

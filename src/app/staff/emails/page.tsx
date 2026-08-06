@@ -116,23 +116,51 @@ export default function StaffEmailPage() {
   const [message, setMessage] = useState("");
   const [testTo, setTestTo] = useState("");
 
+  /*
+   * A rejected fetch used to leave this page saying "Loading email settings…"
+   * for ever: the promise had a `.then` and no `.catch`, so a network failure
+   * or a 500 with a non-JSON body never resolved into any visible state. A
+   * permanent loading spinner is the quietest form of the same lie the rest of
+   * this pass is about — it reports "working on it" for something that already
+   * failed, and unlike a zero it never even invites a second look.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
+
   useEffect(() => {
     if (!allowed) return;
-    void fetch("/api/staff/emails")
-      .then((response) => response.json())
-      .then((result) => {
-        if (result.error) setMessage(result.error);
-        else {
-          setConfig(result.config);
-          setTemplates(result.templates);
-          setProvider(result.providerConfigured);
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/emails");
+        const result = await response.json();
+        if (!response.ok || result.error) {
+          setMessage(result?.error || "Email settings could not be loaded.");
+          setLoadFailed(true);
+          return;
         }
-      });
+        setConfig(result.config);
+        setTemplates(result.templates);
+        setProvider(result.providerConfigured);
+        setLoadFailed(false);
+      } catch {
+        setMessage("Email settings could not be reached. Check your connection and reload.");
+        setLoadFailed(true);
+      }
+    })();
   }, [allowed]);
 
   if (isLoading) return <div className="ui-card">Loading…</div>;
   if (!allowed) return <AccessDeniedCard message="You do not have access to email settings." />;
-  if (!config) return <div className="ui-card">{message || "Loading email settings…"}</div>;
+  if (loadFailed) {
+    return (
+      <div className="ui-card" role="alert">
+        <p className="font-semibold">Email settings could not be loaded.</p>
+        <p className="mt-1 text-sm text-brand-textMuted">
+          {message} Nothing is shown below, because the current configuration is unknown — it has not been changed.
+        </p>
+      </div>
+    );
+  }
+  if (!config) return <div className="ui-card" role="status">Loading email settings…</div>;
 
   const save = async (event: FormEvent) => {
     event.preventDefault();

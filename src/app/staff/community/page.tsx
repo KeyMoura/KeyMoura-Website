@@ -1032,7 +1032,12 @@ async function deriveFlagTargets(
 
   const postToThread = new Map<number, number>();
   const threadIds = new Set<number>(threadIdsDirect);
-  for (const r of postRows.data ?? []) {
+  // These three loops build a post -> thread -> category lookup used only to
+  // construct deep links. A refused read leaves an entry out of the map and the
+  // flag renders without a link, which is a visible degradation rather than a
+  // false claim — but the `.error` check is written out rather than assumed, so
+  // the rule "rows never come from an unchecked result" holds everywhere.
+  for (const r of postRows.error ? [] : (postRows.data ?? [])) {
     if (typeof r?.id === "number" && typeof r?.thread_id === "number") {
       postToThread.set(r.id, r.thread_id);
       threadIds.add(r.thread_id);
@@ -1049,7 +1054,7 @@ async function deriveFlagTargets(
 
   const threadsById = new Map<number, { slug: string; title: string; category_id: number }>();
   const catIds = new Set<number>();
-  for (const t of threadRows.data ?? []) {
+  for (const t of threadRows.error ? [] : (threadRows.data ?? [])) {
     if (
       typeof t?.id === "number" &&
       typeof t?.slug === "string" &&
@@ -1073,7 +1078,7 @@ async function deriveFlagTargets(
     : { data: [], error: null };
 
   const catSlugById = new Map<number, string>();
-  for (const c of catRows.data ?? []) {
+  for (const c of catRows.error ? [] : (catRows.data ?? [])) {
     if (typeof c?.id === "number" && typeof c?.slug === "string") {
       catSlugById.set(c.id, c.slug);
     }
