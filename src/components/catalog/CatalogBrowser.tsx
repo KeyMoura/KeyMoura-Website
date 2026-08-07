@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ProductCard, { type ProductCardProduct } from "@/components/ProductCard";
 import CatalogBrowseDrawer from "@/components/catalog/CatalogBrowseDrawer";
 import { MenuSelect } from "@/components/ui/MenuSelect";
@@ -44,10 +44,16 @@ type CatalogBrowserProps = {
  * filter is *how you are looking at it*, and a separate indexable page for
  * every combination of four filters is a thousand near-duplicate pages.
  *
- * Both live in the URL and nowhere else. There is no `useState` mirror, which
- * is what makes the back button disagree with what is on screen: pressing Back
- * from *Interior, sorted by price* returns to *Interior, featured*, and the
- * highlighted chip follows.
+ * The URL is the source of truth for both. Pressing Back from *Interior,
+ * sorted by price* returns to *Interior, featured*, and the highlighted chip
+ * follows.
+ *
+ * The search text is the one exception, and a narrow one: it is held locally
+ * while it is being typed and written to the URL when the typing pauses. That
+ * is not a mirror the URL can drift from — a URL change from any other source
+ * is adopted immediately — it is a debounce, and it exists because this is a
+ * server component and a `router.replace` per keystroke costs a full RSC
+ * round trip for a result the browser already has.
  *
  * ## Why a horizontal bar rather than a permanent sidebar
  *
@@ -73,7 +79,43 @@ export default function CatalogBrowser({
   const searchParams = useSearchParams();
 
   const filters = useMemo(() => parseCatalogFilters(searchParams), [searchParams]);
-  const visible = useMemo(() => applyCatalogFilters(scopedProducts, filters), [scopedProducts, filters]);
+
+  /**
+   * The search box is the one filter that changes on every keystroke.
+   *
+   * Writing each one straight to the URL made the box cost a server round trip
+   * per character: this is a server component, so a `router.replace` refetches
+   * the RSC payload — and it comes back identical, because the filtering is
+   * done here over a list already in memory. Measured at roughly 1.5s per
+   * keystroke against the dev server.
+   *
+   * So the typed text is held locally for the grid, and the URL is written
+   * once the typing pauses. The URL is still the source of truth: when it
+   * changes for any reason that is not this box — a Back, a shared link, a
+   * Clear — the box adopts it. That adjustment happens during render, which is
+   * React's documented pattern for deriving state from a changing input and
+   * avoids both an effect and the cascading render one would cause.
+   *
+   * The dropdowns are left writing straight through. They change once per
+   * interaction, and each of those *is* a history entry worth having.
+   */
+  const [typed, setTyped] = useState(filters.query);
+  const [lastUrlQuery, setLastUrlQuery] = useState(filters.query);
+  if (lastUrlQuery !== filters.query) {
+    // React's documented "adjusting state when a prop changes": both halves are
+    // state, set during render, so React restarts the render immediately rather
+    // than painting a stale box and correcting it. A ref would have done the
+    // same job less safely — and `react-hooks/refs` refuses one here for
+    // exactly that reason.
+    setLastUrlQuery(filters.query);
+    setTyped(filters.query);
+  }
+
+  const effectiveFilters = useMemo(() => ({ ...filters, query: typed }), [filters, typed]);
+  const visible = useMemo(
+    () => applyCatalogFilters(scopedProducts, effectiveFilters),
+    [scopedProducts, effectiveFilters]
+  );
 
   const menu = useMemo(
     () =>
@@ -83,13 +125,26 @@ export default function CatalogBrowser({
         activeCategoryId,
         // Switching category keeps the search and the sort. Dropping them is a
         // silent reset the customer did not ask for.
-        filterQuery: catalogFilterQuery(filters),
+        filterQuery: catalogFilterQuery(effectiveFilters),
       }),
-    [categories, allProducts, activeCategoryId, filters]
+    [categories, allProducts, activeCategoryId, effectiveFilters]
   );
 
-  const isDefault = filtersAreDefault(filters);
-  const filterCount = activeFilterCount(filters);
+  /*
+   * The URL catches up when the typing pauses. `replace`, not `push`: a
+   * history entry per pause would make Back walk backwards through a word.
+   */
+  useEffect(() => {
+    if (typed === filters.query) return;
+    const timer = window.setTimeout(() => {
+      const next = { ...filters, query: typed };
+      router.replace(`${pathname}${catalogFilterQuery(next)}`, { scroll: false });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [typed, filters, pathname, router]);
+
+  const isDefault = filtersAreDefault(effectiveFilters);
+  const filterCount = activeFilterCount(effectiveFilters);
 
   /** Writes filters back to the URL. Replace, not push: typing in a search box must not fill the history. */
   function setFilters(next: Partial<CatalogFilters>, mode: "replace" | "push" = "replace") {
@@ -99,7 +154,10 @@ export default function CatalogBrowser({
     else router.replace(url, { scroll: false });
   }
 
-  const clear = () => router.replace(pathname, { scroll: false });
+  const clear = () => {
+    setTyped("");
+    router.replace(pathname, { scroll: false });
+  };
 
   const branch = menu.categories.find((entry) => entry.isCurrentBranch);
   const subcategories = branch?.children ?? [];
@@ -179,8 +237,8 @@ export default function CatalogBrowser({
           <input
             id="catalog-search"
             type="search"
-            value={filters.query}
-            onChange={(event) => setFilters({ query: event.target.value })}
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
             placeholder="Search products…"
             className="ui-input"
           />
@@ -212,9 +270,13 @@ export default function CatalogBrowser({
 
         <CatalogBrowseDrawer
           menu={menu}
-          filters={filters}
+          filters={effectiveFilters}
           filterCount={filterCount}
-          onChange={setFilters}
+          onChange={(next, mode) => {
+            // The drawer's search box shares the debounce; its dropdowns do not.
+            if (typeof next.query === "string" && Object.keys(next).length === 1) setTyped(next.query);
+            else setFilters(next, mode);
+          }}
           onClear={clear}
         />
       </section>

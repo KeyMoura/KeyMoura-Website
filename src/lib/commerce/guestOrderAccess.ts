@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { routeServiceClient } from "@/lib/api/routeAuth";
+import { checkoutAmountCents } from "@/lib/paymentMath";
 import {
   evaluateGuestAccess,
   GUEST_ORDER_COOKIE,
@@ -93,8 +94,37 @@ export type GuestOrderMessage = {
 };
 
 export type GuestOrderResolution =
-  | { ok: true; order: GuestOrderView; items: GuestOrderItem[]; messages: GuestOrderMessage[] }
+  | {
+      ok: true;
+      order: GuestOrderView;
+      items: GuestOrderItem[];
+      messages: GuestOrderMessage[];
+      /** Whether there is a balance to pay right now, and how much. */
+      payment: { payable: boolean; amountDueCents: number };
+    }
   | { ok: false; reason: GuestAccessResult | "unavailable" };
+
+/**
+ * Whether this order can be paid, decided beside the data rather than in a
+ * component.
+ *
+ * The same three conditions `/api/orders/guest/[id]/checkout` enforces, from
+ * the same `paymentMath` helper, so the button appears exactly when the route
+ * would accept the request. The route re-checks all of it — this only decides
+ * whether to offer the control.
+ */
+function guestPayment(order: GuestOrderView, now: Date): { payable: boolean; amountDueCents: number } {
+  const amountDueCents = checkoutAmountCents(order);
+  const quoteLive = !order.quote_expires_at || Date.parse(order.quote_expires_at) > now.getTime();
+  return {
+    amountDueCents,
+    payable:
+      ["accepted", "awaiting_payment", "in_progress"].includes(order.status) &&
+      (order.agreed_price_cents ?? 0) >= 50 &&
+      quoteLive &&
+      amountDueCents >= 50,
+  };
+}
 
 /** The raw token from the httpOnly cookie, or null. Never logged, never in a URL. */
 export async function readGuestOrderToken(): Promise<string | null> {
@@ -224,6 +254,7 @@ export async function resolveGuestOrder(orderId: string): Promise<GuestOrderReso
   return {
     ok: true,
     order,
+    payment: guestPayment(order, new Date()),
     items: (itemRows ?? []) as GuestOrderItem[],
     // A guest's own messages carry no sender; anything with one came from the
     // shop. The sender id itself is dropped rather than passed on — it names a

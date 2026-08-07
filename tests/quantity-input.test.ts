@@ -309,11 +309,19 @@ test("the field is not a number input, and keeps the keyboard behaviour of one",
 });
 
 test("a value that changed elsewhere never overwrites a half-typed entry", () => {
-  assert.match(
-    code(field),
-    /document\.activeElement !== inputRef\.current/,
-    "the draft is only dropped when the field is not focused"
-  );
+  const stripped = code(field);
+  // The draft is what is shown whenever one exists, so a refetch landing
+  // mid-edit cannot replace what the customer is typing.
+  assert.match(stripped, /const shown = draft \?\? String\(value\)/);
+  // And it is derived, not synchronised: an earlier version cleared the draft
+  // from a `useEffect` on `value`, which is a setState inside an effect and a
+  // cascading render on every cart refetch.
+  assert.doesNotMatch(stripped, /useEffect/, "no effect is needed to keep the draft correct");
+  // Every exit from typing clears it, which is what stops a draft outliving
+  // its edit.
+  assert.match(stripped, /function commit\(raw: string\) \{\s*[\s\S]{0,200}setDraft\(null\)/);
+  assert.match(stripped, /function step\(direction: 1 \| -1\) \{\s*[\s\S]{0,200}setDraft\(null\)/);
+  assert.match(stripped, /onBlur=\{\(event\) => commit\(event\.target\.value\)/);
 });
 
 test("the step controls are real buttons with names, and disable at the bounds", () => {

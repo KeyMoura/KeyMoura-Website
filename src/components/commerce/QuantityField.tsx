@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   commitQuantityInput,
   quantityCeiling,
@@ -90,13 +90,21 @@ export default function QuantityField({
   const [message, setMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // A quantity that changed elsewhere — a refetch, another tab, a server
-  // correction — must not overwrite a half-typed entry. Dropping the draft
-  // only when the field is not focused keeps both true.
-  useEffect(() => {
-    if (document.activeElement !== inputRef.current) setDraft(null);
-  }, [value]);
-
+  /*
+   * A quantity that changed elsewhere — a refetch, another tab, a server
+   * correction — must not overwrite a half-typed entry, and the draft must not
+   * outlive the edit that created it.
+   *
+   * Both hold without an effect. A draft exists only while the customer is
+   * typing, and every exit from typing clears it: `commit` runs on blur and on
+   * Enter, and `step` clears it too. So `draft ?? String(value)` shows what was
+   * typed while it is being typed and the live value at every other moment.
+   *
+   * The earlier version cleared the draft from a `useEffect` on `value`, which
+   * is a `setState` inside an effect — a cascading render on every cart
+   * refetch, and exactly what `react-hooks/set-state-in-effect` exists to
+   * catch. Deriving it is both correct and cheaper.
+   */
   const bounds = { max, absoluteMax };
   const ceiling = quantityCeiling(bounds);
   const shown = draft ?? String(value);

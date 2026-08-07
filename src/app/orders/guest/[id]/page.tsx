@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import GuestOrderActions from "@/components/commerce/GuestOrderActions";
 import { OrderFulfillmentStatus } from "@/components/commerce/OrderFulfillmentStatus";
-import { checkoutAmountCents } from "@/lib/paymentMath";
 import { resolveGuestOrder } from "@/lib/commerce/guestOrderAccess";
 
 /**
@@ -83,23 +82,7 @@ export default async function GuestOrderPage({
     );
   }
 
-  const { order, items, messages } = result;
-
-  /**
-   * Whether there is a balance to pay, decided here and not by the browser.
-   *
-   * The same three conditions the guest checkout route enforces, computed from
-   * the same `paymentMath` helper — so the button appears exactly when the
-   * route would accept the request. The route re-checks all of it; this only
-   * decides whether to offer the control.
-   */
-  const quoteLive = !order.quote_expires_at || new Date(order.quote_expires_at).getTime() > Date.now();
-  const amountDue = checkoutAmountCents(order);
-  const payable =
-    ["accepted", "awaiting_payment", "in_progress"].includes(order.status) &&
-    (order.agreed_price_cents ?? 0) >= 50 &&
-    quoteLive &&
-    amountDue >= 50;
+  const { order, items, messages, payment } = result;
   const justPaid = query.payment === "success";
   const isRequest = order.order_kind !== "direct_purchase";
 
@@ -210,8 +193,8 @@ export default async function GuestOrderPage({
       <GuestOrderActions
         orderId={order.id}
         messages={messages}
-        payable={payable}
-        amountDueLabel={payable ? money(amountDue) : null}
+        payable={payment.payable}
+        amountDueLabel={payment.payable ? money(payment.amountDueCents) : null}
       />
 
       <section className="ui-card mt-4 p-5">
