@@ -4321,3 +4321,180 @@ deliberately fake service-role key.
 2. **Set `TURNSTILE_SECRET_KEY`** to switch the guest-request check on. Until
    then it is a deliberate no-op.
 3. `commerce_settings.guest.allowCheckout` / `.allowRequests` both default on.
+
+## Pass 13 — merged and in production
+
+Branch `storefront-catalog-guest-commerce-20260806` → merged as **`ca174c1`**,
+which is the current production SHA. Merged with `--no-ff`, never force-pushed.
+
+| SHA | What |
+|-----|------|
+| `ffb2efe` | Fix the two reported purchase-control defects |
+| `dfe8481` | Rebuild `/catalog` around real category routes and a browse menu |
+| `ab80363` | Let guests buy, ask, reply and pay without an account |
+| `8ada034` | Keep the catalog search responsive instead of a round trip per key |
+| `f5fc4e3` | Record pass 13 |
+| `ca174c1` | Merge commit |
+
+- Vercel **preview build: success** on `f5fc4e3` (the final branch head).
+- Vercel **production deployment: success** on `ca174c1`.
+
+### Migration application — 2026-08-07
+
+Both applied with approval through `execute_sql` in **two separate guarded
+transactions**, not `apply_migration` — that tool stamps its own timestamp as
+the version, which caused six of the seven ledger drifts repaired in pass 3.
+Each ledger row was inserted by hand inside the same transaction under the
+repository filename's version.
+
+`20260806040000_catalog_slug_namespace` guards: 43 rows before, version not
+already recorded, no slug triggers present, and **no existing slug naming both
+a category and a product** — then 44 rows, 4 triggers, 2 functions, and
+products/categories/orders unchanged.
+
+`20260806050000_guest_commerce` guards: 44 rows before, `guest_email` absent,
+and **no order with a null `customer_id` and no message with a null
+`sender_id`** — then 45 rows, both columns nullable, 4 guest columns, 3
+constraints, 2 indexes, order and message counts unchanged, and **no existing
+row having gained guest data or lost its `customer_id`**.
+
+All guards held; both committed.
+
+**The ledger is exact: 45 repo files, 45 rows**, verified by diffing the two
+sorted sets — symmetric difference empty. Newest rows
+`20260806040000 / catalog_slug_namespace` and `20260806050000 / guest_commerce`.
+
+### Verification after applying
+
+| Check | Result |
+|---|---|
+| `orders.customer_id` / `order_messages.sender_id` | both **nullable** |
+| Guest columns | `guest_access_expires_at, guest_email, guest_name, guest_token_hash` |
+| Constraints | `orders_guest_email_shape`, `orders_guest_name_length`, `orders_owner_present` |
+| Indexes | `orders_guest_email_idx`, `orders_guest_token_hash_idx` (both partial) |
+| Slug triggers | all **4** present (insert + update-of-slug on each table) |
+| Slug functions | both present, `SECURITY DEFINER` |
+| Slug function EXECUTE | **false for `anon`, `authenticated`, `public` and `service_role`** — a trigger function needs none |
+| Supabase security advisors | **no new findings**; neither slug function appears in either SECURITY DEFINER warning, because the revokes ran |
+| Existing data | unchanged — 9 orders, 3 order items, 2 messages, 2 products, 1 category, 5 payments, 26 deliveries, 3 identities |
+| Orders carrying guest data | **0** — no existing row was touched |
+
+### Role-switched access, re-run against the live schema
+
+Every probe ran inside a transaction ended with a sentinel exception.
+
+| Role | Reading a guest order |
+|---|---|
+| `anon` | **refused at the grant layer** — no SELECT on `orders` at all, so RLS is never even consulted |
+| `authenticated`, no uid | **0 rows** — `auth.uid() = customer_id` is NULL against NULL, which is not TRUE |
+| `authenticated`, non-staff customer (two tested) | **0 rows** |
+| `authenticated`, non-staff, reading another customer's account order | **0 rows** |
+| `service_role` | select and update succeed, which the server routes need |
+
+**A false alarm worth recording.** The first cross-customer probe picked the
+customer owning the most orders and reported that they *could* read a guest
+order. That account turns out to have `is_staff_user() = true` despite
+`profiles.role = 'member'`, so it was the **staff arm** of the existing policy
+— `(auth.uid() = customer_id) OR is_staff_user()` — working exactly as
+intended. Re-run per-user, both genuinely non-staff customers see zero. The
+lesson is the pass-8 one restated: a probe that measures the wrong subject
+reports a defect that is not there.
+
+`service_role` retains DELETE on `orders`. That is pre-existing and required —
+the checkout route removes a shell order when the `order_items` insert fails —
+not something these migrations opened.
+
+### Guest lifecycle, exercised against the live schema and rolled back
+
+| Check | Result |
+|---|---|
+| Reservation for a **guest cart** with `user_id` NULL | taken |
+| Guest order written with `customer_id` NULL | accepted; `orders_owner_present` satisfied by `guest_email` |
+| Hold linked to order + checkout session | 1 |
+| Settlement (`record_stripe_order_payment` → `commit_order_inventory` → `commit_order_reservations`) | stock **5 → 3**, one ledger row |
+| **Replayed webhook** | stock stays **3**, still one ledger row, still one payment row |
+| Failed payment | hold released, **stock untouched at 5** |
+| `checkout.session.expired` | released by session id, identity-agnostic |
+| Ownerless order (no customer and no guest email) | **refused** by `orders_owner_present` |
+| Malformed guest address | **refused** by `orders_guest_email_shape` |
+
+**A probe of mine was wrong first.** It asserted that
+`commit_order_reservations` decrements stock; it does not — it releases the
+hold, and `commit_order_inventory` is the only writer of
+`products.inventory_quantity`. Diagnosed by printing what the function returned
+rather than assuming, then re-run calling both in the order the webhook calls
+them.
+
+### Guest custom requests, live schema, rolled back
+
+Submit → secure view → reply → quote → payment preparation, plus every denial:
+wrong token 0 rows, expired 0 rows, revoked (hash cleared) 0 rows, expired
+quote refused. A guest reply stores with `sender_id` NULL; an internal staff
+note on the same order stays out of what the guest reads (1 visible of 2).
+
+### Authenticated flows, unchanged
+
+Account direct checkout still reserves, settles and moves stock (5 → 4); the
+account order carries **no** guest columns; an account custom request and an
+account message still store with their `customer_id` and `sender_id`; and
+`.eq("customer_id", user.id)` still resolves the account order.
+
+### Guest-token behaviour
+
+Re-run as the 45-test suite: valid token opens, wrong token denied, expired
+denied, **null expiry denied** (fails closed rather than meaning "forever"),
+revoked denied, and comparison is constant-time with a length check first so a
+mismatched buffer cannot throw.
+
+### Production smoke test — on `ca174c1`
+
+| Check | Result |
+|---|---|
+| Storefront | `/` 200 (0.83 s), `/catalog` 200, `/catalog/interior` 200, `/catalog/premade-shift-knob` 200, `/cart`, `/shipping`, `/refunds`, `/terms` all 200 |
+| Public API | `GET /api/cart` and `/api/cart/fulfillment` both 200 |
+| Legacy category link | `/catalog?category=Interior` → **307 → `/catalog/interior`** |
+| Unknown slug / wrong parent | **404** / **404** |
+| Staff gated | `/staff`, `/staff/catalog/categories`, `/api/staff/catalog/categories` all **307** |
+| Guest order page, no cookie | 200 rendering the refusal, `noindex, nofollow, nocache` |
+| Guest APIs, no cookie | messages **403**, checkout **403** |
+| Guest checkout validation | no email → 400 `field: "email"`; malformed → 400 with its own sentence |
+| Public payload privacy | no origin address, return address, staff recipients, reservation timings or low-stock recipients |
+| Sign-in page | **Continue with Google** and **Continue with Facebook**; **no Discord**; email and password still present |
+| Emails sent in the deployment window | **0** |
+| Stripe charges or refunds created | **0** |
+
+Production data after the run — unchanged: 9 orders (**0 guest orders**, since
+every probe rolled back), 3 order items, 2 messages, 2 products, 1 category, 5
+payments, 0 refunds, 26 deliveries, 45 migrations, tracked stock still 5.
+
+### Identity safety
+
+**No identity was deleted or unlinked**: 3 identities before and after — 2
+Google, 1 email, 0 Discord (there never were any), 0 deleted users. **No
+Supabase Auth configuration was changed**; Discord's enabled/disabled state in
+the Supabase dashboard is exactly as the owner left it, and this pass never
+called an auth configuration API. The UI stopped *offering* Discord, which is a
+different thing from the project refusing it.
+
+### The two deferrals, restated
+
+1. **Guest cancellations and returns remain account-only.** Each is a financial
+   workflow with its own eligibility rules, staff decision and refund path. The
+   guest order page says the team handles them rather than offering a control
+   that would be refused server-side.
+2. **Server-side catalog pagination is deferred** until catalog size justifies
+   it. The whole published catalog is loaded so the browse counts are exact
+   rather than estimated — the failure pass 9 recorded was a card reading 3
+   opening a list of 5. At a few hundred products the counts move to one grouped
+   query and the grid to a paginated server query; `catalogData.ts` is the module
+   that changes, not the pages.
+
+### Owner checks worth five minutes
+
+1. **Confirm Facebook is enabled in Supabase Auth.** The sign-in page now offers
+   it; if the provider is not enabled, the button will fail at Supabase. Nothing
+   in this pass changed that setting.
+2. Buy something as a guest, end to end, with a real card. That is the one path
+   no automated session can complete.
+3. Set `TURNSTILE_SECRET_KEY` if you want the guest-request check live; until
+   then it is a deliberate no-op.
