@@ -4042,3 +4042,282 @@ opens it for the first time:
   discrepancy.
 - Email delivery remains single-attempt at the point of sending. A failure is
   recorded, alerted, and re-sendable by hand; there is no automatic retry.
+
+---
+
+# Pass 13 — storefront catalog, guest commerce, providers, quantity and layout defects
+
+Branch `storefront-catalog-guest-commerce-20260806`, from `f4732d8`.
+**Not merged. Two migrations await approval and have not been applied.**
+
+## Verified starting state — 2026-08-07
+
+| Check | Result |
+|---|---|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `f4732d8` |
+| Production health | `/` 200 (0.50 s), `/catalog` 200, `/cart` 200, `GET /api/cart` 200, `/staff` 307 |
+| Migration ledger | **exact** — 43 repo files, 43 rows, versions and names identical |
+
+## The two reported defects
+
+### 1. Typing a quantity was replaced by the stock maximum
+
+Every quantity field clamped **on every keystroke**:
+
+    const next = Number(event.target.value);
+    setQuantity(Math.min(Math.max(1, next), maxQuantity ?? 999));
+
+With five in stock and `1` in the box, typing `2` makes the intermediate
+string `"12"`, and `Math.min(12, 5)` is `5`. Clearing first does not help:
+`Number("")` is `0`, `Math.max(1, 0)` is `1`, so the box refills itself the
+instant it is emptied and the next keystroke appends to a digit nobody typed.
+**The arrows worked because they never produce an intermediate value** — which
+is exactly what the report said.
+
+`src/lib/commerce/quantity.ts` holds the rules, pure and dependency-free. A
+keystroke is not a decision: the field holds what was typed until commit —
+blur, Enter, or a step button. Refusals are named rather than coerced, which is
+the lesson pass 4 recorded when `Math.trunc` published a 12% code for somebody
+who typed 12.5.
+
+One control, `QuantityField`, now serves the product page, the cart page, the
+cart drawer and both request wizards. The cart surfaces additionally stop
+posting a mutation per keystroke — clearing the box used to ask the server for
+`quantity: 0`. Native spinners become real 44px buttons with accessible names;
+a native spinner arrow has none. ArrowUp/ArrowDown are kept on the field.
+
+The untracked ceiling drops from 999 to 99, matching `MAX_LINE_QUANTITY`, which
+the server already enforced: 500 could previously be typed and silently become
+99. Surfaces with a different server rule state it — the request wizard passes
+1000, which is what `/api/orders/custom` allows.
+
+### 2. The purchase panel had its own scrolling area
+
+`.product-info-sticky` was `position: sticky` with
+`max-height: calc(100dvh - …)` and `overflow-y: auto`, so price, quantity, Add
+to cart and Request a custom version scrolled inside the page's own scroller,
+with `overscroll-behavior: contain` stopping the page at the panel's end.
+
+**Sticky was removed rather than repaired.** It could only be kept if the panel
+were reliably shorter than the viewport, and it is not — that column carries the
+title, summary, badges, options, actions, quick facts and assurances. A sticky
+box taller than the viewport pins its top and puts its own foot out of reach,
+which is the failure the `max-height` was papering over. The mobile sticky
+action bar is unchanged.
+
+## Catalog: real category routes and a browse menu
+
+The redesign pass 6 planned and deferred.
+
+**The URL conflict, and how it was resolved.** The requested shape is
+`/catalog`, `/catalog/[category]`, `/catalog/[category]/[subcategory]` — but
+`/catalog/[slug]` was already the product route and Next.js cannot have two
+dynamic segments in one position. Products were **not** moved:
+`/catalog/premade-shift-knob` is live, indexed and linked from the cart,
+wishlist, order pages and transactional email. The segment resolves a category
+first and a product otherwise, and `20260806040000` makes the ambiguity
+unrepresentable rather than resolved by precedence. **The documented rule: a
+slug identifies at most one thing under `/catalog`.**
+
+One view, one URL: a subcategory reached without its parent redirects to its
+canonical address, `/catalog?category=` redirects to the real page, and both
+segments of a two-segment path are checked against the tree, so
+`/catalog/exterior/shift-knobs` is a 404 rather than a second address.
+
+**Navigation.** A horizontal row of top-level chips with a second row of
+subcategories for the branch you are in — not a permanent sidebar, which with
+one category today would be a mostly empty column taking a third of the width
+from the products. Below `sm` both rows give way to a real dialog sheet.
+
+Counts are exact because every published product is loaded for the page; a
+category with nothing in it is not offered at all. Filters live in the URL, so
+Back returns to the previous view and the highlighted chip follows.
+
+**The search box is debounced**, found by driving the page: this is a server
+component, so a `router.replace` per keystroke cost a full RSC round trip
+(~1.5s in dev) for a payload that came back identical. The grid responds
+immediately; the URL catches up when the typing pauses and is still the source
+of truth.
+
+**Schema was already sufficient** — `parent_id`, unique slugs, `display_order`,
+`is_active`, `archived_at` and the one-level trigger have existed since
+`20260802020000`. What was missing was the staff surface: the category API has
+had no page in front of it since pass 6. `/staff/catalog/categories` drives it,
+importing its rules from the same module the route does.
+
+## Guest commerce
+
+Recorded as "unrepresentable, not merely unimplemented" since pass 3, for one
+reason: `orders.customer_id` was NOT NULL.
+
+**The credential.** A 32-byte opaque token in an httpOnly cookie; only a salted
+digest is stored. It never appears in a URL, a log or a redirect — a URL lands
+in history, in a `Referer`, and in whatever a customer pastes into a support
+chat. Access needs a live hash **and** an unexpired window; a null expiry is
+treated as expired, so a row that lost it fails closed. Revocation is clearing
+the hash, following the rule pass 3 set for share links: there is then nothing
+left to compare against.
+
+**There is deliberately no lookup by order number and email.** Order numbers are
+sequential, so that form is really "is this address a customer here" — a
+guessing oracle. A guest who has lost the cookie is told to contact support,
+which is a person checking rather than a form guessing.
+
+**Guest checkout is not a second pricing path.** Revalidation, fulfillment
+planning, the reservation, the order write, the session expiry pinned to the
+hold, and the idempotency key are the same code for both identities. Only the
+identity columns, the receipt address and the landing page differ.
+
+**The webhook binding was vacuous for a guest.** It compared
+`metadata.customer_id !== order.customer_id`; for a guest both are null, and a
+comparison that authorises everything must never be what settles money. A guest
+session must now say it is one **and** be the session the order recorded — an id
+minted by Stripe and written by the checkout route, which is a stronger binding
+than the one it stands in for. The **failed-payment branch was skipping guests
+entirely**, which would have left the inventory hold unreleased and nobody told;
+it now keys on the same marker.
+
+**What a guest can and cannot do.** Read their order, reply to staff, and pay an
+approved quote. Cancellations and returns stay account-only and say so: each is
+a financial workflow with its own eligibility rules, staff decision and refund
+path, and a button that appears to work and is refused server-side is worse than
+one that is not offered.
+
+**Guest requests** are gated by a setting, a rate limit (5/hour, tighter than
+any signed-in equivalent) and **Turnstile when configured** — the keys
+`/staff/integrations` has tracked since pass 12 now have a verifier behind them,
+fail-open unconfigured and fail-closed once set, with no "allow on network
+error". Files stay account-only: the storage prefix is keyed on an authenticated
+user, and inventing a public write bucket in passing is not a thing to do
+quietly. The form says so rather than dropping an attachment.
+
+## Discord replaced by Facebook
+
+**Audited against production first: 3 users, 0 with a Discord identity, 0 whose
+only method is Discord.** Nobody's login path was removed, so no transition plan
+was needed.
+
+Nothing was disabled in Supabase Auth and no identity was unlinked — the UI
+stopped *offering* Discord, which is a different thing from the project refusing
+it. An already-linked provider stays visible and removable even once it stops
+being offered, so a Discord identity would still render by name and still be
+disconnectable. `'facebook'` was verified against the installed
+`@supabase/auth-js` `Provider` union in `node_modules`, not remembered, and the
+handlers are typed to that literal so a typo is a compile error.
+
+The last usable login method still cannot be disconnected, OAuth still returns
+to `window.location.origin`, and the post-sign-in destination still refuses
+anything that is not a path on this site (including `//evil.example`).
+
+## Migrations — written, dry-run, **not applied**
+
+| File | What |
+|---|---|
+| `20260806040000_catalog_slug_namespace.sql` | Two trigger functions + four triggers enforcing one slug namespace under `/catalog`. No column, constraint, policy or row altered. |
+| `20260806050000_guest_commerce.sql` | Widens `orders.customer_id` and `order_messages.sender_id`; adds `guest_email`, `guest_name`, `guest_token_hash`, `guest_access_expires_at`, three CHECKs and two partial indexes. |
+
+Both are guarded on the existing data before installing anything, so neither can
+leave a table in a state its own guard would refuse. Neither issues a grant:
+columns inherit the table's ACL, which is why the pass-5a failure mode is
+unreachable here — and the migration says so rather than leaving the next reader
+to wonder.
+
+**Dry runs against production, both rolled back, production verified untouched
+after each.** Catalog namespace: five proofs — a colliding category refused, a
+free slug accepted, a colliding product rename refused, an unrelated product
+save unaffected, a category rename onto a product slug refused. Guest commerce:
+five proofs — existing rows unchanged and none gaining guest data, a guest order
+representable, an ownerless order refused, a malformed address refused, a guest
+reply accepted.
+
+**Rollback rehearsal**: applied, then the down statements run, then the `orders`
+column signature compared — byte-for-byte identical.
+
+**RLS, role-switched**: a guest order is invisible to `authenticated` (RLS
+returns 0 rows, because `auth.uid() = customer_id` is NULL against NULL, which
+is not TRUE), and `anon` is refused at the **grant** layer before RLS is
+consulted at all.
+
+## Validation
+
+- **1323 tests pass, 0 fail** (1202 at `f4732d8`; 121 added across four new
+  suites).
+- Typecheck clean. Production build clean from a cleared `.next`, exit 0; all
+  new routes present.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings). Two errors
+  this pass introduced were found and fixed rather than suppressed — a setState
+  inside an effect, and `Date.now()` in a component body.
+- Nine existing assertions re-pointed and made stricter, including the two that
+  pinned the signed-in-only checkout contract and the one that *required* the
+  `max-height` on the purchase panel.
+
+### Driven in a real browser
+
+Dev server, cold start with a cleared `.next`.
+
+| Check | Result |
+|---|---|
+| **stock 5, type 2** | **`2`** — the reported bug, on the real product with 5 in stock |
+| stock 5, type 5 / 6 | `5` / `5` with "Only 5 available." |
+| 0 / −1 / 2.5 | `1` "Use Remove…" / `1` "smallest quantity is 1" / restored, "whole units" |
+| abc / 1e3 | previous value restored, "Enter a quantity as a number." |
+| paste 3 | `3` |
+| empty while editing | **stays empty**; on blur restores the previous value |
+| while typing, every case | the box held **exactly** what was typed — no mid-edit clamping |
+| − / + / ArrowUp / ArrowDown / Enter | all work; clamped and disabled at both bounds |
+| **Nested scrollers in the product page** | **0** |
+| Purchase column | `position: static`, `overflow-y: visible`, `max-height: none` |
+| Catalog routes | `/catalog` 200, `/catalog/interior` 200, `?category=Interior` **307 → `/catalog/interior`**, unknown slug 404, wrong parent 404 |
+| Category page | correct title, h1, breadcrumb, canonical, `aria-current`, exact counts |
+| Mobile 375 | chip rows hidden, trigger 44px, dialog portalled to `body` at 375×645, body locked, focus in and back, Escape, **Tab trap wraps both ways**, no sideways overflow |
+| Filters | grid responds immediately; URL catches up after the pause; Back/Forward track the dropdowns |
+| Guest order page, no cookie | "Order not available", `noindex, nofollow, nocache`, no column names leaked |
+| Guest APIs, no cookie | messages **403**, checkout **403** |
+| Guest checkout validation | no email → 400 `field: "email"`; malformed → 400 with the specific sentence |
+| Accessibility | one h1, no image without alt, every control named |
+
+**Two console errors investigated and dismissed by a cold restart**: a
+`useId` hydration mismatch in `QuantityField` and a `useState is not defined`
+were both HMR artifacts of editing files while the dev server was live. On a
+cold load the ids match and neither appears. What remains is the **pre-existing**
+`data-motion` mismatch on the root `<html>` and the local 503s from the
+deliberately fake service-role key.
+
+### What could not be verified, and why
+
+- **A real Stripe payment, guest or account.** Reaching one needs a real card.
+  The arithmetic, the idempotency keys, the session binding and the refusal
+  paths are covered by tests and by the HTTP-level probes above; the Stripe API
+  call itself was not made.
+- **A signed-in session.** Unchanged limitation from passes 3–12: signing in
+  means handling a password. The guest paths — which are the new ones — *were*
+  driven end to end without one, which is the first time this project has been
+  able to exercise a commerce path in a browser.
+- **The populated guest order page.** It needs a real guest order, which needs a
+  real payment. Its access rules are covered by 45 tests and by the denial paths
+  driven above.
+- **No email was sent** and no Stripe charge or refund was created.
+
+## Deferred, honestly
+
+1. **Guest cancellations and returns.** Account-only, stated on the page.
+2. **Cross-device guest access.** The credential is per-browser by design. A
+   lookup by order number and email is the obvious feature and is deliberately
+   not built — see above.
+3. **Guest file uploads on custom requests.** Needs its own bucket, a
+   signed-upload route and a retention decision.
+4. **Server-side catalog pagination.** The whole published catalog is loaded so
+   the browse counts can be exact. At a few hundred products the counts move to
+   one grouped query and the grid to a paginated server query; the shape in
+   `catalogData.ts` is what would change, not the pages. Recorded because the
+   brief asked for pagination and this catalog holds two products.
+
+## External setup still required
+
+1. **Enable Facebook in Supabase Auth** if it is not already — the UI now offers
+   it. Nothing here changed that configuration.
+2. **Set `TURNSTILE_SECRET_KEY`** to switch the guest-request check on. Until
+   then it is a deliberate no-op.
+3. `commerce_settings.guest.allowCheckout` / `.allowRequests` both default on.

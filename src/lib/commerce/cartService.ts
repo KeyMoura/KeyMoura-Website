@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 import {
   clampQuantity,
+  displayableLineCeiling,
   isRejected,
   lineSignature,
   MAX_LINE_QUANTITY,
@@ -566,6 +567,10 @@ export function serializeCart(resolved: ResolvedCart) {
       // public catalog media — no storage credentials, no owner identity.
       image: resolved.images.get(line.productId) ?? EMPTY_IMAGE_SOURCE,
       quantity: line.quantity,
+      // What the quantity field may offer, derived server-side from the live
+      // product row. `null` means stock is not the limit, which is a different
+      // statement from "99 available" and must not be rendered as one.
+      maxQuantity: displayableLineCeiling(line.product),
       unitPriceCents: line.unitPriceCents,
       lineSubtotalCents: line.lineSubtotalCents,
       selectedOptions: line.selectedOptions,

@@ -2303,20 +2303,33 @@
   .product-lightbox-counter { color: #fff; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
 
   /* ---- Purchase panel ---- */
-  @media (min-width: 1024px) {
-    /* Sticky only where the column is genuinely shorter than the gallery, and
-       bounded by the viewport so a tall panel can still be scrolled through
-       rather than having its foot cut off. `--km-header-height` is the one
-       definition of the bar's height, so a density change moves this too. */
-    .product-info-sticky {
-      position: sticky;
-      top: calc(var(--km-header-height, 3.75rem) + 1.5rem);
-      max-height: calc(100dvh - var(--km-header-height, 3.75rem) - 3rem);
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      scrollbar-width: thin;
-    }
-  }
+  /*
+    Ordinary page content. The page is the only thing that scrolls.
+
+    This column used to be `position: sticky` with
+    `max-height: calc(100dvh - …)` and `overflow-y: auto`, which gave the price,
+    quantity, Add to cart and Request a custom version their own scrollbar
+    inside the page's. Two nested scrollers is a trap on every input device: a
+    wheel over the panel moves one distance and a wheel two pixels to the left
+    moves another, a trackpad chains unpredictably between them, and on a touch
+    screen the page stops responding entirely while a finger is on the panel.
+    `overscroll-behavior: contain` made that deliberate — reaching the panel's
+    end stopped the page rather than handing the scroll back.
+
+    **Sticky was removed rather than repaired.** It could only have been kept if
+    the panel were reliably shorter than the viewport, and it is not: this
+    column carries the title, summary, badges, options, actions, quick facts and
+    every structured section. A sticky box taller than the viewport pins its top
+    and puts its own foot permanently out of reach — which is the failure the
+    `max-height` was papering over, and the reason a second scrollbar appeared
+    at all. Whitespace beside a long gallery is a smaller cost than a purchase
+    control that cannot be scrolled to.
+
+    `min-width: 0` stays: a grid child defaults to `min-width: auto`, so one
+    long unbroken product code would otherwise widen the column and push the
+    page sideways.
+  */
+  .product-info-column { min-width: 0; }
 
   .product-eyebrow-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .product-title {
@@ -2389,18 +2402,45 @@
     line-height: 1.5;
   }
 
-  .product-quantity { display: flex; align-items: center; gap: 0.75rem; }
-  .product-quantity-label { font-size: 0.875rem; font-weight: 600; }
-  .product-quantity-input {
-    width: 5rem;
-    min-height: 2.75rem;
+  /* ---- Quantity field (product page, cart page, cart drawer) ---- */
+  /* One control in three places. The stepper buttons replace the native
+     spinner arrows, which have no accessible name and are far under the 44px
+     target; `min-height: 2.75rem` on all three parts is what keeps them
+     tappable. */
+  .quantity-field { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+  .quantity-field-label { font-size: 0.875rem; font-weight: 600; }
+  .quantity-stepper {
+    display: inline-flex;
+    align-items: stretch;
     border-radius: 0.625rem;
     border: 1px solid var(--border);
     background: var(--panel);
-    padding-inline: 0.75rem;
-    font-variant-numeric: tabular-nums;
+    overflow: hidden;
   }
-  .product-quantity-max { font-size: 0.75rem; color: var(--muted); }
+  .quantity-step {
+    display: grid;
+    place-items: center;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    font-size: 1.125rem;
+    line-height: 1;
+    color: var(--text);
+  }
+  .quantity-step:hover:not(:disabled) { background: var(--km-surface-strong, rgb(255 255 255 / 0.06)); }
+  .quantity-step:disabled { opacity: 0.4; cursor: not-allowed; }
+  .quantity-input {
+    width: 3.5rem;
+    min-height: 2.75rem;
+    border-inline: 1px solid var(--border);
+    background: transparent;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .quantity-stepper.is-compact .quantity-step { min-height: 2.75rem; min-width: 2.5rem; }
+  .quantity-stepper.is-compact .quantity-input { width: 2.75rem; font-size: 0.875rem; }
+  .quantity-max { font-size: 0.75rem; color: var(--muted); }
+  .quantity-message { flex-basis: 100%; font-size: 0.75rem; color: #fcd34d; }
 
   .product-actions { display: grid; gap: 0.625rem; }
   @media (min-width: 480px) {
@@ -2605,28 +2645,85 @@
   }
 
   /* ---- Catalog ---- */
-  .catalog-filters {
-    margin-top: 2rem;
+  /*
+    The browse menu.
+
+    A horizontal row of category chips rather than a permanent sidebar. With
+    one top-level category a full-height sidebar would be a mostly empty column
+    taking a third of the width from the products; the row reads the same at
+    one category and at twenty. Subcategories appear as a second row, and only
+    for the branch you are in.
+
+    Below `sm` both rows are replaced by the drawer trigger: a scrolling chip
+    row hides everything past the third item behind a gesture nobody discovers.
+  */
+  .catalog-nav { margin-top: 2rem; display: none; }
+  .catalog-nav-placeholder { min-height: 12rem; }
+  @media (min-width: 640px) {
+    .catalog-nav { display: block; }
+  }
+  .catalog-nav-row,
+  .catalog-nav-subrow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    list-style: none;
+    padding: 0;
+  }
+  .catalog-nav-subrow {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+  .catalog-nav-chip,
+  .catalog-nav-subchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding-inline: 0.875rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 0.875rem;
+    font-weight: 550;
+    color: var(--text);
+    transition: border-color 120ms ease-out, background 120ms ease-out;
+  }
+  .catalog-nav-subchip { min-height: 2.5rem; font-weight: 500; background: transparent; }
+  .catalog-nav-chip:hover,
+  .catalog-nav-subchip:hover { border-color: var(--brand-primary); }
+  .catalog-nav-chip.is-active,
+  .catalog-nav-subchip.is-active {
+    border-color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+    color: var(--text);
+  }
+  /* The parent of the subcategory you are in stays marked without claiming to
+     be the current page — `aria-current` is on exactly one link at a time. */
+  .catalog-nav-chip.is-branch { border-color: color-mix(in srgb, var(--brand-primary) 50%, var(--border)); }
+  .catalog-nav-count {
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  .catalog-toolbar {
+    margin-top: 1.25rem;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr;
     border-radius: var(--card-radius, 1rem);
     border: 1px solid var(--border);
     background: var(--panel);
     padding: 1rem;
   }
-  .catalog-filter-row {
-    display: grid;
-    gap: 0.75rem;
-    grid-template-columns: 1fr;
-  }
+  .catalog-filter-controls { display: none; gap: 0.75rem; }
   @media (min-width: 640px) {
-    .catalog-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    /* Search spans the row: it is the control people reach for first. */
-    .catalog-search { grid-column: 1 / -1; }
+    .catalog-toolbar { grid-template-columns: minmax(12rem, 1.6fr) auto; align-items: center; }
+    .catalog-filter-controls { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   }
-  @media (min-width: 1024px) {
-    .catalog-filter-row { grid-template-columns: minmax(12rem, 1.6fr) repeat(4, minmax(0, 1fr)); }
-    .catalog-search { grid-column: auto; }
-  }
-  .catalog-filter-summary {
+  .catalog-summary {
     margin-top: 0.875rem;
     display: flex;
     flex-wrap: wrap;
@@ -2636,6 +2733,118 @@
     font-size: 0.875rem;
     color: var(--muted);
   }
+
+  /* ---- Browse & filter sheet (small screens) ---- */
+  .catalog-drawer-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-height: 2.75rem;
+    padding-inline: 0.875rem;
+    border-radius: var(--control-radius);
+    border: 1px solid var(--border);
+    background: var(--panel-strong, var(--panel));
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  @media (min-width: 640px) {
+    .catalog-drawer-trigger { display: none; }
+  }
+  .catalog-drawer-trigger-here {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .catalog-drawer-trigger-badge {
+    display: grid;
+    place-items: center;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 9999px;
+    background: var(--brand-primary);
+    color: var(--km-navbar-badge-text, #0a0a0a);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .catalog-drawer-root { position: fixed; inset: 0; z-index: 80; }
+  .catalog-drawer-backdrop { position: absolute; inset: 0; background: rgb(0 0 0 / 0.6); }
+  .catalog-drawer-panel {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    /* Bounded by the viewport, and the *panel* is the scroller — which is
+       correct for a sheet that covers the page, and is not the nested-scroller
+       mistake the product page had: nothing is scrolling behind it. */
+    max-height: 88dvh;
+    border-top-left-radius: 1rem;
+    border-top-right-radius: 1rem;
+    border: 1px solid var(--border);
+    background: var(--panel-strong, var(--panel));
+  }
+  .catalog-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .catalog-drawer-title { font-size: 1rem; font-weight: 650; color: var(--text); }
+  .catalog-drawer-close {
+    display: grid;
+    place-items: center;
+    height: 2.75rem;
+    width: 2.75rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .catalog-drawer-scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem;
+    display: grid;
+    gap: 1.5rem;
+  }
+  .catalog-drawer-section { display: grid; gap: 0.375rem; }
+  .catalog-drawer-heading {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .catalog-drawer-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 2.75rem;
+    padding-inline: 0.75rem;
+    border-radius: var(--control-radius);
+    font-size: 0.9375rem;
+    color: var(--text);
+  }
+  .catalog-drawer-item.is-child { padding-left: 1.75rem; font-size: 0.875rem; color: var(--muted); }
+  .catalog-drawer-item.is-active {
+    background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+    color: var(--text);
+  }
+  .catalog-drawer-count { font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .catalog-drawer-field { display: grid; gap: 0.375rem; font-size: 0.8125rem; color: var(--muted); }
+  .catalog-drawer-footer {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem calc(1rem + env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom))
+      calc(1rem + env(safe-area-inset-left));
+    border-top: 1px solid var(--border);
+  }
+  .catalog-drawer-footer > * { flex: 1; justify-content: center; }
   .catalog-grid {
     display: grid;
     gap: 1.25rem;

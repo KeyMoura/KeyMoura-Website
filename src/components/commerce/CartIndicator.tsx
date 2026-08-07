@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCartShopping } from "@fortawesome/free-solid-svg-icons";
 import ProductImage from "@/components/ProductImage";
+import QuantityField from "@/components/commerce/QuantityField";
 import { badgeCount, badgeLabel } from "@/lib/navBadge";
 import { formatCents, useCart, useCartMutations } from "@/lib/hooks/useCart";
 
@@ -145,22 +146,18 @@ export default function CartIndicator() {
                           {item.optionLabels.map((option) => `${option.group}: ${option.label}`).join(" · ")}
                         </p>
                       ) : null}
-                      <div className="mt-1 flex items-center gap-2">
-                        <label className="sr-only" htmlFor={`qty-${item.itemId}`}>
-                          Quantity for {item.name}
-                        </label>
-                        <input
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <QuantityField
                           id={`qty-${item.itemId}`}
-                          type="number"
-                          min={1}
-                          max={99}
                           value={item.quantity}
+                          max={item.maxQuantity ?? null}
+                          describedItem={item.name}
                           disabled={!item.itemId || setQuantity.isPending}
-                          onChange={(event) =>
-                            item.itemId &&
-                            setQuantity.mutate({ itemId: item.itemId, quantity: Number(event.target.value) })
+                          showMax={false}
+                          size="compact"
+                          onCommit={(quantity) =>
+                            item.itemId && setQuantity.mutate({ itemId: item.itemId, quantity })
                           }
-                          className="ui-input h-8 w-16 text-sm"
                         />
                         <button
                           type="button"

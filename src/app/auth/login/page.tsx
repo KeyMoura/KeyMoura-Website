@@ -91,7 +91,19 @@ export default function LoginPage() {
     window.location.assign(next);
   };
 
-  const handleOAuth = async (provider: "google" | "discord") => {
+  /**
+   * Sign-in providers offered on this page.
+   *
+   * Discord was replaced by Facebook here. Nothing was disabled in Supabase
+   * Auth and no identity was unlinked: existing Discord identities keep
+   * working, `/auth/callback` still exchanges any provider's code, and a user
+   * who had one can still sign in with it. This list is what the page *offers*,
+   * not what the project accepts.
+   *
+   * `"facebook"` is the exact identifier in the installed `@supabase/auth-js`
+   * `Provider` union — checked against `node_modules`, not remembered.
+   */
+  const handleOAuth = async (provider: "google" | "facebook") => {
     setError(null);
     setLoading(true);
 
@@ -152,11 +164,11 @@ export default function LoginPage() {
 
               <button
                 type="button"
-                onClick={() => handleOAuth("discord")}
+                onClick={() => handleOAuth("facebook")}
                 disabled={loading}
                 className="inline-flex w-full items-center justify-center rounded-full border border-zinc-700 bg-black/40 px-4 py-2 text-sm font-medium text-brand-text transition hover:bg-zinc-900 disabled:opacity-60"
               >
-                Continue with Discord
+                Continue with Facebook
               </button>
             </div>
 

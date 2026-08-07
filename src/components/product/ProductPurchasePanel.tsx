@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faShareNodes, faCheck } from "@fortawesome/free-solid-svg-icons";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import QuantityField from "@/components/commerce/QuantityField";
 import WishlistButton from "@/components/commerce/WishlistButton";
 import ProductStickyBar from "@/components/product/ProductStickyBar";
 import { useCartMutations } from "@/lib/hooks/useCart";
@@ -307,28 +308,15 @@ export default function ProductPurchasePanel({
       ) : null}
 
       {canBuy ? (
-        <div className="product-quantity">
-          <label htmlFor="product-quantity" className="product-quantity-label">
-            Quantity
-          </label>
-          <input
-            id="product-quantity"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={maxQuantity ?? 999}
-            value={quantity}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              const capped = Math.min(Math.max(1, Number.isFinite(next) ? next : 1), maxQuantity ?? 999);
-              setQuantity(capped);
-            }}
-            className="product-quantity-input"
-          />
-          {maxQuantity != null ? (
-            <span className="product-quantity-max">{maxQuantity} available</span>
-          ) : null}
-        </div>
+        <QuantityField
+          id="product-quantity"
+          value={quantity}
+          max={maxQuantity}
+          onCommit={(next) => {
+            setQuantity(next);
+            setMessage("");
+          }}
+        />
       ) : null}
 
       <div className="product-actions">

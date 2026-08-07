@@ -6,6 +6,15 @@ import { resolveCart } from "@/lib/commerce/cartService";
 import { readGuestToken } from "@/lib/commerce/cartSession";
 import { mergeGuestCart } from "@/lib/commerce/cartService";
 import {
+  createGuestOrderToken,
+  guestAccessExpiry,
+  GUEST_ORDER_COOKIE,
+  GUEST_ORDER_COOKIE_MAX_AGE,
+  hashGuestOrderToken,
+  parseGuestContact,
+  type GuestContact,
+} from "@/lib/commerce/guestOrders";
+import {
   linkCartReservationsToOrder,
   loadCommerceSettings,
   releaseReservations,
@@ -18,7 +27,7 @@ import {
 } from "@/lib/commerce/checkoutFulfillment";
 
 /**
- * Direct-purchase checkout.
+ * Direct-purchase checkout, for an account or a guest.
  *
  * The order is written *before* the Stripe session exists, with a canonical
  * `agreed_price_cents` computed here from live product rows. The session then
@@ -27,11 +36,17 @@ import {
  * same accounting RPC. Direct purchases inherit every payment guarantee the
  * request flow already has instead of growing a second, weaker payment path.
  *
- * Checkout requires a signed-in customer. `orders.customer_id` is NOT NULL and
- * the webhook refuses to settle a session whose `customer_id` does not match
- * the order, so a guest order is not merely unimplemented — it is
- * unrepresentable. Guests build a cart, then sign in to pay, and the guest
- * cart is merged into the account on the way through.
+ * **Guest checkout, and what it is not.** Until `20260806050000`,
+ * `orders.customer_id` was NOT NULL, so a guest order was unrepresentable
+ * rather than unimplemented. It is now nullable, and a guest order carries the
+ * address its receipt goes to plus a salted digest of the cookie token that
+ * lets that browser read it back.
+ *
+ * A guest is **not** a second pricing path. Everything below this point —
+ * revalidation, fulfillment planning, the reservation, the order write, the
+ * Stripe session, the idempotency key — is the same code for both. The only
+ * differences are which identity columns are set, which address the receipt is
+ * sent to, and where the customer lands afterwards.
  */
 
 export const runtime = "nodejs";
@@ -41,22 +56,45 @@ const STRIPE_MINIMUM_CENTS = 50;
 
 export async function POST(req: NextRequest) {
   const user = await getUserFromRequest(req);
+  const guestToken = readGuestToken(req);
+
+  // Read once: the fulfillment plan needs it too, and a second `req.json()`
+  // on a consumed body returns nothing.
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const settings = await loadCommerceSettings();
+
+  let guest: GuestContact | null = null;
   if (!user) {
-    return NextResponse.json(
-      { error: "Sign in to finish checking out.", requiresSignIn: true },
-      { status: 401 }
-    );
+    if (!settings.guest.allowCheckout) {
+      return NextResponse.json(
+        { error: "Sign in to finish checking out.", requiresSignIn: true },
+        { status: 401 }
+      );
+    }
+    // The address is required, because it is the only way a guest ever hears
+    // about the order again. It is validated here rather than trusted: it
+    // reaches a mail send, so a value carrying CR or LF is a header injection
+    // into a message somebody else receives.
+    const parsed = parseGuestContact({ email: body.guestEmail, name: body.guestName });
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.message, field: parsed.field }, { status: 400 });
+    }
+    guest = parsed.contact;
+    if (!guestToken) {
+      // Without a cart cookie there is no cart to check out, and nothing to
+      // attach the order to afterwards.
+      return NextResponse.json({ error: "Your cart is empty." }, { status: 409 });
+    }
   }
 
-  // Fold in anything bought as a guest before this cart is priced, so the
-  // customer pays for what they actually filled the cart with.
-  const guestToken = readGuestToken(req);
-  if (guestToken) await mergeGuestCart(guestToken, user.id);
+  // Fold in anything put in the cart as a guest before this cart is priced, so
+  // the customer pays for what they actually filled the cart with.
+  if (user && guestToken) await mergeGuestCart(guestToken, user.id);
 
   // Revalidation immediately before the session is created: this is the price
   // the customer is charged, recomputed from live products, not the number the
   // browser last displayed.
-  const cart = await resolveCart({ customerId: user.id });
+  const cart = await resolveCart(user ? { customerId: user.id } : { guestToken: guestToken as string });
 
   if (!cart.priced.lines.length) {
     return NextResponse.json({ error: "Your cart is empty." }, { status: 409 });
@@ -83,8 +121,6 @@ export async function POST(req: NextRequest) {
   // The browser sends a *method id* and an address. It never sends a shipping
   // price, and no field carrying one is read: the charge is recomputed here
   // from the configured methods and this server's own subtotal.
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const settings = await loadCommerceSettings();
   const productFulfillment = await loadProductFulfillment(lines.map((line) => line.productId));
   const quotableLines = toQuotableLines(lines, productFulfillment);
 
@@ -122,7 +158,10 @@ export async function POST(req: NextRequest) {
 
   const reservation = await reserveCartInventory({
     cartId: cart.cartId,
-    userId: user.id,
+    // A guest hold is keyed on the cart, which is what the release and commit
+    // paths already look it up by. There is no user to attribute it to and
+    // inventing one would put a fake id in the ledger.
+    userId: user?.id ?? null,
     lines: lines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
     minutes: settings.inventory.reservationMinutes,
     allowOversell: settings.inventory.allowOverselling,
@@ -150,10 +189,24 @@ export async function POST(req: NextRequest) {
       ? lines[0].product.name
       : `${lines[0].product.name} and ${lines.length - 1} more item${lines.length - 1 === 1 ? "" : "s"}`;
 
+  // Minted before the insert so its digest can be written with the row: an
+  // order that exists without a way for its guest to reach it is an order that
+  // has to be recovered by hand.
+  const guestOrderToken = guest ? createGuestOrderToken() : null;
+
   const { data: order, error: orderError } = await routeServiceClient
     .from("orders")
     .insert({
-      customer_id: user.id,
+      customer_id: user?.id ?? null,
+      guest_email: guest?.email ?? null,
+      guest_name: guest?.name ?? null,
+      // The raw token is never stored. A database read — a dump, a log, a
+      // support screen — must not yield something that can be replayed.
+      guest_token_hash: guestOrderToken ? hashGuestOrderToken(guestOrderToken) : null,
+      // Bounded from the moment it is minted. A cookie left on a shared
+      // computer stops working on its own rather than waiting for somebody to
+      // notice.
+      guest_access_expires_at: guestOrderToken ? guestAccessExpiry() : null,
       order_kind: "direct_purchase",
       status: "awaiting_payment",
       payment_status: "unpaid",
@@ -218,11 +271,24 @@ export async function POST(req: NextRequest) {
     const session = await stripeClient().checkout.sessions.create(
       {
         mode: "payment",
-        customer_email: user.email,
+        customer_email: user?.email ?? guest?.email,
         client_reference_id: order.id,
-        // The webhook matches on both of these before settling any money.
-        metadata: { order_id: order.id, customer_id: user.id, payment_kind: "full", order_kind: "direct_purchase" },
-        payment_intent_data: { metadata: { order_id: order.id, customer_id: user.id } },
+        /**
+         * The webhook matches on these before settling any money.
+         *
+         * For an account order that is `customer_id`, unchanged. For a guest
+         * there is no customer id, and comparing two nulls proves nothing — so
+         * a guest session is marked as one, and the webhook additionally
+         * requires it to be the session this order actually recorded. That is
+         * a strictly stronger binding than the old comparison, not a relaxed
+         * one: the session id is minted by Stripe and written by us.
+         */
+        metadata: user
+          ? { order_id: order.id, customer_id: user.id, payment_kind: "full", order_kind: "direct_purchase" }
+          : { order_id: order.id, guest: "1", payment_kind: "full", order_kind: "direct_purchase" },
+        payment_intent_data: {
+          metadata: user ? { order_id: order.id, customer_id: user.id } : { order_id: order.id, guest: "1" },
+        },
         // One line for the canonical total. Stripe is told the amount; it is
         // never asked to compute one, and the client never supplies one.
         line_items: [
@@ -238,7 +304,12 @@ export async function POST(req: NextRequest) {
             },
           },
         ],
-        success_url: `${siteUrl}/orders/${order.id}?payment=success`,
+        // A guest lands on the read-only guest view, which authenticates on the
+        // cookie. The account page reads through RLS as the signed-in customer
+        // and would show a guest nothing.
+        success_url: guest
+          ? `${siteUrl}/orders/guest/${order.id}?payment=success`
+          : `${siteUrl}/orders/${order.id}?payment=success`,
         cancel_url: `${siteUrl}/cart?payment=cancelled`,
         // The session dies when the hold does. Without this the session would
         // outlive its reservation by up to 24 hours, and a customer could pay
@@ -270,7 +341,28 @@ export async function POST(req: NextRequest) {
       .update({ converted_order_id: order.id, updated_at: new Date().toISOString() })
       .eq("id", cart.cartId);
 
-    return NextResponse.json({ url: session.url, orderId: order.id });
+    const response = NextResponse.json({ url: session.url, orderId: order.id });
+
+    /**
+     * The guest's credential, set on the response that hands back the Stripe
+     * URL — so it exists before the customer leaves for Stripe and is present
+     * when they come back.
+     *
+     * httpOnly so no script can read it, SameSite=Lax so it is not sent on a
+     * cross-site POST but *is* sent on the top-level GET that Stripe redirects
+     * back with, and Secure in production. It is never put in a URL.
+     */
+    if (guestOrderToken) {
+      response.cookies.set(GUEST_ORDER_COOKIE, guestOrderToken, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: GUEST_ORDER_COOKIE_MAX_AGE,
+      });
+    }
+
+    return response;
   } catch (error) {
     await releaseReservations({ reason: "checkout_session_failed", cartId: cart.cartId, orderId: order.id });
     await routeServiceClient.from("orders").delete().eq("id", order.id);

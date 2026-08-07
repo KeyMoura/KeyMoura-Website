@@ -141,6 +141,13 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["catalog.view", "catalog.manage"],
       },
       {
+        href: "/staff/catalog/categories",
+        label: "Categories",
+        description: "The storefront browse menu: categories, subcategories and order.",
+        icon: "catalog",
+        anyOf: ["catalog.categories.manage"],
+      },
+      {
         href: "/staff/catalog/discounts",
         label: "Discount codes",
         description: "Codes, targeting, limits and the redemption report.",

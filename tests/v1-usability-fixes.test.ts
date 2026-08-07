@@ -5,7 +5,9 @@ import test from "node:test";
 const read = (path: string) => readFileSync(path, "utf8");
 
 test("catalog uses gallery media and exposes image navigation", () => {
-  const catalog = read("src/app/catalog/page.tsx");
+  // The catalog's media query moved into the loader every catalog route shares
+  // when category routes arrived.
+  const catalog = read("src/lib/commerce/catalogData.ts");
   const product = read("src/app/catalog/[slug]/page.tsx");
   const image = read("src/components/ProductImage.tsx");
   assert.match(catalog, /from\("product_media"\)/);

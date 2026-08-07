@@ -35,7 +35,7 @@ async function currentCart(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const { cart } = await currentCart(req);
+  const { cart, userId } = await currentCart(req);
   const settings = await loadCommerceSettings();
   const publicView = publicCommerceSettings(settings);
 
@@ -68,6 +68,21 @@ export async function GET(req: NextRequest) {
     amountToFreeShippingCents: amountToFreeShipping(settings, qualifying),
     pickup: publicView.pickup,
     supportEmail: publicView.supportEmail,
+    /*
+      Who the cart page is talking to, and whether the shop takes guests.
+
+      Answered here rather than by the browser reading its own Supabase
+      session, so there is one source of truth about who a visitor is — and
+      `guestCheckout` is the shop's switch, not the browser's. Both are
+      re-checked by the checkout route, so what these enable in the UI can only
+      remove a control, never grant one.
+
+      Neither value identifies anybody: it is a boolean about the caller's own
+      request and a published setting.
+    */
+    signedIn: Boolean(userId),
+    guestCheckout: publicView.guest.allowCheckout,
+    guestRequests: publicView.guest.allowRequests,
   });
 }
 

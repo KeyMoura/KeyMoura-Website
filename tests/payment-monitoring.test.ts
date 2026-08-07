@@ -69,7 +69,28 @@ test("checkout retries are idempotent and delayed failures notify both sides", (
   assert.match(webhook, /templateKey: "payment_failed"/);
   assert.match(webhook, /templateKey: "staff_payment_failed"/);
   assert.match(webhook, /session\.currency !== "usd"/);
-  assert.match(webhook, /session\.metadata\?\.customer_id !== order\.customer_id/);
+
+  /*
+   * The session-to-order binding, re-pointed for guest checkout and made
+   * stricter rather than looser.
+   *
+   * It used to be one comparison: `metadata.customer_id !== order.customer_id`.
+   * A guest order has neither, and `null === null` would have been a
+   * comparison that authorises everything — so the guest branch requires the
+   * session to be **the one this order recorded**, an id minted by Stripe and
+   * written by the checkout route. The account branch is untouched.
+   */
+  assert.match(webhook, /session\.metadata\?\.customer_id === order\.customer_id/);
+  assert.match(
+    webhook,
+    /session\.metadata\?\.guest === "1" && order\.stripe_checkout_session_id === session\.id/
+  );
+  assert.match(webhook, /if \(!order \|\| !order\.agreed_price_cents \|\| !identityMatches\)/);
+
+  // A guest's failed payment must reach the same branch an account's does, or
+  // the hold is never released and nobody is told.
+  assert.match(webhook, /const failedIsGuest = failedSession\.metadata\?\.guest === "1"/);
+  assert.match(webhook, /if \(failedOrderId && \(failedCustomerId \|\| failedIsGuest\)\)/);
 });
 
 test("Sentry covers every Next.js runtime without collecting customer PII", () => {
