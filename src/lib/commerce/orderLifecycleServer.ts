@@ -68,7 +68,10 @@ export async function loadCommercePolicy(): Promise<CommercePolicy> {
 export type OrderLifecycleRow = {
   id: string;
   order_number: string | null;
-  customer_id: string;
+  /** Null on a guest order — see `20260806050000_guest_commerce.sql`. */
+  customer_id: string | null;
+  guest_email: string | null;
+  guest_name: string | null;
   product_id: string | null;
   product_name: string;
   order_kind: string | null;
@@ -93,7 +96,7 @@ export type OrderLifecycleRow = {
 };
 
 const ORDER_COLUMNS =
-  "id,order_number,customer_id,product_id,product_name,order_kind,status,payment_status," +
+  "id,order_number,customer_id,guest_email,guest_name,product_id,product_name,order_kind,status,payment_status," +
   "fulfillment_status,cancellation_status,return_status,fulfillment_method,agreed_price_cents," +
   "amount_paid_cents,amount_refunded_cents,deposit_amount_cents,discount_code_id,created_at," +
   "delivered_at,picked_up_at,shipped_at,cancelled_at,cancellation_reason,inventory_committed_at";
@@ -474,7 +477,7 @@ export async function applyOrderCancellation(input: ApplyCancellationInput) {
 
 export type LifecycleNotification = {
   orderId: string;
-  order: Pick<OrderLifecycleRow, "customer_id" | "product_name" | "order_number">;
+  order: Pick<OrderLifecycleRow, "customer_id" | "guest_email" | "guest_name" | "product_name" | "order_number">;
   actorUserId: string | null;
   templateKey: CommerceEmailTemplateKey;
   /**
@@ -516,21 +519,38 @@ export type LifecycleNotification = {
  */
 export async function sendLifecycleNotification(input: LifecycleNotification) {
   try {
-    const [{ data: authUser }, config] = await Promise.all([
-      db().auth.admin.getUserById(input.order.customer_id),
+    /**
+     * A guest order has no account, so there is no auth user to look up and no
+     * bell for a notification to land in. Their address is on the order.
+     *
+     * The lookup is skipped rather than attempted with a null id: asking the
+     * admin API for user `null` is a request that can only fail, and a failure
+     * here is swallowed by the catch below — so it would present as a customer
+     * silently not being told their refund completed.
+     */
+    const [authUserResult, config] = await Promise.all([
+      input.order.customer_id
+        ? db().auth.admin.getUserById(input.order.customer_id)
+        : Promise.resolve({ data: null }),
       getCommerceEmailConfig(),
     ]);
+    const authUser = authUserResult.data;
+    const recipient = input.order.customer_id
+      ? authUser?.user?.email
+      : input.order.guest_email ?? undefined;
+    const displayName = input.order.customer_id
+      ? authUser?.user?.user_metadata?.display_name || authUser?.user?.email?.split("@")[0] || "Customer"
+      : input.order.guest_name?.trim() || input.order.guest_email?.split("@")[0] || "Customer";
 
     if (config.sendStatusUpdates !== false) {
       await sendCommerceEmail({
-        to: authUser.user?.email,
+        to: recipient,
         orderId: input.orderId,
         templateKey: input.templateKey,
         eventKey: input.eventKey,
         href: input.href,
         variables: {
-          customer_name:
-            authUser.user?.user_metadata?.display_name || authUser.user?.email?.split("@")[0] || "Customer",
+          customer_name: displayName,
           product_name: input.order.product_name,
           order_label: input.order.order_number || "your KeyMoura order",
           detail: input.detail || "",
@@ -541,13 +561,15 @@ export async function sendLifecycleNotification(input: LifecycleNotification) {
       });
     }
 
-    await notifyOrderUser({
-      orderId: input.orderId,
-      actorUserId: input.actorUserId,
-      recipientUserId: input.order.customer_id,
-      title: input.title,
-      message: input.message,
-    });
+    if (input.order.customer_id) {
+      await notifyOrderUser({
+        orderId: input.orderId,
+        actorUserId: input.actorUserId,
+        recipientUserId: input.order.customer_id,
+        title: input.title,
+        message: input.message,
+      });
+    }
 
     if (input.notifyStaff) {
       await notifyOrderStaff({

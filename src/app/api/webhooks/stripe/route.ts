@@ -4,6 +4,7 @@ import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { getCommerceEmailConfig, sendCommerceEmail } from "@/lib/commerceEmail";
 import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
+import { guestDisplayName } from "@/lib/commerce/guestOrders";
 import { raiseOperationalAlert, recordIntegrationObservation } from "@/lib/comms/operationalAlerts";
 import { captureCommerceException } from "@/lib/monitoring";
 import {
@@ -11,6 +12,7 @@ import {
   logLifecycleFailure,
   moneyText,
   sendLifecycleNotification,
+  type OrderLifecycleRow,
 } from "@/lib/commerce/orderLifecycleServer";
 import {
   commitOrderReservations,
@@ -46,7 +48,7 @@ async function settleRefundSideEffects(stripeRefundId: string, status: "succeede
 
   const { data: order } = await routeServiceClient
     .from("orders")
-    .select("id,customer_id,product_name,order_number,cancellation_status,return_status,amount_paid_cents,amount_refunded_cents")
+    .select("id,customer_id,guest_email,guest_name,product_name,order_number,cancellation_status,return_status,amount_paid_cents,amount_refunded_cents")
     .eq("id", refund.order_id)
     .maybeSingle();
   if (!order) return;
@@ -103,7 +105,7 @@ async function settleRefundSideEffects(stripeRefundId: string, status: "succeede
 
   await sendLifecycleNotification({
     orderId: refund.order_id,
-    order: order as { customer_id: string; product_name: string; order_number: string | null },
+    order: order as unknown as Pick<OrderLifecycleRow, "customer_id" | "guest_email" | "guest_name" | "product_name" | "order_number">,
     actorUserId: null,
     templateKey: succeeded ? (fullyRefunded ? "refund_completed" : "refund_partial_completed") : "refund_failed",
     eventKey: `refund-webhook-${stripeRefundId}-${status}`,
@@ -290,7 +292,16 @@ export async function POST(req: NextRequest) {
     const failedSession = event.data.object as Stripe.Checkout.Session;
     const failedOrderId = failedSession.metadata?.order_id || failedSession.client_reference_id;
     const failedCustomerId = failedSession.metadata?.customer_id;
-    if (failedOrderId && failedCustomerId) {
+    /**
+     * A guest session carries no `customer_id`, so the old
+     * `if (failedOrderId && failedCustomerId)` would have skipped the whole
+     * branch for a guest: the order would have stayed `unpaid` rather than
+     * `payment_failed`, **the inventory hold would never have been released**,
+     * and nobody would have been told. Marked as a guest instead, which the
+     * checkout route sets on every guest session.
+     */
+    const failedIsGuest = failedSession.metadata?.guest === "1";
+    if (failedOrderId && (failedCustomerId || failedIsGuest)) {
       // `payment_failed` rather than leaving it `unpaid`: the column previously
       // could not tell "never tried" from "tried and was declined", which is
       // the difference between a nudge and an apology.
@@ -309,16 +320,30 @@ export async function POST(req: NextRequest) {
       }
       const failedOrder = await routeServiceClient
         .from("orders")
-        .select("product_name,order_number")
+        .select("product_name,order_number,customer_id,guest_email,guest_name")
         .eq("id", failedOrderId)
         .maybeSingle();
       const failedProduct = String(failedOrder.data?.product_name || "your order");
       const failedLabel = String(failedOrder.data?.order_number || "your KeyMoura order");
-      const { data: failedAuthUser } = await routeServiceClient.auth.admin.getUserById(failedCustomerId);
+      // The order row, not the session metadata, decides who this is: the
+      // metadata says which kind of checkout it was, the row says who owns it.
+      const failedOwnerId = (failedOrder.data?.customer_id as string | null) ?? null;
+      const failedGuestEmail = (failedOrder.data?.guest_email as string | null) ?? null;
+      const { data: failedAuthUser } = failedOwnerId
+        ? await routeServiceClient.auth.admin.getUserById(failedOwnerId)
+        : { data: null };
+      const failedRecipient = failedOwnerId ? failedAuthUser?.user?.email : failedGuestEmail ?? undefined;
+      const failedName = failedOwnerId
+        ? failedAuthUser?.user?.user_metadata?.display_name || failedAuthUser?.user?.email?.split("@")[0] || "Customer"
+        : guestDisplayName({ email: failedGuestEmail ?? "", name: failedOrder.data?.guest_name as string | null });
       const failedConfig = await getCommerceEmailConfig();
 
       await Promise.all([
-        notifyOrderUser({ orderId:failedOrderId, actorUserId:null, recipientUserId:failedCustomerId, title:"Payment failed", message:"Your payment did not complete. No successful payment was recorded; open the order to try again." }),
+        // A guest has no bell for an in-app notification to land in; the email
+        // below is how they hear about it.
+        failedOwnerId
+          ? notifyOrderUser({ orderId:failedOrderId, actorUserId:null, recipientUserId:failedOwnerId, title:"Payment failed", message:"Your payment did not complete. No successful payment was recorded; open the order to try again." })
+          : Promise.resolve(),
         // Deduplicated on the order rather than the Stripe event, so a customer
         // who fails twice does not fill the staff bell with the same line.
         raiseOperationalAlert({
@@ -331,12 +356,12 @@ export async function POST(req: NextRequest) {
         // of the same failure is silent.
         failedConfig.sendPaymentUpdates
           ? sendCommerceEmail({
-              to: failedAuthUser.user?.email,
+              to: failedRecipient,
               orderId: failedOrderId,
               templateKey: "payment_failed",
               eventKey: `stripe-payment-failed-${event.id}`,
               variables: {
-                customer_name: failedAuthUser.user?.user_metadata?.display_name || failedAuthUser.user?.email?.split("@")[0] || "Customer",
+                customer_name: failedName,
                 product_name: failedProduct,
                 order_label: failedLabel,
                 status: "payment failed",
@@ -378,8 +403,25 @@ export async function POST(req: NextRequest) {
   if (inserted.error?.code === "23505") return NextResponse.json({ received: true, duplicate: true });
   if (inserted.error) return webhookFailed(event, "record_checkout_event");
 
-  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,agreed_price_cents,order_kind").eq("id", orderId).maybeSingle();
-  if (!order || !order.agreed_price_cents || session.metadata?.customer_id !== order.customer_id) {
+  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,product_name,customer_id,guest_email,guest_name,agreed_price_cents,order_kind,stripe_checkout_session_id").eq("id", orderId).maybeSingle();
+  /**
+   * Binding a session to an order.
+   *
+   * An account order matches on `customer_id`, exactly as before. A guest
+   * order has none, and `undefined !== null` would have refused every guest
+   * payment — while `null === null` would have been a comparison that proves
+   * nothing, which is worse. A guest session must therefore say it is one and
+   * be **the session this order recorded**: that id is minted by Stripe and
+   * written by the checkout route, so it is a strictly stronger binding than
+   * the identity comparison it stands in for, not a relaxed one.
+   */
+  const guestOrder = Boolean(order && !order.customer_id);
+  const identityMatches = order
+    ? guestOrder
+      ? session.metadata?.guest === "1" && order.stripe_checkout_session_id === session.id
+      : session.metadata?.customer_id === order.customer_id
+    : false;
+  if (!order || !order.agreed_price_cents || !identityMatches) {
     await routeServiceClient.from("stripe_webhook_events").delete().eq("stripe_event_id", event.id);
     return NextResponse.json({ error: "Order amount mismatch" }, { status: 409 });
   }
@@ -491,11 +533,17 @@ export async function POST(req: NextRequest) {
       }
     }
   }
-  const { data: authUser } = await routeServiceClient.auth.admin.getUserById(order.customer_id);
+  // A guest has no auth user to look up, and asking for one by a null id is a
+  // request that can only fail.
+  const authUser = order.customer_id
+    ? (await routeServiceClient.auth.admin.getUserById(order.customer_id)).data
+    : null;
   const config = await getCommerceEmailConfig();
   const paidAmount = `$${(session.amount_total / 100).toFixed(2)}`;
-  const customerName =
-    authUser.user?.user_metadata?.display_name || authUser.user?.email?.split("@")[0] || "Customer";
+  const recipientEmail = order.customer_id ? authUser?.user?.email : order.guest_email ?? undefined;
+  const customerName = order.customer_id
+    ? authUser?.user?.user_metadata?.display_name || authUser?.user?.email?.split("@")[0] || "Customer"
+    : guestDisplayName({ email: order.guest_email ?? "", name: order.guest_name });
   const orderLabel = order.order_number || "your KeyMoura order";
   const isDirectPurchase = order.order_kind === "direct_purchase";
 
@@ -514,7 +562,7 @@ export async function POST(req: NextRequest) {
    */
   if (config.sendPaymentUpdates) {
     await sendCommerceEmail({
-      to: authUser.user?.email,
+      to: recipientEmail,
       orderId,
       templateKey: isDirectPurchase ? "order_received" : "payment_received",
       eventKey: isDirectPurchase ? `order-received-${orderId}` : `stripe-paid-${event.id}`,
@@ -560,13 +608,18 @@ export async function POST(req: NextRequest) {
         ? `${orderLabel} — ${paidAmount} paid for ${order.product_name}. Ready to prepare.`
         : `${paidAmount} was received for ${orderLabel}.${fullyPaid ? " Paid in full." : ""}`,
     }),
-    notifyOrderUser({
-      orderId,
-      actorUserId: null,
-      recipientUserId: order.customer_id,
-      title: "Payment received",
-      message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received.${fullyPaid ? " Your order is paid in full." : ` $${((order.agreed_price_cents-newNetCollected)/100).toFixed(2)} remains.`}`,
-    }),
+    // An in-app notification needs an account to land in. A guest has none —
+    // their receipt is the email above, and inventing a notification nobody
+    // can ever open would only make the bell's counts wrong.
+    order.customer_id
+      ? notifyOrderUser({
+          orderId,
+          actorUserId: null,
+          recipientUserId: order.customer_id,
+          title: "Payment received",
+          message: `Your $${(session.amount_total / 100).toFixed(2)} payment was received.${fullyPaid ? " Your order is paid in full." : ` $${((order.agreed_price_cents-newNetCollected)/100).toFixed(2)} remains.`}`,
+        })
+      : Promise.resolve(),
     notifyOrderStaff({ orderId, actorUserId:null, title:fullyPaid ? "Order paid in full" : "Deposit received", message:`$${(session.amount_total/100).toFixed(2)} was received for ${order.product_name}. Production is ready to continue.` }),
   ]);
   await routeServiceClient.from("stripe_webhook_events").update({ processed_at: new Date().toISOString() }).eq("stripe_event_id", event.id);

@@ -10,10 +10,17 @@ const addToCart = read("src/components/commerce/AddToCartButton.tsx");
 const productPage = read("src/app/catalog/[slug]/page.tsx");
 
 test("checkout re-resolves the cart from live products before charging", () => {
+  // Re-pointed for guest checkout: the cart is resolved from the account *or*
+  // the guest cookie, and the property that matters is unchanged — the cart is
+  // re-priced server-side before any order row exists.
   const orderInsert = checkout.indexOf('.from("orders")');
-  const revalidate = checkout.indexOf("resolveCart({ customerId: user.id })");
+  const revalidate = checkout.indexOf("await resolveCart(user ?");
   assert.ok(revalidate > 0, "checkout must resolve the cart server-side");
   assert.ok(revalidate < orderInsert, "revalidation must happen before the order is written");
+  // Stricter than before: neither branch may take a price from the request.
+  for (const field of ["body.amount", "body.total", "body.price", "body.subtotal", "body.totals"]) {
+    assert.ok(!checkout.includes(field), `checkout must never read ${field} from the request`);
+  }
 });
 
 test("the charged amount comes from the resolved cart, never the request body", () => {
@@ -70,23 +77,72 @@ test("checkout refuses a cart holding anything unavailable", () => {
   assert.match(checkout, /status: 409/);
 });
 
-test("checkout requires a signed-in customer and says so explicitly", () => {
+/**
+ * Re-pointed, not deleted.
+ *
+ * This used to require that a signed-out customer was always refused. Guest
+ * checkout is now a *setting*, so the property that has to hold is that the
+ * refusal still happens when the shop has it switched off — and that the
+ * switch is the server's, read from commerce settings rather than the request.
+ */
+test("checkout refuses a guest only when the shop has guest checkout off", () => {
   const guard = checkout.slice(checkout.indexOf("const user = await getUserFromRequest"));
-  assert.match(guard.slice(0, 400), /requiresSignIn: true/);
-  assert.match(guard.slice(0, 400), /status: 401/);
+  const window = guard.slice(0, 1400);
+  assert.match(window, /if \(!settings\.guest\.allowCheckout\)/, "the switch is the shop's setting");
+  assert.match(window, /requiresSignIn: true/);
+  assert.match(window, /status: 401/);
+  // And a guest who *is* allowed must still identify themselves.
+  assert.match(window, /parseGuestContact/);
+  assert.ok(
+    guard.indexOf("parseGuestContact") < guard.indexOf('.from("orders")'),
+    "the address must be validated before an order row exists"
+  );
 });
 
 test("a guest cart is merged into the account before checkout prices it", () => {
   const merge = checkout.indexOf("mergeGuestCart(guestToken, user.id)");
-  const resolve = checkout.indexOf("resolveCart({ customerId: user.id })");
+  const resolve = checkout.indexOf("await resolveCart(user ?");
   assert.ok(merge > 0 && merge < resolve, "the guest cart must be folded in before the cart is priced");
+  // The merge is for a signed-in customer only: folding a guest cart into
+  // "the account" when there is no account is meaningless, and the guard
+  // states it.
+  assert.match(checkout, /if \(user && guestToken\) await mergeGuestCart/);
 });
 
-test("a direct order carries the same webhook metadata the quote flow uses", () => {
-  // The existing webhook matches on order_id and customer_id before settling
-  // money; a direct order that omitted either would never be paid out.
-  assert.match(checkout, /metadata: \{ order_id: order\.id, customer_id: user\.id/);
-  assert.match(checkout, /payment_intent_data: \{ metadata: \{ order_id: order\.id, customer_id: user\.id \} \}/);
+test("a guest order carries an access credential that is never stored raw", () => {
+  assert.match(checkout, /createGuestOrderToken\(\)/);
+  assert.match(checkout, /guest_token_hash: guestOrderToken \? hashGuestOrderToken\(guestOrderToken\) : null/);
+  assert.match(checkout, /guest_access_expires_at: guestOrderToken \? guestAccessExpiry\(\) : null/);
+  // httpOnly, and never in a URL.
+  assert.match(checkout, /httpOnly: true/);
+  assert.ok(
+    !/success_url:[^;]*guestOrderToken/.test(checkout),
+    "the token must never be placed in a redirect URL"
+  );
+});
+
+test("a direct order carries the metadata the webhook binds on, for both identities", () => {
+  // The webhook matches on order_id plus an identity before settling money; a
+  // session that omitted either would never be paid out. An account order
+  // still carries `customer_id`, unchanged. A guest order has none, so it is
+  // marked as a guest — and the webhook additionally requires it to be the
+  // session the order recorded, which is a stronger binding, not a weaker one.
+  assert.match(checkout, /order_id: order\.id, customer_id: user\.id/);
+  assert.match(checkout, /order_id: order\.id, guest: "1"/);
+  assert.match(checkout, /payment_intent_data: \{[\s\S]{0,200}customer_id: user\.id/);
+
+  const webhook = read("src/app/api/webhooks/stripe/route.ts");
+  assert.match(webhook, /session\.metadata\?\.customer_id === order\.customer_id/, "the account binding survives");
+  assert.match(
+    webhook,
+    /session\.metadata\?\.guest === "1" && order\.stripe_checkout_session_id === session\.id/,
+    "a guest session must be the one this order recorded"
+  );
+  // Two nulls comparing equal must never be what authorises a settlement.
+  assert.ok(
+    !/session\.metadata\?\.customer_id !== order\.customer_id/.test(webhook),
+    "the old vacuous-on-null comparison must be gone"
+  );
 });
 
 test("order lines are snapshotted so a later product edit cannot rewrite them", () => {

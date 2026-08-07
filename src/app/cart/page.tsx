@@ -9,7 +9,7 @@ import CheckoutFulfillmentPanel, {
   type FulfillmentSelection,
   type QuotedTotals,
 } from "@/components/commerce/CheckoutFulfillmentPanel";
-import { formatCents, useCart, useCartMutations } from "@/lib/hooks/useCart";
+import { formatCents, useCart, useCartMutations, useCheckoutContext } from "@/lib/hooks/useCart";
 
 /**
  * The cart page.
@@ -24,9 +24,26 @@ export default function CartPage() {
   const { setQuantity, remove, clear, applyDiscount } = useCartMutations();
   const [codeInput, setCodeInput] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
+  /** Which field the server refused, so it can be marked rather than only described. */
+  const [checkoutField, setCheckoutField] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [fulfillment, setFulfillment] = useState<FulfillmentSelection | null>(null);
   const [quoted, setQuoted] = useState<QuotedTotals | null>(null);
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestName, setGuestName] = useState("");
+
+  /**
+   * Whether this visitor is signed in, and whether the shop takes guests.
+   *
+   * Both come from the server. Reading a Supabase session in this component
+   * would be a second source of truth about who the visitor is, and the
+   * `guest.allowCheckout` switch is the shop's, not the browser's — the
+   * checkout route re-checks both, so what is rendered here can only ever
+   * remove a control, never grant one.
+   */
+  const { data: fulfillmentOptions } = useCheckoutContext();
+  const signedIn = fulfillmentOptions?.signedIn ?? false;
+  const guestAllowed = fulfillmentOptions?.guestCheckout ?? false;
 
   // Stable identities so the panel's effect does not re-run on every render of
   // this page.
@@ -41,25 +58,33 @@ export default function CartPage() {
   async function startCheckout() {
     setCheckingOut(true);
     setCheckoutError("");
+    setCheckoutField(null);
     try {
       const response = await fetch("/api/cart/checkout", {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        // A method id and an address, never a price. The server recomputes the
-        // delivery charge from its own configuration and its own subtotal.
-        body: JSON.stringify(fulfillment ?? {}),
+        // A method id, an address, and — for a guest — where the receipt goes.
+        // Never a price: the server recomputes the delivery charge from its own
+        // configuration and its own subtotal.
+        body: JSON.stringify({
+          ...(fulfillment ?? {}),
+          ...(signedIn ? {} : { guestEmail, guestName }),
+        }),
       });
       const payload = (await response.json().catch(() => null)) as
-        | { url?: string; error?: string; requiresSignIn?: boolean; shortages?: { productName: string; available: number }[] }
+        | { url?: string; error?: string; field?: string; requiresSignIn?: boolean; shortages?: { productName: string; available: number }[] }
         | null;
 
+      // Only when the shop has guest checkout off. Otherwise a signed-out
+      // customer is not sent away from their cart.
       if (payload?.requiresSignIn) {
         window.location.href = `/auth/login?next=${encodeURIComponent("/cart")}`;
         return;
       }
       if (!response.ok || !payload?.url) {
         setCheckoutError(payload?.error || "Checkout could not be started. Please try again.");
+        setCheckoutField(payload?.field ?? null);
         // The cart may have changed underneath the customer — a price moved, or
         // something sold out. Re-read it so the page shows why.
         void refetch();
@@ -354,6 +379,56 @@ export default function CartPage() {
               </p>
             ) : null}
 
+            {/*
+              Guest checkout, offered rather than imposed.
+
+              An account is genuinely better — order history, messages,
+              cancellations and returns all live there — so signing in is the
+              first option and is not buried. What changed is that it is no
+              longer the *only* option: a customer who wants to buy one thing
+              can, and is told exactly what they give up by doing so.
+
+              The email field only appears for a signed-out visitor, and only
+              once the server has said guest checkout is on.
+            */}
+            {!signedIn && guestAllowed ? (
+              <div className="mt-5 grid gap-3 border-t border-brand-border pt-5">
+                <p className="text-sm font-semibold">Checking out as a guest</p>
+                <label className="text-sm">
+                  Email <span className="text-brand-textMuted">(your receipt goes here)</span>
+                  <input
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    required
+                    className="ui-input mt-1 w-full"
+                    value={guestEmail}
+                    onChange={(event) => setGuestEmail(event.target.value)}
+                    aria-invalid={checkoutField === "email" ? true : undefined}
+                    placeholder="you@example.com"
+                  />
+                </label>
+                <label className="text-sm">
+                  Name <span className="text-brand-textMuted">(optional)</span>
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    className="ui-input mt-1 w-full"
+                    value={guestName}
+                    onChange={(event) => setGuestName(event.target.value)}
+                    aria-invalid={checkoutField === "name" ? true : undefined}
+                  />
+                </label>
+                <p className="text-xs text-brand-textMuted">
+                  You will be able to open this order from this browser for 90 days.{" "}
+                  <Link href={`/auth/login?next=${encodeURIComponent("/cart")}`} className="underline hover:no-underline">
+                    Sign in instead
+                  </Link>{" "}
+                  to keep it in your account with messages, cancellations and returns.
+                </p>
+              </div>
+            ) : null}
+
             <button
               type="button"
               disabled={!cart?.chargeable || checkingOut || !fulfillment}
@@ -367,9 +442,11 @@ export default function CartPage() {
                 Choose a delivery option below to continue.
               </p>
             ) : null}
-            <p className="mt-2 text-center text-xs text-brand-textMuted">
-              You will be asked to sign in before paying.
-            </p>
+            {!signedIn && !guestAllowed ? (
+              <p className="mt-2 text-center text-xs text-brand-textMuted">
+                You will be asked to sign in before paying.
+              </p>
+            ) : null}
           </aside>
 
           <CheckoutFulfillmentPanel onChange={handleFulfillmentChange} onTotals={handleTotals} />

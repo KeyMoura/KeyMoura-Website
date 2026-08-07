@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import QuantityField from "@/components/commerce/QuantityField";
+import { useCheckoutContext } from "@/lib/hooks/useCart";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { money, type CatalogProduct, type ProductOptionGroup } from "@/lib/commerceTypes";
 import { supabaseBrowser } from "@/lib/supabaseClient";
@@ -61,6 +62,17 @@ export default function ProductRequestForm({
   const [checkoutToken] = useState(() => crypto.randomUUID());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestName, setGuestName] = useState("");
+
+  /**
+   * Whether this visitor is signed in, and whether the shop takes guest
+   * requests — both from the server, so the browser's own idea of its session
+   * is not a second source of truth. The route re-checks both.
+   */
+  const { data: checkout } = useCheckoutContext();
+  const signedIn = checkout?.signedIn ?? false;
+  const guestRequestsAllowed = checkout?.guestRequests ?? false;
 
   const choicePrice = useMemo(
     () =>
@@ -117,8 +129,67 @@ export default function ProductRequestForm({
     setError("");
 
     const { data: auth } = await supabase.auth.getUser();
+
+    /**
+     * A guest asking for a custom version of this product.
+     *
+     * Posted to `/api/orders/custom`, which is the route that already accepts
+     * a guest identity, a product reference and an option snapshot — rather
+     * than widening `/api/orders`, whose ownership rules are the account
+     * path's and should stay that way.
+     *
+     * File-upload option groups are the one thing a guest cannot send: the
+     * storage prefix is keyed on an authenticated user. Said here rather than
+     * discovered after a long form.
+     */
     if (!auth.user) {
-      router.push(`/auth/login?next=${encodeURIComponent(`/catalog/${product.slug}`)}`);
+      if (!guestRequestsAllowed) {
+        router.push(`/auth/login?next=${encodeURIComponent(`/catalog/${product.slug}`)}`);
+        return;
+      }
+      if (groups.some((group) => group.input_type === "file")) {
+        setBusy(false);
+        return setError("This product needs a file with the request, so please sign in or create an account first.");
+      }
+      if (notes.trim().length < 20) {
+        setBusy(false);
+        return setError("Tell us a little more about what you need — at least 20 characters.");
+      }
+
+      const chosen: Record<string, string> = {};
+      for (const group of groups) {
+        const selected = selections[group.option_key];
+        if (selected === null || selected === undefined || selected === "" || selected === false) continue;
+        const choice = group.product_option_values?.find((value) => value.value === selected);
+        chosen[group.name] = choice?.label ?? String(selected);
+      }
+
+      const guestResponse = await fetch("/api/orders/custom", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guest_email: guestEmail,
+          guest_name: guestName,
+          product_slug: product.slug,
+          selected_options: chosen,
+          title: `Custom ${product.name}`,
+          project_type: "Custom version of a catalog product",
+          description: notes.trim(),
+          quantity,
+          budget: budget.trim(),
+          target_date: targetDate || null,
+          fulfillment_method: fulfillmentMethod,
+          shipping_address: fulfillmentMethod === "shipping" ? shippingAddress : null,
+        }),
+      });
+      const guestData = (await guestResponse.json().catch(() => null)) as { id?: string; href?: string; error?: string } | null;
+      if (!guestResponse.ok || !guestData?.id) {
+        setError(guestData?.error || "Could not send that request.");
+        setBusy(false);
+        return;
+      }
+      router.push(guestData.href ?? `/orders/guest/${guestData.id}`);
       return;
     }
 
@@ -563,6 +634,47 @@ export default function ProductRequestForm({
           </div>
           <span className="text-xs text-brand-textMuted">No charge now</span>
         </div>
+
+        {/* Only on the last step, only when signed out, and only when the shop
+            takes guest requests. Asked for at the end rather than the start:
+            a form that opens by demanding an address is a form fewer people
+            finish, and nothing before this point needs to know who they are. */}
+        {step === 3 && !signedIn && guestRequestsAllowed ? (
+          <div className="mt-5 grid gap-3 border-t border-brand-border pt-5 sm:grid-cols-2">
+            <p className="text-sm font-semibold sm:col-span-2">Where should we send the quote?</p>
+            <label className="text-sm">
+              Email
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                required
+                className={`${input} mt-1 w-full`}
+                value={guestEmail}
+                onChange={(event) => setGuestEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+            </label>
+            <label className="text-sm">
+              Name <span className="text-brand-textMuted">(optional)</span>
+              <input
+                type="text"
+                autoComplete="name"
+                className={`${input} mt-1 w-full`}
+                value={guestName}
+                onChange={(event) => setGuestName(event.target.value)}
+              />
+            </label>
+            <p className="text-xs text-brand-textMuted sm:col-span-2">
+              Nothing is charged. You will be able to read the quote, reply and pay from this browser for 90 days —
+              or{" "}
+              <a href={`/auth/login?next=${encodeURIComponent(`/catalog/${product.slug}`)}`} className="underline hover:no-underline">
+                sign in
+              </a>{" "}
+              to keep it in your account.
+            </p>
+          </div>
+        ) : null}
 
         {error ? (
           <p role="alert" className="ui-notice ui-notice-danger mt-3">

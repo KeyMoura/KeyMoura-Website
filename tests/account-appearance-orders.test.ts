@@ -54,7 +54,11 @@ test("account security exposes safe Supabase identity linking", () => {
   assert.match(page, /linkIdentity\(/);
   assert.match(page, /unlinkIdentity\(/);
   assert.match(page, /identities\.length < 2/);
-  assert.match(page, /\["google", "discord"\]/);
+  // The offered provider list moved into `connectedMethods` when Discord was
+  // replaced by Facebook, so that an already-linked provider stays visible even
+  // once it stops being offered. Asserted in `auth-providers.test.ts`, which
+  // owns that rule now.
+  assert.match(page, /connectedMethods/);
   assert.match(page, /`Connect \$\{label\}`/);
 });
 

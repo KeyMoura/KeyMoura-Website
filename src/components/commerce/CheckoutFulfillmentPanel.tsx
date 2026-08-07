@@ -39,6 +39,10 @@ export type FulfillmentOptions = {
     addressLines: string[] | null;
   };
   supportEmail: string;
+  /** Who the server thinks this visitor is, and whether the shop takes guests. */
+  signedIn: boolean;
+  guestCheckout: boolean;
+  guestRequests: boolean;
 };
 
 export type FulfillmentSelection = {

@@ -34,6 +34,18 @@ export const RATE_LIMITS = {
   // the staff notification queue.
   orderCancel: { bucket: "order.cancel", limit: 10, windowSeconds: 300 },
   orderReturn: { bucket: "order.return", limit: 10, windowSeconds: 600 },
+  /**
+   * Guest surfaces, which a stranger reaches with no account at all.
+   *
+   * Tighter than the signed-in equivalents on purpose: an account is itself a
+   * cost to create, and these three each end in something the shop pays for —
+   * a row a staff member has to read, an email that leaves the building, or a
+   * Stripe session. Generous enough that a customer who mistypes an address
+   * twice and retries is never blocked.
+   */
+  guestRequest: { bucket: "guest.request", limit: 5, windowSeconds: 3600 },
+  guestCheckout: { bucket: "guest.checkout", limit: 20, windowSeconds: 900 },
+  guestMessage: { bucket: "guest.message", limit: 20, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**

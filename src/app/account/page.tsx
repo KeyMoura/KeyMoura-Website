@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, ChangeEvent } from "react";
+import { useEffect, useMemo, useState, ChangeEvent } from "react";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { ImageCropModal } from "@/components/ImageCropModal";
@@ -44,7 +44,15 @@ type BlockedUserRow = {
 };
 
 const AVATAR_MAX_SIZE_PX = 256;
-const prettyProvider = (provider: string) => provider === "google" ? "Google" : provider === "discord" ? "Discord" : provider.replace(/\b\w/g, character => character.toUpperCase());
+/**
+ * A human label for a provider.
+ *
+ * Discord stays in this map even though it is no longer offered. This is a
+ * *display* function, and an account that already carries a Discord identity
+ * must still render it by name rather than as a fallback-capitalised string —
+ * nothing was unlinked, so those identities still exist and still work.
+ */
+const prettyProvider = (provider: string) => provider === "google" ? "Google" : provider === "facebook" ? "Facebook" : provider === "discord" ? "Discord" : provider.replace(/\b\w/g, character => character.toUpperCase());
 
 // Resize an image file down to maxSize (px) and convert to JPEG
 async function resizeImageToJpeg(file: File, maxSize: number): Promise<Blob> {
@@ -369,7 +377,17 @@ useEffect(() => {
     setPasswordMessage("Password saved. You can now use email + password to log in.");
   };
 
-  const handleLinkIdentity = async (provider: "google" | "discord") => {
+  /**
+   * Providers this page offers to connect.
+   *
+   * Facebook replaces Discord here. Discord is *not* disabled in Supabase Auth
+   * and no identity is unlinked — a user who already has one keeps it, sees it
+   * below, and can still sign in with it.
+   *
+   * `"facebook"` is the exact identifier in the installed `@supabase/auth-js`
+   * `Provider` union.
+   */
+  const handleLinkIdentity = async (provider: "google" | "facebook") => {
     setIdentityBusy(provider);
     setIdentityMessage(null);
     const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(`/account?linked=${provider}`)}`;
@@ -377,10 +395,34 @@ useEffect(() => {
     if (error) {
       setIdentityMessage(error.message.includes("Manual linking is disabled")
         ? "Account linking must be enabled in Supabase Auth settings before this provider can be connected."
-        : `Could not connect ${provider === "google" ? "Google" : "Discord"}. ${error.message}`);
+        : `Could not connect ${prettyProvider(provider)}. ${error.message}`);
       setIdentityBusy(null);
     }
   };
+
+  /**
+   * The rows in "Connected sign-in methods".
+   *
+   * The providers this page *offers* (Google, Facebook), plus any provider the
+   * account is already linked to — which is what keeps a Discord identity
+   * visible and disconnectable after Discord stopped being offered. An
+   * already-linked provider that is no longer offered renders with no
+   * "Connect" button: there is nothing to connect it to, but its owner can
+   * still see it and still remove it once they have another method.
+   */
+  const connectedMethods = useMemo<{ provider: string; offered: boolean }[]>(() => {
+    const offeredProviders = ["google", "facebook"] as const;
+    const rows: { provider: string; offered: boolean }[] = offeredProviders.map((provider) => ({
+      provider: provider as string,
+      offered: true,
+    }));
+    for (const identity of identities) {
+      if (identity.provider === "email") continue;
+      if (rows.some((row) => row.provider === identity.provider)) continue;
+      rows.push({ provider: identity.provider, offered: false });
+    }
+    return rows;
+  }, [identities]);
 
   const handleUnlinkIdentity = async (identity: AccountIdentity) => {
     if (identities.length < 2) {
@@ -1139,12 +1181,12 @@ const loadMyReports = async (viewerId: string) => {
                 Sign in with any connected method and you will reach this same KeyMoura account. Supabase also safely combines verified provider accounts that use the same email.
               </p>
               <div className="space-y-2 sm:max-w-2xl">
-                {(["google", "discord"] as const).map(provider => {
+                {connectedMethods.map(({ provider, offered }) => {
                   const identity = identities.find(item => item.provider === provider);
                   const label = prettyProvider(provider);
                   return <div key={provider} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-border bg-black/25 p-3">
                     <div><div className="font-medium text-brand-text">{label}</div><div className="text-[11px] text-brand-textMuted">{identity ? identity.identity_data?.email || "Connected" : "Not connected"}</div></div>
-                    {identity ? <button type="button" className="ui-btn ui-btn-ghost text-xs" disabled={identityBusy !== null || identities.length < 2} title={identities.length < 2 ? "Connect another method first" : undefined} onClick={() => void handleUnlinkIdentity(identity)}>{identityBusy === provider ? "Disconnecting…" : "Disconnect"}</button> : <button type="button" className="ui-btn ui-btn-secondary text-xs" disabled={identityBusy !== null} onClick={() => void handleLinkIdentity(provider)}>{identityBusy === provider ? "Connecting…" : `Connect ${label}`}</button>}
+                    {identity ? <button type="button" className="ui-btn ui-btn-ghost text-xs" disabled={identityBusy !== null || identities.length < 2} title={identities.length < 2 ? "Connect another method first" : undefined} onClick={() => void handleUnlinkIdentity(identity)}>{identityBusy === provider ? "Disconnecting…" : "Disconnect"}</button> : offered ? <button type="button" className="ui-btn ui-btn-secondary text-xs" disabled={identityBusy !== null} onClick={() => void handleLinkIdentity(provider as "google" | "facebook")}>{identityBusy === provider ? "Connecting…" : `Connect ${label}`}</button> : null}
                   </div>;
                 })}
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-border bg-black/25 p-3"><div><div className="font-medium text-brand-text">Email</div><div className="text-[11px] text-brand-textMuted">{user.email || "No email on file"} · Email link always available</div></div><span className="rounded-full border border-emerald-500/40 px-2.5 py-1 text-[11px] text-emerald-300">Connected</span></div>

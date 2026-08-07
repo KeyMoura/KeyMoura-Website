@@ -45,6 +45,36 @@ export function useCart() {
   });
 }
 
+/**
+ * Who the server thinks this visitor is, and whether the shop takes guests.
+ *
+ * Reads the same endpoint `CheckoutFulfillmentPanel` reads, which is a second
+ * GET on the cart page. That is deliberate for now: the panel owns a fair
+ * amount of local state around its own copy, and folding the two together is a
+ * refactor of a working checkout surface for one saved request. What matters —
+ * that both read the *server's* answer rather than the browser's own idea of
+ * who is signed in — is already true.
+ */
+export const CHECKOUT_CONTEXT_QUERY_KEY = ["checkout", "fulfillment"] as const;
+
+export type CheckoutContext = {
+  signedIn: boolean;
+  guestCheckout: boolean;
+  guestRequests: boolean;
+};
+
+export function useCheckoutContext() {
+  return useQuery({
+    queryKey: CHECKOUT_CONTEXT_QUERY_KEY,
+    queryFn: async () => {
+      const response = await fetch("/api/cart/fulfillment", { credentials: "same-origin" });
+      if (!response.ok) throw new Error("Could not load checkout options.");
+      return (await response.json()) as CheckoutContext & Record<string, unknown>;
+    },
+    staleTime: 30_000,
+  });
+}
+
 type AddInput = { productId: string; quantity?: number; selectedOptions?: Record<string, string> };
 
 /**

@@ -9,6 +9,7 @@ import {
   logLifecycleAudit,
   logLifecycleFailure,
   sendLifecycleNotification,
+  type OrderLifecycleRow,
 } from "@/lib/commerce/orderLifecycleServer";
 import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import {
@@ -43,7 +44,7 @@ import type { CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 export const runtime = "nodejs";
 
 const ORDER_COLUMNS =
-  "id,order_number,customer_id,product_name,status,payment_status,fulfillment_status,fulfillment_method," +
+  "id,order_number,customer_id,guest_email,guest_name,product_name,status,payment_status,fulfillment_status,fulfillment_method," +
   "shipping_address,shipping_carrier,tracking_number,tracking_url,shipped_at,delivered_at,ready_at," +
   "picked_up_at,ready_to_fulfill_at,pickup_confirmed_at,fulfillment_notes,customer_shipment_note," +
   "pickup_location_snapshot,shipping_method_snapshot,shipping_cents,fulfillment_updated_at,amount_paid_cents," +
@@ -51,7 +52,10 @@ const ORDER_COLUMNS =
 
 type OrderRow = {
   id: string;
-  customer_id: string;
+  /** Null on a guest order. */
+  customer_id: string | null;
+  guest_email: string | null;
+  guest_name: string | null;
   product_name: string;
   order_number: string | null;
   status: string;
@@ -441,7 +445,7 @@ async function updateTracking(input: {
   if (isCorrection) {
     await sendLifecycleNotification({
       orderId: input.order.id,
-      order: input.order as unknown as { customer_id: string; product_name: string; order_number: string | null },
+      order: input.order as unknown as Pick<OrderLifecycleRow, "customer_id" | "guest_email" | "guest_name" | "product_name" | "order_number">,
       actorUserId: input.actorUserId,
       templateKey: "tracking_corrected",
       eventKey: `tracking-corrected-${input.order.id}-${number}`,
@@ -512,7 +516,7 @@ async function notifyCustomer(input: {
 
   await sendLifecycleNotification({
     orderId: input.order.id,
-    order: input.order as unknown as { customer_id: string; product_name: string; order_number: string | null },
+    order: input.order as unknown as Pick<OrderLifecycleRow, "customer_id" | "guest_email" | "guest_name" | "product_name" | "order_number">,
     actorUserId: input.actorUserId,
     templateKey,
     // Keyed on the order and the state, so a retried request or a double-click

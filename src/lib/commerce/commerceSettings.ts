@@ -175,6 +175,19 @@ export type CommerceSettings = {
       staffAlerts: boolean;
     };
   };
+  /**
+   * Who may buy and who may ask.
+   *
+   * Both default **on**, unlike shipping and pickup. Those default off because
+   * an unconfigured shop must not invent a delivery price; there is no
+   * equivalent hazard in letting somebody buy without first making an account,
+   * and requiring one is the thing the owner asked to remove. The switches
+   * exist so turning it back off is a setting rather than a deploy.
+   */
+  guest: {
+    allowCheckout: boolean;
+    allowRequests: boolean;
+  };
   returnAddress: Address;
 };
 
@@ -239,6 +252,10 @@ export const DEFAULT_COMMERCE_SETTINGS: CommerceSettings = {
       returns: true,
       staffAlerts: true,
     },
+  },
+  guest: {
+    allowCheckout: true,
+    allowRequests: true,
   },
   returnAddress: { ...EMPTY_ADDRESS },
 };
@@ -390,6 +407,7 @@ export function parseCommerceSettings(raw: unknown): CommerceSettings {
   const inventory = asRecord(root.inventory);
   const email = asRecord(root.email);
   const categories = asRecord(email.categories);
+  const guest = asRecord(root.guest);
 
   const regionsRaw = asRecord(shipping.destinationRegions);
   const destinationRegions: Record<string, string[]> = {};
@@ -458,6 +476,10 @@ export function parseCommerceSettings(raw: unknown): CommerceSettings {
         staffAlerts: bool(categories.staffAlerts, true),
       },
     },
+    guest: {
+      allowCheckout: bool(guest.allowCheckout, defaults.guest.allowCheckout),
+      allowRequests: bool(guest.allowRequests, defaults.guest.allowRequests),
+    },
     returnAddress: parseAddress(root.returnAddress),
   };
 }
@@ -485,6 +507,15 @@ export type PublicCommerceSettings = {
     hoursText: string;
     /** Present only when policy allows it before the order is ready. */
     addressLines: string[] | null;
+  };
+  /**
+   * Safe to publish: whether a visitor may buy or ask without an account is
+   * something the cart and the request form have to render, and it reveals
+   * nothing a customer could not learn by pressing the button.
+   */
+  guest: {
+    allowCheckout: boolean;
+    allowRequests: boolean;
   };
 };
 
@@ -521,6 +552,7 @@ export function publicCommerceSettings(
       hoursText: settings.pickup.hoursText,
       addressLines: revealPickup && settings.pickup.enabled ? formatAddressLines(settings.pickup.address) : null,
     },
+    guest: { ...settings.guest },
   };
 }
 

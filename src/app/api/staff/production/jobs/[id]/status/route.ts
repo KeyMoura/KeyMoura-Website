@@ -15,7 +15,7 @@ import {
   recordJobAction,
   type JobRow,
 } from "@/lib/production/server";
-import { sendLifecycleNotification } from "@/lib/commerce/orderLifecycleServer";
+import { sendLifecycleNotification, type OrderLifecycleRow } from "@/lib/commerce/orderLifecycleServer";
 import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import type { CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 
@@ -196,14 +196,14 @@ async function announceProductionStatus(job: JobRow, to: ProductionStatus, actor
 
   const { data: order } = await routeServiceClient
     .from("orders")
-    .select("id,customer_id,product_name,order_number")
+    .select("id,customer_id,guest_email,guest_name,product_name,order_number")
     .eq("id", job.order_id)
     .maybeSingle();
   if (!order?.customer_id) return;
 
   await sendLifecycleNotification({
     orderId: String(order.id),
-    order: order as { customer_id: string; product_name: string; order_number: string | null },
+    order: order as unknown as Pick<OrderLifecycleRow, "customer_id" | "guest_email" | "guest_name" | "product_name" | "order_number">,
     actorUserId,
     templateKey: spec.template,
     eventKey: `production-${job.id}-${to}`,
