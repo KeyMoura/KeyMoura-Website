@@ -83,9 +83,17 @@ export type StaffNavGroup = {
  * adding a section cannot leave its holders locked out of the shell.
  */
 export const STAFF_NAV: readonly StaffNavGroup[] = [
+  /**
+   * **Today** — the four destinations a shop is actually run from.
+   *
+   * These used to be split across "Overview" and "Commerce", which put the
+   * dashboard in a group of its own with the to-do board and left staff reading
+   * two headings to find the work. One group, in the order a job travels: it
+   * arrives (Orders), it is made (Production), it goes out (Fulfillment).
+   */
   {
-    id: "overview",
-    label: "Overview",
+    id: "today",
+    label: "Today",
     items: [
       {
         href: "/staff",
@@ -94,38 +102,28 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         icon: "dashboard",
       },
       {
-        href: "/staff/info/todo",
-        label: "To-do board",
-        description: "Shared staff tasks and who is carrying them.",
-        icon: "todo",
-        anyOf: ["todo.view"],
-      },
-    ],
-  },
-  {
-    id: "commerce",
-    label: "Commerce",
-    items: [
-      {
         href: "/staff/orders",
         label: "Orders",
-        description: "Requests, quotes, payments, cancellations, returns and refunds.",
+        description: "Every order, and where each one is. Open an order to manage all of it.",
         icon: "orders",
         anyOf: ["orders.view", "orders.manage"],
       },
       {
-        href: "/staff/fulfillment",
-        label: "Fulfillment",
-        description: "Everything waiting to be packed, collected, shipped or confirmed.",
-        icon: "truck",
-        anyOf: ["fulfillment.view", "fulfillment.manage"],
-      },
-      {
         href: "/staff/production",
         label: "Production",
-        description: "The workshop queue, job workspaces and printable travellers.",
+        description: "The workshop queue: what has to be made, in what order, and by when.",
         icon: "production",
         anyOf: ["production.view", "production.manage"],
+      },
+      {
+        href: "/staff/fulfillment",
+        // A queue, not a second order editor. The description says so, because
+        // "Fulfillment" beside "Orders" is otherwise a fair invitation to
+        // wonder which of the two an order is managed from.
+        label: "Fulfillment",
+        description: "A queue of what is ready to pack, collect or ship. Editing happens on the order.",
+        icon: "truck",
+        anyOf: ["fulfillment.view", "fulfillment.manage"],
       },
     ],
   },
@@ -148,28 +146,28 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["catalog.categories.manage"],
       },
       {
-        href: "/staff/catalog/discounts",
-        label: "Discount codes",
-        description: "Codes, targeting, limits and the redemption report.",
-        icon: "discount",
-        anyOf: ["catalog.discounts.manage"],
-      },
-      {
         href: "/staff/inventory",
         label: "Inventory",
         description: "On hand, reserved and available stock, with every movement.",
         icon: "inventory",
         anyOf: ["inventory.view", "inventory.manage"],
       },
+      {
+        href: "/staff/catalog/discounts",
+        label: "Discounts",
+        description: "Codes, targeting, limits and the redemption report.",
+        icon: "discount",
+        anyOf: ["catalog.discounts.manage"],
+      },
     ],
   },
   {
-    id: "people",
-    label: "Customers & content",
+    id: "customers",
+    label: "Customers",
     items: [
       {
         href: "/staff/security/users",
-        label: "Customers & users",
+        label: "Customers",
         description: "Accounts, roles, verification and account status.",
         icon: "users",
         // The legacy `/staff/info/users` route redirects here; owning it keeps
@@ -179,46 +177,34 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
       {
         href: "/staff/moderation/reports",
-        label: "Reports & moderation",
+        label: "Reports",
         description: "The report queue, escalations and moderation decisions.",
         icon: "moderation",
         alsoOwns: ["/staff/moderation"],
         anyOf: ["moderation.reports.view"],
       },
-      {
-        href: "/staff/community",
-        label: "Community",
-        description: "Threads, categories and community configuration.",
-        icon: "community",
-        anyOf: ["community.view"],
-      },
-      {
-        href: "/staff/shops",
-        label: "Shops",
-        description: "Partner shops and their published listings.",
-        icon: "shops",
-        anyOf: ["shops.view"],
-      },
-      {
-        href: "/staff/info/pending",
-        label: "Pending submissions",
-        description: "Community-submitted pages waiting for review.",
-        icon: "pending",
-        anyOf: ["info.pending.view"],
-      },
-      {
-        href: "/staff/info/updates",
-        label: "Content updates",
-        description: "Proposed edits to existing pages waiting for review.",
-        icon: "updates",
-        anyOf: ["info.updates.view"],
-      },
     ],
   },
+  /**
+   * **Operations** — tools consulted when something is wrong or being checked,
+   * rather than on the way through a normal day's work.
+   *
+   * Separating these from Today is the point of the group. Reconciliation and
+   * launch readiness sat beside Orders in a group called "Business", which gave
+   * a page somebody opens twice a month the same weight as the page they live
+   * in.
+   */
   {
-    id: "business",
-    label: "Business",
+    id: "operations",
+    label: "Operations",
     items: [
+      {
+        href: "/staff/emails",
+        label: "Emails",
+        description: "Sender details, the templates customers receive, staff alerts and delivery history.",
+        icon: "email",
+        anyOf: ["emails.manage", "emails.view", "emails.resend"],
+      },
       {
         href: "/staff/info/analytics",
         label: "Analytics",
@@ -256,6 +242,50 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
     ],
   },
+  /**
+   * **Site content** — the pages-and-listings side of the site, which is not
+   * the shop and does not belong in the middle of it.
+   *
+   * `/staff/community` is deliberately **not** listed. Community is dormant on
+   * the customer side as of pass 14, and a staff menu entry for a section
+   * customers cannot reach is an invitation to curate something nobody will
+   * read. The route, its data and its permissions are all untouched, so the
+   * page still opens for anyone who has its URL.
+   */
+  {
+    id: "content",
+    label: "Site content",
+    items: [
+      {
+        href: "/staff/info/todo",
+        label: "To-do board",
+        description: "Shared staff tasks and who is carrying them.",
+        icon: "todo",
+        anyOf: ["todo.view"],
+      },
+      {
+        href: "/staff/info/pending",
+        label: "Pending submissions",
+        description: "Member-submitted pages waiting for review.",
+        icon: "pending",
+        anyOf: ["info.pending.view"],
+      },
+      {
+        href: "/staff/info/updates",
+        label: "Content updates",
+        description: "Proposed edits to existing pages waiting for review.",
+        icon: "updates",
+        anyOf: ["info.updates.view"],
+      },
+      {
+        href: "/staff/shops",
+        label: "Shops",
+        description: "Partner shops and their published listings.",
+        icon: "shops",
+        anyOf: ["shops.view"],
+      },
+    ],
+  },
   {
     id: "settings",
     label: "Settings",
@@ -280,8 +310,11 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
       {
         href: "/staff/settings/commerce",
-        label: "Shipping, pickup & policy",
-        description: "Delivery methods and prices, local pickup, stock rules, returns policy.",
+        // "Shipping, pickup & policy" described the contents rather than naming
+        // the destination, so it matched nothing a staff member would think to
+        // look for. The page is the shop's commerce configuration.
+        label: "Commerce",
+        description: "Delivery methods and prices, local pickup, stock rules, returns and cancellation policy.",
         icon: "commerce",
         anyOf: ["commerce.settings.view", "commerce.settings.manage"],
       },
@@ -293,11 +326,11 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["appearance.manage"],
       },
       {
-        href: "/staff/emails",
-        label: "Email & notifications",
-        description: "Sender details, templates, staff alerts and delivery history.",
-        icon: "email",
-        anyOf: ["emails.manage", "emails.view", "emails.resend"],
+        href: "/staff/security/roles",
+        label: "Roles & permissions",
+        description: "Which staff roles can view and manage each area.",
+        icon: "roles",
+        anyOf: ["roles.view"],
       },
       {
         href: "/staff/security",
@@ -305,13 +338,6 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         description: "Maintenance mode, lockdown, IP restrictions and emergency messaging.",
         icon: "security",
         anyOf: ["security.view"],
-      },
-      {
-        href: "/staff/security/roles",
-        label: "Roles & permissions",
-        description: "Which staff roles can view and manage each area.",
-        icon: "roles",
-        anyOf: ["roles.view"],
       },
       {
         href: "/staff/security/verified-perks",

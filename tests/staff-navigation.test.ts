@@ -100,7 +100,6 @@ test("every staff section is reachable from the menu", () => {
     "/staff/settings/commerce",
     "/staff/appearance",
     "/staff/emails",
-    "/staff/community",
     "/staff/shops",
     "/staff/moderation/reports",
     "/staff/security",
@@ -118,6 +117,22 @@ test("every staff section is reachable from the menu", () => {
   for (const section of sections) {
     assert.ok(hrefs.has(section), `${section} exists but nothing in the staff menu links to it`);
   }
+});
+
+test("community is dormant: unlisted in the menu, but not deleted", () => {
+  /*
+   * Pass 14 took Community out of the customer product, and out of the staff
+   * menu with it — curating a section customers cannot reach is work that leads
+   * nowhere. This asserts the *pair* of facts, because either one alone is a
+   * different and worse outcome: an entry with no page is a broken menu, and a
+   * deleted page is destroyed history.
+   */
+  const hrefs = new Set(STAFF_NAV_ITEMS.map((item) => item.href));
+  assert.ok(!hrefs.has("/staff/community"), "Community must not be in the staff menu");
+  assert.ok(exists("src/app/staff/community/page.tsx"), "the page must still exist and still open by URL");
+  assert.ok(exists("src/app/community/page.tsx"), "the public route must still exist");
+  // The permission is untouched, so anyone who had it still has it.
+  assert.ok(ALL.has("community.view"));
 });
 
 // ---------------------------------------------------------------------------
@@ -224,7 +239,7 @@ test("a section page reads Staff / group / page", () => {
   const crumbs = staffBreadcrumbs("/staff/settings/commerce");
   assert.deepEqual(
     crumbs.map((crumb) => crumb.label),
-    ["Staff", "Settings", "Shipping, pickup & policy"]
+    ["Staff", "Settings", "Commerce"]
   );
   assert.equal(crumbs[crumbs.length - 1].current, true);
 });
@@ -238,11 +253,11 @@ test("the group crumb is not a link", () => {
 test("a known leaf gets its own crumb and an unknown one does not", () => {
   assert.deepEqual(
     staffBreadcrumbs("/staff/orders/abc").map((crumb) => crumb.label),
-    ["Staff", "Commerce", "Orders", "Order"]
+    ["Staff", "Today", "Orders", "Order"]
   );
   assert.deepEqual(
     staffBreadcrumbs("/staff/orders/new").map((crumb) => crumb.label),
-    ["Staff", "Commerce", "Orders", "New proposal"]
+    ["Staff", "Today", "Orders", "New proposal"]
   );
   // Nothing is invented for a path with no known shape: the trail stops at the
   // section rather than ending in a slug.

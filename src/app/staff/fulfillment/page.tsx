@@ -34,9 +34,16 @@ import {
  * reading 3 and a queue showing 5 is not representable.
  *
  * Reads go through the browser client and RLS rather than a new staff API. The
- * columns are already staff-readable — the order cockpit reads the same table
- * the same way — and adding a route to re-fetch what RLS already permits would
- * be a second copy of the permission decision.
+ * columns are already staff-readable — the orders list reads the same table the
+ * same way — and adding a route to re-fetch what RLS already permits would be a
+ * second copy of the permission decision.
+ *
+ * **This page is a queue, and deliberately not an order editor.** It answers
+ * "what has to go out, and what is waiting on someone else"; every row opens the
+ * order for the actual work. That boundary is the reason the page exists rather
+ * than being a filter on `/staff/orders`, and it is the one thing to preserve
+ * here: the moment it grows fields to edit, there are two places to ship an
+ * order from and two places for the answer to be wrong.
  */
 
 const SELECT =
@@ -145,7 +152,7 @@ function FulfillmentQueueContent() {
           <h1 className="mt-1 text-3xl font-semibold">Fulfillment</h1>
           <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
             Everything waiting to be packed, collected, shipped or confirmed. Each order sits in exactly one
-            queue, so these counts add up.
+            queue, so these counts add up. This is a worklist — open an order to change anything on it.
           </p>
         </div>
         <Link href="/staff/settings/commerce" className="ui-btn ui-btn-ghost text-sm">
