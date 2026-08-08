@@ -49,9 +49,14 @@ test("customer and staff request flows share the same progress language", () => 
 test("appearance offers visual choices and previews the complete component system", () => {
   const appearance = read("src/app/staff/appearance/page.tsx");
 
-  for (const expected of ["Starting point", "Layout & type", "Components", "Advanced palette", "Live appearance preview", "MetricCard", "ui-stepper", "ui-tabs", "Primary action", "Secondary action"]) {
+  // "Components" is now "Control shapes", and "Advanced palette" is gone —
+  // it hid eleven colours including both button texts behind a collapsed
+  // <details>, which is why nobody could find the one that colours the
+  // catalog's custom-project button.
+  for (const expected of ["Starting point", "Layout & type", "Control shapes", "Live appearance preview", "MetricCard", "Add to Cart", "Customizable"]) {
     assert.ok(appearance.includes(expected), `missing appearance control or preview: ${expected}`);
   }
+  assert.doesNotMatch(appearance, /Advanced palette/, "no colour may be hidden behind a disclosure");
   assert.doesNotMatch(appearance, /<MenuSelect/);
   assert.match(appearance, /aria-pressed=\{value === item\}/);
 });

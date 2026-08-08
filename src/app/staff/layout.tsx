@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 
-import { StaffNav } from "@/components/staff/StaffNav";
-import { StaffMobileNav } from "@/components/staff/StaffMobileNav";
-import { StaffBreadcrumbs } from "@/components/staff/StaffBreadcrumbs";
+import { StaffShell } from "@/components/staff/StaffShell";
 
 /**
  * The staff shell.
@@ -15,26 +13,13 @@ import { StaffBreadcrumbs } from "@/components/staff/StaffBreadcrumbs";
  * navigation. The two are now separate components with separate semantics, and
  * each is hidden at the width where the other is correct.
  *
+ * The layout itself stays a server component; `StaffShell` is the client
+ * boundary, and it exists because the collapsed-rail width is a grid-column
+ * decision rather than a sidebar decision. See its own comment.
+ *
  * `.staff-nav` is already in the print stylesheet's blanket hide rule; the
  * drawer trigger carries `print-hidden` for the same reason.
  */
 export default function StaffLayout({ children }: { children: ReactNode }) {
-  return (
-    <div className="page-container-wide">
-      <div className="staff-shell">
-        <div className="hidden lg:block">
-          <StaffNav />
-        </div>
-
-        <div className="min-w-0">
-          <div className="print-hidden mb-4 lg:hidden">
-            <StaffMobileNav />
-          </div>
-
-          <StaffBreadcrumbs />
-          {children}
-        </div>
-      </div>
-    </div>
-  );
+  return <StaffShell>{children}</StaffShell>;
 }

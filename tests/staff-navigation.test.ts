@@ -253,18 +253,18 @@ test("the group crumb is not a link", () => {
 test("a known leaf gets its own crumb and an unknown one does not", () => {
   assert.deepEqual(
     staffBreadcrumbs("/staff/orders/abc").map((crumb) => crumb.label),
-    ["Staff", "Today", "Orders", "Order"]
+    ["Staff", "Orders", "Orders", "Order"]
   );
   assert.deepEqual(
     staffBreadcrumbs("/staff/orders/new").map((crumb) => crumb.label),
-    ["Staff", "Today", "Orders", "New proposal"]
+    ["Staff", "Orders", "Orders", "New proposal"]
   );
   // Nothing is invented for a path with no known shape: the trail stops at the
   // section rather than ending in a slug.
   const unknown = staffBreadcrumbs("/staff/catalog/something/deep");
   assert.deepEqual(
     unknown.map((crumb) => crumb.label),
-    ["Staff", "Catalog", "Products"]
+    ["Staff", "Store", "Products"]
   );
   assert.equal(unknown[unknown.length - 1].current, true);
 });
@@ -309,10 +309,26 @@ test("the desktop sidebar and the mobile drawer read the same definition", () =>
 
 test("the settings index derives its cards from the Settings group", () => {
   const settings = read("src/app/staff/settings/page.tsx");
-  assert.match(settings, /visibleStaffNav/);
-  assert.match(settings, /group\.id === "settings"/);
+  const navigation = read("src/lib/staffNavigation.ts");
+  // The derivation moved into `staffSettingsSections`, which the page calls —
+  // still one source, now also responsible for the four named blocks the flat
+  // grid of seven cards lacked.
+  assert.match(settings, /staffSettingsSections/);
+  assert.match(navigation, /id === "settings"/);
   // The overview must not link to itself.
-  assert.match(settings, /item\.href !== "\/staff\/settings"/);
+  assert.match(navigation, /item\.href !== "\/staff\/settings"/);
+});
+
+test("every settings destination is filed under a named block", () => {
+  const settingsGroup = STAFF_NAV.find((group) => group.id === "settings");
+  assert.ok(settingsGroup, "the Settings group must exist");
+  for (const item of settingsGroup.items) {
+    if (item.href === "/staff/settings") continue;
+    assert.ok(
+      item.settingsSection,
+      `${item.label} has no settings section, so the index would silently drop it`
+    );
+  }
 });
 
 test("every icon key used by the navigation is mapped to a real icon", () => {
@@ -344,14 +360,17 @@ test("the mobile drawer is a dialog, portalled, focus-trapped and dismissible", 
 });
 
 test("the drawer is not a second copy of the sidebar rendered inline", () => {
-  const layout = read("src/app/staff/layout.tsx");
-  // Comments stripped: this file explains the disclosure element it replaced.
-  const code = stripComments(layout);
+  // The shell moved into a client component, because the collapsed rail's width
+  // is a grid-column decision the sidebar could not reach. The rule it enforces
+  // is unchanged and asserted at its new home.
+  const shell = stripComments(read("src/components/staff/StaffShell.tsx"));
   // The old layout rendered the sidebar twice — once in the rail and once
   // inside a disclosure — so every link existed twice in the accessibility tree.
-  assert.equal((code.match(/<StaffNav /g) ?? []).length, 1);
-  assert.match(code, /<StaffMobileNav \/>/);
-  assert.doesNotMatch(code, /<details/);
+  assert.equal((shell.match(/<StaffNav\b/g) ?? []).length, 1);
+  assert.match(shell, /<StaffMobileNav \/>/);
+  assert.doesNotMatch(shell, /<details/);
+  // The layout must not grow a second one back.
+  assert.doesNotMatch(stripComments(read("src/app/staff/layout.tsx")), /<StaffNav\b/);
 });
 
 test("the staff chrome is dropped on paper", () => {

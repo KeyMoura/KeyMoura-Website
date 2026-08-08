@@ -158,9 +158,13 @@ test("template changes are audited", () => {
 
 // --- UI wiring -----------------------------------------------------------
 
-test("the Appearance page has its own Templates section", () => {
-  assert.match(page, /templates: \{ label: "Templates"/);
-  assert.match(page, /"brand" \| "assets" \| "wording" \| "navigation" \| "theme" \| "templates"/);
+test("the Appearance page has its own saved-looks section", () => {
+  // Renamed from "Templates": the word describes a file format rather than what
+  // the section holds, which is a saved appearance you can try before publishing.
+  assert.match(page, /templates: \{ label: "Saved looks"/);
+  // The two colour sections collapsed into one searchable "colors", and the
+  // choice controls moved to "styles".
+  assert.match(page, /"colors" \| "styles" \| "brand" \| "assets" \| "wording" \| "templates"/);
 });
 
 test("save, list, apply, rename, and delete are all wired up", () => {

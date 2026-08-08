@@ -5030,3 +5030,276 @@ discount code appearing between passes.
    lists it under Shop work. Before this pass that save detached it.
 5. **Open `/staff/emails`** and look at any template's new "Used by" panel.
    `staff_fulfillment_due` should be badged "Not sent yet" with a reason.
+
+# Pass 15 — staff UX, information architecture, appearance system, collapsed rail
+
+Branch `staff-ux-appearance-overhaul-20260808`, from `f9dded6`.
+**No migration was written and none is needed.** The full audit is
+`docs/STAFF_UX_AUDIT.md`, written before any code changed.
+
+## Verified starting state — 2026-08-08
+
+| Check | Result |
+|---|---|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `f9dded6` |
+| Migration ledger | 47 repo files, 47 rows |
+| Roles | 4 — admin, moderator, support, member |
+
+`products` reads 3 where pass 14 recorded 2. This pass never created a product;
+it is owner activity between passes, recorded here so the next reader does not
+attribute it to this work.
+
+## The headline: role creation was still broken, and it was not the migration
+
+Pass 14 diagnosed "could not create the role" as the missing `badge_icon`
+column, applied `20260808010000_role_badge_icon`, and verified the column. The
+report came back unchanged, because **there were two defects and only one was
+fixed**.
+
+`roles.description` is `text NOT NULL DEFAULT ''`. The create form posts exactly
+`{ key, label }`. `parseCreatePayload` filled the absent description with
+`null`, and `toRoleDbColumns` always emitted the key — so every insert carried
+an explicit `description: null`, which **overrides a default rather than
+triggering it**.
+
+Proven against production before anything changed, inside a function that
+catches and reports, rolled back:
+
+| Scenario | Result |
+|---|---|
+| `description = NULL` | `23502 null value in column "description" … violates not-null` |
+| `description = ''` | **succeeded** |
+
+**Why pass 14 missed it.** Its dry run used a hand-written SQL insert that
+supplied a description. That proved the *column* was fixed and never exercised
+the *route's payload*, which is the thing that omits it. The dry run and the
+application disagreed about what "creating a role" means.
+
+**No migration.** The column is correct. Relaxing a NOT NULL to accommodate a
+caller sending the wrong value would lose the guarantee that every role has a
+description string to render. The conversion lives in `toRoleDbColumns`, not in
+each route, so a fifth call site cannot reintroduce it. `PATCH` had the same
+defect on the same column — unreported only because nothing sends it yet.
+
+Every failure but 23505 collapsed to one message, which is how a not-null
+violation stayed invisible for two passes. 23502, 23514, 23503 and 42501 now say
+which happened, without echoing a constraint name at an operator.
+
+Verified against the live schema, all rolled back, production untouched
+(4 roles, 0 probes, 47 migrations, before and after):
+
+| Scenario | Result |
+|---|---|
+| Route payload now (`description = ''`) | **succeeds** — `is_system=false`, no permissions granted |
+| Old payload (`description = null`) | `23502` — the reported failure |
+| All six badge icons | **all accepted** |
+| `rocket` | `23514` → "That is not one of the available badge icons." |
+| Duplicate key `admin` | `23505` → "A role with that key already exists." |
+
+Deleting was also unreachable. The route has refused built-in roles and roles
+people still hold since pass 14, but nothing in the UI could call it, so a role
+created by mistake could never be removed.
+
+## The collapsed sidebar was a grid-column bug, not a sidebar bug
+
+Collapsing hid the labels and left the sidebar 280px wide. The state lived on
+the `<nav>`; the width is set two levels above it:
+
+    div.staff-shell     grid-template-columns: 280px 1fr   <- decides width
+      div                                                   <- fills 280px
+        nav.staff-nav   data-compact="true"                 <- state was here
+
+Every compact rule applied inside a box an ancestor had already sized. The
+labels genuinely left the layout — `sr-only` is `position: absolute` — and 280px
+of empty panel stayed. No work on the link styles could have fixed it.
+
+`StaffShell` now owns the preference and carries `data-compact` on the grid
+container. `minmax(0, 1fr)` on the content column matters: a bare `1fr` has a
+min-content floor that would absorb the gain.
+
+| Width | Expanded | Collapsed | Content gained |
+|---|---|---|---|
+| 1024 | 280px | **72px** | +208px |
+| 1280 | 280px | **72px** | 924.8 → **1132.8px** |
+| 1440 / 1920 | 280px | **72px** | +208px |
+
+`title` was replaced with a real tooltip: no browser raises a `title` on
+keyboard focus, so the collapsed rail was unlabelled for anyone tabbing it.
+
+## Appearance: the page could not answer its only question
+
+Controls were labelled with the token's name, eleven colours — including both
+button texts — were hidden inside a collapsed "Advanced palette", nothing was
+searchable, and the preview showed metric cards and a stepper. An owner tuning
+the storefront had nothing on screen that resembled it.
+
+`src/theme/appearanceMap.ts` is the single declaration: for every colour, a
+human name, a sentence, the real screen elements it reaches, and search terms.
+The page renders entirely from it, and search matches the *elements*.
+
+**The two the owner named had no control at all.** The "Customizable" badge and
+the catalog's "Need something else? Start a custom project" derived every colour
+from `--brand-accent`, so the only way to change either was to change footer
+links, the request stepper and every accent badge with it. Both now have their
+own background, text and border.
+
+Stored as `""` meaning "follow the accent": an untouched site renders
+identically, and a stored hex would have frozen the badge at today's accent and
+stopped it following a later palette change. That "unset" must be genuinely
+**absent** from the DOM — an empty custom property is still *defined*, so
+`var(--x, fallback)` would resolve to nothing rather than the derivation behind
+it. `optionalVars` drops them, shared by the root layout and the preview.
+
+| Before | After |
+|---|---|
+| 6 sections; colours split across "Colors & controls" and "Navbar" | 6 sections; **all colours in one searchable "Colours"** |
+| 11 colours behind a collapsed `<details>` | none hidden |
+| No search | search over labels, descriptions and screen elements |
+| Preview: metric cards, stepper, tabs | preview leads with product card, badge, CTA, buttons, form field |
+| No control for the badge or the CTA fill | 5 new optional tokens |
+| Staff and storefront controls interleaved unlabelled | every group carries a scope badge |
+
+### Token to what it changes
+
+Full table in `STAFF_UX_AUDIT.md` section 7. The two that were reported:
+
+| Element | Controls |
+|---|---|
+| "Customizable" badge | Badge background / text / border — each following Accent until set |
+| "Need something else? Start a custom project" | Secondary button background / text / border, shape from Secondary buttons |
+
+### Hard-coded colour audit
+
+| Class | Verdict |
+|---|---|
+| `#fb7185` danger, `#4ade80` success | **Intentionally fixed** — a status colour that could be reassigned would stop meaning anything. Asserted by test. |
+| Role badge defaults in `roleSchema.ts` | **Intentionally fixed** — per-role overrides exist |
+| `defaultSiteTheme` hexes | **Intentionally fixed** — they are the defaults |
+| `/staff/security/roles` `border-zinc-800 bg-black/35` | **Was a real bypass** — routed through the shared tokens here |
+| Remaining staff-page chrome | **Recorded, not executed** — touches ~30 pages, own pass |
+
+## Staff information architecture
+
+Same 27 destinations, no route added or removed.
+
+| Before (6 groups) | After (8 groups) |
+|---|---|
+| Today: Dashboard, Orders, Production, Fulfillment | **Dashboard**; **Orders** |
+| Catalog: Products, Categories, Inventory, Discounts | **Operations**: Production, Fulfillment, Inventory |
+| Customers: Customers, Reports | **Store**: Products, Categories, Discounts |
+| Operations: Emails … Audit log | **Customers**: Customers, Reports |
+| Site content: 4 | **Business**: Emails, Analytics, Reconciliation, Integration health, Launch readiness, Audit log |
+| Settings: 7 | **Site content**: 4; **Settings**: 7 |
+
+Inventory moved out of the catalog group: fixing a stock count is operational
+work done beside Production and Fulfillment, and it was filed with writing
+product copy. Catalog to Store (what the storefront is called). Operations to
+Business for the reporting group, freeing the word for what is actually the
+operation. "Settings overview" to "All settings". "Security controls" to "Site
+access & safety", which stops it competing with "Roles & permissions".
+
+**"Custom Requests" was requested and deliberately not added** — no such route
+exists. Custom requests are orders carrying `is_custom`, shown by a filter on
+`/staff/orders`; an entry would 404 or duplicate Orders under a second name.
+
+The settings index is four named blocks instead of a flat grid of seven cards
+where "Recycle bin" carried the same weight as "Commerce".
+
+Orders, Production and Fulfillment keep the pass 14 boundary and it is now
+structural: Orders sits alone as the canonical workspace, while Production and
+Fulfillment sit together under Operations as queues into and out of it. Their
+descriptions still say editing happens on the order.
+
+## `/orders/new` — the form system, not one margin
+
+`Project type *` sat on its dropdown because every control on all four steps
+shared `const input = "ui-input mt-1"` — 4px — while `/staff/orders/new` used
+`mt-2` and the rest of the project used `.ui-label`. Three spacings, so "fix the
+spacing" had no single answer.
+
+Spacing now belongs to `.ui-label` alone at 0.5rem, and a shared `Field`
+component carries the structure. Measured: 8px on every field, identical at 375
+and 1280, no horizontal overflow. The required marker gained a text equivalent —
+a bare `*` is announced as "star" or skipped depending on the reader.
+
+## Validation
+
+- **1438 tests pass, 0 fail** (1376 at `f9dded6`). Four new suites; eight
+  existing tests re-pointed to the new structure and made stricter rather than
+  weakened.
+- Typecheck clean. Production build clean from a cleared `.next`, exit 0.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings).
+
+Two new tests failed on their first run and were right to:
+`appearance-token-map` refused an empty "Staff area" colour group — the staff
+area shares every colour and its only dedicated control is a shape — and
+`staff-sidebar-collapse` caught an over-broad regex matching the phone
+single-column rule.
+
+### Driven in a real browser
+
+Full table in `STAFF_UX_AUDIT.md` section 11. Widths 320, 375, 768, 1024, 1280,
+1440, 1920 — no horizontal overflow at any. Appearance search resolves
+"customizable" to the three badge controls and "custom project" to the three CTA
+controls; the preview updates live with no save, and Clear restores inheritance
+with the variable absent rather than empty.
+
+**A tooltip that read as broken and was not.** The link matched `:focus-visible`
+but computed opacity stayed `0` after 400ms and even when set inline. The
+Browser pane does not composite frames, so a `transition` never advances and
+`getComputedStyle` returns the from-value forever. With `transition: none`
+forced: focus to `1`, blur to `0`, refocus to `1`.
+
+### What could not be verified, and why
+
+- **A signed-in staff session.** Unchanged since pass 3: middleware redirects
+  `/staff/*` even locally, and signing in means handling a password. Staff pages
+  were driven by seeding `["meAccess"]` through the React fiber, so the shell,
+  navigation, Appearance editor and settings index were exercised for real, but
+  every staff API answered 401/403. The roles editor's populated state and the
+  create/delete round trip were not driven in a browser; their rules are covered
+  by the 31 new role tests and by the live-schema probes above.
+- **Production role creation end to end.** Proven at the database, not through
+  the deployed UI. That is the owner check below.
+
+## Deferred, honestly
+
+1. **Staff page field placement** (Products, Orders, Production, Commerce
+   section ordering) — audited in `STAFF_UX_AUDIT.md` section 8 and **not
+   executed**. It touches the largest editors in the product, none of which an
+   automated session can reach, and putting it in the same pass as the fix that
+   makes roles work would ship untestable churn beside a verified repair.
+2. **The remaining staff-chrome hard-coded colours** — one page fixed, ~30 to go.
+3. **Two `main` landmarks per staff page** — pre-existing at `f9dded6`,
+   confirmed on three pages. Fixing it means changing the landmark on every
+   staff page.
+4. **`/staff/orders/new` on the shared `Field` component** — it already measures
+   8px, so it is consistent by value but not yet by mechanism.
+
+## Residual risks
+
+- The five new appearance tokens default to `""`, and the whole "unset means
+  inherit" behaviour rests on the variable being *absent* rather than empty.
+  `optionalVars` is one function with one test; if a third call site ever emits
+  these without it, untouched sites lose the colour instead of inheriting it.
+- `appearanceMap.ts` claims what each colour reaches. The variable and the
+  layout emission are asserted; the `usedBy` prose is checked for the elements
+  the owner named, but a future component reading `--km-surface` without saying
+  so would not fail a test.
+
+## Owner checks worth five minutes
+
+1. **Create a role.** `/staff/security/roles` — type a key and a name, press
+   Create. This is the reported failure and the one path no automated session
+   can reach. It should now succeed, open the new role, and say it has no
+   permissions until you grant some.
+2. **Delete that role.** The button is new; built-in roles show "Built in —
+   cannot be deleted" instead.
+3. **Change the "Customizable" badge.** `/staff/appearance` — type
+   "customizable" into the colour search. Three controls should appear. Change
+   one and watch the preview badge move before you publish.
+4. **Collapse the sidebar** on any staff page. It should become a 72px rail and
+   the page content should get visibly wider.
+5. **Open `/orders/new`** and look at the gap under `Project type *`.

@@ -12,6 +12,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { BlocksProvider } from "@/components/BlocksProvider";
 import { getSiteSettings } from "@/lib/siteSettings";
+import { optionalVars } from "@/theme/runtime";
 import { SiteSettingsProvider } from "@/components/SiteSettingsProvider";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -70,6 +71,20 @@ export default async function RootLayout({
     "--km-nav-badge-text": settings.theme.navigationBadgeText,
     "--km-nav-mobile-bg": settings.theme.navigationMobileBackground,
     "--km-nav-mobile-text": settings.theme.navigationMobileText,
+    /*
+     * The five optional overrides. An unset value must not be emitted at all:
+     * `var(--km-badge-bg, var(--accent-soft))` only reaches its fallback when
+     * the custom property is genuinely absent, and an empty string is still
+     * "present" as far as `var()` is concerned. Spreading a conditional object
+     * is what keeps "unset" meaning "follow the accent" rather than "no colour".
+     */
+    ...optionalVars({
+      "--km-badge-bg": settings.theme.badgeBackground,
+      "--km-badge-text": settings.theme.badgeText,
+      "--km-badge-border": settings.theme.badgeBorder,
+      "--km-secondary-button-bg": settings.theme.secondaryButtonBackground,
+      "--km-secondary-button-border": settings.theme.secondaryButtonBorder,
+    }),
   } as CSSProperties;
 
   return (

@@ -35,7 +35,17 @@ test("appearance has a dedicated classic navbar editor and expanded controls", (
   const runtime = read("src/theme/runtime.ts");
   const pdf = read("src/app/api/info/pdf/[slug]/route.ts");
 
-  for (const label of ["Navbar", "Public navbar", "Navbar colors", "Navbar background", "Active link", "Scroll behavior", "Surface shadows", "Border contrast"]) assert.match(appearance, new RegExp(label));
+  // The navbar's shape controls stayed on the page; its colours moved into the
+  // token map, where each one also says what it changes. Asserting both halves
+  // is stronger than the old check, which only proved a label existed in JSX.
+  const map = read("src/theme/appearanceMap.ts");
+  for (const label of ["Navigation bar", "Scroll behavior", "Surface shadows", "Border contrast"]) {
+    assert.match(appearance, new RegExp(label));
+  }
+  for (const label of ["Navbar background", "Current page link", "Navbar link text"]) {
+    assert.match(map, new RegExp(label));
+  }
+  assert.match(appearance, /publicNavigationStyle/, "the classic navbar choice is still editable");
   assert.match(runtime, /publicNavigationStyle: "classic"/);
   assert.doesNotMatch(pdf, /schassis\.info/i);
   assert.match(pdf, /keymoura\.com\/projects/);

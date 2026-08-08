@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import QuantityField from "@/components/commerce/QuantityField";
 import { MenuSelect } from "@/components/ui/MenuSelect";
-import { Notice, cx } from "@/components/ui/DesignSystem";
+import { Field, Notice, cx } from "@/components/ui/DesignSystem";
 import { emptyShippingAddress, type FulfillmentMethod, type ShippingAddress } from "@/lib/checkout";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 
@@ -14,7 +14,17 @@ type FormData = {
   quantity:number; budget:string; target_date:string; fulfillment_method:FulfillmentMethod; shipping_address:ShippingAddress;
 };
 const initial = (): FormData => ({ title:"", project_type:"", description:"", material:"", dimensions:"", tolerance:"", finish:"", quantity:1, budget:"", target_date:"", fulfillment_method:"shipping", shipping_address:emptyShippingAddress() });
-const input = "ui-input mt-1";
+/**
+ * Spacing is `.ui-label`'s job now, not a margin on every control.
+ *
+ * This was `"ui-input mt-1"` — 4px between a label and its field on all four
+ * steps, which is what put `Project type *` on top of its dropdown. The label
+ * spacing moved into the shared `Field` component so every pair on the page is
+ * consistent with the rest of the site rather than with itself.
+ */
+const input = "ui-input";
+/** `MenuSelect` renders a button, so it needs the trigger layout as well. */
+const selectInput = `${input} flex items-center justify-between text-left`;
 const projectTypes = ["Automotive part", "Replacement part", "Sign or display", "Furniture / woodworking", "Fixture or jig", "Prototype", "Other custom project"];
 const materials = ["Open to recommendation", "Aluminum", "Delrin / acetal", "Acrylic", "Hardwood", "Plywood / MDF", "Brass", "Other"];
 
@@ -94,9 +104,43 @@ export default function NewCustomRequestPage() {
       </aside>
       <form onSubmit={submit} className="ui-card p-5 sm:p-7">
         <div className="ui-stepper" aria-label="Request progress">{labels.map((label,index)=><button type="button" key={label} data-step={index+1} disabled={index+1>step} aria-current={step===index+1?"step":undefined} onClick={()=>index+1<step&&setStep((index+1) as 1|2|3|4)} className={cx("ui-step text-left",step===index+1&&"is-current",step>index+1&&"is-complete")}>{label}</button>)}</div>
-        {step===1?<section className="mt-7"><h2 className="text-2xl font-semibold">What are we making?</h2><div className="mt-5 grid gap-4"><label className="text-sm">Project type *<MenuSelect value={form.project_type} onChange={v=>set("project_type",v)} options={[{value:"",label:"Choose a project type"},...projectTypes.map(v=>({value:v,label:v}))]} className={`${input} flex items-center justify-between text-left`} /></label><label className="text-sm">Project name<input className={input} value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Example: Delrin shift knob" maxLength={120}/></label><label className="text-sm">Describe the part and how it will be used *<textarea className={`${input} min-h-36`} value={form.description} onChange={e=>set("description",e.target.value)} placeholder="What should it do? What does it attach to? Include anything that cannot change." maxLength={5000}/></label><QuantityField value={form.quantity} max={null} absoluteMax={1000} showMax={false} onCommit={v=>set("quantity",v)} /></div></section>:null}
-        {step===2?<section className="mt-7"><h2 className="text-2xl font-semibold">Specifications and files</h2><p className="mt-2 text-sm text-brand-textMuted">Unknown is okay—choose “open to recommendation” and we’ll help.</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-sm">Material<MenuSelect value={form.material} onChange={v=>set("material",v)} options={materials.map(v=>({value:v,label:v}))} className={`${input} flex items-center justify-between text-left`} /></label><label className="text-sm">Overall dimensions<input className={input} value={form.dimensions} onChange={e=>set("dimensions",e.target.value)} placeholder='Example: 3.0" × 3.0" × 2.5"'/></label><label className="text-sm">Required tolerance<input className={input} value={form.tolerance} onChange={e=>set("tolerance",e.target.value)} placeholder="Example: ±0.1 mm, or advise me"/></label><label className="text-sm">Finish / appearance<input className={input} value={form.finish} onChange={e=>set("finish",e.target.value)} placeholder="Sanded, polished, anodized…"/></label><label className="text-sm">Budget range<input className={input} value={form.budget} onChange={e=>set("budget",e.target.value)} placeholder="Optional"/></label><label className="text-sm">Needed by<input className={input} type="date" value={form.target_date} onChange={e=>set("target_date",e.target.value)}/></label><label className="text-sm sm:col-span-2">CAD, drawings, photos, or references<input className={input} type="file" multiple accept=".stl,.step,.stp,.iges,.igs,.dxf,.dwg,.svg,.pdf,.png,.jpg,.jpeg,.webp,.zip" onChange={e=>setFiles(Array.from(e.target.files??[]).slice(0,10))}/><span className="mt-1 block text-xs text-brand-textMuted">Up to 10 files · 50 MB each · CAD, drawings, images, PDF, or ZIP</span>{files.length?<span className="mt-2 block text-sm text-brand-primary">{files.map(f=>f.name).join(", ")}</span>:null}</label></div></section>:null}
-        {step===3?<section className="mt-7"><h2 className="text-2xl font-semibold">Delivery</h2><div className="mt-5 grid grid-cols-2 gap-3"><button type="button" onClick={()=>set("fulfillment_method","shipping")} className={`ui-card ui-card-hover text-left ${form.fulfillment_method==="shipping"?"!border-brand-primary !bg-brand-primary/10":""}`}><b>Ship to me</b><span className="mt-1 block text-xs text-brand-textMuted">Quoted after review</span></button><button type="button" onClick={()=>set("fulfillment_method","pickup")} className={`ui-card ui-card-hover text-left ${form.fulfillment_method==="pickup"?"!border-brand-primary !bg-brand-primary/10":""}`}><b>Local pickup</b><span className="mt-1 block text-xs text-brand-textMuted">Arrange after completion</span></button></div>{form.fulfillment_method==="shipping"?<div className="mt-5 grid gap-3 sm:grid-cols-2">{([['name','Recipient'],['line1','Street address'],['line2','Apartment / suite'],['city','City'],['state','State'],['postal_code','ZIP code']] as [keyof ShippingAddress,string][]).map(([key,label])=><label key={key} className={`text-sm ${key==='line1'||key==='line2'?'sm:col-span-2':''}`}>{label}<input className={input} value={form.shipping_address[key]} onChange={e=>set("shipping_address",{...form.shipping_address,[key]:e.target.value})}/></label>)}</div>:null}</section>:null}
+        {step===1?<section className="mt-7"><h2 className="text-2xl font-semibold">What are we making?</h2><div className="mt-5 grid gap-5">
+          <Field label="Project type" required>
+            <MenuSelect ariaLabel="Project type" value={form.project_type} onChange={v=>set("project_type",v)} options={[{value:"",label:"Choose a project type"},...projectTypes.map(v=>({value:v,label:v}))]} className={selectInput} />
+          </Field>
+          <Field label="Project name" help="Optional — we will use the project type if you leave this blank.">
+            <input className={input} value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Example: Delrin shift knob" maxLength={120}/>
+          </Field>
+          <Field label="Describe the part and how it will be used" required help="At least 20 characters.">
+            <textarea className={`${input} min-h-36`} value={form.description} onChange={e=>set("description",e.target.value)} placeholder="What should it do? What does it attach to? Include anything that cannot change." maxLength={5000}/>
+          </Field>
+          <QuantityField value={form.quantity} max={null} absoluteMax={1000} showMax={false} onCommit={v=>set("quantity",v)} />
+        </div></section>:null}
+        {step===2?<section className="mt-7"><h2 className="text-2xl font-semibold">Specifications and files</h2><p className="mt-2 text-sm text-brand-textMuted">Unknown is okay—choose “open to recommendation” and we’ll help.</p><div className="mt-5 grid gap-5 sm:grid-cols-2">
+          <Field label="Material">
+            <MenuSelect ariaLabel="Material" value={form.material} onChange={v=>set("material",v)} options={materials.map(v=>({value:v,label:v}))} className={selectInput} />
+          </Field>
+          <Field label="Overall dimensions">
+            <input className={input} value={form.dimensions} onChange={e=>set("dimensions",e.target.value)} placeholder='Example: 3.0" × 3.0" × 2.5"'/>
+          </Field>
+          <Field label="Required tolerance">
+            <input className={input} value={form.tolerance} onChange={e=>set("tolerance",e.target.value)} placeholder="Example: ±0.1 mm, or advise me"/>
+          </Field>
+          <Field label="Finish / appearance">
+            <input className={input} value={form.finish} onChange={e=>set("finish",e.target.value)} placeholder="Sanded, polished, anodized…"/>
+          </Field>
+          <Field label="Budget range" help="Optional.">
+            <input className={input} value={form.budget} onChange={e=>set("budget",e.target.value)} placeholder="Optional"/>
+          </Field>
+          <Field label="Needed by" help="Optional.">
+            <input className={input} type="date" value={form.target_date} onChange={e=>set("target_date",e.target.value)}/>
+          </Field>
+          <Field className="sm:col-span-2" label="CAD, drawings, photos, or references" help="Up to 10 files · 50 MB each · CAD, drawings, images, PDF, or ZIP">
+            <input className={input} type="file" multiple accept=".stl,.step,.stp,.iges,.igs,.dxf,.dwg,.svg,.pdf,.png,.jpg,.jpeg,.webp,.zip" onChange={e=>setFiles(Array.from(e.target.files??[]).slice(0,10))}/>
+            {files.length?<span className="mt-2 block text-sm text-brand-primary">{files.map(f=>f.name).join(", ")}</span>:null}
+          </Field>
+        </div></section>:null}
+        {step===3?<section className="mt-7"><h2 className="text-2xl font-semibold">Delivery</h2><div className="mt-5 grid grid-cols-2 gap-3"><button type="button" onClick={()=>set("fulfillment_method","shipping")} className={`ui-card ui-card-hover text-left ${form.fulfillment_method==="shipping"?"!border-brand-primary !bg-brand-primary/10":""}`}><b>Ship to me</b><span className="mt-1 block text-xs text-brand-textMuted">Quoted after review</span></button><button type="button" onClick={()=>set("fulfillment_method","pickup")} className={`ui-card ui-card-hover text-left ${form.fulfillment_method==="pickup"?"!border-brand-primary !bg-brand-primary/10":""}`}><b>Local pickup</b><span className="mt-1 block text-xs text-brand-textMuted">Arrange after completion</span></button></div>{form.fulfillment_method==="shipping"?<div className="mt-5 grid gap-5 sm:grid-cols-2">{([['name','Recipient',true],['line1','Street address',true],['line2','Apartment / suite',false],['city','City',true],['state','State',true],['postal_code','ZIP code',true]] as [keyof ShippingAddress,string,boolean][]).map(([key,label,required])=><Field key={key} label={label} required={required} className={key==='line1'||key==='line2'?'sm:col-span-2':undefined}><input className={input} value={form.shipping_address[key]} onChange={e=>set("shipping_address",{...form.shipping_address,[key]:e.target.value})}/></Field>)}</div>:null}</section>:null}
         {step===4?<section className="mt-7"><h2 className="text-2xl font-semibold">Review your request</h2><p className="mt-2 text-sm text-brand-textMuted">Submitting is free. KeyMoura will review it and send a quote for your approval.</p><dl className="mt-5 grid gap-3 sm:grid-cols-2">{[["Project",form.title||form.project_type],["Type",form.project_type],["Quantity",String(form.quantity)],["Material",form.material||"Recommendation requested"],["Dimensions",form.dimensions||"To discuss"],["Tolerance",form.tolerance||"Standard / advise me"],["Finish",form.finish||"To discuss"],["Files",files.length?`${files.length} attached`:"None"],["Delivery",form.fulfillment_method==="shipping"?"Shipping":"Local pickup"],["Needed by",form.target_date||"Flexible"]].map(([label,value])=><div key={label} className="rounded-xl border border-zinc-800 p-3"><dt className="text-xs text-brand-textMuted">{label}</dt><dd className="mt-1 text-sm">{value}</dd></div>)}</dl><div className="mt-4 rounded-xl border border-zinc-800 p-4"><p className="text-xs text-brand-textMuted">Description</p><p className="mt-2 whitespace-pre-wrap text-sm">{form.description}</p></div></section>:null}
         {error?<Notice tone="danger" role="alert" className="mt-5">{error}</Notice>:null}{saved?<Notice tone="success" role="status" className="mt-5">{saved}</Notice>:null}
         <div className="ui-action-row mt-7">{step>1?<button type="button" onClick={()=>setStep((step-1) as 1|2|3)} className="ui-btn ui-btn-ghost">Back</button>:null}<button type="button" disabled={busy} onClick={()=>void saveDraft()} className="ui-btn ui-btn-secondary disabled:opacity-50">Save draft</button>{step<4?<button type="button" onClick={next} className="ui-btn ui-btn-primary ml-auto">Continue</button>:<button disabled={busy} className="ui-btn ui-btn-primary ml-auto disabled:opacity-50">{busy?"Submitting…":"Submit request — no charge"}</button>}</div>

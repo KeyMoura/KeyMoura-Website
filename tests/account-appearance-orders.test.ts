@@ -64,16 +64,37 @@ test("account security exposes safe Supabase identity linking", () => {
 
 test("appearance is organized into focused sections with explicit publishing", () => {
   const page = read("src/app/staff/appearance/page.tsx");
-  for (const label of ["Brand & business", "Logos & icons", "Labels & wording", "Colors & controls"]) {
+  // Section names now describe the subject rather than the editor: "Colours"
+  // instead of "Colors & controls", "Business details" instead of "Brand &
+  // business". Every colour lives in one searchable section instead of being
+  // split between "Colors & controls" and "Navbar".
+  for (const label of ["Colours", "Shapes & density", "Business details", "Logos & icons", "Labels & wording"]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /Reset this section/);
   assert.match(page, /Publish appearance/);
   assert.match(page, /You have unpublished appearance changes/);
-  for (const label of ["Layout & type", "Components", "Tabs", "Cards & panels", "Inputs", "Navigation", "Content width"]) {
+  for (const label of ["Layout & type", "Control shapes", "Tabs", "Cards & panels", "Inputs", "Content width"]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /"framed"/);
+});
+
+/**
+ * Colour controls are no longer written at the call site.
+ *
+ * This is the assertion the old string matching was reaching for and could not
+ * make: a control exists because the map declares it, so the page cannot ship a
+ * colour picker with no explanation attached.
+ */
+test("every colour control is rendered from the declared map", () => {
+  const page = read("src/app/staff/appearance/page.tsx");
+  assert.match(page, /searchAppearanceSettings/, "the colour list is filtered by the shared search");
+  assert.match(page, /APPEARANCE_GROUPS/, "groups come from the map, not from the page");
+  assert.match(page, /setting\.usedBy/, "every control states what it changes");
+  // A hand-written colour field beside the mapped ones would be a control with
+  // no description and no search terms — exactly what this pass removed.
+  assert.doesNotMatch(page, /function ColorField/, "there is no second, unexplained colour control");
 });
 
 test("account tabs use the shared configurable tab system", () => {

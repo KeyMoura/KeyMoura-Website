@@ -23,23 +23,33 @@ import { StaffNavIcon } from "@/components/staff/StaffNavIcon";
  * longest-prefix matching from that module rather than three hand-written
  * exceptions here.
  *
- * Two pieces of state are remembered in `localStorage`: which groups are
- * collapsed, and whether the rail is in compact mode. Both go through
+ * Which groups are collapsed is remembered in `localStorage` through
  * `useStoredPreference`, which serves the default during server rendering and
  * hydration and switches to the stored value afterwards — so neither reading
  * storage during render (a hydration mismatch, and this project already carries
  * one) nor writing state from an effect (a cascading render on every mount) is
  * needed.
+ *
+ * **Compact mode is not owned here.** It is passed in by `StaffShell`, because
+ * the rail's width is set by the shell's grid column and this component cannot
+ * reach it. Reading the same preference in both places would be two
+ * subscriptions that can disagree for a frame.
  */
 
 const COLLAPSED_GROUPS_KEY = "km.staffNav.collapsedGroups";
-const COMPACT_KEY = "km.staffNav.compact";
 
 /** Stable module-scope defaults: a fresh `[]` each render would re-subscribe the store. */
 const NO_COLLAPSED_GROUPS: readonly string[] = [];
-const parseCompact = (raw: string) => raw === "true" || raw === "1";
 
-export function StaffNav({ variant = "sidebar" }: { variant?: "sidebar" | "drawer" }) {
+export function StaffNav({
+  variant = "sidebar",
+  compact = false,
+  onToggleCompact,
+}: {
+  variant?: "sidebar" | "drawer";
+  compact?: boolean;
+  onToggleCompact?: () => void;
+}) {
   const pathname = usePathname();
   const { data: access } = useMeAccess();
   const permissions = new Set(access?.permissions ?? []);
@@ -50,7 +60,6 @@ export function StaffNav({ variant = "sidebar" }: { variant?: "sidebar" | "drawe
     NO_COLLAPSED_GROUPS,
     parseStringArray
   );
-  const [compact, setCompact] = useStoredPreference(COMPACT_KEY, false, parseCompact);
 
   if (!groups.length) return null;
 
@@ -61,8 +70,6 @@ export function StaffNav({ variant = "sidebar" }: { variant?: "sidebar" | "drawe
       collapsedGroups.includes(id) ? collapsedGroups.filter((value) => value !== id) : [...collapsedGroups, id]
     );
   };
-
-  const toggleCompact = () => setCompact(!compact);
 
   const renderGroup = (group: StaffNavGroup) => {
     // A collapsed group that contains the current page is forced open: hiding
@@ -108,11 +115,24 @@ export function StaffNav({ variant = "sidebar" }: { variant?: "sidebar" | "drawe
                 <Link
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  title={isCompact ? item.label : undefined}
                   className="staff-nav-link"
                 >
                   <StaffNavIcon icon={item.icon} className="staff-nav-link-icon h-4 w-4" />
+                  {/* `sr-only` is `position: absolute`, so the label leaves the
+                      layout entirely rather than reserving width — but it stays
+                      the link's accessible name, which is the whole point of an
+                      icon-only rail. */}
                   <span className={isCompact ? "sr-only" : "staff-nav-link-label"}>{item.label}</span>
+                  {/* A real tooltip rather than `title`. No browser raises a
+                      `title` on keyboard focus, so a keyboard user tabbing a
+                      collapsed rail previously saw nothing at all. `aria-hidden`
+                      because the span above already names the link; announcing
+                      both would read every item twice. */}
+                  {isCompact ? (
+                    <span className="staff-nav-tip" aria-hidden="true">
+                      {item.label}
+                    </span>
+                  ) : null}
                 </Link>
               </li>
             );
@@ -138,7 +158,7 @@ export function StaffNav({ variant = "sidebar" }: { variant?: "sidebar" | "drawe
           ) : null}
           <button
             type="button"
-            onClick={toggleCompact}
+            onClick={onToggleCompact}
             aria-pressed={isCompact}
             className="staff-nav-compact-toggle"
             title={isCompact ? "Expand the sidebar" : "Collapse the sidebar"}

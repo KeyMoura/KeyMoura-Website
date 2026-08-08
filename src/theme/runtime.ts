@@ -2,6 +2,26 @@ export type SiteTheme = {
   background: string; backgroundEnd: string; surface: string; surfaceStrong: string;
   text: string; mutedText: string; headingText: string; linkText: string; border: string;
   primaryButtonText: string; secondaryButtonText: string;
+  /**
+   * Optional overrides. `""` means "follow the accent", which is what these
+   * elements have always done — so an existing site renders identically until
+   * somebody sets one.
+   *
+   * They exist because the two elements the shop owner asked about most had no
+   * control at all. The "Customizable" badge and the catalog's "Need something
+   * else? Start a custom project" button derived every colour from
+   * `--brand-accent`, so the only way to change either was to change the accent
+   * — which also moves footer links, the request stepper and every accent badge.
+   * "Which setting controls this?" had no answer because the setting did not
+   * exist.
+   *
+   * Stored empty rather than pre-filled with the derived hex: a stored colour
+   * would freeze the badge at today's accent and silently stop it following a
+   * future palette change, which is the behaviour every existing install
+   * depends on.
+   */
+  badgeBackground: string; badgeText: string; badgeBorder: string;
+  secondaryButtonBackground: string; secondaryButtonBorder: string;
   radius: "soft" | "rounded" | "pill";
   density: "compact" | "comfortable";
   font: "system" | "modern" | "technical";
@@ -31,6 +51,8 @@ export const defaultSiteTheme: SiteTheme = {
   surfaceStrong: "#18181b", text: "#f4f4f5", mutedText: "#a1a1aa",
   headingText: "#ffffff", linkText: "#f59e0b", border: "#3f3f46",
   primaryButtonText: "#09090b", secondaryButtonText: "#f4f4f5",
+  badgeBackground: "", badgeText: "", badgeBorder: "",
+  secondaryButtonBackground: "", secondaryButtonBorder: "",
   radius: "rounded", density: "comfortable", font: "modern",
   primaryButtonStyle: "solid", secondaryButtonStyle: "outline",
   tabStyle: "framed", cardStyle: "soft", inputStyle: "solid",
@@ -45,6 +67,26 @@ export const defaultSiteTheme: SiteTheme = {
   backgroundStyle: "gradient", contentWidth: "standard", shadowStyle: "soft", borderStrength: "standard",
 };
 
+/**
+ * Drops unset overrides so `var(--x, fallback)` can reach its fallback.
+ *
+ * An empty custom property is still *defined*, so `var()` would resolve it to
+ * nothing rather than to the derivation behind it — the badge would lose its
+ * colour instead of following the accent. Omitting the declaration entirely is
+ * the only thing that keeps "unset" meaning "inherit".
+ *
+ * Shared by the root layout and the Appearance preview so both express "unset"
+ * the same way; a preview that emitted empty strings would show a colourless
+ * badge for a setting that renders correctly in production.
+ */
+export function optionalVars(values: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(values)) {
+    if (value) out[name] = value;
+  }
+  return out;
+}
+
 const hex = /^#[0-9a-f]{6}$/i;
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
   typeof value === "string" && allowed.includes(value as T) ? (value as T) : fallback;
@@ -52,11 +94,29 @@ const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback
 export function normalizeSiteTheme(value: unknown): SiteTheme {
   const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const color = (key: keyof SiteTheme) => typeof input[key] === "string" && hex.test(input[key] as string) ? input[key] as string : defaultSiteTheme[key] as string;
+  /**
+   * A colour that may legitimately be unset.
+   *
+   * `""` is a real value here — "follow the accent" — so it must survive the
+   * round trip rather than being replaced by a default. Anything that is
+   * neither a hex nor empty is still rejected, so a malformed stored value
+   * falls back to inheriting rather than to a hard-coded colour.
+   */
+  const optionalColor = (key: keyof SiteTheme) => {
+    const value = input[key];
+    if (typeof value !== "string") return "";
+    const trimmed = value.trim();
+    return hex.test(trimmed) ? trimmed : "";
+  };
   return {
     background: color("background"), backgroundEnd: color("backgroundEnd"), surface: color("surface"),
     surfaceStrong: color("surfaceStrong"), text: color("text"), mutedText: color("mutedText"),
     headingText: color("headingText"), linkText: color("linkText"), border: color("border"),
     primaryButtonText: color("primaryButtonText"), secondaryButtonText: color("secondaryButtonText"),
+    badgeBackground: optionalColor("badgeBackground"), badgeText: optionalColor("badgeText"),
+    badgeBorder: optionalColor("badgeBorder"),
+    secondaryButtonBackground: optionalColor("secondaryButtonBackground"),
+    secondaryButtonBorder: optionalColor("secondaryButtonBorder"),
     navigationBackground: color("navigationBackground"), navigationText: color("navigationText"),
     navigationActiveText: color("navigationActiveText"), navigationBorder: color("navigationBorder"),
     navigationHoverBackground: color("navigationHoverBackground"), navigationHoverText: color("navigationHoverText"),

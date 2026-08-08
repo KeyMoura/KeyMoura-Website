@@ -117,6 +117,33 @@ export function normalizeBadgeIcon(value: unknown): RoleBadgeIcon | null {
   return isRoleBadgeIcon(trimmed) ? (trimmed as RoleBadgeIcon) : null;
 }
 
+/**
+ * Columns that are `NOT NULL` with a default, and therefore must never be sent
+ * as an explicit `null`.
+ *
+ * This is the second half of the "could not create the role" defect, and it
+ * outlived pass 14's migration. `roles.description` is `text NOT NULL DEFAULT
+ * ''`. The create form posts only `{ key, label }`, the route filled the absent
+ * description with `null`, and an explicit `null` **overrides a default rather
+ * than triggering it** — so every create was refused with
+ *
+ *     23502  null value in column "description" of relation "roles"
+ *            violates not-null constraint
+ *
+ * and the route reported the generic "Could not create the role."
+ *
+ * Proven against production before the change, not inferred: the same insert
+ * with `''` succeeds and with `null` fails. The repair is here rather than a
+ * migration making the column nullable — the column is right, and relaxing a
+ * constraint to accommodate a caller that sends the wrong value would lose the
+ * guarantee that every role has a description string to render.
+ *
+ * `''` rather than omitting the key: both work for an insert, but an *update*
+ * clearing a description has to write something, and `''` is what the default
+ * would have produced anyway.
+ */
+export const ROLE_NOT_NULL_TEXT_COLUMNS: readonly string[] = [ROLE_COLUMNS.description];
+
 /** Wire field -> database column, for writes. Only these may be written. */
 const WRITABLE: Readonly<Record<string, string>> = {
   label: ROLE_COLUMNS.label,
@@ -140,7 +167,41 @@ const WRITABLE: Readonly<Record<string, string>> = {
 export function toRoleDbColumns(patch: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [wireField, column] of Object.entries(WRITABLE)) {
-    if (Object.prototype.hasOwnProperty.call(patch, wireField)) out[column] = patch[wireField];
+    if (!Object.prototype.hasOwnProperty.call(patch, wireField)) continue;
+    const value = patch[wireField];
+    // The one place a `null` is turned back into the column's own default.
+    // Doing it here rather than in each route means a fifth call site cannot
+    // reintroduce the 23502 by building its payload slightly differently.
+    out[column] = value === null && ROLE_NOT_NULL_TEXT_COLUMNS.includes(column) ? "" : value;
   }
   return out;
+}
+
+/**
+ * A database error from a role write, as something an operator can act on.
+ *
+ * Every failure except 23505 used to collapse to "Could not create the role.",
+ * which is how a not-null violation stayed invisible for two passes — it was
+ * indistinguishable from a permission problem, a typo or an outage. Each code
+ * below is a distinct thing the operator did, and each message says which.
+ */
+export function roleWriteErrorMessage(
+  error: { code?: string | null; message?: string | null } | null,
+  verb: "create" | "update" | "delete"
+): { message: string; status: number } {
+  switch (error?.code) {
+    case "23505":
+      return { message: "A role with that key already exists.", status: 409 };
+    case "23502":
+      return { message: "That role is missing a required field.", status: 400 };
+    case "23514":
+      // The only CHECK on `roles` is `roles_badge_icon_check`.
+      return { message: "That is not one of the available badge icons.", status: 400 };
+    case "23503":
+      return { message: "Something still refers to that role.", status: 409 };
+    case "42501":
+      return { message: "This account is not allowed to change roles.", status: 403 };
+    default:
+      return { message: `Could not ${verb} the role.`, status: 400 };
+  }
 }

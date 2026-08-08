@@ -24,18 +24,21 @@ const UTILITY_CSS_VARS = [
 
 test("Appearance exposes a dedicated navbar utility controls subsection", () => {
   const page = read("src/app/staff/appearance/page.tsx");
+  const map = read("src/theme/appearanceMap.ts");
 
-  assert.match(page, /Navbar utility controls/);
+  // The utility colours are declared in the map now rather than hand-written
+  // into the page's JSX. Each must still exist, and must additionally say what
+  // it changes — the old assertion could not check that at all.
   for (const field of UTILITY_FIELDS) {
-    assert.match(page, new RegExp(`form\\.theme\\.${field}`));
-    assert.match(page, new RegExp(`setTheme\\("${field}"`));
+    assert.match(map, new RegExp(`key: "${field}"`), `${field} must be a declared, explained control`);
   }
+  assert.match(map, /Utility button background/);
+  assert.match(map, /Search, wishlist, cart, notifications and account buttons/);
 
-  // The section's "Reset this section" action must also revert the new fields.
-  const resetBlock = page.match(/if \(section === "navigation"\) \{[\s\S]*?\}\r?\n\s*const keys:/)?.[0] ?? page;
-  for (const field of UTILITY_FIELDS) {
-    assert.match(resetBlock, new RegExp(field));
-  }
+  // "Reset this section" derives from the map instead of a hand-maintained key
+  // list, so a colour added to one and not the other can no longer survive a
+  // reset. Asserting the derivation is what makes the 19-key list unnecessary.
+  assert.match(page, /if \(section === "colors"\)[\s\S]{0,400}APPEARANCE_SETTINGS/);
 
   // The live-preview CSS variable map must include the new tokens.
   for (const cssVar of UTILITY_CSS_VARS) {

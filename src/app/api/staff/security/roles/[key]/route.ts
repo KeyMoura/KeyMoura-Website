@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { readJson, asRecord } from "@/lib/json";
 import { isBoolean, isNumber, isString } from "@/lib/typeGuards";
-import { isRoleBadgeIcon, normalizeBadgeIcon, toRoleDbColumns } from "@/lib/staff/roleSchema";
+import {
+  isRoleBadgeIcon,
+  normalizeBadgeIcon,
+  roleWriteErrorMessage,
+  toRoleDbColumns,
+} from "@/lib/staff/roleSchema";
 
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -22,6 +27,9 @@ function parseUpdatePayload(v: unknown): { value: Record<string, unknown> } | { 
     wire.label = label;
   }
   if (isString(r.description)) wire.description = r.description;
+  // Clearing a description is legal; writing `null` into a NOT NULL column is
+  // not. `toRoleDbColumns` converts this to `''`, which is what the column's
+  // own default would have produced.
   if (r.description === null) wire.description = null;
   if (isNumber(r.priority)) wire.priority = Math.trunc(r.priority);
   if (isBoolean(r.is_staff)) wire.is_staff = r.is_staff;
@@ -64,7 +72,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ key: stri
     .update(parsed.value)
     .eq("key", roleKey)
     .select("key");
-  if (error) return NextResponse.json({ error: "Could not update the role." }, { status: 400 });
+  if (error) {
+    const { message, status } = roleWriteErrorMessage(error, "update");
+    return NextResponse.json({ error: message }, { status });
+  }
   if (!data?.length) return NextResponse.json({ error: "That role no longer exists." }, { status: 404 });
 
   return NextResponse.json({ ok: true }, { status: 200 });
@@ -108,7 +119,10 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ key: str
   }
 
   const { error } = await routeServiceClient.from("roles").delete().eq("key", roleKey);
-  if (error) return NextResponse.json({ error: "Could not delete the role." }, { status: 400 });
+  if (error) {
+    const { message, status } = roleWriteErrorMessage(error, "delete");
+    return NextResponse.json({ error: message }, { status });
+  }
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

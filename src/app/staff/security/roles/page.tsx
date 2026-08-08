@@ -7,6 +7,7 @@ import { isArray, isRecord, isString } from "@/lib/typeGuards";
 import { RolePill } from "@/components/RolePill";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { ROLE_BADGE_ICONS } from "@/lib/staff/roleSchema";
+import { Field, Notice } from "@/components/ui/DesignSystem";
 
 type LoadState = "loading" | "denied" | "loaded";
 
@@ -22,6 +23,8 @@ type RoleRow = {
   description: string | null;
   priority: number;
   is_staff: boolean;
+  /** Built-in roles cannot be deleted; the editor needs to know before offering. */
+  is_system: boolean;
   badge_bg: string;
   badge_border: string;
   badge_text: string;
@@ -55,6 +58,7 @@ function normalizeRoleRows(v: unknown): RoleRow[] {
       description: isString(r.description) ? r.description : null,
       priority: typeof r.priority === "number" ? r.priority : 0,
       is_staff: typeof r.is_staff === "boolean" ? r.is_staff : false,
+      is_system: typeof r.is_system === "boolean" ? r.is_system : false,
       badge_bg: isString(r.badge_bg) ? r.badge_bg : "#111827",
       badge_border: isString(r.badge_border) ? r.badge_border : "#374151",
       badge_text: isString(r.badge_text) ? r.badge_text : "#E5E7EB",
@@ -106,6 +110,9 @@ export default function StaffSecurityRolesPage() {
 
   const [creatingKey, setCreatingKey] = useState<string>("");
   const [creatingLabel, setCreatingLabel] = useState<string>("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string>("");
+  const [createNotice, setCreateNotice] = useState<string>("");
   const [permissionQuery, setPermissionQuery] = useState<string>("");
   const [permissionCategory, setPermissionCategory] = useState<string>("all");
 
@@ -280,37 +287,73 @@ export default function StaffSecurityRolesPage() {
     if (!viewerToken) return;
     const key = creatingKey.trim().toLowerCase();
     const label = creatingLabel.trim();
+    setCreateError("");
+    setCreateNotice("");
     if (!key || !label) {
-      alert("Enter a key and label.");
+      setCreateError("Enter both a key and a label.");
       return;
     }
 
+    setCreating(true);
     const res = await fetch("/api/staff/security/roles", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${viewerToken}`,
       },
+      // The description is deliberately not sent. The column is NOT NULL with a
+      // default, and the route now supplies `''` rather than the `null` that
+      // refused every create this form ever attempted.
       body: JSON.stringify({ key, label }),
     });
+    setCreating(false);
 
     if (!res.ok) {
       const j = (await res.json().catch(() => null)) as unknown;
-      const msg = isRecord(j) && isString(j.error) ? j.error : "Failed to create role.";
-      alert(msg);
+      // The server's message is already written for an operator — it names the
+      // cause rather than echoing a constraint. Showing it beside the form
+      // rather than in an alert() means it survives long enough to read.
+      setCreateError(isRecord(j) && isString(j.error) ? j.error : "Could not create the role.");
       return;
     }
 
     setCreatingKey("");
     setCreatingLabel("");
+    setCreateNotice(`Created “${label}”. It has no permissions until you grant some.`);
+    await loadRolesAndPermissions();
+    await selectRole(key);
+  };
+
+  /**
+   * Deleting a role.
+   *
+   * The route has refused built-in roles and roles people still hold since pass
+   * 14, but nothing in the UI could reach it — so a role created by mistake
+   * could never be removed. The confirm names the role, because the button sits
+   * beside an editor where the selection is easy to lose track of.
+   */
+  const deleteRole = async () => {
+    if (!viewerToken || !selectedRole) return;
+    if (!window.confirm(`Delete the role “${selectedRole.label}”? This cannot be undone.`)) return;
+    setCreateError("");
+    setCreateNotice("");
+    const res = await fetch(`/api/staff/security/roles/${encodeURIComponent(selectedRole.key)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${viewerToken}` },
+    });
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as unknown;
+      setCreateError(isRecord(j) && isString(j.error) ? j.error : "Could not delete the role.");
+      return;
+    }
+    setSelectedRoleKey(null);
+    setCreateNotice(`Deleted “${selectedRole.label}”.`);
     await loadRolesAndPermissions();
   };
 
   if (state === "loading") {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="text-sm text-brand-textMuted">Loading…</div>
-      </div>
+      <div className="ui-card text-sm text-brand-textMuted">Loading roles…</div>
     );
   }
 
@@ -319,16 +362,24 @@ export default function StaffSecurityRolesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-lg font-semibold text-brand-text">Security</div>
-          <div className="text-sm text-brand-textMuted">Roles & permissions</div>
-        </div>
-      </div>
+    // The page sits inside the staff shell, which already supplies the
+    // container and its padding. `mx-auto max-w-6xl px-4 py-8` double-padded it
+    // and made this page narrower than every sibling.
+    <main className="page-stack">
+      {/* The heading was `Security` at text-lg with `Roles & permissions` as a
+          subtitle — smaller than this page's own card titles, and inverting the
+          hierarchy the breadcrumb above it had just established. */}
+      <header>
+        <p className="ui-eyebrow">Settings</p>
+        <h1 className="mt-1 text-3xl font-semibold">Roles &amp; permissions</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-textMuted">
+          What each staff role may see and change. A new role starts with no permissions at all — grant them
+          below, and the change applies the next time that person loads a page.
+        </p>
+      </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4">
+        <div className="ui-card">
           <div className="mb-3 text-sm font-semibold text-brand-text">Roles</div>
           <div className="space-y-2">
             {roles.map((r) => (
@@ -348,47 +399,72 @@ export default function StaffSecurityRolesPage() {
             ))}
           </div>
 
-          <div className="mt-6 border-t border-zinc-800 pt-4">
-            <div className="mb-2 text-xs font-semibold text-brand-textMuted">Create role</div>
-            <div className="grid grid-cols-1 gap-2">
-              <input
-                value={creatingKey}
-                onChange={(e) => setCreatingKey(e.target.value)}
-                placeholder="key (e.g. organizer)"
-                className="ui-input text-sm"
-              />
-              <input
-                value={creatingLabel}
-                onChange={(e) => setCreatingLabel(e.target.value)}
-                placeholder="label (e.g. Organizer)"
-                className="ui-input text-sm"
-              />
+          <div className="mt-6 border-t border-brand-border pt-4">
+            <div className="mb-3 text-xs font-semibold text-brand-textMuted">Create a role</div>
+            <div className="grid grid-cols-1 gap-3">
+              <Field label="Key" help="Lowercase letters, numbers, hyphens and underscores. Cannot be changed later.">
+                <input
+                  value={creatingKey}
+                  onChange={(e) => setCreatingKey(e.target.value)}
+                  placeholder="organizer"
+                  className="ui-input text-sm"
+                />
+              </Field>
+              <Field label="Name" help="What staff see on the badge.">
+                <input
+                  value={creatingLabel}
+                  onChange={(e) => setCreatingLabel(e.target.value)}
+                  placeholder="Organizer"
+                  className="ui-input text-sm"
+                />
+              </Field>
+              {/* Beside the form rather than in an `alert()`. The reported
+                  failure was a message nobody could act on; one that vanishes
+                  when dismissed is barely better. */}
+              {createError ? <Notice tone="danger" role="alert">{createError}</Notice> : null}
+              {createNotice ? <Notice tone="success" role="status">{createNotice}</Notice> : null}
               <button
                 type="button"
                 onClick={() => void createRole()}
-                className="ui-btn ui-btn-primary w-full text-sm"
+                disabled={creating}
+                className="ui-btn ui-btn-primary w-full text-sm disabled:opacity-50"
               >
-                Create
+                {creating ? "Creating…" : "Create role"}
               </button>
             </div>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-black/35 p-4 lg:col-span-2">
+        <div className="ui-card lg:col-span-2">
           {selectedRole ? (
             <div>
-              <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <div className="text-sm font-semibold text-brand-text">{selectedRole.label}</div>
+                  <h2 className="text-lg font-semibold text-brand-text">{selectedRole.label}</h2>
                   <div className="text-xs text-brand-textMuted">{selectedRole.key}</div>
                 </div>
+                {/* The route has refused built-in roles and roles people still
+                    hold since pass 14, but nothing could reach it — so a role
+                    created by mistake could never be removed. Built-in roles get
+                    an explanation rather than a button that always fails. */}
+                {selectedRole.is_system ? (
+                  <p className="text-xs text-brand-textMuted">Built in — cannot be deleted.</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void deleteRole()}
+                    className="ui-btn ui-btn-danger !py-1.5 text-xs"
+                  >
+                    Delete role
+                  </button>
+                )}
               </div>
 
               <div className="space-y-4">
-                <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                <div className="ui-card">
                   <div className="mb-3 text-xs font-semibold text-brand-textMuted">Badge</div>
 
-                  <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/35 px-3 py-2">
+                  <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-brand-border bg-brand-surfaceStrong px-3 py-2">
                     <div>
                       <div className="text-xs font-semibold text-brand-text">Staff role</div>
                       <div className="text-[11px] text-brand-textMuted">Only staff roles can access /staff</div>
@@ -450,7 +526,7 @@ export default function StaffSecurityRolesPage() {
                             setBgHexDraft(e.target.value);
                             void updateRole({ badge_bg: e.target.value });
                           }}
-                          className="aspect-square h-10 w-10 cursor-pointer appearance-none overflow-hidden rounded-md border border-zinc-800 bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0"
+                          className="aspect-square h-10 w-10 cursor-pointer appearance-none overflow-hidden rounded-md border border-brand-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0"
                           title="Pick color"
                         />
                         <input
@@ -480,7 +556,7 @@ export default function StaffSecurityRolesPage() {
                             setBorderHexDraft(e.target.value);
                             void updateRole({ badge_border: e.target.value });
                           }}
-                          className="aspect-square h-10 w-10 cursor-pointer appearance-none overflow-hidden rounded-md border border-zinc-800 bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0"
+                          className="aspect-square h-10 w-10 cursor-pointer appearance-none overflow-hidden rounded-md border border-brand-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0"
                           title="Pick color"
                         />
                         <input
@@ -510,7 +586,7 @@ export default function StaffSecurityRolesPage() {
                             setTextHexDraft(e.target.value);
                             void updateRole({ badge_text: e.target.value });
                           }}
-                          className="aspect-square h-10 w-10 cursor-pointer appearance-none overflow-hidden rounded-md border border-zinc-800 bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0"
+                          className="aspect-square h-10 w-10 cursor-pointer appearance-none overflow-hidden rounded-md border border-brand-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0"
                           title="Pick color"
                         />
                         <input
@@ -533,7 +609,7 @@ export default function StaffSecurityRolesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+                <div className="ui-card">
                   <div className="mb-3 text-xs font-semibold text-brand-textMuted">Permissions</div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <MenuSelect
@@ -562,7 +638,7 @@ export default function StaffSecurityRolesPage() {
                             className={`flex cursor-pointer items-start rounded-xl border p-3 transition-colors ${
                               checked
                                 ? "border-emerald-400/40 bg-emerald-500/10"
-                                : "border-white/10 bg-black/30 hover:border-brand-primary/40"
+                                : "border-brand-border bg-brand-surfaceStrong hover:border-brand-primary/40"
                             }`}
                           >
                             <input
@@ -597,10 +673,10 @@ export default function StaffSecurityRolesPage() {
               </div>
             </div>
           ) : (
-            <div className="text-sm text-brand-textMuted">Select a role to edit.</div>
+            <p className="ui-empty-state">Choose a role on the left to edit its badge and permissions.</p>
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }
