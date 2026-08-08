@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { Notice } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
@@ -245,40 +246,41 @@ export default function StaffCategoriesPage() {
     );
   }
 
-  if (accessLoading) return <main className="page-container"><p className="text-brand-textMuted">Checking access…</p></main>;
+  if (accessLoading) return <LoadingState>Checking access…</LoadingState>;
   if (!canManage) {
     return (
-      <main className="page-container">
-        <AccessDeniedCard
-          title="Categories need a permission you do not have"
-          message="Ask an administrator for catalog.categories.manage."
-        />
-      </main>
+      <AccessDeniedCard
+        title="Categories need a permission you do not have"
+        message="Ask an administrator for catalog.categories.manage."
+      />
     );
   }
 
   const counts = loaded?.productCounts ?? {};
 
   return (
-    <main className="page-container">
-      <header className="max-w-3xl">
-        <h1 className="text-3xl font-semibold tracking-tight">Categories</h1>
-        <p className="mt-3 leading-7 text-brand-textMuted">
-          These are the storefront browse menu. A top-level category becomes{" "}
-          <code className="text-xs">/catalog/&lt;slug&gt;</code>, and a subcategory becomes{" "}
-          <code className="text-xs">/catalog/&lt;parent&gt;/&lt;slug&gt;</code>. One level of nesting only —
-          the database refuses a parent that already has one.
-        </p>
-        <p className="mt-2 text-sm text-brand-textMuted">
+    /*
+     * The page wrapper was `page-container` — a *second* max-width container
+     * inside the staff shell's own `page-container-wide`, so this page was
+     * measurably narrower than Products beside it in the same menu group and
+     * its gutters did not line up. Every staff page now uses `StaffPage`,
+     * which sets no width of its own and inherits the shell's.
+     */
+    <StaffPage>
+      <PageHeader
+        title="Categories"
+        description="The storefront browse menu. A top-level category becomes /catalog/<slug>, and a subcategory becomes /catalog/<parent>/<slug> — one level of nesting only, because the database refuses a parent that already has one."
+      >
+        <p className="staff-page-description">
           A category with no products in it and no subcategories is hidden from the storefront menu, so an
           empty category never becomes a dead click for a customer.
         </p>
-      </header>
+      </PageHeader>
 
-      {error ? <Notice tone="danger" role="alert" className="mt-6">{error}</Notice> : null}
-      {notice ? <Notice tone="success" role="status" className="mt-6">{notice}</Notice> : null}
+      {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
+      {notice ? <Notice tone="success" role="status">{notice}</Notice> : null}
 
-      <section className="ui-card mt-6 p-5">
+      <section className="ui-card p-5">
         <h2 className="text-lg font-semibold">Add a category</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-sm">
@@ -421,7 +423,7 @@ export default function StaffCategoriesPage() {
           ) : null}
         </section>
       ) : null}
-    </main>
+    </StaffPage>
   );
 }
 

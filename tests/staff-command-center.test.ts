@@ -418,36 +418,73 @@ test("failures are tracked per source, not as one banner over healthy-looking pa
 });
 
 test("no derived figure is computed from a failed load", () => {
-  // `buildDashboardSummary([])` happily reports $0 and zero overdue, which is a
-  // confident wrong answer rather than a missing one.
-  assert.match(dashboard, /now && ordersUsable\s*\n?\s*\? buildDashboardSummary/);
-  assert.match(dashboard, /attentionQueue\(orders, now\) : \[\]\), \[now, orders, ordersUsable\]/);
+  /*
+   * `attentionQueue([])` and a workload total over `[]` are both happy to
+   * report zero, which is a confident wrong answer rather than a missing one.
+   * Both queues and the Today block are gated on the load having succeeded.
+   */
+  assert.match(dashboard, /attentionQueue\(orders, now\) : \[\]\),\s*\[now, orders, ordersUsable\]/);
+  assert.match(dashboard, /stockUsable \? stockAttention\(products\) : \[\]/);
+  // `today` is null unless orders loaded, so the four numbers cannot render
+  // from an empty array.
+  assert.match(dashboard, /if \(!now \|\| !ordersUsable\) return null;/);
 });
 
-test("every panel that depends on orders shows the failure rather than a count", () => {
-  // The attention list, the fulfillment cards and the revenue panel each refuse
-  // to render a number when the orders query failed.
-  assert.match(dashboard, /\{ordersError \? \(\s*<Notice tone="danger" className="mt-5">\s*Open work could not be loaded/);
-  assert.match(dashboard, /\{ordersError \? \(\s*<Notice tone="danger" className="mt-4">\s*The fulfillment queues could not be counted/);
-  assert.match(dashboard, /\{canViewOrders && ordersError \? \(/);
-  // The count badge disappears rather than reading 0.
-  assert.match(dashboard, /\{ordersUsable \? \(\s*<Badge tone=\{attention\.length \? "warning" : "neutral"\}>/);
+test("every section that depends on orders shows the failure rather than a count", () => {
+  // Each source names itself, in the section that would otherwise show its
+  // number — a page-level banner is not enough when the rows underneath keep
+  // rendering.
+  assert.match(dashboard, /ordersError \? \(\s*<ErrorState>\s*Open order work could not be loaded/);
+  assert.match(dashboard, /productsError \? \(\s*<ErrorState>\s*Stock could not be read/);
+  // The Today block is absent rather than zeroed, because `today` is null.
+  assert.match(dashboard, /\{today \? \(/);
 });
 
 test("the fulfillment queue makes no claim about the shop when its load failed", () => {
   const queue = read("src/app/staff/fulfillment/page.tsx");
   assert.match(queue, /result\.error \? \[\] : \(result\.data \?\? \[\]\)/);
-  // Bucket counts, the summary line and the reassuring empty state are all
+  // Queue counts, the summary line and the reassuring empty state are all
   // withheld, not rendered as zero.
-  assert.match(queue, /\{!error \? \(\s*<section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"/);
+  assert.match(queue, /\{!error \? \(\s*<nav aria-label="Fulfillment queues"/);
   assert.match(queue, /\{!error \? \(\s*<p className="text-xs text-brand-textMuted" aria-live="polite">/);
   assert.match(queue, /!loading && !error && shown\.length === 0/);
 });
 
-test("stock does not report itself healthy when it could not be read", () => {
-  assert.match(dashboard, /\{productsError \? \(\s*<Notice tone="danger" className="mt-5">\s*Stock could not be read/);
-  // The cheerful empty state is now the *else* branch, not the default.
-  assert.match(dashboard, /\) : !loading && !lowStock\.length \? \(\s*<EmptyState className="mt-5">Stock levels look healthy/);
+test("the fulfillment queue stays a queue and never becomes a second order editor", () => {
+  const queue = read("src/app/staff/fulfillment/page.tsx");
+  /*
+   * The boundary this page exists for. Every row offers exactly two links —
+   * the next delivery action and the order itself — and no control that writes.
+   * A `<form>`, a `ConsequentialAction` or a fulfillment `PATCH` here would be
+   * a second place to ship an order from.
+   */
+  assert.doesNotMatch(queue, /ConsequentialAction/);
+  assert.doesNotMatch(queue, /method: "(POST|PATCH|PUT|DELETE)"/);
+  // Age is on the row: five orders "to prepare" is normal, one of them being
+  // nine days old is not, and a queue without age cannot say so.
+  assert.match(queue, /function ageLabel/);
+  assert.match(queue, /in this state/);
+});
+
+test("the reassuring empty state requires every source to have succeeded", () => {
+  /*
+   * "Nothing is waiting on a decision" is a claim about the whole shop. The
+   * attention queue is now merged from orders *and* stock, so it must not be
+   * made when either of them failed — a page that says all is well because it
+   * could not read the stock table is worse than one that says nothing.
+   */
+  assert.match(
+    dashboard,
+    /!loading && !ordersError && !productsError && !attention\.length \? \(\s*<EmptyState>Nothing is waiting on a decision/
+  );
+});
+
+test("stock problems are attention rows, not a panel below the numbers", () => {
+  // A published product at zero stock is a product customers cannot buy. It
+  // belongs in the same queue as everything else that wants a human today,
+  // not in a "Stock alerts" card underneath a revenue chart.
+  assert.match(dashboard, /stockAttention/);
+  assert.doesNotMatch(dashboard, /Stock alerts/);
 });
 
 // ---------------------------------------------------------------------------

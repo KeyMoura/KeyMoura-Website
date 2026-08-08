@@ -79,10 +79,62 @@ test("staff order queue separates staff actions from customer waits", () => {
 test("staff order detail leads with the next action and hides manual overrides", () => {
   const detail = read("src/app/staff/orders/[id]/page.tsx");
   assert.match(detail, /Next step/);
-  assert.match(detail, /Prepare customer review/);
   assert.match(detail, /Customer quote/);
   assert.match(detail, /Advanced status override/);
   assert.match(detail, /Quote Review/);
   assert.match(detail, /Finished Product Review/);
   assert.match(detail, /not your material or labor cost/);
+});
+
+test("the order workspace is tabbed, and the next step points at a tab", () => {
+  const detail = read("src/app/staff/orders/[id]/page.tsx");
+  /*
+   * The page was one column of eleven panels — a stepper, a workspace, a shop
+   * work list, a review composer, the lifecycle panel, the quote editor, the
+   * fulfillment panel, the conversation, a timeline, an email log and an
+   * override — all mounted at once. Every one of those still exists; each now
+   * lives on exactly one tab.
+   */
+  for (const id of [
+    "overview",
+    "items",
+    "payment",
+    "production",
+    "fulfillment",
+    "messages",
+    "returns",
+    "activity",
+  ]) {
+    assert.match(detail, new RegExp(`<TabPanel id="${id}"`), `no panel for the ${id} tab`);
+  }
+  // "Next step" moves the reader to the tab that holds the control, rather
+  // than to an anchor 2,000 pixels down a single page.
+  assert.match(detail, /setTab\(nextStep\.tab\)/);
+  assert.match(detail, /tab: "payment"/);
+  assert.match(detail, /tab: "fulfillment"/);
+});
+
+test("no state is rendered on two tabs at once", () => {
+  const detail = read("src/app/staff/orders/[id]/page.tsx");
+  /*
+   * The lifecycle panel drew a four-tile financial summary and the page header
+   * drew its own, so "how much has this customer paid" had two answers on one
+   * screen. The panel is now asked for one half at a time: money on Payment,
+   * decisions on Returns & cancellations.
+   */
+  assert.match(detail, /view="money"/);
+  assert.match(detail, /view="lifecycle"/);
+  const panel = read("src/components/staff/OrderLifecyclePanel.tsx");
+  assert.match(panel, /const showMoney = view === "all" \|\| view === "money"/);
+  assert.match(panel, /const showLifecycle = view === "all" \|\| view === "lifecycle"/);
+});
+
+test("retired anchors still land on the tab that replaced them", () => {
+  // `#fulfillment` is linked from the fulfillment queue, `#quote` from the old
+  // next-step button, `#conversation` from anywhere a colleague pasted a link.
+  const framework = read("src/lib/staff/pageFramework.ts");
+  assert.match(framework, /conversation: "messages"/);
+  assert.match(framework, /quote: "payment"/);
+  assert.match(framework, /"shop-work": "production"/);
+  assert.match(read("src/app/staff/orders/[id]/page.tsx"), /ORDER_TAB_ALIASES/);
 });

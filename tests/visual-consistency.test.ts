@@ -17,9 +17,23 @@ test("dashboard analytics and staff navigation use shared themed controls", () =
   const analytics = read("src/app/staff/info/analytics/page.tsx");
   const navigation = read("src/components/staff/StaffNav.tsx");
 
+  /*
+   * The dashboard no longer carries a range picker or metric tiles.
+   *
+   * Its revenue chart and four `MetricCard`s answered "how did the month go",
+   * which is the Analytics page's question, and they sat above the stock list —
+   * so a published product at zero stock was below the fold behind a decorative
+   * graph. The dashboard now states its four workload numbers through `Facts`,
+   * and links to Analytics for the trend.
+   *
+   * The invariant is unchanged and is what this test is for: both surfaces are
+   * built from the shared, themed vocabulary and neither hard-codes a colour.
+   */
+  assert.match(dashboard, /from "@\/components\/staff\/StaffPage"/);
+  assert.match(dashboard, /<Facts>/);
+  assert.match(analytics, /SegmentedControl/);
+  assert.match(analytics, /MetricCard/);
   for (const page of [dashboard, analytics]) {
-    assert.match(page, /SegmentedControl/);
-    assert.match(page, /MetricCard/);
     assert.doesNotMatch(page, /bg-brand-accent text-black/);
   }
   assert.match(navigation, /className="staff-nav/);
@@ -29,10 +43,20 @@ test("dashboard analytics and staff navigation use shared themed controls", () =
 test("catalog actions use the shared primary secondary and destructive hierarchy", () => {
   const catalog = read("src/app/staff/catalog/page.tsx");
 
-  assert.match(catalog, /const primary = "ui-btn ui-btn-primary/);
+  /*
+   * The editor's single save moved into the shared `SaveBar`, which owns the
+   * primary button, so the page no longer declares a `primary` constant of its
+   * own. The three-level hierarchy is still exactly the requirement: one
+   * primary action, ghost secondaries, and a destructive class that is only
+   * used for destruction.
+   */
+  assert.match(catalog, /<SaveBar/);
   assert.match(catalog, /const subtle = "ui-btn ui-btn-ghost/);
+  assert.match(catalog, /ui-btn ui-btn-primary/);
   assert.match(catalog, /ui-btn ui-btn-danger/);
   assert.doesNotMatch(catalog, /const primary = .*text-brand-primary/);
+  // Exactly one destructive control: "Delete permanently".
+  assert.equal((catalog.match(/ui-btn ui-btn-danger/g) ?? []).length, 1);
 });
 
 test("customer and staff request flows share the same progress language", () => {

@@ -5,8 +5,16 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
-import { EmptyState, Notice, Panel } from "@/components/ui/DesignSystem";
-import { JobRowLink, type JobSummary } from "@/components/staff/production/JobBadges";
+import { Field, Notice } from "@/components/ui/DesignSystem";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Section,
+  StaffPage,
+} from "@/components/staff/StaffPage";
+import { DueDate, PriorityBadge, StatusBadge } from "@/components/staff/production/JobBadges";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import {
   PRODUCTION_PRIORITIES,
@@ -16,21 +24,45 @@ import {
   bucketJobs,
   isProductionPriority,
   isProductionStatus,
+  type ProductionStatus,
 } from "@/lib/production/jobs";
 
 /**
- * The production queue.
+ * The production queue — a manufacturing worklist, not a second order list.
  *
- * Filters live in the URL rather than in component state so that every card on
- * the dashboard can link to an exact view — "3 jobs overdue" goes to the list
- * of those three, not to the queue with a filter the operator has to reapply.
- * It also makes a view bookmarkable and shareable between staff.
+ * ## What this pass changed
+ *
+ * Two things made this read as "orders again in a different colour". First, the
+ * rows carried a job number, a title, two badges and a due date, and the source
+ * order appeared only as a bare order number in a trailing slot — so the page
+ * looked like an order list whose rows had lost their customer. Second, the
+ * page wrapped itself in `page-container`, *inside* the shell's own
+ * `page-container-wide`, so it was measurably narrower than every other staff
+ * page and its filter panel sat at a different gutter.
+ *
+ * Now each row says what a shop needs before starting work: **what to make, how
+ * many, for which order, by when, what stage it is at, and what is blocking
+ * it**. The blocker is stated in words on the row rather than implied by an
+ * amber badge — `waiting_on_materials` and `on_hold` both showed as an amber
+ * chip, and only one of them means "go and order something".
+ *
+ * Filters live in the URL rather than in component state so that a dashboard
+ * card can link to an exact view — "3 jobs overdue" goes to the list of those
+ * three, not to the queue with a filter the operator has to reapply.
  */
 
-const primary = "ui-btn ui-btn-primary disabled:opacity-50";
-const subtle = "ui-btn ui-btn-ghost text-sm disabled:opacity-50";
-
-type JobRecord = JobSummary & {
+type JobRecord = {
+  id: string;
+  job_number: string;
+  title: string;
+  status: ProductionStatus;
+  priority: "low" | "normal" | "high" | "urgent";
+  due_date: string | null;
+  promised_date?: string | null;
+  created_at?: string;
+  quantity: number | null;
+  hold_reason: string | null;
+  failure_reason: string | null;
   assigned_to: string | null;
   order_id: string | null;
   product_id: string | null;
@@ -47,6 +79,20 @@ type Payload = {
   offset: number;
   canManage: boolean;
 };
+
+/**
+ * What is stopping this job, in words.
+ *
+ * `STATUS_META[...].blocked` already knows which states mean "the shop is
+ * waiting on somebody"; the reason columns say who. A job that is not blocked
+ * returns null and the row shows nothing rather than an empty label.
+ */
+function blockerText(job: JobRecord): string | null {
+  if (job.failure_reason) return `Rework: ${job.failure_reason}`;
+  if (job.hold_reason) return `On hold: ${job.hold_reason}`;
+  if (!STATUS_META[job.status]?.blocked) return null;
+  return STATUS_META[job.status].description;
+}
 
 function QueueContent() {
   const router = useRouter();
@@ -68,6 +114,9 @@ function QueueContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchDraft, setSearchDraft] = useState(search);
+  const [filtersOpen, setFiltersOpen] = useState(
+    () => Boolean(status) || Boolean(priority) || Boolean(assignedTo)
+  );
 
   // Tracked separately from `error` because a refusal is not a failure. The
   // permission check below and the route's own check can disagree — a
@@ -143,15 +192,7 @@ function QueueContent() {
   const jobs = useMemo(() => shown?.jobs ?? [], [shown]);
   const buckets = useMemo(() => bucketJobs(jobs, now), [jobs, now]);
 
-  if (accessLoading) {
-    return (
-      <div className="page-container">
-        <p className="text-sm text-brand-textMuted" role="status">
-          Checking your access…
-        </p>
-      </div>
-    );
-  }
+  if (accessLoading) return <LoadingState>Checking your access…</LoadingState>;
 
   if (!canView || denied) {
     return (
@@ -164,6 +205,7 @@ function QueueContent() {
 
   const activeFilters =
     Boolean(status) || Boolean(priority) || Boolean(assignedTo) || overdue || Boolean(search) || scope !== "open";
+  const panelFilterCount = [status, priority, assignedTo].filter(Boolean).length;
 
   const groups: Array<{ key: string; heading: string; hint: string; jobs: JobRecord[] }> = [
     { key: "overdue", heading: "Overdue", hint: "Past the due date and still live.", jobs: buckets.overdue as JobRecord[] },
@@ -173,72 +215,99 @@ function QueueContent() {
   ];
 
   return (
-    <div className="page-container space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Production</h1>
-          <p className="mt-1 text-sm text-brand-textMuted">
-            Work in the shop, ordered by what is late and what is urgent.
-          </p>
-        </div>
-        {canManage ? (
-          <Link href="/staff/production/new" className={primary}>
-            New job
+    <StaffPage>
+      <PageHeader
+        title="Production"
+        description="Work in the shop, ordered by what is late and what is urgent. Each job says what to make, for which order, and what is holding it up."
+        actions={
+          canManage ? (
+            <Link href="/staff/production/new" className="ui-btn ui-btn-primary text-sm">
+              New job
+            </Link>
+          ) : null
+        }
+      />
+
+      {/* The three scopes staff actually switch between, then everything else
+          behind Filters — the same toolbar shape the order queue uses. */}
+      <nav aria-label="Production queues" className="staff-views">
+        {(["open", "all", "finished"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => setParam("scope", option === "open" ? null : option)}
+            aria-pressed={scope === option}
+            className="staff-view"
+          >
+            {option === "open" ? "Open" : option === "all" ? "All" : "Finished"}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setParam("overdue", overdue ? null : "true")}
+          aria-pressed={overdue}
+          className="staff-view"
+        >
+          Overdue only
+        </button>
+      </nav>
+
+      <form
+        className="staff-toolbar"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setParam("q", searchDraft.trim() || null);
+        }}
+      >
+        <label className="staff-toolbar-search">
+          <span className="sr-only">Search production jobs</span>
+          <input
+            type="search"
+            className="ui-input w-full"
+            placeholder="Job number or title…"
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
+          />
+        </label>
+        <button type="submit" className="ui-btn ui-btn-secondary text-sm">
+          Search
+        </button>
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          aria-controls="staff-production-filters"
+          className="ui-btn ui-btn-ghost text-sm"
+        >
+          Filters
+          {panelFilterCount ? <span className="ml-1.5 tabular-nums">({panelFilterCount})</span> : null}
+        </button>
+        {activeFilters ? (
+          <Link href="/staff/production" className="ui-btn ui-btn-ghost text-sm">
+            Clear filters
           </Link>
         ) : null}
-      </header>
+      </form>
 
-      <Panel aria-label="Filters" className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          {(["open", "all", "finished"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setParam("scope", option === "open" ? null : option)}
-              aria-pressed={scope === option}
-              className={scope === option ? "ui-btn ui-btn-primary text-sm" : subtle}
-            >
-              {option === "open" ? "Open" : option === "all" ? "All" : "Finished"}
-            </button>
-          ))}
-
-          <button
-            type="button"
-            onClick={() => setParam("overdue", overdue ? null : "true")}
-            aria-pressed={overdue}
-            className={overdue ? "ui-btn ui-btn-primary text-sm" : subtle}
-          >
-            Overdue only
-          </button>
-
-          {activeFilters ? (
-            <Link href="/staff/production" className={subtle}>
-              Clear filters
-            </Link>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium">Status</span>
+      {filtersOpen ? (
+        <div id="staff-production-filters" className="staff-filter-panel">
+          <Field label="Stage">
             <select
-              className="ui-input min-h-10 text-sm"
+              className="ui-input w-full"
               value={isProductionStatus(status) ? status : ""}
               onChange={(event) => setParam("status", event.target.value || null)}
             >
-              <option value="">Any status</option>
+              <option value="">Any stage</option>
               {PRODUCTION_STATUSES.map((option) => (
                 <option key={option} value={option}>
                   {STATUS_META[option].label}
                 </option>
               ))}
             </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium">Priority</span>
+          </Field>
+          <Field label="Priority">
             <select
-              className="ui-input min-h-10 text-sm"
+              className="ui-input w-full"
               value={isProductionPriority(priority) ? priority : ""}
               onChange={(event) => setParam("priority", event.target.value || null)}
             >
@@ -249,12 +318,10 @@ function QueueContent() {
                 </option>
               ))}
             </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium">Assigned</span>
+          </Field>
+          <Field label="Assigned to">
             <select
-              className="ui-input min-h-10 text-sm"
+              className="ui-input w-full"
               value={assignedTo ?? ""}
               onChange={(event) => setParam("assignedTo", event.target.value || null)}
             >
@@ -266,46 +333,13 @@ function QueueContent() {
                 </option>
               ))}
             </select>
-          </label>
-
-          <form
-            className="flex items-end gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setParam("q", searchDraft.trim() || null);
-            }}
-          >
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="font-medium">Search</span>
-              <input
-                type="search"
-                className="ui-input min-h-10 text-sm"
-                placeholder="Job number or title"
-                value={searchDraft}
-                onChange={(event) => setSearchDraft(event.target.value)}
-              />
-            </label>
-            <button type="submit" className={subtle}>
-              Search
-            </button>
-          </form>
+          </Field>
         </div>
-      </Panel>
-
-      {error ? (
-        <Notice tone="danger" role="alert">
-          <p>{error}</p>
-          <button type="button" className={`${subtle} mt-2`} onClick={() => void load()}>
-            Try again
-          </button>
-        </Notice>
       ) : null}
 
-      {loading && !shown ? (
-        <p className="text-sm text-brand-textMuted" role="status">
-          Loading the production queue…
-        </p>
-      ) : null}
+      {error ? <ErrorState onRetry={() => void load()}>{error}</ErrorState> : null}
+
+      {loading && !shown ? <LoadingState>Loading the production queue…</LoadingState> : null}
 
       {shown ? (
         <>
@@ -320,51 +354,79 @@ function QueueContent() {
               <p className="font-medium">
                 {activeFilters ? "No jobs match these filters." : "No production jobs yet."}
               </p>
-              <p className="mt-1 text-sm text-brand-textMuted">
+              <p className="mt-1">
                 {activeFilters
                   ? "Clear the filters to see the whole queue."
                   : "Raise a job from an order, or create one directly for stock work."}
               </p>
             </EmptyState>
           ) : (
-            <div className="space-y-6">
-              {groups.map((group) =>
-                group.jobs.length ? (
-                  <section key={group.key} aria-labelledby={`queue-${group.key}`}>
-                    <div className="mb-2 flex items-baseline gap-2">
-                      <h2 id={`queue-${group.key}`} className="text-sm font-semibold uppercase tracking-wide">
-                        {group.heading}
-                      </h2>
-                      <span className="text-xs text-brand-textMuted">
-                        {group.jobs.length} · {group.hint}
-                      </span>
-                    </div>
-                    <ul className="space-y-2">
-                      {group.jobs.map((job) => (
-                        <li key={job.id}>
-                          <JobRowLink
-                            job={job}
-                            now={now}
-                            assignee={job.assigned_to ? shown.people[job.assigned_to] : null}
-                            trailing={
-                              job.order_id && shown.orders[job.order_id] ? (
-                                <span className="text-xs text-brand-textMuted">
-                                  {shown.orders[job.order_id].order_number ?? "Order"}
+            groups.map((group) =>
+              group.jobs.length ? (
+                <Section
+                  key={group.key}
+                  title={`${group.heading} (${group.jobs.length})`}
+                  description={group.hint}
+                >
+                  <div className="staff-rows">
+                    {group.jobs.map((job) => {
+                      const blocker = blockerText(job);
+                      const order = job.order_id ? shown.orders[job.order_id] : null;
+                      return (
+                        <Link key={job.id} href={`/staff/production/${job.id}`} className="staff-row">
+                          <div className="staff-row-main">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs text-brand-textMuted">{job.job_number}</span>
+                              <span className="staff-row-title">{job.title}</span>
+                              {job.quantity && job.quantity > 1 ? (
+                                <span className="staff-row-meta">× {job.quantity}</span>
+                              ) : null}
+                            </div>
+                            {/* The source order, stated as a fact rather than
+                                hidden in a trailing slot. "No source order" is
+                                a real and common answer for stock work, and it
+                                is said out loud so an unlinked job is not
+                                mistaken for one whose link failed to load. */}
+                            <div className="staff-row-detail">
+                              {order ? (
+                                <span className="text-brand-accent">
+                                  Order {order.order_number ?? "—"}
                                 </span>
-                              ) : null
-                            }
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                ) : null
-              )}
-            </div>
+                              ) : (
+                                <span>No source order</span>
+                              )}
+                              {job.assigned_to && shown.people[job.assigned_to]
+                                ? ` · ${shown.people[job.assigned_to]}`
+                                : " · Unassigned"}
+                            </div>
+                            {blocker ? <div className="staff-row-meta mt-1 text-amber-200">{blocker}</div> : null}
+                          </div>
+                          <div className="staff-row-aside flex-col !items-start gap-1 sm:!items-end">
+                            <span className="flex flex-wrap gap-1.5">
+                              <StatusBadge status={job.status} />
+                              <PriorityBadge priority={job.priority} />
+                            </span>
+                            <span className="text-xs">
+                              <DueDate job={job} now={now} />
+                            </span>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </Section>
+              ) : null
+            )
           )}
         </>
       ) : null}
-    </div>
+
+      {shown && !shown.canManage ? (
+        <Notice tone="info">
+          You can read the queue but not change a job. That needs the production.manage permission.
+        </Notice>
+      ) : null}
+    </StaffPage>
   );
 }
 
@@ -372,15 +434,7 @@ export default function StaffProductionQueuePage() {
   // useSearchParams needs a Suspense boundary; without one the whole route
   // opts into client-side rendering at build time.
   return (
-    <Suspense
-      fallback={
-        <div className="page-container">
-          <p className="text-sm text-brand-textMuted" role="status">
-            Loading the production queue…
-          </p>
-        </div>
-      }
-    >
+    <Suspense fallback={<LoadingState>Loading the production queue…</LoadingState>}>
       <QueueContent />
     </Suspense>
   );

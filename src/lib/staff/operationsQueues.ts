@@ -36,6 +36,12 @@ export type QueueOrder = {
   shipping_carrier: string | null;
   tracking_number: string | null;
   ready_at: string | null;
+  /**
+   * Optional: only the dashboard selects it, to total what was collected in the
+   * last seven days. The fulfillment queue does not, and a required field here
+   * would have made every caller select a column it has no use for.
+   */
+  paid_at?: string | null;
   shipped_at: string | null;
   delivered_at: string | null;
   target_date: string | null;
@@ -201,11 +207,41 @@ export type AttentionKind =
 export type AttentionItem = {
   kind: AttentionKind;
   orderId: string;
+  /** What happened. */
   title: string;
+  /** What has to happen about it. */
   detail: string;
+  /** The primary action, named as a verb phrase. */
+  action: string;
+  /**
+   * Where that action is performed — the **tab** of the order workspace that
+   * holds it, not just the order.
+   *
+   * Landing on the order's Overview and expecting the reader to find the
+   * cancellation panel is how a dashboard becomes a list of links to the same
+   * place. `#returns` puts them on the control.
+   */
+  href: string;
   /** Higher sorts first. Money and customer-blocking work outrank housekeeping. */
   weight: number;
 };
+
+/** Which tab of the order workspace each kind of work is done on. */
+const ATTENTION_TAB: Readonly<Record<AttentionKind, string>> = {
+  cancellation: "returns",
+  return: "returns",
+  tracking: "fulfillment",
+  request: "overview",
+  quote: "payment",
+  overdue: "production",
+  unfulfilled: "fulfillment",
+  in_transit: "fulfillment",
+  unpaid: "payment",
+};
+
+/** The order workspace, opened on the tab where this work is done. */
+export const attentionHref = (kind: AttentionKind, orderId: string): string =>
+  `/staff/orders/${orderId}#${ATTENTION_TAB[kind]}`;
 
 const OPEN_CANCELLATION = new Set(["requested", "under_review", "refund_pending", "refund_failed"]);
 const OPEN_RETURN = new Set([
@@ -230,35 +266,40 @@ export function attentionQueue(orders: readonly QueueOrder[], now: Date): Attent
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const items: AttentionItem[] = [];
+  /** Fills in the two derived fields so no call site can forget one. */
+  const add = (item: Omit<AttentionItem, "href">) => items.push({ ...item, href: attentionHref(item.kind, item.orderId) });
 
   for (const order of orders) {
     const name = order.order_number || order.product_name;
     const closed = CLOSED_ORDER_STATUSES.includes(order.status);
 
     if (OPEN_CANCELLATION.has(String(order.cancellation_status || "none"))) {
-      items.push({
+      add({
         kind: "cancellation",
         orderId: order.id,
         title: `Cancellation to decide — ${name}`,
         detail: "A customer has asked to cancel. Approving it is a staff decision.",
+        action: "Review cancellation",
         weight: 100,
       });
     }
     if (OPEN_RETURN.has(String(order.return_status || "none"))) {
-      items.push({
+      add({
         kind: "return",
         orderId: order.id,
         title: `Return in progress — ${name}`,
         detail: "Review, receive or inspect this return.",
+        action: "Progress return",
         weight: 95,
       });
     }
     if (missingTracking(order)) {
-      items.push({
+      add({
         kind: "tracking",
         orderId: order.id,
         title: `Shipped with no tracking — ${name}`,
         detail: "The customer has nothing to follow. Add the carrier and number.",
+        action: "Add tracking",
         weight: 90,
       });
     }
@@ -266,60 +307,124 @@ export function attentionQueue(orders: readonly QueueOrder[], now: Date): Attent
     if (closed) continue;
 
     if (order.status === "requested") {
-      items.push({
+      add({
         kind: "request",
         orderId: order.id,
         title: `New request — ${name}`,
         detail: "Review the specifications and accept or decline.",
+        action: "Review request",
         weight: 80,
       });
     }
     if (order.status === "accepted" && order.agreed_price_cents == null) {
-      items.push({
+      add({
         kind: "quote",
         orderId: order.id,
         title: `Quote to prepare — ${name}`,
         detail: "The request is accepted and has no price yet.",
+        action: "Prepare quote",
         weight: 75,
       });
     }
     if (order.target_date && new Date(`${order.target_date}T00:00:00`) < today) {
-      items.push({
+      add({
         kind: "overdue",
         orderId: order.id,
         title: `Past its target date — ${name}`,
         detail: `Target was ${order.target_date}.`,
+        action: "Check production",
         weight: 70,
       });
     }
 
     const bucket = fulfillmentBucket(order);
     if (bucket === "to_prepare" || bucket === "in_progress" || bucket === "ready") {
-      items.push({
+      add({
         kind: "unfulfilled",
         orderId: order.id,
         title: `Waiting to be sent — ${name}`,
         detail: fulfillmentNextAction(order),
+        action: String(order.fulfillment_method) === "pickup" ? "Prepare pickup" : "Pack and ship",
         weight: 60,
       });
     } else if (bucket === "in_transit" && !missingTracking(order)) {
-      items.push({
+      add({
         kind: "in_transit",
         orderId: order.id,
         title: `Delivery to confirm — ${name}`,
         detail: "Shipped and not yet confirmed delivered.",
+        action: "Confirm delivery",
         weight: 40,
       });
     } else if (bucket === "awaiting_payment") {
-      items.push({
+      add({
         kind: "unpaid",
         orderId: order.id,
         title: `Balance outstanding — ${name}`,
-        detail: `${(outstandingBalanceCents(order) / 100).toFixed(2)} still to collect.`,
+        // The `$` is not decoration. Browser-driving the rebuilt dashboard
+        // showed this row reading "220.00 still to collect", which on a queue
+        // that also counts days and quantities is a number with no unit.
+        detail: `$${(outstandingBalanceCents(order) / 100).toFixed(2)} still to collect.`,
+        action: "Collect balance",
         weight: 50,
       });
     }
   }
 
   return items.sort((a, b) => b.weight - a.weight || a.title.localeCompare(b.title));
+}
+
+// ---------------------------------------------------------------------------
+// Stock attention
+// ---------------------------------------------------------------------------
+
+export type StockProduct = {
+  id: string;
+  name: string;
+  is_published: boolean;
+  inventory_policy: string;
+  inventory_quantity: number;
+  low_stock_threshold: number;
+  archived_at: string | null;
+};
+
+/**
+ * Low and out-of-stock products, as attention rows.
+ *
+ * Stock was a separate panel at the bottom of the dashboard titled "Stock
+ * alerts", below revenue. A published product at zero stock is not an alert to
+ * read after the numbers — it is a product customers cannot buy, and it belongs
+ * in the same queue as everything else that wants a human today.
+ *
+ * Archived and untracked products are excluded: an unlimited made-to-order
+ * product's quantity is not a claim about anything.
+ */
+export function stockAttention(
+  products: readonly StockProduct[]
+): { id: string; title: string; detail: string; action: string; href: string; weight: number }[] {
+  return products
+    .filter(
+      (product) =>
+        !product.archived_at &&
+        product.inventory_policy === "track" &&
+        product.inventory_quantity <= product.low_stock_threshold
+    )
+    .map((product) => {
+      const out = product.inventory_quantity <= 0;
+      return {
+        id: product.id,
+        title: `${out ? "Out of stock" : "Low stock"} — ${product.name}`,
+        detail: out
+          ? product.is_published
+            ? "Published with nothing on hand. Customers cannot buy it."
+            : "Nothing on hand. The product is not published."
+          : `${product.inventory_quantity} left, at or below the threshold of ${product.low_stock_threshold}.`,
+        action: "Adjust stock",
+        href: `/staff/inventory/${product.id}`,
+        // An out-of-stock published product outranks unfulfilled work; a
+        // low-stock warning sits below it.
+        weight: out && product.is_published ? 85 : out ? 55 : 30,
+      };
+    })
+    .sort((a, b) => b.weight - a.weight || a.title.localeCompare(b.title));
 }

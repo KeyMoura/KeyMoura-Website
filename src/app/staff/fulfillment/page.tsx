@@ -5,11 +5,18 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
-import { Badge, EmptyState, Notice } from "@/components/ui/DesignSystem";
+import { Badge, Field } from "@/components/ui/DesignSystem";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  StaffPage,
+  StatusChip,
+} from "@/components/staff/StaffPage";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { classifySupabaseError } from "@/lib/staff/loadState";
 import { supabaseBrowser } from "@/lib/supabaseClient";
-import { FULFILLMENT_STAFF_LABELS, lifecycleLabel } from "@/lib/commerce/orderLifecycle";
 import {
   ACTIVE_FULFILLMENT_BUCKETS,
   FULFILLMENT_BUCKET_COPY,
@@ -24,26 +31,34 @@ import {
 /**
  * The fulfillment queue.
  *
- * The pass-8 API is complete and server-enforced but had no queue in front of
- * it, so "what has to go out today" was answerable only by opening orders one
- * at a time.
- *
- * **Filters live in the URL**, following the production queue: a dashboard card
- * links to an exact view, and a view is bookmarkable and shareable. Bucketing
- * comes from `operationsQueues.ts`, which the dashboard also reads, so a card
- * reading 3 and a queue showing 5 is not representable.
- *
- * Reads go through the browser client and RLS rather than a new staff API. The
- * columns are already staff-readable — the orders list reads the same table the
- * same way — and adding a route to re-fetch what RLS already permits would be a
- * second copy of the permission decision.
- *
  * **This page is a queue, and deliberately not an order editor.** It answers
  * "what has to go out, and what is waiting on someone else"; every row opens the
  * order for the actual work. That boundary is the reason the page exists rather
  * than being a filter on `/staff/orders`, and it is the one thing to preserve
  * here: the moment it grows fields to edit, there are two places to ship an
  * order from and two places for the answer to be wrong.
+ *
+ * ## What this pass changed
+ *
+ * The five buckets were a row of large cards — each a label, a two-line
+ * description and a big number — that took the top 300px of the page before a
+ * single order appeared. They are now the same chips the order queue uses, so
+ * the work starts at the top of the screen.
+ *
+ * Two things were missing from the rows and are now on them: **age**, which is
+ * the only way to see that an order has been sitting in "to prepare" for six
+ * days, and a **Problems** view, which collects the orders whose fulfillment
+ * state is wrong rather than merely early — today that is anything shipped
+ * without a tracking number, which is invisible in a state-based bucket because
+ * it sits in "Out for delivery" looking healthy.
+ *
+ * Bucketing comes from `operationsQueues.ts`, which the dashboard also reads, so
+ * a card reading 3 and a queue showing 5 is not representable.
+ *
+ * Reads go through the browser client and RLS rather than a new staff API. The
+ * columns are already staff-readable — the orders list reads the same table the
+ * same way — and adding a route to re-fetch what RLS already permits would be a
+ * second copy of the permission decision.
  */
 
 const SELECT =
@@ -54,8 +69,27 @@ const SELECT =
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
+/** The pseudo-bucket for orders whose state is wrong rather than early. */
+const PROBLEMS = "problems";
+
 function isBucket(value: string | null): value is FulfillmentBucket {
   return Boolean(value) && (ACTIVE_FULFILLMENT_BUCKETS as readonly string[]).includes(String(value));
+}
+
+/**
+ * How long this order has been sitting where it is.
+ *
+ * Measured from the timestamp that put it in its current state, falling back to
+ * `updated_at`. Age is the difference between a queue and a list: five orders
+ * "to prepare" is normal, and one of them being nine days old is not.
+ */
+function ageLabel(order: QueueOrder): string {
+  const since = order.shipped_at || order.ready_at || order.updated_at;
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 3_600_000));
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours}h in this state`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} in this state`;
 }
 
 function FulfillmentQueueContent() {
@@ -73,7 +107,11 @@ function FulfillmentQueueContent() {
   const [query, setQuery] = useState("");
 
   const bucketParam = searchParams.get("bucket");
-  const bucket: FulfillmentBucket | "all" = isBucket(bucketParam) ? bucketParam : "all";
+  const bucket: FulfillmentBucket | "all" | typeof PROBLEMS = isBucket(bucketParam)
+    ? bucketParam
+    : bucketParam === PROBLEMS
+      ? PROBLEMS
+      : "all";
   const methodParam = searchParams.get("method");
   const method = methodParam === "shipping" || methodParam === "pickup" ? methodParam : "all";
 
@@ -110,6 +148,16 @@ function FulfillmentQueueContent() {
   }, [canView, supabase]);
 
   const grouped = useMemo(() => groupByFulfillmentBucket(orders), [orders]);
+  /*
+   * Problems overlap the state buckets on purpose.
+   *
+   * An order shipped without tracking sits in "Out for delivery" and looks
+   * entirely healthy there; the customer has nothing to follow. Counting it in
+   * both places is correct — the state buckets still partition every order, and
+   * this is a cross-cutting view over them, which is why its count is not added
+   * to the totals below.
+   */
+  const problems = useMemo(() => orders.filter((order) => missingTracking(order)), [orders]);
 
   const setFilter = (next: { bucket?: string; method?: string }) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -123,7 +171,11 @@ function FulfillmentQueueContent() {
 
   const shown = useMemo(() => {
     const base =
-      bucket === "all" ? ACTIVE_FULFILLMENT_BUCKETS.flatMap((key) => grouped[key]) : grouped[bucket];
+      bucket === "all"
+        ? ACTIVE_FULFILLMENT_BUCKETS.flatMap((key) => grouped[key])
+        : bucket === PROBLEMS
+          ? problems
+          : grouped[bucket];
     const term = query.trim().toLowerCase();
     return base.filter((order) => {
       if (method !== "all" && String(order.fulfillment_method || "shipping") !== method) return false;
@@ -135,9 +187,9 @@ function FulfillmentQueueContent() {
         .toLowerCase()
         .includes(term);
     });
-  }, [bucket, grouped, method, profiles, query]);
+  }, [bucket, grouped, method, problems, profiles, query]);
 
-  if (isLoading) return <div className="ui-card text-sm text-brand-textMuted">Loading…</div>;
+  if (isLoading) return <LoadingState>Loading…</LoadingState>;
   if (!canView) {
     return <AccessDeniedCard message="You need the “View fulfillment” permission to see the delivery queue." />;
   }
@@ -145,79 +197,90 @@ function FulfillmentQueueContent() {
   const totalActive = ACTIVE_FULFILLMENT_BUCKETS.reduce((sum, key) => sum + grouped[key].length, 0);
 
   return (
-    <main className="page-stack">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="ui-eyebrow">Commerce</p>
-          <h1 className="mt-1 text-3xl font-semibold">Fulfillment</h1>
-          <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
-            Everything waiting to be packed, collected, shipped or confirmed. Each order sits in exactly one
-            queue, so these counts add up. This is a worklist — open an order to change anything on it.
-          </p>
-        </div>
-        <Link href="/staff/settings/commerce" className="ui-btn ui-btn-ghost text-sm">
-          Delivery settings
-        </Link>
-      </div>
+    <StaffPage>
+      <PageHeader
+        title="Fulfillment"
+        description="Everything waiting to be packed, collected, shipped or confirmed. Each order sits in exactly one queue, so these counts add up. This is a worklist — open an order to change anything on it."
+        actions={
+          <Link href="/staff/settings/commerce#shipping" className="ui-btn ui-btn-ghost text-sm">
+            Delivery settings
+          </Link>
+        }
+      />
 
       {error ? (
-        <Notice tone="danger" role="alert">
-          Could not load the fulfillment queue, so no counts are shown: {error}
-        </Notice>
+        <ErrorState>Could not load the fulfillment queue, so no counts are shown: {error}</ErrorState>
       ) : null}
 
-      {/* The bucket cards are counts. With no data they are not zeroes, they
-          are unknown — and a row of confident zeroes beside an error notice is
-          read as an empty shop. */}
+      {/* The queues, as chips. With no data they are not zeroes, they are
+          unknown — and a row of confident zeroes beside an error notice reads
+          as an empty shop. */}
       {!error ? (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Fulfillment queues">
-          {ACTIVE_FULFILLMENT_BUCKETS.map((key) => {
-            const active = bucket === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilter({ bucket: active ? "all" : key })}
-                aria-pressed={active}
-                className={`ui-card ui-card-hover text-left ${active ? "!border-brand-primary !bg-brand-primary/10" : ""}`}
-              >
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="text-sm font-semibold">{FULFILLMENT_BUCKET_COPY[key].label}</span>
-                  <span className="text-2xl font-semibold tabular-nums">{grouped[key].length}</span>
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-brand-textMuted">
-                  {FULFILLMENT_BUCKET_COPY[key].description}
-                </span>
-              </button>
-            );
-          })}
-        </section>
+        <nav aria-label="Fulfillment queues" className="staff-views">
+          <button
+            type="button"
+            onClick={() => setFilter({ bucket: "all" })}
+            aria-pressed={bucket === "all"}
+            className="staff-view"
+          >
+            All live work
+            <span className="staff-view-count">{totalActive}</span>
+          </button>
+          {ACTIVE_FULFILLMENT_BUCKETS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter({ bucket: bucket === key ? "all" : key })}
+              aria-pressed={bucket === key}
+              title={FULFILLMENT_BUCKET_COPY[key].description}
+              className="staff-view"
+            >
+              {FULFILLMENT_BUCKET_COPY[key].label}
+              <span className="staff-view-count">{grouped[key].length}</span>
+            </button>
+          ))}
+          {problems.length ? (
+            <button
+              type="button"
+              onClick={() => setFilter({ bucket: bucket === PROBLEMS ? "all" : PROBLEMS })}
+              aria-pressed={bucket === PROBLEMS}
+              title="Shipped with no tracking number, so the customer has nothing to follow."
+              className="staff-view"
+            >
+              Problems
+              <span className="staff-view-count">{problems.length}</span>
+            </button>
+          ) : null}
+        </nav>
       ) : null}
 
-      <div className="ui-filter-bar">
-        <label className="min-w-[14rem] flex-1">
+      <div className="staff-toolbar">
+        <label className="staff-toolbar-search">
           <span className="sr-only">Search fulfillment queue</span>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="ui-input h-full"
+            className="ui-input w-full"
             placeholder="Search order, product, customer or tracking…"
           />
         </label>
-        <label>
-          <span className="sr-only">Filter by delivery method</span>
+        <Field label="Method" className="min-w-[10rem]">
           <select
             value={method}
             onChange={(event) => setFilter({ method: event.target.value })}
-            className="ui-input h-full"
+            className="ui-input w-full"
           >
             <option value="all">All methods</option>
             <option value="shipping">Shipping</option>
             <option value="pickup">Local pickup</option>
           </select>
-        </label>
+        </Field>
         {bucket !== "all" || method !== "all" ? (
-          <button type="button" onClick={() => setFilter({ bucket: "all", method: "all" })} className="ui-btn ui-btn-ghost text-sm">
+          <button
+            type="button"
+            onClick={() => setFilter({ bucket: "all", method: "all" })}
+            className="ui-btn ui-btn-ghost text-sm"
+          >
             Clear filters
           </button>
         ) : null}
@@ -227,53 +290,74 @@ function FulfillmentQueueContent() {
         <p className="text-xs text-brand-textMuted" aria-live="polite">
           {bucket === "all"
             ? `${shown.length} of ${totalActive} orders in the live queues`
-            : `${shown.length} in ${FULFILLMENT_BUCKET_COPY[bucket].label.toLowerCase()}`}
+            : bucket === PROBLEMS
+              ? `${shown.length} with a delivery problem`
+              : `${shown.length} in ${FULFILLMENT_BUCKET_COPY[bucket].label.toLowerCase()}`}
         </p>
       ) : null}
 
-      <div className="space-y-3">
-        {shown.map((order) => {
-          const profile = profiles[order.customer_id];
-          const customer = profile?.display_name || (profile?.username ? `@${profile.username}` : "Customer");
-          const balance = outstandingBalanceCents(order);
-          return (
-            <Link
-              key={order.id}
-              href={`/staff/orders/${order.id}#fulfillment`}
-              className="ui-card ui-card-hover grid gap-4 md:grid-cols-[1.5fr_1fr_auto] md:items-center"
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">{order.product_name}</span>
-                  {order.quantity > 1 ? <Badge>Qty {order.quantity}</Badge> : null}
-                  <Badge tone={String(order.fulfillment_method) === "pickup" ? "accent" : "neutral"}>
-                    {String(order.fulfillment_method) === "pickup" ? "Pickup" : "Shipping"}
-                  </Badge>
-                  {missingTracking(order) ? <Badge tone="warning">No tracking</Badge> : null}
+      {shown.length ? (
+        <div className="staff-rows">
+          {shown.map((order) => {
+            const profile = profiles[order.customer_id];
+            const customer = profile?.display_name || (profile?.username ? `@${profile.username}` : "Customer");
+            const balance = outstandingBalanceCents(order);
+            const pickup = String(order.fulfillment_method) === "pickup";
+            return (
+              <div key={order.id} className="staff-row">
+                <div className="staff-row-main">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="staff-row-title">{order.product_name}</span>
+                    {order.quantity > 1 ? <Badge>Qty {order.quantity}</Badge> : null}
+                    <Badge tone={pickup ? "accent" : "neutral"}>{pickup ? "Pickup" : "Shipping"}</Badge>
+                    {missingTracking(order) ? <Badge tone="danger">No tracking</Badge> : null}
+                  </div>
+                  <div className="staff-row-detail">
+                    {order.order_number || "New request"} · {customer} · {ageLabel(order)}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <StatusChip value={order.fulfillment_status || "unfulfilled"} />
+                    {balance > 0 ? <Badge tone="warning">{money(balance)} due</Badge> : null}
+                    {order.tracking_number ? (
+                      <span className="staff-row-meta">
+                        {order.shipping_carrier || "Carrier"} {order.tracking_number}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-brand-textMuted">
-                  {order.order_number || "New request"} · {customer}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-brand-accent">{fulfillmentNextAction(order)}</div>
-                <div className="mt-1 text-xs text-brand-textMuted">
-                  {lifecycleLabel(FULFILLMENT_STAFF_LABELS, String(order.fulfillment_status || "unfulfilled"))}
-                  {order.tracking_number ? ` · ${order.shipping_carrier || "Carrier"} ${order.tracking_number}` : ""}
-                </div>
-              </div>
-              <div className="text-left md:text-right">
-                <div className="font-medium">{balance > 0 ? `${money(balance)} due` : "Paid in full"}</div>
-                <div className="mt-1 text-xs text-brand-textMuted">
-                  {order.target_date ? `Target ${order.target_date}` : "No target date"}
-                </div>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+                {/*
+                  The action names itself and the link says where it goes.
 
-      {loading ? <EmptyState>Loading the fulfillment queue…</EmptyState> : null}
+                  The whole row used to be one link to `#fulfillment`, so "Open
+                  Order" and "do the next thing" were the same click and the row
+                  could not offer both. They are different intentions — reading
+                  the order and performing its next delivery step — and a queue
+                  that only offers one of them sends staff to the wrong tab half
+                  the time.
+                */}
+                <div className="staff-row-aside flex-col !items-start gap-1.5 sm:!items-end">
+                  <Link
+                    href={`/staff/orders/${order.id}#fulfillment`}
+                    className="text-xs font-semibold text-brand-accent"
+                  >
+                    {fulfillmentNextAction(order)} →
+                  </Link>
+                  <Link href={`/staff/orders/${order.id}`} className="staff-row-meta hover:text-brand-accent">
+                    Open order
+                  </Link>
+                  <span className="staff-row-meta">
+                    {order.target_date
+                      ? `Target ${new Date(`${order.target_date}T00:00:00`).toLocaleDateString()}`
+                      : "No target date"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {loading ? <LoadingState>Loading the fulfillment queue…</LoadingState> : null}
       {/* "Nothing is waiting to go out" is a claim about the shop. It must not
           be made when the query that would have shown the work was refused. */}
       {!loading && !error && shown.length === 0 ? (
@@ -283,23 +367,16 @@ function FulfillmentQueueContent() {
             : "Nothing is waiting to go out. Every order is either delivered, collected or not yet payable."}
         </EmptyState>
       ) : null}
-    </main>
+    </StaffPage>
   );
 }
 
 export default function StaffFulfillmentQueuePage() {
   // `useSearchParams` needs a Suspense boundary; without one the whole route
   // opts into client-side rendering and the production build refuses to
-  // prerender it. Same shape as the production queue, which puts its filters in
-  // the URL for the same reason.
+  // prerender it.
   return (
-    <Suspense
-      fallback={
-        <p className="text-sm text-brand-textMuted" role="status">
-          Loading the fulfillment queue…
-        </p>
-      }
-    >
+    <Suspense fallback={<LoadingState>Loading the fulfillment queue…</LoadingState>}>
       <FulfillmentQueueContent />
     </Suspense>
   );

@@ -177,26 +177,54 @@ export function StaffMobileNav() {
                 </div>
 
                 <div className="staff-drawer-scroll">
-                  {groups.map((group) => (
-                    <nav key={group.id} aria-label={group.label} className="staff-drawer-group">
-                      <p className="staff-drawer-heading">{group.label}</p>
-                      {group.items.map((item) => (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={close}
-                          aria-current={isStaffNavItemActive(item, pathname) ? "page" : undefined}
-                          className="staff-drawer-item"
-                        >
-                          <StaffNavIcon icon={item.icon} className="staff-drawer-item-icon h-4 w-4" />
-                          <span className="min-w-0">
-                            <span className="staff-drawer-item-label">{item.label}</span>
-                            <span className="staff-drawer-item-description">{item.description}</span>
-                          </span>
-                        </Link>
-                      ))}
-                    </nav>
-                  ))}
+                  {groups.map((group) => {
+                    const links = group.items.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={close}
+                        aria-current={isStaffNavItemActive(item, pathname) ? "page" : undefined}
+                        className="staff-drawer-item"
+                      >
+                        <StaffNavIcon icon={item.icon} className="staff-drawer-item-icon h-4 w-4" />
+                        <span className="min-w-0">
+                          <span className="staff-drawer-item-label">{item.label}</span>
+                          <span className="staff-drawer-item-description">{item.description}</span>
+                        </span>
+                      </Link>
+                    ));
+
+                    /*
+                     * "More tools" folds on a phone too.
+                     *
+                     * Each drawer row is a label *and* a description, so it is
+                     * about 64px tall; the eleven secondary destinations are
+                     * most of a screen of scrolling between the reader and the
+                     * four rows they opened the drawer for. `<details>` rather
+                     * than component state because it is a disclosure the
+                     * browser already implements accessibly, and it lives
+                     * inside a dialog that is unmounted when closed — there is
+                     * no state worth persisting across that.
+                     */
+                    if (group.secondary) {
+                      return (
+                        <details key={group.id} className="staff-drawer-group staff-drawer-more">
+                          <summary className="staff-drawer-more-summary">{group.label}</summary>
+                          <nav aria-label={group.label}>{links}</nav>
+                        </details>
+                      );
+                    }
+
+                    /* A group whose only item repeats its name contributes the
+                       row and skips the caption above it. */
+                    const bare = group.items.length === 1 && group.items[0].label === group.label;
+                    return (
+                      <nav key={group.id} aria-label={group.label} className="staff-drawer-group">
+                        {bare ? null : <p className="staff-drawer-heading">{group.label}</p>}
+                        {links}
+                      </nav>
+                    );
+                  })}
                 </div>
               </div>
             </div>,

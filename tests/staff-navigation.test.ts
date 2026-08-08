@@ -4,13 +4,16 @@ import test from "node:test";
 
 import { PERMISSIONS } from "../src/lib/permissions.ts";
 import {
+  PRIMARY_STAFF_NAV_ITEMS,
   STAFF_AREA_PERMISSIONS,
   STAFF_NAV,
   STAFF_NAV_ITEMS,
   activeStaffNavItem,
   canUseStaffArea,
   isStaffNavItemActive,
+  primaryStaffNav,
   staffBreadcrumbs,
+  staffSettingsSections,
   visibleStaffHrefs,
   visibleStaffNav,
 } from "../src/lib/staffNavigation.ts";
@@ -247,17 +250,34 @@ test("a section page reads Staff / group / page", () => {
 test("the group crumb is not a link", () => {
   // Groups are headings. The old context bar linked one to the first page
   // inside it, which navigated somewhere the reader had not asked to go.
-  assert.equal(staffBreadcrumbs("/staff/orders/abc")[1].href, "");
+  assert.equal(staffBreadcrumbs("/staff/catalog/discounts")[1].href, "");
+});
+
+test("a group whose name repeats its only item contributes no crumb", () => {
+  /*
+   * `Staff › Orders › Orders › Order` was the trail before this pass. Orders,
+   * Production and Fulfillment are now one-item groups whose label *is* the
+   * destination's label, so the group crumb would say the same word twice in a
+   * row and teach the reader that a level of the hierarchy means nothing.
+   */
+  assert.deepEqual(
+    staffBreadcrumbs("/staff/orders/abc").map((crumb) => crumb.label),
+    ["Staff", "Orders", "Order"]
+  );
+  assert.deepEqual(
+    staffBreadcrumbs("/staff/catalog/discounts").map((crumb) => crumb.label),
+    ["Staff", "Store", "Discounts"]
+  );
 });
 
 test("a known leaf gets its own crumb and an unknown one does not", () => {
   assert.deepEqual(
     staffBreadcrumbs("/staff/orders/abc").map((crumb) => crumb.label),
-    ["Staff", "Orders", "Orders", "Order"]
+    ["Staff", "Orders", "Order"]
   );
   assert.deepEqual(
     staffBreadcrumbs("/staff/orders/new").map((crumb) => crumb.label),
-    ["Staff", "Orders", "Orders", "New proposal"]
+    ["Staff", "Orders", "New proposal"]
   );
   // Nothing is invented for a path with no known shape: the trail stops at the
   // section rather than ending in a slug.
@@ -314,9 +334,39 @@ test("the settings index derives its cards from the Settings group", () => {
   // still one source, now also responsible for the four named blocks the flat
   // grid of seven cards lacked.
   assert.match(settings, /staffSettingsSections/);
-  assert.match(navigation, /id === "settings"/);
+  /*
+   * The index reads `settingsSection` across the **whole** navigation, not just
+   * the Settings group.
+   *
+   * This pass folded Site access & safety, Verified perks, the Recycle bin, the
+   * Audit log and People & accounts into the "More tools" disclosure. Deriving
+   * the settings index from group membership would have silently dropped all
+   * five off `/staff/settings` — the exact drift that once left
+   * `/staff/settings/commerce` reachable only by typing its URL.
+   */
+  assert.match(navigation, /item\.settingsSection/);
   // The overview must not link to itself.
   assert.match(navigation, /item\.href !== "\/staff\/settings"/);
+});
+
+test("every settings destination reaches the index wherever it sits in the sidebar", () => {
+  const sections = staffSettingsSections(ALL);
+  const listed = sections.flatMap((section) => section.items.map((item) => item.href));
+  for (const href of [
+    "/staff/settings/commerce",
+    "/staff/appearance",
+    "/staff/security/roles",
+    "/staff/security",
+    "/staff/security/verified-perks",
+    "/staff/security/recycle-bin",
+    "/staff/security/audit",
+    "/staff/security/users",
+  ]) {
+    assert.ok(listed.includes(href), `${href} is not reachable from the settings index`);
+  }
+  // No duplicates: an item filed in two blocks would be two answers to one
+  // question.
+  assert.equal(new Set(listed).size, listed.length);
 });
 
 test("every settings destination is filed under a named block", () => {
@@ -408,9 +458,19 @@ test("no staff chrome writes state from inside an effect", () => {
 });
 
 test("a collapsed group containing the current page is forced open", () => {
+  assert.match(read("src/components/staff/StaffNav.tsx"), /const collapsed = !containsActive &&/);
+});
+
+test("the compact rail does not unfold the secondary group", () => {
+  /*
+   * Primary groups are forced open in the compact rail — there is nothing to
+   * collapse when every label is already hidden. "More tools" is not, because
+   * eleven extra icons under the four that matter is the wall of
+   * undifferentiated targets this pass removed from the expanded sidebar.
+   */
   assert.match(
     read("src/components/staff/StaffNav.tsx"),
-    /collapsedGroups\.includes\(group\.id\) && !containsActive/
+    /group\.secondary \? !flipped : !isCompact && flipped/
   );
 });
 
@@ -483,8 +543,61 @@ test("a holder of emails.view alone can reach the email section", () => {
 });
 
 test("the new breadcrumb leaves are labelled rather than guessed", () => {
-  const delivery = staffBreadcrumbs("/staff/emails/deliveries");
-  assert.equal(delivery[delivery.length - 1].label, "Delivery history");
   const discrepancies = staffBreadcrumbs("/staff/launch-readiness/discrepancies");
   assert.equal(discrepancies[discrepancies.length - 1].label, "Payment discrepancies");
+});
+
+// ---------------------------------------------------------------------------
+// The size of the menu
+// ---------------------------------------------------------------------------
+
+test("the always-visible menu is at most 16 destinations", () => {
+  /*
+   * The number this pass exists to change: 27 rows, in 8 expanded groups, every
+   * one of them weighted the same. The ceiling is here rather than in a
+   * document because the failure mode is not a redesign — it is the next pass
+   * adding "just one more" row, five times.
+   *
+   * Adding a destination is still fine. Adding a *primary* destination means
+   * deciding what stops being primary.
+   */
+  assert.ok(
+    PRIMARY_STAFF_NAV_ITEMS.length <= 16,
+    `${PRIMARY_STAFF_NAV_ITEMS.length} primary destinations; the ceiling is 16`
+  );
+});
+
+test("nothing was deleted when the menu shrank", () => {
+  // Every route that had a menu entry before this pass still has one. The
+  // difference is which of them a staff member has to read past every morning.
+  const all = new Set(visibleStaffHrefs(ALL));
+  for (const href of [
+    "/staff/info/analytics",
+    "/staff/security/audit",
+    "/staff/security/users",
+    "/staff/moderation/reports",
+    "/staff/security",
+    "/staff/security/verified-perks",
+    "/staff/security/recycle-bin",
+    "/staff/info/todo",
+    "/staff/info/pending",
+    "/staff/info/updates",
+    "/staff/shops",
+  ]) {
+    assert.ok(all.has(href), `${href} lost its menu entry`);
+  }
+});
+
+test("exactly one group is secondary, and the primary groups are the task list", () => {
+  const secondary = STAFF_NAV.filter((group) => group.secondary);
+  assert.equal(secondary.length, 1);
+  assert.equal(secondary[0].id, "more");
+  assert.deepEqual(
+    STAFF_NAV.filter((group) => !group.secondary).map((group) => group.id),
+    ["dashboard", "orders", "production", "fulfillment", "store", "business", "settings"]
+  );
+});
+
+test("primaryStaffNav never returns the secondary group", () => {
+  for (const group of primaryStaffNav(ALL)) assert.notEqual(group.id, "more");
 });

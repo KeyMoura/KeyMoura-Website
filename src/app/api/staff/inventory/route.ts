@@ -82,6 +82,11 @@ export async function GET(req: NextRequest) {
       // after the fetch below, on the page only.
       query = query.eq("inventory_policy", "track");
       break;
+    case "reserved":
+      // Held quantity is summed from `inventory_reservations` after this query
+      // runs, so — like `low_stock` — it can only be narrowed on the page.
+      query = query.eq("inventory_policy", "track");
+      break;
     default:
       break;
   }
@@ -161,7 +166,12 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  const visible = filter === "low_stock" ? items.filter((item) => item.availability === "low_stock") : items;
+  const visible =
+    filter === "low_stock"
+      ? items.filter((item) => item.availability === "low_stock")
+      : filter === "reserved"
+        ? items.filter((item) => item.reserved > 0)
+        : items;
 
   return NextResponse.json({
     items: visible,

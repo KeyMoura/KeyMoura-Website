@@ -5,9 +5,12 @@ import Link from "next/link";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { Badge, EmptyState, Notice, Panel } from "@/components/ui/DesignSystem";
+import { LoadingState, PageTabs, StaffPage, TabPanel } from "@/components/staff/StaffPage";
 import { PriorityBadge, StatusBadge, DueDate } from "@/components/staff/production/JobBadges";
 import { JobForm, type JobDraftState } from "@/components/staff/production/JobForm";
+import { useHashTab } from "@/lib/hooks/useHashTab";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
+import type { StaffTab } from "@/lib/staff/pageFramework";
 import {
   FILE_KIND_META,
   PRODUCTION_FILE_KINDS,
@@ -148,6 +151,28 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
   const [targetStatus, setTargetStatus] = useState<ProductionStatus | "">("");
   const [reason, setReason] = useState("");
   const [pendingWarnings, setPendingWarnings] = useState<string[] | null>(null);
+
+  /*
+   * The tab strip.
+   *
+   * Declared before the early returns so hook order is stable across the
+   * loading, refused and loaded renders. The counts on Tasks, Quality and
+   * Files are the reason the strip is worth having: this page was six stacked
+   * panels, and the only way to learn that a job had no files was to scroll
+   * past everything else to find out.
+   */
+  const tabs = useMemo<StaffTab[]>(() => {
+    const tasks = payload?.tasks ?? [];
+    return [
+      { id: "manufacturing", label: "Manufacturing" },
+      { id: "tasks", label: "Tasks", count: tasks.filter((task) => task.kind !== "quality").length },
+      { id: "quality", label: "Quality", count: tasks.filter((task) => task.kind === "quality").length },
+      { id: "files", label: "Files", count: payload?.files.length ?? null },
+      { id: "notes", label: "Details & notes" },
+      { id: "history", label: "History" },
+    ];
+  }, [payload]);
+  const [tab, setTab] = useHashTab(tabs);
 
   const [now] = useState(() => new Date());
   const errorRef = useRef<HTMLDivElement | null>(null);
@@ -322,15 +347,15 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
     [job, load]
   );
 
-  if (accessLoading) {
-    return (
-      <div className="page-container">
-        <p className="text-sm text-brand-textMuted" role="status">
-          Checking your access…
-        </p>
-      </div>
-    );
-  }
+  /*
+   * The three pre-content branches use the same page root as the loaded one.
+   *
+   * They wrapped themselves in `page-container` — a second max-width box inside
+   * the staff shell's own `page-container-wide` — so the loading and
+   * not-found states rendered narrower than the job itself, and the page
+   * visibly jumped its own width once the fetch landed.
+   */
+  if (accessLoading) return <LoadingState>Checking your access…</LoadingState>;
 
   if (!canView || denied) {
     return (
@@ -341,26 +366,18 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  if (loading && !payload) {
-    return (
-      <div className="page-container">
-        <p className="text-sm text-brand-textMuted" role="status">
-          Loading the job…
-        </p>
-      </div>
-    );
-  }
+  if (loading && !payload) return <LoadingState>Loading the job…</LoadingState>;
 
   if (!payload || !job || !draft) {
     return (
-      <div className="page-container space-y-4">
+      <StaffPage>
         <Notice tone="danger" role="alert">
           {error || "That job could not be found."}
         </Notice>
         <Link href="/staff/production" className={subtle}>
           Back to the queue
         </Link>
-      </div>
+      </StaffPage>
     );
   }
 
@@ -369,34 +386,80 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
       ? transitionProblem(job.status, targetStatus, { reason, reopen: isTerminalStatus(job.status) })
       : null;
 
-  return (
-    <div className="page-container space-y-6">
-      <nav aria-label="Breadcrumb">
-        <Link href="/staff/production" className="text-sm text-brand-textMuted underline">
-          ← Production queue
-        </Link>
-      </nav>
+  const sourceOrder = job.order_id ? payload.orders[job.order_id] : null;
 
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-mono text-xs text-brand-textMuted">{job.job_number}</p>
-          <h1 className="text-2xl font-semibold">{job.title}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusBadge status={job.status} />
-            <PriorityBadge priority={job.priority} />
-            <span className="text-xs">
-              <DueDate job={job} now={now} />
-            </span>
-            {job.rework_count > 0 ? (
-              <Badge tone="danger">
-                Reworked {job.rework_count}×
-              </Badge>
-            ) : null}
+  return (
+    <StaffPage>
+      {/* ================= Persistent header ================= */}
+      <header className="staff-record-header">
+        <div className="staff-record-top">
+          <div className="min-w-0">
+            <p className="staff-record-eyebrow font-mono">{job.job_number}</p>
+            <h1 className="staff-record-title">{job.title}</h1>
+            <div className="staff-record-states">
+              <StatusBadge status={job.status} />
+              <PriorityBadge priority={job.priority} />
+              <span className="text-xs">
+                <DueDate job={job} now={now} />
+              </span>
+              {job.quantity && job.quantity > 1 ? <Badge>× {job.quantity}</Badge> : null}
+              {job.rework_count > 0 ? <Badge tone="danger">Reworked {job.rework_count}×</Badge> : null}
+            </div>
           </div>
+          <Link href={`/staff/production/${job.id}/print`} className="ui-btn ui-btn-secondary text-sm">
+            Print work order
+          </Link>
         </div>
-        <Link href={`/staff/production/${job.id}/print`} className={subtle}>
-          Print work order
-        </Link>
+
+        {/*
+          The source order, in the header.
+
+          It used to be the first cell of a three-column "Linked to" panel below
+          the status controls, styled exactly like Product and Customer — so the
+          one piece of context that tells a maker *why this job exists* had the
+          same weight as a product name, and on a phone it was below the fold.
+          "No source order" is stated in words: an unlinked job is a normal
+          thing for stock work, and silence would read as a link that failed to
+          load.
+        */}
+        <div className="staff-record-next">
+          <div className="min-w-0">
+            <p className="staff-record-next-label">Source order</p>
+            {sourceOrder ? (
+              <p className="staff-record-next-title">
+                <Link href={`/staff/orders/${job.order_id}`} className="text-brand-accent hover:underline">
+                  Order {sourceOrder.order_number ?? "—"} →
+                </Link>
+              </p>
+            ) : (
+              <p className="staff-record-next-title text-brand-textMuted">No source order</p>
+            )}
+            <p className="staff-record-next-detail">
+              {job.product_id && payload.products[job.product_id]
+                ? payload.products[job.product_id].name
+                : "No product linked"}
+              {" · "}
+              {job.customer_id ? (payload.people[job.customer_id] ?? "Unknown customer") : "No customer linked"}
+            </p>
+          </div>
+          {/*
+            Linking is done from the order, deliberately.
+
+            `POST /production/jobs/[id]/link` takes an `expectedOrderId`, and the
+            order's own panel is where the *previous* link is visible — moving
+            work between orders while looking only at the job is how a job gets
+            silently taken off the order that was waiting for it. Editing the
+            job's details never touches `order_id`; `JobForm` has no control for
+            it, which is the property that stops an unrelated save from
+            unlinking an order.
+          */}
+          <Link
+            href={sourceOrder ? `/staff/orders/${job.order_id}#production` : "/staff/orders"}
+            className="ui-btn ui-btn-ghost text-sm"
+          >
+            {sourceOrder ? "Open order" : "Find an order to link"}
+          </Link>
+        </div>
       </header>
 
       <div
@@ -426,50 +489,10 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
         </Notice>
       ) : null}
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Linked records                                                      */}
-      {/* ------------------------------------------------------------------ */}
-      <Panel className="space-y-2 p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide">Linked to</h2>
-        <dl className="grid gap-2 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-xs text-brand-textMuted">Order</dt>
-            <dd>
-              {job.order_id && payload.orders[job.order_id] ? (
-                <Link href={`/staff/orders/${job.order_id}`} className="underline">
-                  {payload.orders[job.order_id].order_number ?? "View order"}
-                </Link>
-              ) : (
-                <span className="text-brand-textMuted">Not linked</span>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-brand-textMuted">Product</dt>
-            <dd>
-              {job.product_id && payload.products[job.product_id] ? (
-                payload.products[job.product_id].name
-              ) : (
-                <span className="text-brand-textMuted">Not linked</span>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-brand-textMuted">Customer</dt>
-            <dd>
-              {job.customer_id ? (
-                payload.people[job.customer_id] ?? "Unknown"
-              ) : (
-                <span className="text-brand-textMuted">Not linked</span>
-              )}
-            </dd>
-          </div>
-        </dl>
-      </Panel>
+      <PageTabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Production job sections" />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Status                                                              */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ================= Manufacturing ================= */}
+      <TabPanel id="manufacturing" value={tab}>
       <Panel className="space-y-3 p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide">Move this job</h2>
 
@@ -606,14 +629,18 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
         )}
       </Panel>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Checklists                                                          */}
-      {/* ------------------------------------------------------------------ */}
+      </TabPanel>
+
+      {/* ================= Tasks and Quality =================
+          `step` and `completion` are the work; `quality` is the inspection that
+          follows it. They were three identical stacked panels, so a maker
+          scrolling for the next step read past the QC list every time. */}
       {PRODUCTION_TASK_KINDS.map((kind) => {
         const items = payload.tasks.filter((task) => task.kind === kind);
         const progress = checklistProgress(payload.tasks, kind);
         return (
-          <Panel key={kind} className="space-y-3 p-4">
+          <TabPanel key={kind} id={kind === "quality" ? "quality" : "tasks"} value={tab}>
+          <Panel className="space-y-3 p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide">{TASK_KIND_META[kind].heading}</h2>
               <span className="text-xs text-brand-textMuted">
@@ -691,12 +718,12 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
               </form>
             ) : null}
           </Panel>
+          </TabPanel>
         );
       })}
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Files                                                               */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ================= Files ================= */}
+      <TabPanel id="files" value={tab}>
       <Panel className="space-y-3 p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide">Files</h2>
         <p className="text-xs text-brand-textMuted">
@@ -814,13 +841,13 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
           </form>
         ) : null}
       </Panel>
+      </TabPanel>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Details                                                             */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ================= Notes and job details ================= */}
+      <TabPanel id="notes" value={tab}>
       <Panel className="space-y-4 p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide">Details</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide">Details &amp; notes</h2>
           {dirty ? (
             <span className="text-xs text-amber-300" role="status">
               Unsaved changes
@@ -871,10 +898,10 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
           ) : null}
         </form>
       </Panel>
+      </TabPanel>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Timeline                                                            */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ================= History ================= */}
+      <TabPanel id="history" value={tab}>
       <Panel className="space-y-3 p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide">History</h2>
         {payload.events.length ? (
@@ -902,6 +929,7 @@ export default function ProductionJobPage({ params }: { params: Promise<{ id: st
           <EmptyState>Nothing has happened to this job yet.</EmptyState>
         )}
       </Panel>
-    </div>
+      </TabPanel>
+    </StaffPage>
   );
 }
