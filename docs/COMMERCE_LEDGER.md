@@ -5303,3 +5303,92 @@ forced: focus to `1`, blur to `0`, refocus to `1`.
 4. **Collapse the sidebar** on any staff page. It should become a 72px rail and
    the page content should get visibly wider.
 5. **Open `/orders/new`** and look at the gap under `Project type *`.
+
+---
+
+# Pass 16 — the staff application redesign
+
+Merged as `dabf18e` (work commit `b804c24`), from `c4270c8`.
+
+Pass 15 changed the sidebar's labels and groups and **explicitly kept all 27
+destinations**, deferring the page restructuring in "Deferred, honestly" item 1
+because the largest editors "an automated session can[not] reach". The owner's
+report after that pass was that `/staff` looked essentially the same. This pass
+executes the restructuring, and reaches the editors.
+
+## How the authenticated surfaces were reached
+
+Middleware 307s `/staff/*` to `/auth/login` without a session and there is no
+local Supabase, which is the constraint pass 15 stopped at. A temporary
+local-only harness mounted the **real** page components inside the **real**
+`StaffShell` with `["meAccess"]` seeded and a `window.fetch` interceptor serving
+fixtures — `supabase-js` issues every PostgREST query through `fetch`, so one
+interceptor covers both `/api/staff/*` and `/rest/v1/*`. Non-GET requests were
+answered from memory and logged; nothing was written anywhere. The harness was
+deleted before the commit and no file in the diff references it.
+
+Two defects were found this way and only this way:
+
+- An unknown `purchase_mode` threw on `PURCHASE_MODE_COPY[mode].help` and
+  white-screened the **entire product editor** rather than one field. A CHECK
+  constraint means the column cannot hold a surprise today, but this is the page
+  a row written by an older build gets opened on. Now narrowed once, with every
+  read routed through it.
+- The dashboard rendered an outstanding balance as `220.00` with no currency
+  symbol, on a queue that also counts days and quantities.
+
+## What changed
+
+| Surface | Before | After |
+| --- | --- | --- |
+| Sidebar | 27 destinations, 8 expanded groups | **16** primary, 11 behind one collapsed "More tools" |
+| `/staff` | revenue chart, 4 metric tiles, 5 count cards, a second copy of the sidebar as cards | one attention queue (orders **and** stock), Today, Recent activity, Quick actions |
+| `/staff/orders` | 16 chips, 9 always-visible filter controls | 6 queues, 3 controls, rest behind Filters |
+| `/staff/orders/[id]` | 877 lines, 11 always-mounted panels | persistent header + 8 tabs, one panel mounted |
+| `/staff/production` | rows that read as an order list | job, source order, quantity, priority, due date, stage, **blocker in words** |
+| production job | 6 stacked panels, source order a cell in a 3-up grid | 6 tabs, **source order in the header** with a live link |
+| `/staff/fulfillment` | 5 large count cards above the work | 7 chips incl. **Problems**, rows carry **age** |
+| product editor | 7 stacked cards | **9 tabs**, checklist in the header, one save |
+| `/staff/settings/commerce` | 7 stacked sections, 3 borders deep | **7 tabs**, `<fieldset>` borders removed |
+| `/staff/emails` | one page + a separate `/deliveries` route | **3 tabs**, delivery log embedded, route redirects |
+
+Three pages (`/staff/production`, `catalog/categories`, `catalog/discounts`)
+nested a second `page-container` **inside** the shell's `page-container-wide`,
+so they rendered narrower than their neighbours with gutters that did not line
+up. A test now forbids it across every redesigned page.
+
+## Verified in a browser
+
+Every surface driven at `1280`, and the shell at `320/375/768/1024/1440/1920`:
+no horizontal overflow at any width, no touch target under 40px at 375, rail
+appears at 1024, collapsed rail narrows the **grid column** 280px → 72px.
+Drawer is `role="dialog" aria-modal="true"`, traps focus, locks the body,
+Escape restores it, and "More tools" is a `<details>` closed by default.
+Tablist carries a roving tabindex (exactly one tab stop) and arrow keys move
+selection. Editing on the product editor's Basic tab survives a round trip to
+SEO and back, and the SEO tab's derived "Search title" updates from it live —
+one draft, one save.
+
+## Not verified
+
+- **The running Vercel preview**, as in every previous pass: previews are
+  SSO-gated and the Vercel CLI is not installed in this environment. The
+  identical production build was run clean locally twice.
+- **The order workspace's tracking-required transition**, whose
+  `ConsequentialAction` labels are built from fields the harness could not
+  faithfully supply. Its rules are covered by `fulfillment-workflow.test.ts`.
+- **Production data.** Every figure above came from fixtures; no production row
+  was read or written.
+
+## Owner checks worth five minutes
+
+1. **Open `/staff`.** The sidebar should show 16 rows and a "More tools"
+   disclosure, not 27 rows.
+2. **Open any order.** It should be a header plus eight tabs, not a long scroll.
+   Press the "Next step" button and confirm it lands on the right tab.
+3. **Open a product and switch tabs.** Type in a field on Basic, go to SEO,
+   come back — the edit should still be there and Save still enabled.
+4. **Settings → Commerce → Shipping.** Seven tabs, and the origin address should
+   no longer sit inside a bordered box inside a card.
+5. **Business → Email.** Templates, Delivery history and Settings as three tabs;
+   the old `/staff/emails/deliveries` link should redirect into the tab.
