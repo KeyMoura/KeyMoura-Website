@@ -477,3 +477,95 @@ Tasks D–G are healthy. **A, B and C are the pass.**
   and not executed. It touches every staff page and belongs in its own pass with
   its own visual verification.
 - **Custom Requests nav entry** — no route exists (§2).
+
+---
+
+## 11. Verified after implementation — 2026-08-08
+
+Driven in a real browser against a dev server from a cleared `.next`. Staff pages
+were reached by seeding the `["meAccess"]` query through the React fiber, which
+works locally only — middleware redirects `/staff/*` before any HTML otherwise.
+
+### The collapsed sidebar, measured
+
+| Width | Expanded rail | Collapsed rail | Content expanded | Overflow |
+|---|---|---|---|---|
+| 1024 | 280px | **72px** | 876.8px | none |
+| 1280 | 280px | **72px** | 924.8 → **1132.8px** (+208) | none |
+| 1440 | 280px | **72px** | 1148px | none |
+| 1920 | 280px | **72px** | 1148px | none |
+
+Labels are `position: absolute` and reserve 1px, icons are centred to within
+2px, the active item keeps `aria-current`, expand/collapse round-trips, and the
+preference persists to `localStorage`. At 320/375/768 the rail is `display:
+none` and the drawer trigger is present — a desktop preference cannot reach a
+phone.
+
+**The keyboard tooltip works.** It first read as broken: the link matched
+`:focus-visible` but computed opacity stayed `0` even 400ms later. The cause was
+not CSS — the Browser pane does not composite frames, so a `transition` never
+advances and `getComputedStyle` returns the from-value forever. With
+`transition: none` forced: focus → `1`, blur → `0`, refocus → `1`.
+
+### Appearance, driven
+
+Search matches against the *screen elements*, which is the whole point:
+
+| Typed | Surfaced |
+|---|---|
+| `customizable` | Accent colour, **Badge background, Badge text, Badge border** |
+| `custom project` | Accent colour, **Secondary button background, text, border** |
+| `cart` | Utility background/border/icon/hover, Count badge background & number |
+| `price` | Primary brand colour |
+
+The preview updates live, with no save: typing `#22C55E` into Badge background
+moved the previewed "Customizable" badge from the accent derivation
+`color(srgb 0.96 0.62 0.04 / 0.18)` to `rgb(34, 197, 94)`, and emitted
+`--km-badge-bg: #22C55E`. Pressing **Clear** returned the badge to the accent
+derivation with the variable **absent** — not empty — which is exactly what lets
+`var(--km-badge-bg, var(--accent-soft))` reach its fallback, and the field then
+reads "Automatic".
+
+### `/orders/new`
+
+| | Before | After |
+|---|---|---|
+| `Project type` label-to-control gap | 4px | **8px** |
+| Label `display` | inline text node | `block`, `margin-bottom: 8px` |
+| Required marker | literal `*` in the string | `.ui-required`, 3.2px left margin |
+| Accessible name | `Project type *` | `Project type* (required)` |
+
+All three step-1 fields measure 8px, identical at 375 and 1280, no horizontal
+overflow at either.
+
+### Role creation, proven against the live schema
+
+Every case run inside a rolled-back transaction; production untouched
+(4 roles, 0 probes, 47 migrations, before and after).
+
+| Scenario | Result |
+|---|---|
+| Route's payload now (`description = ''`) | **succeeds** — `is_system=false`, no permissions |
+| Old payload (`description = null`) | `23502` — the reported failure |
+| All six badge icons | **all accepted** |
+| `rocket` | `23514` → "That is not one of the available badge icons." |
+| Duplicate key `admin` | `23505` → "A role with that key already exists." |
+
+### Accessibility
+
+One `h1`, no heading-level skips, no image without `alt`, no unlabelled input,
+no unnamed button, one live region (the search result count).
+
+**Pre-existing and not introduced here:** every staff page renders its own
+`<main>` inside the root layout's `<main id="main-content">`, so there are two
+`main` landmarks. Confirmed present at `f9dded6` on `/staff/appearance`,
+`/staff/settings` and `/staff/orders/new`. Converting `/staff/security/roles`
+from a `<div>` to a `<main>` made it consistent with its siblings and therefore
+joins the same pre-existing pattern. Fixing it properly means changing the
+landmark on roughly thirty pages, which belongs in the page-framework pass this
+one deliberately scoped down.
+
+Console carried only the **pre-existing** `data-motion` hydration mismatch on
+the root `html` (present since pass 3, reproduces on `/`), local 503s from the
+deliberately fake service-role key, and 401/403s from an unauthenticated seeded
+session.
