@@ -48,6 +48,60 @@ type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
   tone?: "neutral" | "accent" | "warning" | "danger" | "success";
 };
 
+/**
+ * One form field: label, control, optional help text.
+ *
+ * **Why this exists.** `/orders/new` set every control's spacing with a shared
+ * `const input = "ui-input mt-1"` — 4px between a label and its control, and the
+ * label was a bare text node inside `<label className="text-sm">` rather than
+ * anything the design system knew about. `Project type *` sat almost on the
+ * dropdown's top border, and `/staff/orders/new` used `mt-2` for the identical
+ * pattern. Two order forms, two spacings, neither matching `.ui-label`.
+ *
+ * Fixing the one reported field with a margin would have left nine others wrong
+ * and added a fourth spacing value, so the spacing moved into `.ui-label`, which
+ * the rest of the project already uses, and this component makes the structure
+ * reusable.
+ *
+ * The `<label>` wraps the control, so association is implicit and needs no ids.
+ * Controls that are not real form elements — `MenuSelect` renders a button —
+ * take their own `ariaLabel`; a wrapping label does not name a button.
+ *
+ * The required marker is `aria-hidden` with a text equivalent beside it: a bare
+ * `*` is announced as "star" or skipped entirely depending on the screen reader.
+ */
+export function Field({
+  label,
+  required = false,
+  help,
+  className,
+  children,
+}: {
+  label: ReactNode;
+  required?: boolean;
+  help?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className={cx("ui-field", className)}>
+      <span className="ui-label">
+        {label}
+        {required ? (
+          <>
+            <span className="ui-required" aria-hidden="true">
+              *
+            </span>
+            <span className="sr-only"> (required)</span>
+          </>
+        ) : null}
+      </span>
+      {children}
+      {help ? <span className="ui-help">{help}</span> : null}
+    </label>
+  );
+}
+
 export function Badge({ tone = "neutral", className, ...props }: BadgeProps) {
   return <span className={cx("ui-badge", `ui-badge-${tone}`, className)} {...props} />;
 }
