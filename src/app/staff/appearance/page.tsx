@@ -4,7 +4,13 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { Badge, MetricCard, Notice, cx } from "@/components/ui/DesignSystem";
-import { defaultSiteTheme, type SiteTheme } from "@/theme/runtime";
+import { defaultSiteTheme, optionalVars, type SiteTheme } from "@/theme/runtime";
+import {
+  APPEARANCE_GROUPS,
+  APPEARANCE_SETTINGS,
+  searchAppearanceSettings,
+  type AppearanceSetting,
+} from "@/theme/appearanceMap";
 import {
   BUILT_IN_PRESETS,
   normalizeAppearanceTemplateConfig,
@@ -40,7 +46,7 @@ type Appearance = {
   identity: Identity;
 };
 
-type Section = "brand" | "assets" | "wording" | "navigation" | "theme" | "templates";
+type Section = "colors" | "styles" | "brand" | "assets" | "wording" | "templates";
 
 const defaultIdentity: Identity = {
   name: "KeyMoura",
@@ -67,13 +73,29 @@ const defaults: Appearance = {
   identity: defaultIdentity,
 };
 
+/**
+ * Section order is the order somebody actually works in: colours first, because
+ * that is what every reported confusion was about, then shape, then the
+ * identity fields that are set once during setup.
+ *
+ * "Colors & controls" and "Navbar" used to be separate sections holding 11 and
+ * 17 colours respectively, so half the palette was in a section named after a
+ * component. Every colour now lives in one searchable place, grouped by what it
+ * touches.
+ */
 const sectionCopy: Record<Section, { label: string; description: string }> = {
-  brand: { label: "Brand & business", description: "Business name, public details, metadata, and support information." },
+  colors: { label: "Colours", description: "Every colour on the site, grouped by what it changes. Search if you know what you are looking for." },
+  styles: { label: "Shapes & density", description: "Corner rounding, spacing, typography and the shape of buttons, cards and inputs." },
+  brand: { label: "Business details", description: "Business name, public details, metadata, and support information." },
   assets: { label: "Logos & icons", description: "Header, footer, browser, and mobile brand artwork." },
   wording: { label: "Labels & wording", description: "Names customers see for the major areas of the site." },
-  navigation: { label: "Navbar", description: "Restore the classic header or customize its colors and behavior independently." },
-  theme: { label: "Colors & controls", description: "One shared visual language for storefront, account, orders, and staff tools." },
-  templates: { label: "Templates", description: "Save a complete look, try saved looks before publishing, and manage them." },
+  templates: { label: "Saved looks", description: "Save a complete look, try saved looks before publishing, and manage them." },
+};
+
+const SCOPE_LABEL: Record<"storefront" | "staff" | "both", string> = {
+  storefront: "Storefront",
+  staff: "Staff area",
+  both: "Storefront & staff",
 };
 
 /** The part of the form a template captures. */
@@ -150,8 +172,9 @@ function contrast(first: string, second: string) {
 export default function AppearancePage() {
   const [form, setForm] = useState<Appearance>(defaults);
   const [saved, setSaved] = useState<Appearance>(defaults);
-  const [section, setSection] = useState<Section>("brand");
+  const [section, setSection] = useState<Section>("colors");
   const [state, setState] = useState("Loading appearance…");
+  const [colorQuery, setColorQuery] = useState("");
 
   const [templates, setTemplates] = useState<AppearanceTemplate[]>([]);
   const [templatesError, setTemplatesError] = useState("");
@@ -304,6 +327,16 @@ export default function AppearancePage() {
     "--km-nav-badge-text": form.theme.navigationBadgeText,
     "--km-nav-mobile-bg": form.theme.navigationMobileBackground,
     "--km-nav-mobile-text": form.theme.navigationMobileText,
+    // Same helper the root layout uses. An unset override must be *absent*
+    // here too, or the preview would render a colourless badge for a setting
+    // that follows the accent correctly on the live site.
+    ...optionalVars({
+      "--km-badge-bg": form.theme.badgeBackground,
+      "--km-badge-text": form.theme.badgeText,
+      "--km-badge-border": form.theme.badgeBorder,
+      "--km-secondary-button-bg": form.theme.secondaryButtonBackground,
+      "--km-secondary-button-border": form.theme.secondaryButtonBorder,
+    }),
   } as CSSProperties;
 
   const setTheme = <Key extends keyof SiteTheme>(key: Key, value: SiteTheme[Key]) =>
@@ -311,12 +344,37 @@ export default function AppearancePage() {
   const setIdentity = (key: keyof Identity, value: string) =>
     setForm((current) => ({ ...current, identity: { ...current.identity, [key]: value } }));
 
+  /**
+   * Reset only what the open section edits.
+   *
+   * The two colour-bearing sections are derived from `APPEARANCE_SETTINGS`
+   * rather than a hand-written key list. The previous version listed 19 navbar
+   * keys by hand beside a section that reset the whole theme, so a colour added
+   * to one list and not the other would silently survive a reset.
+   */
   const resetSection = () => setForm((current) => {
-    if (section === "theme") return { ...current, primaryColor: saved.primaryColor, accentColor: saved.accentColor, theme: saved.theme };
-    if (section === "navigation") {
-      const keys = ["publicNavigationStyle", "navigationBehavior", "navigationDensity", "navigationBackground", "navigationText", "navigationActiveText", "navigationBorder", "navigationHoverBackground", "navigationHoverText", "navigationBadgeBackground", "navigationBadgeText", "navigationMobileBackground", "navigationMobileText", "navigationUtilityBackground", "navigationUtilityBorder", "navigationUtilityText", "navigationUtilityHoverBackground", "navigationUtilityHoverBorder", "navigationUtilityHoverText"] as const;
-      return { ...current, theme: { ...current.theme, ...Object.fromEntries(keys.map((key) => [key, saved.theme[key]])) } };
+    if (section === "colors") {
+      const next = { ...current, theme: { ...current.theme } };
+      for (const setting of APPEARANCE_SETTINGS) {
+        if (setting.key === "primaryColor") next.primaryColor = saved.primaryColor;
+        else if (setting.key === "accentColor") next.accentColor = saved.accentColor;
+        else {
+          const key = setting.key as keyof SiteTheme;
+          (next.theme as Record<string, unknown>)[key] = saved.theme[key];
+        }
+      }
+      return next;
     }
+    if (section === "styles") {
+      // Everything on the theme that is not a colour: the choice-valued keys.
+      const colorKeys = new Set<string>(APPEARANCE_SETTINGS.map((setting) => setting.key));
+      const next = { ...current, theme: { ...current.theme } };
+      for (const key of Object.keys(saved.theme) as (keyof SiteTheme)[]) {
+        if (!colorKeys.has(key)) (next.theme as Record<string, unknown>)[key] = saved.theme[key];
+      }
+      return next;
+    }
+    if (section === "templates") return current;
     const keys: Array<keyof Identity> = section === "brand"
       ? ["name", "shortName", "tagline", "description", "publicUrl", "supportEmail", "copyrightText"]
       : section === "assets"
@@ -394,51 +452,20 @@ export default function AppearancePage() {
             {section === "assets" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Header logo" value={form.identity.logoUrl} onChange={(value) => setIdentity("logoUrl", value)} /><TextField label="Wordmark (optional)" value={form.identity.wordmarkUrl} onChange={(value) => setIdentity("wordmarkUrl", value)} /><TextField label="Footer logo" value={form.identity.footerLogoUrl} onChange={(value) => setIdentity("footerLogoUrl", value)} /><TextField label="Browser favicon" value={form.identity.faviconUrl} onChange={(value) => setIdentity("faviconUrl", value)} /><TextField label="Apple / mobile icon" value={form.identity.appleIconUrl} onChange={(value) => setIdentity("appleIconUrl", value)} /></div> : null}
             {section === "wording" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Community label" value={form.identity.forumLabel} onChange={(value) => setIdentity("forumLabel", value)} /><TextField label="Projects label" value={form.identity.knowledgeBaseLabel} onChange={(value) => setIdentity("knowledgeBaseLabel", value)} /><TextField label="Trusted vendor label" value={form.identity.trustedVendorLabel} onChange={(value) => setIdentity("trustedVendorLabel", value)} /></div> : null}
 
-            {section === "navigation" ? <>
-              <AppearanceGroup title="Public navbar" description="Classic restores the original KeyMoura header. These controls are independent from the staff sidebar.">
-                <Choice label="Navbar style" value={form.theme.publicNavigationStyle} values={["classic", "soft", "framed", "minimal"]} onChange={(value) => setTheme("publicNavigationStyle", value as SiteTheme["publicNavigationStyle"])} />
-                <Choice label="Scroll behavior" value={form.theme.navigationBehavior} values={["auto-hide", "sticky"]} onChange={(value) => setTheme("navigationBehavior", value as SiteTheme["navigationBehavior"])} />
-                <Choice label="Navbar spacing" value={form.theme.navigationDensity} values={["compact", "comfortable"]} onChange={(value) => setTheme("navigationDensity", value as SiteTheme["navigationDensity"])} />
-              </AppearanceGroup>
-              <AppearanceGroup title="Navbar colors" description="Change the header without recoloring cards, buttons, or page content.">
-                <div className="grid gap-4 sm:grid-cols-2"><ColorField label="Navbar background" value={form.theme.navigationBackground} onChange={(value) => setTheme("navigationBackground", value)} /><ColorField label="Navbar text" value={form.theme.navigationText} onChange={(value) => setTheme("navigationText", value)} /><ColorField label="Active link" value={form.theme.navigationActiveText} onChange={(value) => setTheme("navigationActiveText", value)} /><ColorField label="Navbar border" value={form.theme.navigationBorder} onChange={(value) => setTheme("navigationBorder", value)} /></div>
-              </AppearanceGroup>
-              {/* Hover was previously the one navbar state with no control: an
-                  operator could set an active colour but nothing happened when a
-                  customer moved the pointer over a link, which on a light navbar
-                  read as an unresponsive header. */}
-              <AppearanceGroup title="Navbar link hover" description="What a primary navigation link looks like under the pointer, and inside the More and account menus.">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ColorField label="Hover background" value={form.theme.navigationHoverBackground} onChange={(value) => setTheme("navigationHoverBackground", value)} />
-                  <ColorField label="Hover text" value={form.theme.navigationHoverText} onChange={(value) => setTheme("navigationHoverText", value)} />
-                </div>
-              </AppearanceGroup>
-              <AppearanceGroup title="Navbar utility controls" description="Search, the wishlist, the cart, notifications, and the account control keep their own colors here — they no longer follow the site's primary or secondary/accent colors.">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ColorField label="Utility background" value={form.theme.navigationUtilityBackground} onChange={(value) => setTheme("navigationUtilityBackground", value)} />
-                  <ColorField label="Utility border" value={form.theme.navigationUtilityBorder} onChange={(value) => setTheme("navigationUtilityBorder", value)} />
-                  <ColorField label="Utility text" value={form.theme.navigationUtilityText} onChange={(value) => setTheme("navigationUtilityText", value)} />
-                  <ColorField label="Utility hover background" value={form.theme.navigationUtilityHoverBackground} onChange={(value) => setTheme("navigationUtilityHoverBackground", value)} />
-                  <ColorField label="Utility hover border" value={form.theme.navigationUtilityHoverBorder} onChange={(value) => setTheme("navigationUtilityHoverBorder", value)} />
-                  <ColorField label="Utility hover text" value={form.theme.navigationUtilityHoverText} onChange={(value) => setTheme("navigationUtilityHoverText", value)} />
-                </div>
-              </AppearanceGroup>
-              {/* Counts used to borrow the utility hover colours, so a subtler
-                  hover silently dulled the cart count with it. */}
-              <AppearanceGroup title="Count badges" description="The cart, wishlist, and notification counts, and the unread dot on the account control.">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ColorField label="Badge background" value={form.theme.navigationBadgeBackground} onChange={(value) => setTheme("navigationBadgeBackground", value)} />
-                  <ColorField label="Badge text" value={form.theme.navigationBadgeText} onChange={(value) => setTheme("navigationBadgeText", value)} />
-                </div>
-              </AppearanceGroup>
-              <AppearanceGroup title="Menus and the mobile drawer" description="The dropdown panels and the slide-in menu on phones. Separate from the bar itself, which is usually translucent over the page.">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ColorField label="Menu background" value={form.theme.navigationMobileBackground} onChange={(value) => setTheme("navigationMobileBackground", value)} />
-                  <ColorField label="Menu text" value={form.theme.navigationMobileText} onChange={(value) => setTheme("navigationMobileText", value)} />
-                </div>
-              </AppearanceGroup>
-              <NavbarPreview form={form} />
-            </> : null}
+            {section === "colors" ? (
+              <ColorSection
+                form={form}
+                query={colorQuery}
+                onQueryChange={setColorQuery}
+                onChange={(setting, value) =>
+                  setting.key === "primaryColor"
+                    ? setForm((current) => ({ ...current, primaryColor: value }))
+                    : setting.key === "accentColor"
+                      ? setForm((current) => ({ ...current, accentColor: value }))
+                      : setTheme(setting.key as keyof SiteTheme, value as never)
+                }
+              />
+            ) : null}
 
             {section === "templates" ? <>
               {templatesError ? <Notice tone="danger" role="alert">{templatesError}</Notice> : null}
@@ -530,12 +557,12 @@ export default function AppearancePage() {
               </AppearanceGroup>
             </> : null}
 
-            {section === "theme" ? <>
-              <AppearanceGroup title="Starting point" description="Apply a coordinated palette, then tune any component below. Save your own in Templates.">
+            {section === "styles" ? <>
+              <AppearanceGroup title="Starting point" description="Apply a coordinated palette, then tune anything below. Save your own under Saved looks.">
                 <div className="grid gap-3 sm:grid-cols-3">{Object.entries(BUILT_IN_PRESETS).map(([name, preset]) => <button key={name} type="button" onClick={() => applyTemplate(name, preset)} className="ui-card ui-card-hover text-left"><TemplateSwatch primary={preset.primaryColor} accent={preset.accentColor} /><span className="mt-3 block text-sm font-semibold">{name}</span><span className="mt-1 block text-xs text-brand-textMuted">Apply palette</span></button>)}</div>
               </AppearanceGroup>
 
-              <AppearanceGroup title="Layout & type" description="Set the overall density and silhouette used everywhere.">
+              <AppearanceGroup title="Layout & type" description="Storefront and staff. Sets the overall density and silhouette used everywhere.">
                 <Choice label="Page background" value={form.theme.backgroundStyle} values={["gradient", "solid", "spotlight"]} onChange={(value) => setTheme("backgroundStyle", value as SiteTheme["backgroundStyle"])} />
                 <Choice label="Content width" value={form.theme.contentWidth} values={["standard", "wide", "full"]} onChange={(value) => setTheme("contentWidth", value as SiteTheme["contentWidth"])} />
                 <Choice label="Spacing" value={form.theme.density} values={["compact", "comfortable"]} onChange={(value) => setTheme("density", value as SiteTheme["density"])} />
@@ -543,20 +570,29 @@ export default function AppearancePage() {
                 <Choice label="Corner shape" value={form.theme.radius} values={["soft", "rounded", "pill"]} onChange={(value) => setTheme("radius", value as SiteTheme["radius"])} />
               </AppearanceGroup>
 
-              <AppearanceGroup title="Components" description="These controls now drive the same shared components on every major screen.">
+              <AppearanceGroup title="Control shapes" description="Storefront and staff. The shape of each control; its colours are under Colours.">
                 <Choice label="Primary buttons" value={form.theme.primaryButtonStyle} values={["solid", "soft", "outline", "framed"]} onChange={(value) => setTheme("primaryButtonStyle", value as SiteTheme["primaryButtonStyle"])} />
                 <Choice label="Secondary buttons" value={form.theme.secondaryButtonStyle} values={["solid", "soft", "outline", "ghost", "framed"]} onChange={(value) => setTheme("secondaryButtonStyle", value as SiteTheme["secondaryButtonStyle"])} />
                 <Choice label="Tabs" value={form.theme.tabStyle} values={["soft", "framed", "underline"]} onChange={(value) => setTheme("tabStyle", value as SiteTheme["tabStyle"])} />
                 <Choice label="Cards & panels" value={form.theme.cardStyle} values={["soft", "solid", "outline", "elevated"]} onChange={(value) => setTheme("cardStyle", value as SiteTheme["cardStyle"])} />
                 <Choice label="Inputs" value={form.theme.inputStyle} values={["soft", "solid", "outline", "filled"]} onChange={(value) => setTheme("inputStyle", value as SiteTheme["inputStyle"])} />
-                <Choice label="Staff navigation" value={form.theme.navigationStyle} values={["soft", "framed", "minimal"]} onChange={(value) => setTheme("navigationStyle", value as SiteTheme["navigationStyle"])} />
                 <Choice label="Surface shadows" value={form.theme.shadowStyle} values={["none", "soft", "glow"]} onChange={(value) => setTheme("shadowStyle", value as SiteTheme["shadowStyle"])} />
                 <Choice label="Border contrast" value={form.theme.borderStrength} values={["subtle", "standard", "strong"]} onChange={(value) => setTheme("borderStrength", value as SiteTheme["borderStrength"])} />
               </AppearanceGroup>
 
-              <AppearanceGroup title="Brand colors" description="The two colors used for actions, selections, links, and navigation.">
-                <div className="grid gap-4 sm:grid-cols-2"><ColorField label="Primary actions" value={form.primaryColor} onChange={(value) => setForm((current) => ({ ...current, primaryColor: value }))} /><ColorField label="Accent / selected states" value={form.accentColor} onChange={(value) => setForm((current) => ({ ...current, accentColor: value }))} /></div>
-                <details className="ui-card mt-4"><summary className="cursor-pointer font-semibold">Advanced palette</summary><p className="mt-1 text-xs text-brand-textMuted">Fine-tune surfaces and text only when the preset needs adjustment.</p><div className="mt-4 grid gap-4 sm:grid-cols-2">{([ ["background", "Page background"], ["backgroundEnd", "Background gradient end"], ["surface", "Cards and panels"], ["surfaceStrong", "Inputs and raised panels"], ["text", "Body text"], ["headingText", "Headings"], ["mutedText", "Muted text"], ["linkText", "Links"], ["border", "Borders"], ["primaryButtonText", "Primary button text"], ["secondaryButtonText", "Secondary button text"] ] as const).map(([key, label]) => <ColorField key={key} label={label} value={form.theme[key]} onChange={(value) => setTheme(key, value)} />)}</div></details>
+              {/* The navbar's own shape controls live beside the navbar, not in a
+                  list of general component styles. "Navbar style" sitting between
+                  "Inputs" and "Surface shadows" was how a storefront-only control
+                  ended up reading as a site-wide one. */}
+              <AppearanceGroup title="Navigation bar — storefront only" description="Classic restores the original KeyMoura header. None of these touch the staff sidebar.">
+                <Choice label="Navbar style" value={form.theme.publicNavigationStyle} values={["classic", "soft", "framed", "minimal"]} onChange={(value) => setTheme("publicNavigationStyle", value as SiteTheme["publicNavigationStyle"])} />
+                <Choice label="Scroll behavior" value={form.theme.navigationBehavior} values={["auto-hide", "sticky"]} onChange={(value) => setTheme("navigationBehavior", value as SiteTheme["navigationBehavior"])} />
+                <Choice label="Navbar spacing" value={form.theme.navigationDensity} values={["compact", "comfortable"]} onChange={(value) => setTheme("navigationDensity", value as SiteTheme["navigationDensity"])} />
+                <NavbarPreview form={form} />
+              </AppearanceGroup>
+
+              <AppearanceGroup title="Staff area only" description="Changes these admin screens. Customers never see it.">
+                <Choice label="Staff sidebar" value={form.theme.navigationStyle} values={["soft", "framed", "minimal"]} onChange={(value) => setTheme("navigationStyle", value as SiteTheme["navigationStyle"])} />
               </AppearanceGroup>
             </> : null}
           </section>
@@ -589,6 +625,177 @@ export default function AppearancePage() {
   );
 }
 
+/**
+ * The colour editor: one searchable list, grouped by what each colour touches.
+ *
+ * Every reported confusion on this page was the same shape — "I can see the
+ * thing on my storefront, I cannot find the control for it". So the search
+ * matches against the *screen elements* each setting reaches, not only its
+ * label: typing "customizable", "cart" or "custom project" finds the right
+ * control without knowing the token is called an accent or a badge.
+ */
+function ColorSection({
+  form,
+  query,
+  onQueryChange,
+  onChange,
+}: {
+  form: Appearance;
+  query: string;
+  onQueryChange: (value: string) => void;
+  onChange: (setting: AppearanceSetting, value: string) => void;
+}) {
+  const matches = searchAppearanceSettings(query);
+  const matched = new Set(matches.map((setting) => setting.key));
+  const groups = APPEARANCE_GROUPS.map((group) => ({
+    ...group,
+    settings: matches.filter((setting) => setting.group === group.id),
+  })).filter((group) => group.settings.length > 0);
+
+  const valueOf = (setting: AppearanceSetting) =>
+    setting.key === "primaryColor"
+      ? form.primaryColor
+      : setting.key === "accentColor"
+        ? form.accentColor
+        : (form.theme[setting.key as keyof SiteTheme] as string);
+
+  return (
+    <>
+      <div>
+        <label className="block">
+          <span className="ui-label">Search colours</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Try: cart, badge, button, customizable, navbar, input"
+            className="ui-input"
+          />
+        </label>
+        <p aria-live="polite" className="mt-2 text-xs text-brand-textMuted">
+          {query.trim()
+            ? `${matched.size} of ${APPEARANCE_SETTINGS.length} colours match “${query.trim()}”.`
+            : `${APPEARANCE_SETTINGS.length} colours, grouped by what they change.`}
+        </p>
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="ui-empty-state">
+          Nothing matches “{query.trim()}”. Try the name of something you can see on the site — “cart”, “price”,
+          “badge”, “menu”.
+        </p>
+      ) : null}
+
+      {groups.map((group) => (
+        <AppearanceGroup
+          key={group.id}
+          title={group.label}
+          description={group.description}
+          scope={SCOPE_LABEL[group.scope]}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            {group.settings.map((setting) => (
+              <SettingField
+                key={setting.key}
+                setting={setting}
+                value={valueOf(setting)}
+                // What the element renders as while the setting is unset. Every
+                // optional setting today follows the accent, so that is the
+                // honest swatch to show.
+                inherited={form.accentColor}
+                onChange={(value) => onChange(setting, value)}
+              />
+            ))}
+          </div>
+        </AppearanceGroup>
+      ))}
+    </>
+  );
+}
+
+/**
+ * One colour, with the thing it changes stated beside it.
+ *
+ * `Used for` is the whole point. A label alone ("Secondary button text") only
+ * works for somebody who already knows the vocabulary; the list underneath is
+ * what lets an owner recognise the control for the button they are looking at.
+ */
+function SettingField({
+  setting,
+  value,
+  inherited,
+  onChange,
+}: {
+  setting: AppearanceSetting;
+  value: string;
+  /** What this element renders as today when the setting is left unset. */
+  inherited: string;
+  onChange: (value: string) => void;
+}) {
+  const describedBy = `appearance-help-${setting.key}`;
+  const isUnset = Boolean(setting.optional) && !value;
+
+  return (
+    <div className="rounded-[var(--control-radius)] border border-brand-border p-3">
+      <label className="block">
+        <span className="ui-label">{setting.label}</span>
+        <span className="flex gap-2">
+          {/*
+            An unset optional setting shows the colour it currently *renders* as,
+            so the swatch is never a lie — but the text field beside it stays
+            empty and the caption says it is following something else. A picker
+            pre-filled with a stored-looking hex would make "unset" indis-
+            tinguishable from "set to exactly the accent", and the two behave
+            differently the next time the palette changes.
+          */}
+          <input
+            type="color"
+            value={value || inherited}
+            aria-label={`${setting.label} colour picker`}
+            onChange={(event) => onChange(event.target.value)}
+            className="ui-color-input"
+          />
+          <input
+            value={value}
+            aria-describedby={describedBy}
+            placeholder={isUnset ? "Automatic" : undefined}
+            onChange={(event) => onChange(event.target.value)}
+            className="ui-input font-mono uppercase"
+            maxLength={7}
+          />
+          {setting.optional && value ? (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="ui-btn ui-btn-ghost !px-2 text-xs"
+              title={`Go back to following ${setting.optional.inheritsFrom}`}
+            >
+              Clear
+            </button>
+          ) : null}
+        </span>
+      </label>
+      <p id={describedBy} className="mt-2 text-xs text-brand-textMuted">
+        {setting.description}
+      </p>
+      <p className="mt-2 text-xs text-brand-textMuted">
+        <span className="font-semibold text-brand-text">Used for: </span>
+        {setting.usedBy.join(" · ")}
+      </p>
+      {isUnset && setting.optional ? (
+        <p className="mt-2 text-xs text-brand-textMuted">
+          <b>Automatic</b> — following {setting.optional.inheritsFrom}. Pick a colour to set it on its own.
+        </p>
+      ) : null}
+      {setting.shared ? (
+        <p className="mt-2 text-xs text-amber-300">
+          Shared — changing this moves everything listed above at once.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function TemplateSwatch({ primary, accent }: { primary: string; accent: string }) {
   return (
     <span className="flex gap-1.5" aria-hidden="true">
@@ -598,15 +805,166 @@ function TemplateSwatch({ primary, accent }: { primary: string; accent: string }
   );
 }
 
+/**
+ * A labelled caption under a previewed element.
+ *
+ * Every preview piece says which settings drive it. That is the difference
+ * between a preview that shows a change and a preview that explains one — the
+ * reported confusion was never "I cannot see the button", it was "I cannot
+ * find the control for the button I can see".
+ */
+function PreviewNote({ children }: { children: ReactNode }) {
+  return <p className="mt-2 text-[11px] leading-4 text-brand-textMuted">{children}</p>;
+}
+
+function PreviewBlock({ title, note, children }: { title: string; note: ReactNode; children: ReactNode }) {
+  return (
+    <div className="rounded-[var(--control-radius)] border border-brand-border p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-brand-textMuted">{title}</p>
+      <div className="mt-3">{children}</div>
+      <PreviewNote>{note}</PreviewNote>
+    </div>
+  );
+}
+
+/**
+ * The live preview.
+ *
+ * It previews the **storefront** first. The old version showed metric cards, a
+ * stepper and a tab strip — all staff components — so an owner tuning the shop
+ * customers see had nothing on screen that resembled it, and the two elements
+ * they actually asked about (the custom-project CTA and the "Customizable"
+ * badge) appeared nowhere at all.
+ */
 function AppearancePreview({ form }: { form: Appearance }) {
-  return <section className="ui-preview ui-card sticky top-5 h-fit space-y-4" aria-label="Live appearance preview">
-    <div className="flex items-center gap-3">{form.identity.logoUrl ? <Image src={form.identity.logoUrl} alt="" width={48} height={48} unoptimized className="h-12 w-12 object-contain" /> : null}<div><p className="ui-eyebrow">Live preview</p><h2 className="text-2xl font-semibold">{form.identity.shortName || form.identity.name}</h2><p className="text-sm text-brand-textMuted">{form.identity.tagline}</p></div></div>
-    <div className="ui-tabs w-full" role="tablist" aria-label="Preview tabs"><button type="button" role="tab" aria-selected="true" className="ui-tab is-active">Overview</button><button type="button" role="tab" aria-selected="false" className="ui-tab">Orders</button><button type="button" role="tab" aria-selected="false" className="ui-tab">Activity</button></div>
-    <div className="grid grid-cols-2 gap-3"><MetricCard label="Active orders" value="12" detail="3 need attention" /><MetricCard label="Revenue" value="$1,240" detail="Last 30 days" /></div>
-    <div className="ui-stepper"><div className="ui-step is-complete" data-step="1">Request</div><div className="ui-step is-current" data-step="2">Quote</div><div className="ui-step" data-step="3">Build</div></div>
-    <Notice tone="warning">One order needs your approval.</Notice>
-    <div className="ui-card"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">Custom shift knob</p><p className="mt-1 text-xs text-brand-textMuted">Shared cards, labels, borders, and actions update immediately.</p></div><Badge tone="accent">In review</Badge></div><label className="mt-4 block"><span className="ui-label">Customer notes</span><input className="ui-input" placeholder="Add a note…" /></label><div className="ui-action-row mt-4"><button type="button" className="ui-btn ui-btn-primary">Primary action</button><button type="button" className="ui-btn ui-btn-secondary">Secondary action</button><button type="button" className="ui-btn ui-btn-ghost">Quiet action</button></div></div>
-  </section>;
+  return (
+    <section className="ui-preview ui-card sticky top-5 h-fit space-y-3 self-start" aria-label="Live appearance preview">
+      <div className="flex items-center gap-3">
+        {form.identity.logoUrl ? (
+          <Image src={form.identity.logoUrl} alt="" width={40} height={40} unoptimized className="h-10 w-10 object-contain" />
+        ) : null}
+        <div>
+          <p className="ui-eyebrow">Live preview</p>
+          <h2 className="text-xl font-semibold">{form.identity.shortName || form.identity.name}</h2>
+        </div>
+      </div>
+
+      <PreviewBlock
+        title="Product card"
+        note={
+          <>
+            Background: <b>Card background</b> · Title: <b>Heading text</b> · Category and description:{" "}
+            <b>Quiet text</b> · Price: <b>Primary brand colour</b> · Edge: <b>Border colour</b>
+          </>
+        }
+      >
+        <div className="ui-card !p-3">
+          <div className="flex items-center justify-between gap-2 text-xs text-brand-textMuted">
+            <span>Interior</span>
+            <span className="ui-badge ui-badge-accent">Customizable</span>
+          </div>
+          <h3 className="mt-2 text-base font-semibold">Custom shift knob</h3>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-brand-textMuted">
+            Machined to your spline pattern and finish.
+          </p>
+          <p className="mt-2 text-lg font-semibold text-brand-primary">$125.00</p>
+        </div>
+      </PreviewBlock>
+
+      {/* The badge the owner asked about, shown on its own as well as on the
+          card — and honest about the fact that it has no control of its own. */}
+      <PreviewBlock
+        title="“Customizable” badge"
+        note={
+          <>
+            Background: <b>Badge background</b> · Text: <b>Badge text</b> · Border: <b>Badge border</b>. All three
+            are under Labels &amp; badges, and each follows <b>Accent colour</b> until you set it.
+          </>
+        }
+      >
+        <span className="ui-badge ui-badge-accent">Customizable</span>
+      </PreviewBlock>
+
+      <PreviewBlock
+        title="Custom project CTA"
+        note={
+          <>
+            Background: <b>Secondary button background</b> · Text: <b>Secondary button text</b> · Border:{" "}
+            <b>Secondary button border</b> · Shape: <b>Secondary buttons</b> under Shapes &amp; density (currently{" "}
+            <b>{form.theme.secondaryButtonStyle}</b>)
+          </>
+        }
+      >
+        <button type="button" className="ui-btn ui-btn-secondary">
+          Need something else? Start a custom project
+        </button>
+      </PreviewBlock>
+
+      <PreviewBlock
+        title="Buttons"
+        note={
+          <>
+            Primary fill: <b>Primary brand colour</b> · Primary label: <b>Primary button text</b> · Secondary
+            label: <b>Secondary button text</b> · Quiet: <b>Body text</b>
+          </>
+        }
+      >
+        <div className="ui-action-row">
+          <button type="button" className="ui-btn ui-btn-primary">Add to Cart</button>
+          <button type="button" className="ui-btn ui-btn-secondary">Request a Custom Version</button>
+          <button type="button" className="ui-btn ui-btn-ghost">Cancel</button>
+        </div>
+      </PreviewBlock>
+
+      <PreviewBlock
+        title="Form field"
+        note={
+          <>
+            Label: <b>Quiet text</b> · Field background: <b>Input &amp; raised background</b> · Outline:{" "}
+            <b>Border colour</b> · Typed value: <b>Body text</b>
+          </>
+        }
+      >
+        <label className="block">
+          <span className="ui-label">Customer notes</span>
+          <input className="ui-input" defaultValue="Brushed finish, no logo" />
+        </label>
+      </PreviewBlock>
+
+      <PreviewBlock
+        title="Status badges"
+        note={
+          <>
+            “In review” follows <b>Accent colour</b>. In stock and Sold out are deliberately fixed green and red —
+            a status colour that could be reassigned would stop meaning anything.
+          </>
+        }
+      >
+        <div className="flex flex-wrap gap-2">
+          <Badge tone="accent">In review</Badge>
+          <span className="ui-badge ui-badge-success">In stock</span>
+          <span className="ui-badge ui-badge-danger">Sold out</span>
+        </div>
+      </PreviewBlock>
+
+      <PreviewBlock
+        title="Staff panel"
+        note={
+          <>
+            The same <b>Card background</b>, <b>Border colour</b> and <b>Heading text</b> as the storefront. Only
+            the staff sidebar has settings of its own.
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard label="Active orders" value="12" detail="3 need attention" />
+          <MetricCard label="Revenue" value="$1,240" detail="Last 30 days" />
+        </div>
+      </PreviewBlock>
+
+      <Notice tone="warning">Warnings keep their own colour, whatever the theme.</Notice>
+    </section>
+  );
 }
 
 function NavbarPreview({ form }: { form: Appearance }) {
@@ -617,16 +975,28 @@ function SectionTitle({ title, text }: { title: string; text: string }) {
   return <div><h2 className="text-lg font-semibold">{title}</h2><p className="mt-1 text-sm text-brand-textMuted">{text}</p></div>;
 }
 
-function AppearanceGroup({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <fieldset className="rounded-[var(--control-radius)] border border-brand-border p-4"><legend className="px-2 text-sm font-semibold">{title}</legend><p className="mb-4 text-xs text-brand-textMuted">{description}</p><div className="space-y-5">{children}</div></fieldset>;
+/**
+ * `scope` says whether a group touches the storefront, the staff area, or both.
+ *
+ * Without it the two were interleaved with nothing to tell them apart — a
+ * staff-only sidebar control sat between two site-wide ones, so a shop owner
+ * reasonably read the whole list as customer-facing.
+ */
+function AppearanceGroup({ title, description, scope, children }: { title: string; description: string; scope?: string; children: ReactNode }) {
+  return (
+    <fieldset className="rounded-[var(--control-radius)] border border-brand-border p-4">
+      <legend className="px-2 text-sm font-semibold">{title}</legend>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {scope ? <Badge>{scope}</Badge> : null}
+        <p className="text-xs text-brand-textMuted">{description}</p>
+      </div>
+      <div className="space-y-5">{children}</div>
+    </fieldset>
+  );
 }
 
 function TextField({ label, value, onChange, wide = false }: { label: string; value: string; onChange: (value: string) => void; wide?: boolean }) {
   return <label className={wide ? "block sm:col-span-2" : "block"}><span className="ui-label">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="ui-input" /></label>;
-}
-
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="block"><span className="ui-label">{label}</span><span className="flex gap-2"><input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="ui-color-input" /><input value={value} onChange={(event) => onChange(event.target.value)} className="ui-input font-mono uppercase" maxLength={7} /></span></label>;
 }
 
 function Choice({ label, value, values, onChange }: { label: string; value: string; values: string[]; onChange: (value: string) => void }) {

@@ -421,22 +421,31 @@
     box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--brand-primary) 80%, transparent);
   }
 
+  /*
+   * Secondary buttons — the catalog's "Need something else? Start a custom
+   * project" among them.
+   *
+   * Each style keeps its own default as the `var()` fallback, so the three
+   * optional overrides win when set and change nothing when they are not. Only
+   * `--km-secondary-button-text` was configurable before, which is why an owner
+   * could change the words' colour but not the fill or the edge.
+   */
   .ui-btn-secondary {
-    background: transparent;
-    border-color: var(--brand-accent);
+    background: var(--km-secondary-button-bg, transparent);
+    border-color: var(--km-secondary-button-border, var(--brand-accent));
     color: var(--km-secondary-button-text, var(--text));
   }
 
-  .ui-btn-secondary:hover { background: var(--accent-soft); }
+  .ui-btn-secondary:hover { background: var(--km-secondary-button-bg, var(--accent-soft)); }
   [data-secondary-button-style="solid"] .ui-btn-secondary,
-  [data-secondary-button-style="solid"] .catalog-action-secondary { background: var(--brand-accent); border-color: var(--brand-accent); }
+  [data-secondary-button-style="solid"] .catalog-action-secondary { background: var(--km-secondary-button-bg, var(--brand-accent)); border-color: var(--km-secondary-button-border, var(--brand-accent)); }
   [data-secondary-button-style="soft"] .ui-btn-secondary,
-  [data-secondary-button-style="soft"] .catalog-action-secondary { background: var(--accent-soft); border-color: color-mix(in srgb, var(--brand-accent) 55%, transparent); }
+  [data-secondary-button-style="soft"] .catalog-action-secondary { background: var(--km-secondary-button-bg, var(--accent-soft)); border-color: var(--km-secondary-button-border, color-mix(in srgb, var(--brand-accent) 55%, transparent)); }
   [data-secondary-button-style="ghost"] .ui-btn-secondary,
-  [data-secondary-button-style="ghost"] .catalog-action-secondary { background: transparent; border-color: transparent; }
+  [data-secondary-button-style="ghost"] .catalog-action-secondary { background: var(--km-secondary-button-bg, transparent); border-color: var(--km-secondary-button-border, transparent); }
   [data-secondary-button-style="framed"] .ui-btn-secondary,
   [data-secondary-button-style="framed"] .catalog-action-secondary {
-    background: var(--accent-soft); color: var(--brand-accent);
+    background: var(--km-secondary-button-bg, var(--accent-soft)); color: var(--km-secondary-button-text, var(--brand-accent));
     box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--brand-accent) 80%, transparent);
   }
 
@@ -590,7 +599,15 @@
   .ui-metric-detail { margin-top: .5rem; color: var(--muted); font-size: .75rem; line-height: 1.35rem; }
   .ui-empty-state { border-radius: var(--control-radius); border: 1px dashed var(--border); background: color-mix(in srgb, var(--panel) 76%, transparent); padding: 2rem 1rem; text-align: center; color: var(--muted); font-size: .875rem; }
   .ui-badge { display: inline-flex; min-height: 1.5rem; align-items: center; justify-content: center; gap: .3rem; border-radius: 9999px; border: 1px solid var(--border); background: var(--panel); padding: .15rem .55rem; color: var(--text); font-size: .72rem; font-weight: 600; line-height: 1rem; }
-  .ui-badge-accent { border-color: color-mix(in srgb, var(--brand-accent) 45%, var(--border)); background: var(--accent-soft); color: var(--brand-accent); }
+  /* The "Customizable" badge on product cards, and every other accent badge.
+     Three overrides, each falling back to the accent derivation it has always
+     used — so this badge finally has controls of its own without changing what
+     an untouched site looks like. */
+  .ui-badge-accent {
+    border-color: var(--km-badge-border, color-mix(in srgb, var(--brand-accent) 45%, var(--border)));
+    background: var(--km-badge-bg, var(--accent-soft));
+    color: var(--km-badge-text, var(--brand-accent));
+  }
   .ui-badge-warning { border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border)); background: var(--brand-soft); color: var(--brand-primary); }
   .ui-badge-danger { border-color: color-mix(in srgb, #fb7185 44%, var(--border)); background: color-mix(in srgb, #fb7185 10%, transparent); color: #fecdd3; }
   .ui-badge-success { border-color: color-mix(in srgb, #4ade80 40%, var(--border)); background: color-mix(in srgb, #4ade80 9%, transparent); color: #bbf7d0; }
@@ -717,14 +734,58 @@
      scrollbar on the whole page. */
   .staff-nav-link-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* Compact rail: icons only, labels available to screen readers and as titles. */
-  .staff-nav[data-compact="true"] .staff-nav-link { justify-content: center; padding-inline: 0.5rem; }
-  .staff-nav[data-compact="true"] .staff-nav-groups { gap: 0.75rem; }
-  .staff-nav[data-compact="true"] .staff-nav-head { justify-content: center; }
+  /*
+   * Compact rail: icons only, labels out of the layout, nothing reserving width.
+   *
+   * The rail's own box has to shrink too, not just its contents — the panel
+   * padding drops to 0.5rem so a 40px row centres inside 72px with 16px of
+   * chrome, rather than the 0.75rem that suits a 280px sidebar.
+   */
+  .staff-nav[data-compact="true"] { padding: 0.5rem; overflow: visible; }
+  .staff-nav[data-compact="true"] .staff-nav-link { justify-content: center; padding-inline: 0; position: relative; }
+  .staff-nav[data-compact="true"] .staff-nav-groups { gap: 0.5rem; }
+  /* No bottom border or bottom padding under a single centred button: a rule
+     across 56px reads as a divider with nothing above it. */
+  .staff-nav[data-compact="true"] .staff-nav-head {
+    justify-content: center;
+    padding: 0 0 0.5rem;
+    border-bottom: 0;
+    margin-bottom: 0.5rem;
+  }
   .staff-nav[data-compact="true"] .staff-nav-group + .staff-nav-group {
     border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    padding-top: 0.75rem;
+    padding-top: 0.5rem;
   }
+
+  /*
+   * The collapsed rail's tooltip.
+   *
+   * `title` is not an option: no browser raises it on keyboard focus, so the
+   * previous rail was unlabelled for anyone tabbing it. This shows on hover and
+   * on focus, and is `aria-hidden` because the link already carries an sr-only
+   * accessible name.
+   */
+  .staff-nav-tip {
+    position: absolute;
+    left: calc(100% + 0.5rem);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 40;
+    white-space: nowrap;
+    border-radius: 0.375rem;
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+    padding: 0.25rem 0.5rem;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-out;
+  }
+  .staff-nav-link:hover .staff-nav-tip,
+  .staff-nav-link:focus-visible .staff-nav-tip { opacity: 1; }
 
   .staff-nav-in-drawer { border: 0; background: transparent; padding: 0; }
 
@@ -1806,10 +1867,32 @@
 
   @media (min-width: 1024px) {
     .staff-shell {
-      grid-template-columns: 280px 1fr;
+      grid-template-columns: 280px minmax(0, 1fr);
       gap: 1.25rem;
     }
+
+    /*
+     * The collapsed rail, and the line the whole defect turned on.
+     *
+     * Compact mode used to be an attribute on the <nav> two levels down, so the
+     * column stayed 280px and collapsing bought the page nothing. `data-compact`
+     * now lives on this element, which is the only one that can change the
+     * column — and `minmax(0, 1fr)` on the content column means the 208px it
+     * gains is real rather than absorbed by a min-content floor.
+     *
+     * 4.5rem = 72px: a 40px row plus 0.5rem of rail padding either side, which
+     * is a comfortable centred icon target and inside the 64–80px the brief
+     * asked for.
+     */
+    .staff-shell[data-compact="true"] {
+      grid-template-columns: 4.5rem minmax(0, 1fr);
+    }
   }
+
+  /* Below lg the rail is not rendered and the drawer takes over, so a compact
+     preference set on a desktop must not reach the phone layout. */
+  .staff-shell-rail { display: none; }
+  @media (min-width: 1024px) { .staff-shell-rail { display: block; min-width: 0; } }
 
   /*
    * Scroll reveals.
