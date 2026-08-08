@@ -10,6 +10,7 @@ import {
   ROLE_SELECT,
   isRoleBadgeIcon,
   normalizeBadgeIcon,
+  roleWriteErrorMessage,
   toRoleDbColumns,
 } from "@/lib/staff/roleSchema";
 
@@ -58,7 +59,7 @@ const ROLE_KEY_PATTERN = /^[a-z][a-z0-9_-]{1,39}$/;
 type CreatePayload = {
   key: string;
   label: string;
-  description: string | null;
+  description: string;
   priority: number;
   is_staff: boolean;
   badge_bg: string;
@@ -93,7 +94,10 @@ function parseCreatePayload(v: unknown): { value: CreatePayload } | { error: str
     value: {
       key,
       label,
-      description: isString(r.description) ? r.description : null,
+      // `''`, never `null`. `roles.description` is NOT NULL DEFAULT '', and an
+      // explicit null overrides the default instead of triggering it — which is
+      // what refused every create the two-field form has ever attempted.
+      description: isString(r.description) ? r.description : "",
       priority: isNumber(r.priority) ? Math.trunc(r.priority) : 0,
       is_staff: isBoolean(r.is_staff) ? r.is_staff : false,
       badge_bg: isString(r.badge_bg) ? r.badge_bg : DEFAULT_BADGE_BG,
@@ -142,12 +146,8 @@ export async function POST(req: NextRequest) {
 
   const { error } = await routeServiceClient.from("roles").insert(row);
   if (error) {
-    // 23505 is the primary key: a role with this key already exists. Naming the
-    // cause beats echoing a constraint name at somebody creating a role.
-    if (error.code === "23505") {
-      return NextResponse.json({ error: "A role with that key already exists." }, { status: 409 });
-    }
-    return NextResponse.json({ error: "Could not create the role." }, { status: 400 });
+    const { message, status } = roleWriteErrorMessage(error, "create");
+    return NextResponse.json({ error: message }, { status });
   }
 
   return NextResponse.json({ ok: true }, { status: 200 });
