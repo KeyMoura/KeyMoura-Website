@@ -172,6 +172,47 @@ export const EXTRA_CUSTOMER_VARIABLES = [
   "date",
 ] as const;
 
+/**
+ * Placeholders in a template that will not be substituted.
+ *
+ * The sender replaces exactly `/\{\{([a-z_]+)\}\}/g`. Anything else is left in
+ * the message **verbatim** and mailed to the customer as typed — so
+ * `{{ customer_name }}`, `{Customer_Name}` and `{{first-name}}` are not
+ * "ignored", they are delivered. A staff member has no way to discover that
+ * short of sending themselves a test.
+ *
+ * Two distinct problems are reported, because they fail differently:
+ *
+ * - **malformed** — never matched, so the literal braces reach the customer.
+ * - **unknown** — correctly formed but not a variable anything supplies, so it
+ *   is replaced with an empty string and the sentence quietly loses a word.
+ *
+ * Returned as text to show rather than thrown: this is a warning beside the
+ * field, not a refusal. Some of these are legitimately intentional — a template
+ * about JSON, or a brace in prose — and refusing to save would be wrong.
+ */
+export function findPlaceholderProblems(text: string): { malformed: string[]; unknown: string[] } {
+  const source = typeof text === "string" ? text : "";
+  const allowed = new Set<string>(CUSTOMER_SAFE_VARIABLES);
+
+  const unknown: string[] = [];
+  for (const match of source.matchAll(/\{\{([a-z_]+)\}\}/g)) {
+    if (!allowed.has(match[1]) && !unknown.includes(match[0])) unknown.push(match[0]);
+  }
+
+  const malformed: string[] = [];
+  // Anything brace-wrapped that the sender's pattern would not match: single
+  // braces, spaces inside, capitals, hyphens, digits.
+  for (const match of source.matchAll(/\{\{?[^{}]*\}?\}/g)) {
+    const token = match[0];
+    if (/^\{\{[a-z_]+\}\}$/.test(token)) continue; // well-formed; handled above
+    if (!/[A-Za-z]/.test(token)) continue; // `{}` or `{ }` is not a placeholder attempt
+    if (!malformed.includes(token)) malformed.push(token);
+  }
+
+  return { malformed, unknown };
+}
+
 /** Drop anything that is not an allow-listed customer-safe variable. */
 export function filterCustomerVariables(input: Record<string, string>): Record<string, string> {
   const allowed = new Set<string>(EXTRA_CUSTOMER_VARIABLES);
@@ -841,6 +882,40 @@ export const EMAIL_EVENTS: readonly EmailEvent[] = [
 ];
 
 /** Every event, indexed by its matrix id. */
+/**
+ * Every event that sends a given template.
+ *
+ * `/staff/emails` uses this to answer the question the page could not answer
+ * before: *what actually causes this email to go out?* The editor previously
+ * carried a hand-written sentence per template, maintained beside this
+ * catalogue rather than from it — a second source of truth for the one fact a
+ * staff member is relying on when they change the wording.
+ */
+export function eventsForTemplate(templateKey: string): EmailEvent[] {
+  return EMAIL_EVENTS.filter((event) => event.templateKey === templateKey);
+}
+
+/**
+ * Whether editing this template can currently change any email that is sent.
+ *
+ * A template whose every event is `wired: false` is editable, saved, and reaches
+ * nobody — which is exactly the "dead template setting pretending to control
+ * production email" this audit was asked to rule out. Rather than hide the row
+ * (it is a real template with a real, specified trigger that is simply not built
+ * yet) the page says so, and says what it is waiting on.
+ */
+export function templateWiring(templateKey: string): {
+  events: EmailEvent[];
+  wired: boolean;
+  /** Set when nothing is wired: why not, taken from the event's own note. */
+  pendingReason: string | null;
+} {
+  const events = eventsForTemplate(templateKey);
+  const wired = events.some((event) => event.wired);
+  const pendingReason = wired ? null : events.find((event) => event.notes)?.notes ?? null;
+  return { events, wired, pendingReason };
+}
+
 export const EMAIL_EVENTS_BY_ID: Readonly<Record<string, EmailEvent>> = Object.freeze(
   Object.fromEntries(EMAIL_EVENTS.map((event) => [event.id, event]))
 );
