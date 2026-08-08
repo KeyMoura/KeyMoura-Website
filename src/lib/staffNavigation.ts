@@ -3,22 +3,35 @@ import type { PermissionKey } from "./permissions.ts";
 /**
  * The staff information architecture — one definition, read by everything.
  *
- * The desktop sidebar, the mobile drawer, the breadcrumbs, the page header and
- * the settings index all read this file. Before this pass the sidebar held one
- * list and `StaffContextBar` held a second, overlapping one; they had already
- * drifted, and `/staff/settings/commerce` appeared in neither — it was
- * reachable only by typing the URL, which is the failure mode this module
- * exists to make impossible.
+ * The desktop sidebar, the mobile drawer, the breadcrumbs and the settings
+ * index all read this file. Deliberately pure and dependency-free (no React, no
+ * `next/*`), so the routing rules below are testable as functions rather than
+ * only observable by rendering a page.
  *
- * Deliberately pure and dependency-free (no React, no `next/*`), so the routing
- * rules below are testable as functions rather than only observable by
- * rendering a page.
+ * ## What changed in this pass, and why
+ *
+ * The sidebar listed **27 destinations across 8 groups, all of them expanded**.
+ * Every feature the project had ever shipped had a button, and each button had
+ * the same visual weight — so "Recycle bin" and "Orders" were presented as
+ * equally likely places to be going. A staff member opening the shop in the
+ * morning had to read 27 rows to find the four they use.
+ *
+ * The list is now split by **how often somebody actually needs it**:
+ *
+ * - **Primary** (`secondary: false`) — 16 destinations, always visible, grouped
+ *   by the task rather than by the table they happen to read.
+ * - **Secondary** (`secondary: true`) — the diagnostic, moderation and
+ *   site-content tools, behind one collapsed "More tools" disclosure.
+ *
+ * Nothing was removed. Every route still exists, still has its permissions, and
+ * is still reachable from the menu — the difference is that eleven of them no
+ * longer compete with Orders for attention. Several also appear on the settings
+ * index, which is derived from `settingsSection` below rather than from group
+ * membership, so a tool can sit in "More tools" in the sidebar *and* under
+ * "Access & safety" on `/staff/settings` without being listed twice.
  *
  * **Nothing is listed here that does not exist.** There are no placeholder
  * rows, no disabled "coming later" entries, and no group that renders empty.
- * Routes that are genuinely not built yet are recorded in the ledger, not in
- * the menu — a menu entry that goes nowhere costs a staff member the same click
- * every day and teaches them to distrust the rest of the list.
  */
 
 /** Icon keys. Resolved to real icons in the component; kept as strings here so this module imports nothing. */
@@ -52,9 +65,8 @@ export type StaffNavIcon =
 /**
  * Subsections of the settings index.
  *
- * The settings home was a flat grid of seven cards, so "Recycle bin" carried
- * the same weight as "Commerce" and the page could only be read by scanning
- * every card. These are the four questions the cards answer.
+ * These are the four questions `/staff/settings` answers. An item earns a place
+ * there by carrying `settingsSection`, wherever it sits in the sidebar.
  */
 export type StaffSettingsSection = "store" | "design" | "access" | "system";
 
@@ -66,7 +78,7 @@ export const STAFF_SETTINGS_SECTIONS: readonly {
   { id: "store", label: "Store & checkout", description: "How orders are paid for, delivered and returned." },
   { id: "design", label: "Visual design", description: "What the storefront and the staff area look like." },
   { id: "access", label: "Access & safety", description: "Who can do what, and how the site behaves in an emergency." },
-  { id: "system", label: "System", description: "Housekeeping and recovery." },
+  { id: "system", label: "System", description: "Housekeeping, recovery and the record of what was done." },
 ];
 
 export type StaffNavItem = {
@@ -81,15 +93,15 @@ export type StaffNavItem = {
    */
   anyOf?: readonly PermissionKey[];
   /**
-   * Which block of the settings index this belongs to. Only set on items in the
-   * Settings group; the index drops anything unfiled rather than inventing a
-   * heading for it.
+   * Which block of the settings index this belongs to. Read independently of
+   * which sidebar group the item is in, so a tool can be secondary in the
+   * sidebar and still be a first-class row under Settings.
    */
   settingsSection?: StaffSettingsSection;
   /**
    * Extra path prefixes this item owns for active-state purposes — for routes
    * that live outside their own subtree. `/staff/orders` owns `/staff/orders/…`
-   * by prefix already; this is for the cases that prefix matching cannot see.
+   * by prefix already; this is for the cases prefix matching cannot see.
    */
   alsoOwns?: readonly string[];
 };
@@ -97,26 +109,27 @@ export type StaffNavItem = {
 export type StaffNavGroup = {
   id: string;
   label: string;
+  /**
+   * True for the one group that is folded away behind a disclosure.
+   *
+   * The sidebar renders these items only once the reader asks for them. It is
+   * the difference between "this tool exists" and "this tool is part of your
+   * day", and it is the whole reason the primary list is readable at a glance.
+   */
+  secondary?: boolean;
   /** A group whose items are all hidden is not rendered; see `visibleStaffNav`. */
   items: readonly StaffNavItem[];
 };
 
-/**
- * Permissions that let somebody see the staff area at all.
- *
- * Used by the layout to decide between the navigation and a refusal, and by the
- * dashboard. It is derived from the navigation rather than hand-maintained, so
- * adding a section cannot leave its holders locked out of the shell.
- */
 export const STAFF_NAV: readonly StaffNavGroup[] = [
   /**
-   * **Dashboard** — alone, deliberately.
+   * The four things a shop does, one per group, in the order work travels:
+   * decide what is happening, take the order, make it, send it.
    *
-   * It was the first of four items in a group called "Today", beside Orders,
-   * Production and Fulfillment. Those three are queues; the dashboard is the
-   * answer to "what is going on". Filed as their peer it read as a fourth
-   * queue, and the one page that orients a new staff member looked like a
-   * destination you would only visit if the other three had nothing in them.
+   * Each is a single row rather than a heading over a list, because each *is*
+   * one destination. Orders was previously grouped with Production and
+   * Fulfillment, which invited the reader to wonder which of the three an order
+   * is actually managed from — the answer is Orders, and the layout now says so.
    */
   {
     id: "dashboard",
@@ -130,14 +143,6 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
     ],
   },
-  /**
-   * **Orders** — the canonical order workspace, and the only one.
-   *
-   * On its own rather than sharing a group with Production and Fulfillment,
-   * because those two are queues *into* and *out of* an order rather than
-   * alternative places to edit one. Grouping all three together was a standing
-   * invitation to wonder which of the three an order is actually managed from.
-   */
   {
     id: "orders",
     label: "Orders",
@@ -151,20 +156,9 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
     ],
   },
-  /**
-   * **Operations** — the work between an order arriving and leaving.
-   *
-   * In the order a job travels: it is made (Production), it goes out
-   * (Fulfillment), and the stock behind both is corrected here (Inventory).
-   *
-   * Inventory moved out of the catalog group. Fixing a stock count is
-   * operational work done beside Production and Fulfillment; it was filed with
-   * writing product copy and setting up discount codes, so a staff member
-   * reconciling a count crossed the whole menu to get there.
-   */
   {
-    id: "operations",
-    label: "Operations",
+    id: "production",
+    label: "Production",
     items: [
       {
         href: "/staff/production",
@@ -173,6 +167,12 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         icon: "production",
         anyOf: ["production.view", "production.manage"],
       },
+    ],
+  },
+  {
+    id: "fulfillment",
+    label: "Fulfillment",
+    items: [
       {
         href: "/staff/fulfillment",
         // A queue, not a second order editor. The description says so, because
@@ -183,20 +183,16 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         icon: "truck",
         anyOf: ["fulfillment.view", "fulfillment.manage"],
       },
-      {
-        href: "/staff/inventory",
-        label: "Inventory",
-        description: "On hand, reserved and available stock, with every movement.",
-        icon: "inventory",
-        anyOf: ["inventory.view", "inventory.manage"],
-      },
     ],
   },
   /**
-   * **Store** — what customers can buy, and how it is presented.
+   * **Store** — everything about what customers can buy.
    *
-   * Was "Catalog", which is the word the codebase uses for the route. The
-   * storefront calls this the store, and so does everybody describing the task.
+   * Inventory lives here rather than beside Production. It was moved out to
+   * "Operations" last pass on the theory that correcting a count is operational
+   * work; in practice a staff member goes to Inventory *from* a product, and
+   * splitting the four store surfaces across two groups meant the answer to
+   * "where do I manage the shop" was two places.
    */
   {
     id: "store",
@@ -204,8 +200,10 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
     items: [
       {
         href: "/staff/catalog",
+        // The route still says "catalog"; the menu does not. Route history is
+        // not something a staff member should have to learn.
         label: "Products",
-        description: "Product details, media, options, shipping and stock rules.",
+        description: "Product details, media, pricing, options, shipping and stock rules.",
         icon: "catalog",
         anyOf: ["catalog.view", "catalog.manage"],
       },
@@ -217,6 +215,13 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["catalog.categories.manage"],
       },
       {
+        href: "/staff/inventory",
+        label: "Inventory",
+        description: "On hand, reserved and available stock, with every movement.",
+        icon: "inventory",
+        anyOf: ["inventory.view", "inventory.manage"],
+      },
+      {
         href: "/staff/catalog/discounts",
         label: "Discounts",
         description: "Codes, targeting, limits and the redemption report.",
@@ -225,43 +230,13 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
     ],
   },
-  {
-    id: "customers",
-    label: "Customers",
-    items: [
-      {
-        href: "/staff/security/users",
-        label: "Customers",
-        description: "Accounts, roles, verification and account status.",
-        icon: "users",
-        // The legacy `/staff/info/users` route redirects here; owning it keeps
-        // the sidebar highlighted for the instant before the redirect lands.
-        alsoOwns: ["/staff/info/users"],
-        anyOf: ["users.view"],
-      },
-      {
-        href: "/staff/moderation/reports",
-        label: "Reports",
-        description: "The report queue, escalations and moderation decisions.",
-        icon: "moderation",
-        alsoOwns: ["/staff/moderation"],
-        anyOf: ["moderation.reports.view"],
-      },
-    ],
-  },
   /**
-   * **Business** — reporting, communication and health checks.
+   * **Business** — consulted rather than worked through.
    *
-   * Everything here is consulted rather than worked through: you come to answer
-   * a question or because something is wrong. Keeping it out of the daily path
-   * is the point of the group — Reconciliation and Launch readiness once sat
-   * beside Orders, giving a page somebody opens twice a month the same weight
-   * as the page they live in.
-   *
-   * It was called "Operations", which now names the group above it. That was
-   * the wrong home for the word: production and shipping *are* the operation,
-   * and a name that covered both a workshop queue and a payments audit was not
-   * describing either.
+   * You come here to answer a question or because something is wrong. Keeping
+   * it below the daily path is the point: Reconciliation and Launch readiness
+   * once sat beside Orders, giving a page somebody opens twice a month the same
+   * weight as the page they live in.
    */
   {
     id: "business",
@@ -269,17 +244,12 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
     items: [
       {
         href: "/staff/emails",
-        label: "Emails",
-        description: "Sender details, the templates customers receive, staff alerts and delivery history.",
+        label: "Email",
+        description: "The templates customers receive, delivery history and sender settings.",
         icon: "email",
+        // The delivery log is a tab of this page now, not a route of its own.
+        alsoOwns: ["/staff/emails/deliveries"],
         anyOf: ["emails.manage", "emails.view", "emails.resend"],
-      },
-      {
-        href: "/staff/info/analytics",
-        label: "Analytics",
-        description: "Revenue, orders and site metrics over time.",
-        icon: "analytics",
-        anyOf: ["analytics.view"],
       },
       {
         href: "/staff/reconciliation",
@@ -302,29 +272,134 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         icon: "settings",
         anyOf: ["launch.readiness.view", "operations.health.view"],
       },
+    ],
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    items: [
+      {
+        href: "/staff/settings/commerce",
+        label: "Commerce",
+        description: "Checkout, delivery, pickup, stock rules, returns and cancellation policy.",
+        icon: "commerce",
+        settingsSection: "store",
+        anyOf: ["commerce.settings.view", "commerce.settings.manage"],
+      },
+      {
+        href: "/staff/appearance",
+        label: "Appearance",
+        description: "Colours, logos, wording and control styles for the storefront and the staff area.",
+        icon: "appearance",
+        settingsSection: "design",
+        anyOf: ["appearance.manage"],
+      },
+      {
+        href: "/staff/security/roles",
+        label: "Roles & permissions",
+        description: "Which staff roles can view and manage each area.",
+        icon: "roles",
+        settingsSection: "access",
+        anyOf: ["roles.view"],
+      },
+      {
+        href: "/staff/settings",
+        label: "All settings",
+        description: "Every configuration surface, grouped.",
+        icon: "settings",
+        anyOf: [
+          "commerce.settings.view",
+          "commerce.settings.manage",
+          "appearance.manage",
+          "emails.manage",
+          "emails.view",
+          "security.view",
+          "roles.view",
+          "audit.view",
+          "audit.read",
+          "recycle_bin.view",
+          "users.view",
+        ],
+      },
+    ],
+  },
+  /**
+   * **More tools** — real, supported, and not part of a normal day.
+   *
+   * Folded away rather than deleted. Everything here was a top-level row before
+   * this pass; none of it is opened daily, and all of it stayed in the menu at
+   * full weight because no pass had been willing to say so. Each item is still
+   * one click from the sidebar once the disclosure is open, and the ones that
+   * are genuinely configuration also appear on `/staff/settings`.
+   *
+   * `/staff/community` is deliberately still absent: community is dormant on
+   * the customer side, and a staff entry for a section customers cannot reach
+   * would be an invitation to curate something nobody will read. The route and
+   * its permissions are untouched.
+   */
+  {
+    id: "more",
+    label: "More tools",
+    secondary: true,
+    items: [
+      {
+        href: "/staff/info/analytics",
+        label: "Analytics",
+        description: "Revenue, orders and site metrics over time.",
+        icon: "analytics",
+        anyOf: ["analytics.view"],
+      },
+      {
+        href: "/staff/security/users",
+        label: "People & accounts",
+        // Named for what it is. It was called "Customers", which promised a
+        // customer's orders and history and delivers account administration.
+        description: "Staff and member accounts, roles, verification and account status.",
+        icon: "users",
+        alsoOwns: ["/staff/info/users"],
+        settingsSection: "access",
+        anyOf: ["users.view"],
+      },
+      {
+        href: "/staff/moderation/reports",
+        label: "Reports",
+        description: "The report queue, escalations and moderation decisions.",
+        icon: "moderation",
+        alsoOwns: ["/staff/moderation"],
+        anyOf: ["moderation.reports.view"],
+      },
+      {
+        href: "/staff/security",
+        label: "Site access & safety",
+        description: "Maintenance mode, lockdown, IP restrictions and emergency messaging.",
+        icon: "security",
+        settingsSection: "access",
+        anyOf: ["security.view"],
+      },
+      {
+        href: "/staff/security/verified-perks",
+        label: "Verified perks",
+        description: "Bonus permissions granted to verified members.",
+        icon: "perks",
+        settingsSection: "access",
+        anyOf: ["security.verified_perks.manage"],
+      },
       {
         href: "/staff/security/audit",
         label: "Audit log",
         description: "Sensitive staff and system actions, newest first.",
         icon: "audit",
+        settingsSection: "system",
         anyOf: ["audit.view", "audit.read"],
       },
-    ],
-  },
-  /**
-   * **Site content** — the pages-and-listings side of the site, which is not
-   * the shop and does not belong in the middle of it.
-   *
-   * `/staff/community` is deliberately **not** listed. Community is dormant on
-   * the customer side as of pass 14, and a staff menu entry for a section
-   * customers cannot reach is an invitation to curate something nobody will
-   * read. The route, its data and its permissions are all untouched, so the
-   * page still opens for anyone who has its URL.
-   */
-  {
-    id: "content",
-    label: "Site content",
-    items: [
+      {
+        href: "/staff/security/recycle-bin",
+        label: "Recycle bin",
+        description: "Soft-deleted content awaiting expiry, and restores.",
+        icon: "recycle",
+        settingsSection: "system",
+        anyOf: ["recycle_bin.view"],
+      },
       {
         href: "/staff/info/todo",
         label: "To-do board",
@@ -355,90 +430,21 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
     ],
   },
-  {
-    id: "settings",
-    label: "Settings",
-    items: [
-      {
-        href: "/staff/settings",
-        // "Settings overview" names what the page *is* — a document — rather
-        // than what it does. It is the settings home.
-        label: "All settings",
-        description: "Every configuration surface, grouped.",
-        icon: "settings",
-        anyOf: [
-          "commerce.settings.view",
-          "commerce.settings.manage",
-          "appearance.manage",
-          "emails.manage",
-          "emails.view",
-          "security.view",
-          "roles.view",
-          "audit.view",
-          "audit.read",
-          "recycle_bin.view",
-        ],
-      },
-      {
-        href: "/staff/settings/commerce",
-        // "Shipping, pickup & policy" described the contents rather than naming
-        // the destination, so it matched nothing a staff member would think to
-        // look for. The page is the shop's commerce configuration.
-        label: "Commerce",
-        description: "Delivery methods and prices, local pickup, stock rules, returns and cancellation policy.",
-        icon: "commerce",
-        settingsSection: "store",
-        anyOf: ["commerce.settings.view", "commerce.settings.manage"],
-      },
-      {
-        href: "/staff/appearance",
-        label: "Appearance",
-        description: "Colours, logos, wording and control styles for the storefront and the staff area.",
-        icon: "appearance",
-        settingsSection: "design",
-        anyOf: ["appearance.manage"],
-      },
-      {
-        href: "/staff/security/roles",
-        label: "Roles & permissions",
-        description: "Which staff roles can view and manage each area.",
-        icon: "roles",
-        settingsSection: "access",
-        anyOf: ["roles.view"],
-      },
-      {
-        href: "/staff/security",
-        // "Security controls" and "Roles & permissions" both read as "where I
-        // manage who can do what". Only one of them is; this one is the site's
-        // availability and safety switches.
-        label: "Site access & safety",
-        description: "Maintenance mode, lockdown, IP restrictions and emergency messaging.",
-        icon: "security",
-        settingsSection: "access",
-        anyOf: ["security.view"],
-      },
-      {
-        href: "/staff/security/verified-perks",
-        label: "Verified perks",
-        description: "Bonus permissions granted to verified members.",
-        icon: "perks",
-        settingsSection: "access",
-        anyOf: ["security.verified_perks.manage"],
-      },
-      {
-        href: "/staff/security/recycle-bin",
-        label: "Recycle bin",
-        description: "Soft-deleted content awaiting expiry, and restores.",
-        icon: "recycle",
-        settingsSection: "system",
-        anyOf: ["recycle_bin.view"],
-      },
-    ],
-  },
 ];
 
 /** Every item, flattened. Order is the order it is displayed in. */
 export const STAFF_NAV_ITEMS: readonly StaffNavItem[] = STAFF_NAV.flatMap((group) => group.items);
+
+/**
+ * The destinations that are visible without opening a disclosure.
+ *
+ * Exported so a test can hold the line: this pass took the sidebar from 27 to
+ * 16, and the failure mode for the next pass is adding "just one more" row
+ * until it is 27 again.
+ */
+export const PRIMARY_STAFF_NAV_ITEMS: readonly StaffNavItem[] = STAFF_NAV.filter(
+  (group) => !group.secondary
+).flatMap((group) => group.items);
 
 /**
  * The union of every permission that opens some staff destination.
@@ -475,20 +481,25 @@ export function visibleStaffNav(permissions: ReadonlySet<string>): StaffNavGroup
   })).filter((group) => group.items.length > 0);
 }
 
+/** The always-visible part of the menu for this viewer. */
+export function primaryStaffNav(permissions: ReadonlySet<string>): StaffNavGroup[] {
+  return visibleStaffNav(permissions).filter((group) => !group.secondary);
+}
+
 /**
  * The settings index, as named blocks.
  *
- * Derived from the same `STAFF_NAV` the sidebar reads, so a settings page can
- * never exist in one and not the other — that drift is what once left
- * `/staff/settings/commerce` reachable only by typing its URL. A block with
- * nothing the viewer may open is dropped rather than rendered as an empty
- * heading.
+ * Reads `settingsSection` across the **whole** navigation rather than only the
+ * Settings group, so folding a tool into "More tools" in the sidebar does not
+ * quietly drop it off the settings directory. `/staff/settings` itself is
+ * excluded — a settings index listing itself is a loop.
  */
 export function staffSettingsSections(
   permissions: ReadonlySet<string>
 ): { id: StaffSettingsSection; label: string; description: string; items: StaffNavItem[] }[] {
-  const group = visibleStaffNav(permissions).find((candidate) => candidate.id === "settings");
-  const items = (group?.items ?? []).filter((item) => item.href !== "/staff/settings");
+  const items = visibleStaffNav(permissions)
+    .flatMap((group) => group.items)
+    .filter((item) => item.href !== "/staff/settings" && item.settingsSection);
   return STAFF_SETTINGS_SECTIONS.map((section) => ({
     ...section,
     items: items.filter((item) => item.settingsSection === section.id),
@@ -509,11 +520,9 @@ function ownsPath(prefix: string, pathname: string): boolean {
  * How long a claim an item has on this path, or -1 for none.
  *
  * **Longest prefix wins**, which is one rule instead of a per-item `exact` flag.
- * It is what makes `/staff/catalog/discounts` highlight Discount codes rather
- * than Products, `/staff/settings/commerce` highlight itself rather than
- * Settings overview, and `/staff` highlight only the dashboard instead of
- * every row in the sidebar — the previous behaviour needed three hand-written
- * exceptions and still got `/staff/catalog/discounts` wrong.
+ * It is what makes `/staff/catalog/discounts` highlight Discounts rather than
+ * Products, `/staff/settings/commerce` highlight itself rather than All
+ * settings, and `/staff` highlight only the dashboard instead of every row.
  */
 function claimLength(item: StaffNavItem, pathname: string): number {
   const prefixes = [item.href, ...(item.alsoOwns ?? [])];
@@ -566,7 +575,6 @@ export type StaffCrumb = { href: string; label: string; current: boolean };
 const LEAF_LABELS: Readonly<Record<string, string>> = {
   "/staff/orders/new": "New proposal",
   "/staff/production/new": "New job",
-  "/staff/emails/deliveries": "Delivery history",
   "/staff/launch-readiness/discrepancies": "Payment discrepancies",
 };
 
@@ -584,8 +592,10 @@ const LEAF_PATTERNS: readonly { test: RegExp; label: string }[] = [
  * The trail for a staff path: Staff → group → destination → (leaf).
  *
  * The group crumb is **not** a link. Groups are organisational, not
- * destinations — linking one to the first page inside it, which is what the old
- * context bar did, sends a reader somewhere they did not ask to go.
+ * destinations — linking one to the first page inside it sends a reader
+ * somewhere they did not ask to go. A group whose label repeats its only item's
+ * label ("Orders" → "Orders") contributes no crumb at all, which is what the
+ * one-item primary groups introduced this pass would otherwise produce.
  */
 export function staffBreadcrumbs(pathname: string): StaffCrumb[] {
   const match = activeStaffNavItem(pathname);
@@ -597,7 +607,9 @@ export function staffBreadcrumbs(pathname: string): StaffCrumb[] {
     return crumbs;
   }
 
-  crumbs.push({ href: "", label: match.group.label, current: false });
+  if (match.group.label !== match.item.label) {
+    crumbs.push({ href: "", label: match.group.label, current: false });
+  }
 
   const isLeaf = pathname !== match.item.href;
   crumbs.push({ href: match.item.href, label: match.item.label, current: !isLeaf });

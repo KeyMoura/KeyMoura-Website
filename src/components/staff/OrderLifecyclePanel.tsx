@@ -143,7 +143,29 @@ type LifecyclePayload = {
   };
 };
 
-export function OrderLifecyclePanel({ orderId, productName }: { orderId: string; productName: string }) {
+/**
+ * Which half of this panel to render.
+ *
+ * The order workspace is tabbed now, and this component covers two of those
+ * tabs: the money position and the refund control belong on **Payment**, the
+ * cancellation decision and the return workflow on **Returns & cancellations**.
+ * Rendering the whole panel on both would put the financial summary on screen
+ * twice and give a reader two places to issue the same refund from.
+ *
+ * `"all"` stays the default so any caller that has not been tabbed keeps the
+ * behaviour it had.
+ */
+export type LifecycleView = "all" | "money" | "lifecycle";
+
+export function OrderLifecyclePanel({
+  orderId,
+  productName,
+  view = "all",
+}: {
+  orderId: string;
+  productName: string;
+  view?: LifecycleView;
+}) {
   const supabase = useMemo(() => supabaseBrowser(), []);
   const [data, setData] = useState<LifecyclePayload | null>(null);
   const [error, setError] = useState("");
@@ -287,54 +309,66 @@ export function OrderLifecyclePanel({ orderId, productName }: { orderId: string;
       ...body,
     });
 
+  const showMoney = view === "all" || view === "money";
+  const showLifecycle = view === "all" || view === "lifecycle";
+
   return (
     <section id="lifecycle" className="ui-card scroll-mt-5 lg:col-span-2">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="ui-eyebrow">Order lifecycle</p>
-          <h2 className="mt-1 text-xl font-semibold">Cancellation, returns and refunds</h2>
+      {/*
+        The heading is only drawn for the untabbed caller. Inside the order
+        workspace the tab already names the surface, and a card heading
+        repeating it is the doubled-title look the page framework removes.
+      */}
+      {view === "all" ? (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="ui-eyebrow">Order lifecycle</p>
+            <h2 className="mt-1 text-xl font-semibold">Cancellation, returns and refunds</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge>{lifecycleLabel(PAYMENT_LABELS, order.payment_status)}</Badge>
+            <Badge>{lifecycleLabel(FULFILLMENT_LABELS, order.fulfillment_status)}</Badge>
+            {order.cancellation_status !== "none" ? (
+              <Badge tone="warning">{lifecycleLabel(CANCELLATION_LABELS, order.cancellation_status)}</Badge>
+            ) : null}
+            {order.return_status !== "none" ? (
+              <Badge tone="warning">{lifecycleLabel(RETURN_LABELS, order.return_status)}</Badge>
+            ) : null}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge>{lifecycleLabel(PAYMENT_LABELS, order.payment_status)}</Badge>
-          <Badge>{lifecycleLabel(FULFILLMENT_LABELS, order.fulfillment_status)}</Badge>
-          {order.cancellation_status !== "none" ? (
-            <Badge tone="warning">{lifecycleLabel(CANCELLATION_LABELS, order.cancellation_status)}</Badge>
-          ) : null}
-          {order.return_status !== "none" ? (
-            <Badge tone="warning">{lifecycleLabel(RETURN_LABELS, order.return_status)}</Badge>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
 
       {error ? (
-        <Notice tone="danger" role="alert" className="mt-4">
+        <Notice tone="danger" role="alert" className={view === "all" ? "mt-4" : undefined}>
           {error}
         </Notice>
       ) : null}
 
       {/* Financial position, stated before any button that changes it. */}
-      <dl className="mt-4 grid gap-3 sm:grid-cols-4">
-        <div className="ui-card !p-3">
-          <dt className="text-[10px] uppercase tracking-wider text-brand-textMuted">Collected</dt>
-          <dd className="mt-1 text-sm font-semibold">{money(order.amount_paid_cents)}</dd>
-        </div>
-        <div className="ui-card !p-3">
-          <dt className="text-[10px] uppercase tracking-wider text-brand-textMuted">Refunded</dt>
-          <dd className="mt-1 text-sm font-semibold text-rose-300">{money(order.amount_refunded_cents)}</dd>
-        </div>
-        <div className="ui-card !p-3">
-          <dt className="text-[10px] uppercase tracking-wider text-brand-textMuted">In progress</dt>
-          <dd className="mt-1 text-sm font-semibold text-amber-300">{money(data.pendingRefundCents)}</dd>
-          <p className="text-[10px] text-brand-textMuted">Sent to Stripe, not yet confirmed</p>
-        </div>
-        <div className="ui-card !p-3">
-          <dt className="text-[10px] uppercase tracking-wider text-brand-textMuted">Refundable now</dt>
-          <dd className="mt-1 text-sm font-semibold text-emerald-300">{money(data.refundableCents)}</dd>
-        </div>
-      </dl>
+      {showMoney ? (
+        <dl className="staff-facts mt-4">
+          <div>
+            <dt className="staff-fact-label">Collected</dt>
+            <dd className="staff-fact-value">{money(order.amount_paid_cents)}</dd>
+          </div>
+          <div>
+            <dt className="staff-fact-label">Refunded</dt>
+            <dd className="staff-fact-value text-rose-300">{money(order.amount_refunded_cents)}</dd>
+          </div>
+          <div>
+            <dt className="staff-fact-label">In progress</dt>
+            <dd className="staff-fact-value text-amber-300">{money(data.pendingRefundCents)}</dd>
+            <p className="text-[10px] text-brand-textMuted">Sent to Stripe, not yet confirmed</p>
+          </div>
+          <div>
+            <dt className="staff-fact-label">Refundable now</dt>
+            <dd className="staff-fact-value text-emerald-300">{money(data.refundableCents)}</dd>
+          </div>
+        </dl>
+      ) : null}
 
       {/* ---- Cancellation ---------------------------------------------- */}
-      {openRequest ? (
+      {showLifecycle && openRequest ? (
         <div className="mt-6 rounded-2xl border border-amber-500/50 bg-amber-500/10 p-5">
           <h3 className="font-semibold">Cancellation request awaiting your decision</h3>
           <p className="mt-1 text-sm text-brand-textMuted">
@@ -501,7 +535,7 @@ export function OrderLifecyclePanel({ orderId, productName }: { orderId: string;
       ) : null}
 
       {/* ---- Returns ---------------------------------------------------- */}
-      {openReturn ? (
+      {showLifecycle && openReturn ? (
         <ReturnWorkflow
           record={openReturn}
           canReview={permissions.canReviewReturns}
@@ -512,7 +546,7 @@ export function OrderLifecyclePanel({ orderId, productName }: { orderId: string;
       ) : null}
 
       {/* ---- Manual refund ---------------------------------------------- */}
-      {permissions.canIssueRefunds && data.refundableCents > 0 ? (
+      {showMoney && permissions.canIssueRefunds && data.refundableCents > 0 ? (
         <div className="mt-6 rounded-2xl border border-rose-500/40 bg-rose-500/5 p-5">
           <h3 className="font-semibold">Issue a refund</h3>
           <p className="mt-1 text-xs text-brand-textMuted">
@@ -573,7 +607,7 @@ export function OrderLifecyclePanel({ orderId, productName }: { orderId: string;
       ) : null}
 
       {/* ---- History ---------------------------------------------------- */}
-      {data.refunds.length ? (
+      {showMoney && data.refunds.length ? (
         <div className="mt-6">
           <h3 className="text-sm font-semibold">Refunds</h3>
           <ul className="mt-2 divide-y divide-white/10">
@@ -604,7 +638,7 @@ export function OrderLifecyclePanel({ orderId, productName }: { orderId: string;
         </div>
       ) : null}
 
-      {data.inventoryAdjustments && data.inventoryAdjustments.length ? (
+      {showMoney && data.inventoryAdjustments && data.inventoryAdjustments.length ? (
         <div className="mt-6">
           <h3 className="text-sm font-semibold">Inventory impact</h3>
           <ul className="mt-2 divide-y divide-white/10">
@@ -621,10 +655,22 @@ export function OrderLifecyclePanel({ orderId, productName }: { orderId: string;
         </div>
       ) : null}
 
-      {!openRequest && !openReturn && !data.refunds.length ? (
-        <EmptyState className="mt-6">
-          No cancellation, return or refund activity on {productName}.
+      {/*
+        Each view earns its own empty state.
+
+        "No cancellation, return or refund activity" under the Payment tab
+        would be answering a question that tab did not ask, and under Returns
+        it would stay on screen while a refund history sat one tab away.
+      */}
+      {showLifecycle && !openRequest && !openReturn && (view === "lifecycle" || !data.refunds.length) ? (
+        <EmptyState className={view === "all" ? "mt-6" : undefined}>
+          {view === "lifecycle"
+            ? `No cancellation or return has been raised on ${productName}.`
+            : `No cancellation, return or refund activity on ${productName}.`}
         </EmptyState>
+      ) : null}
+      {view === "money" && !data.refunds.length && data.refundableCents <= 0 ? (
+        <EmptyState className="mt-4">No refunds have been issued on this order.</EmptyState>
       ) : null}
     </section>
   );

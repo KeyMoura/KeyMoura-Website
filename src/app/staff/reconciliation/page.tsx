@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { Badge, EmptyState, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { supabaseBrowser } from "@/lib/supabaseClient";
@@ -76,7 +77,7 @@ export default function StaffReconciliationPage() {
     return () => window.clearTimeout(timer);
   }, [canView, load]);
 
-  if (isLoading) return <div className="ui-card text-sm text-brand-textMuted">Loading…</div>;
+  if (isLoading) return <LoadingState>Loading…</LoadingState>;
   if (!canView) {
     return <AccessDeniedCard message="Reconciliation reads order-level money, so it needs the order access permission." />;
   }
@@ -84,20 +85,22 @@ export default function StaffReconciliationPage() {
   const total = report ? report.counts.critical + report.counts.warning + report.counts.info : 0;
 
   return (
-    <main className="page-stack">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="ui-eyebrow">Business</p>
-          <h1 className="mt-1 text-3xl font-semibold">Reconciliation</h1>
-          <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
-            Payments, refunds, stock holds and delivery, checked against each other. This page reads; it never
-            writes. Each finding names the page where the fix is made.
-          </p>
-        </div>
-        <button type="button" onClick={() => void load()} disabled={loading} className="ui-btn ui-btn-secondary disabled:opacity-50">
-          {loading ? "Checking…" : "Run the checks again"}
-        </button>
-      </div>
+    <StaffPage>
+      <PageHeader
+        kind="Administrative tool"
+        title="Reconciliation"
+        description="Payments, refunds, stock holds and delivery, checked against each other. This page reads; it never writes. Each finding names the page where the fix is made."
+        actions={
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="ui-btn ui-btn-secondary text-sm disabled:opacity-50"
+          >
+            {loading ? "Checking…" : "Run the checks again"}
+          </button>
+        }
+      />
 
       {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
 
@@ -174,6 +177,6 @@ export default function StaffReconciliationPage() {
       ) : loading ? (
         <EmptyState>Running the checks…</EmptyState>
       ) : null}
-    </main>
+    </StaffPage>
   );
 }

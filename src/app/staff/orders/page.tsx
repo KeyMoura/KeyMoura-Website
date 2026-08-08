@@ -5,7 +5,15 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
-import { Badge, EmptyState, Notice } from "@/components/ui/DesignSystem";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  StaffPage,
+  StatusChip,
+} from "@/components/staff/StaffPage";
+import { Badge, Field, Notice } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import {
@@ -13,8 +21,9 @@ import {
   FULFILLMENT_STATUSES,
   FULFILLMENT_METHODS,
   ORDER_KINDS,
+  PRIMARY_SAVED_VIEWS,
   PRIORITIES,
-  SAVED_VIEWS,
+  SECONDARY_SAVED_VIEWS,
   clearFilter,
   describeActiveFilters,
   emptyFilters,
@@ -36,26 +45,34 @@ import {
 /**
  * The staff order queue.
  *
- * ## The defect this page was rebuilt for
- *
- * It selected every order into the browser, filtered them in JavaScript, and
- * derived its tab counts from `orderResult.data ?? []`. A refused query is
- * `[]`, so the page rendered **"Needs action (0)"** and **"Nothing in this
- * view."** underneath a red error banner. Pass 9 fixed exactly this shape of
- * bug on the dashboard and the fulfillment queue and recorded that it survived
- * here; this is that fix, plus the server-side filtering the counts need in
- * order to be true.
- *
- * ## The rules now
+ * ## The truthfulness rules, unchanged
  *
  * - Nothing is derived from a load that has not succeeded. `LoadState` makes
  *   that structural: there is no way to reach `.data` without narrowing to
- *   `ready` first, so a count *cannot* come from a failure.
+ *   `ready`, so a count *cannot* come from a failure.
  * - A count that is not known renders as **nothing**, never as `0`.
  * - "No orders match" is shown only for a successful query that returned no
  *   rows. A failure gets a failure, and they do not look alike.
- * - Filtering, sorting and paging are the server's job. The browser receives
- *   one page.
+ * - Filtering, sorting and paging are the server's job.
+ *
+ * ## What this pass changed
+ *
+ * The page opened with **sixteen chips** — one per saved view plus "All orders"
+ * — wrapping over three lines at 1280px, and then a filter bar of **nine
+ * always-visible controls**: a search box, a submit button, five dropdowns, two
+ * date pickers and a sort. Twenty-six controls stood between the heading and
+ * the first order.
+ *
+ * Now: six chips for the queues a shop actually works through, a toolbar of
+ * three controls, and everything else behind a **Filters** disclosure that says
+ * how many are active. Nothing was removed — the other nine views moved into
+ * the panel as a dropdown, which is also where they can be combined with a
+ * date range, which the chip row never allowed.
+ *
+ * Each row is a **record line** rather than a card: order, customer, date, and
+ * then the three states this shop runs on — payment, production, fulfillment —
+ * followed by the total and the action required. That is the column set a staff
+ * member scans down, and it is now the same left-to-right order on every row.
  */
 
 type OrderRow = {
@@ -97,16 +114,7 @@ type Payload = {
 };
 
 const pretty = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
-const prettyStatus = (value: string) =>
-  value === "customer_review" ? "Quote review" : value === "final_review" ? "Finished product review" : pretty(value);
 const money = (cents: number | null) => (cents == null ? "Price pending" : `$${(cents / 100).toFixed(2)}`);
-
-function ageLabel(value: string) {
-  const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3_600_000));
-  if (hours < 1) return "Updated just now";
-  if (hours < 24) return `Updated ${hours}h ago`;
-  return `Updated ${Math.floor(hours / 24)}d ago`;
-}
 
 /** What this order is waiting on, from the server's derived bucket. */
 function nextAction(order: OrderRow): string {
@@ -125,13 +133,16 @@ function nextAction(order: OrderRow): string {
   return "View order";
 }
 
-/*
- * `min-h-11` is 44px — the touch target the staff drawer already uses. Measured
- * at 375 the chips came out 30px tall, which is a comfortable click with a mouse
- * and a miss with a thumb, and this queue strip is the primary navigation of the
- * page on a phone.
- */
-const CHIP = "inline-flex min-h-11 items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition";
+/** Which tab of the workspace an order's next action is performed on. */
+function actionTab(order: OrderRow): string {
+  if (order.cancellation_open || order.return_open) return "returns";
+  if (order.has_failed_refund || order.fulfillment_bucket === "awaiting_payment") return "payment";
+  if (order.missing_tracking) return "fulfillment";
+  if (order.status === "requested" || order.status === "needs_information") return "overview";
+  if (order.status === "accepted" && order.agreed_price_cents == null) return "payment";
+  if (["to_prepare", "in_progress", "ready", "in_transit"].includes(order.fulfillment_bucket)) return "fulfillment";
+  return "overview";
+}
 
 function StaffOrdersContent() {
   const supabase = useMemo(() => supabaseBrowser(), []);
@@ -140,6 +151,7 @@ function StaffOrdersContent() {
   const { data: access, isLoading: accessLoading } = useMeAccess();
   const permissions = useMemo(() => new Set(access?.permissions ?? []), [access]);
   const canView = permissions.has("orders.view") || permissions.has("orders.manage");
+  const canManage = permissions.has("orders.manage");
 
   /*
    * Filters live in the URL and nowhere else.
@@ -160,9 +172,7 @@ function StaffOrdersContent() {
    * Storing the key the result belongs to means a result for a previous filter
    * set is never presented as the current one — the stale-data window between
    * "the URL changed" and "the fetch resolved" simply does not exist, because a
-   * mismatched key reads as loading. Setting `loading` from an effect would
-   * produce the same picture one render later, with a cascading render for
-   * every navigation.
+   * mismatched key reads as loading.
    */
   const [result, setResult] = useState<{ key: string; state: LoadState<Payload> }>({
     key: "",
@@ -182,6 +192,16 @@ function StaffOrdersContent() {
     setSyncedSearch(filters.search);
     setSearchDraft(filters.search);
   }
+
+  const activeFilters = describeActiveFilters(filters);
+  /*
+   * The panel opens itself when something inside it is applied.
+   *
+   * A collapsed panel hiding an active date range is how a staff member
+   * concludes the shop has three orders. `useState` with a lazy initial value
+   * rather than an effect: the correct state is known at first render.
+   */
+  const [filtersOpen, setFiltersOpen] = useState(() => activeFilters.length > 0);
 
   const navigate = useCallback(
     (next: OrderFilters) => router.push(`/staff/orders?${serializeOrderFilters(next)}`),
@@ -233,61 +253,55 @@ function StaffOrdersContent() {
   }, [canView, loadKey, queryString, supabase]);
 
   const payload = isReady(state) ? state.data : null;
-  const activeFilters = describeActiveFilters(filters);
   const currentView = savedView(filters.view);
 
-  if (accessLoading) return <div className="ui-card" role="status">Loading…</div>;
+  if (accessLoading) return <LoadingState>Loading orders…</LoadingState>;
   if (!canView) return <AccessDeniedCard message="You do not have access to orders." />;
 
   return (
-    <main className="page-stack">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          {/* "Order cockpit" was the only name this page ever had, and it named
-              a concept rather than a place: staff reading the sidebar saw
-              "Orders" and staff reading the page saw "Order cockpit", which is
-              how it came to look like a second order system beside
-              /staff/fulfillment. It is the orders list. It is called Orders. */}
-          <p className="text-xs uppercase tracking-[.2em] text-brand-accent">Today</p>
-          <h1 className="mt-1 text-3xl font-semibold">Orders</h1>
-          <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
-            {currentView?.description ??
-              "Every order, filtered the way the shop works. Open an order to manage all of it — payment, production, fulfillment, returns and messages are all on that one page."}
-          </p>
-        </div>
-        <Link href="/staff/orders/new" className="ui-btn ui-btn-primary w-full text-center text-sm sm:w-auto">
-          Create proposal
-        </Link>
-      </div>
+    <StaffPage>
+      <PageHeader
+        title="Orders"
+        description={
+          currentView?.description ??
+          "Every order, and where each one is. Open an order to manage all of it — payment, production, fulfillment, returns and messages are on that one page."
+        }
+        actions={
+          canManage ? (
+            <Link href="/staff/orders/new" className="ui-btn ui-btn-primary text-sm">
+              New order
+            </Link>
+          ) : null
+        }
+      />
 
-      {/* Saved views. A tab shows a count only when the server supplied one:
-          "Refund failures (0)" beside a failure notice is the exact lie this
-          page was rebuilt to stop telling. */}
-      <nav aria-label="Order queues" className="flex flex-wrap gap-2">
+      {/* Six queues, in the order a shop works them. A chip shows a count only
+          when the server supplied one: "Refund failures (0)" beside a failure
+          notice is the exact lie this page was rebuilt to stop telling. */}
+      <nav aria-label="Order queues" className="staff-views">
         <button
           type="button"
           onClick={() => navigate({ ...emptyFilters(), sort: filters.sort })}
           aria-current={!filters.view && !activeFilters.length ? "page" : undefined}
-          className={`${CHIP} ${!filters.view && !activeFilters.length ? "border-brand-accent bg-brand-accent/15 text-brand-accent" : "border-brand-border text-brand-textMuted hover:text-brand-text"}`}
+          className="staff-view"
         >
           All orders
-          {payload ? <span className="ml-1.5 tabular-nums opacity-70">{payload.counts ? payload.total : ""}</span> : null}
+          {payload?.counts ? <span className="staff-view-count">{payload.total}</span> : null}
         </button>
-        {SAVED_VIEWS.map((view) => {
+        {PRIMARY_SAVED_VIEWS.map((view) => {
           const count = payload?.counts?.[view.id];
-          const active = filters.view === view.id;
           return (
             <button
               key={view.id}
               type="button"
               onClick={() => navigate({ ...emptyFilters(), view: view.id })}
-              aria-current={active ? "page" : undefined}
+              aria-current={filters.view === view.id ? "page" : undefined}
               title={view.description}
-              className={`${CHIP} ${active ? "border-brand-accent bg-brand-accent/15 text-brand-accent" : "border-brand-border text-brand-textMuted hover:text-brand-text"}`}
+              className="staff-view"
             >
               {view.label}
               {/* `count === undefined` means unknown, and renders as nothing. */}
-              {typeof count === "number" ? <span className="ml-1.5 tabular-nums opacity-70">{count}</span> : null}
+              {typeof count === "number" ? <span className="staff-view-count">{count}</span> : null}
             </button>
           );
         })}
@@ -300,16 +314,60 @@ function StaffOrdersContent() {
         </Notice>
       ) : null}
 
-      <FilterBar
-        filters={filters}
-        searchDraft={searchDraft}
-        onSearchDraft={setSearchDraft}
-        onNavigate={navigate}
-      />
+      {/* ---- Toolbar: three controls, then everything else behind Filters ---- */}
+      <form
+        className="staff-toolbar"
+        onSubmit={(event) => {
+          event.preventDefault();
+          navigate({ ...filters, view: null, search: searchDraft.trim(), page: 1 });
+        }}
+      >
+        <label className="staff-toolbar-search">
+          <span className="sr-only">Search orders</span>
+          <input
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
+            className="ui-input w-full"
+            placeholder="Order number, product or customer…"
+            type="search"
+          />
+        </label>
+        <button type="submit" className="ui-btn ui-btn-secondary text-sm">
+          Search
+        </button>
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          aria-controls="staff-order-filters"
+          className="ui-btn ui-btn-ghost text-sm"
+        >
+          Filters
+          {activeFilters.length ? <span className="ml-1.5 tabular-nums">({activeFilters.length})</span> : null}
+        </button>
+        <label>
+          <span className="sr-only">Sort orders</span>
+          <select
+            className="ui-input"
+            aria-label="Sort orders"
+            value={filters.sort}
+            onChange={(event) => navigate({ ...filters, page: 1, sort: event.target.value as OrderFilters["sort"] })}
+          >
+            <option value="updated_desc">Recently updated</option>
+            <option value="created_desc">Newest orders</option>
+            <option value="created_asc">Oldest orders</option>
+            <option value="priority">Highest priority</option>
+            <option value="target_date">Target date</option>
+            <option value="price_desc">Highest price</option>
+          </select>
+        </label>
+      </form>
+
+      {filtersOpen ? <FilterPanel filters={filters} onNavigate={navigate} /> : null}
 
       {activeFilters.length ? (
         <div className="flex flex-wrap items-center gap-2" aria-label="Active filters">
-          <span className="text-xs font-semibold uppercase tracking-wide text-brand-textMuted">Filtered by</span>
+          <span className="staff-fact-label">Filtered by</span>
           {activeFilters.map((filter) => (
             <button
               key={String(filter.key)}
@@ -337,25 +395,16 @@ function StaffOrdersContent() {
       {/* ---- The three states, kept visually distinct ---- */}
 
       {isFailed(state) ? (
-        <Notice tone="danger" role="alert">
+        <ErrorState onRetry={() => setReloadToken((token) => token + 1)}>
           <p className="font-semibold">{state.failure.message}</p>
           <p className="mt-1 text-sm opacity-90">
             No count or list is shown, because the answer is unknown — not zero.
             {state.failure.reference ? ` Reference ${state.failure.reference}.` : ""}
           </p>
-          <button
-            type="button"
-            onClick={() => setReloadToken((token) => token + 1)}
-            className="ui-btn ui-btn-secondary mt-3 text-sm"
-          >
-            Retry
-          </button>
-        </Notice>
+        </ErrorState>
       ) : null}
 
-      {state.status === "loading" ? (
-        <EmptyState role="status">Loading orders…</EmptyState>
-      ) : null}
+      {state.status === "loading" ? <LoadingState>Loading orders…</LoadingState> : null}
 
       {payload?.degraded.customerSearch ? (
         <Notice tone="warning" role="status">
@@ -366,11 +415,13 @@ function StaffOrdersContent() {
 
       {payload ? (
         <>
-          <div className="space-y-3">
-            {payload.orders.map((order) => (
-              <OrderCard key={order.id} order={order} degradedNames={payload.degraded.customerNames} />
-            ))}
-          </div>
+          {payload.orders.length ? (
+            <div className="staff-rows">
+              {payload.orders.map((order) => (
+                <OrderLine key={order.id} order={order} degradedNames={payload.degraded.customerNames} />
+              ))}
+            </div>
+          ) : null}
 
           {/* Only a *successful* query that returned nothing earns this sentence. */}
           {payload.orders.length === 0 ? (
@@ -381,31 +432,50 @@ function StaffOrdersContent() {
             </EmptyState>
           ) : null}
 
-          {payload.total > 0 ? (
-            <Pagination payload={payload} filters={filters} onNavigate={navigate} />
-          ) : null}
+          {payload.total > 0 ? <Pagination payload={payload} filters={filters} onNavigate={navigate} /> : null}
         </>
       ) : null}
-    </main>
+    </StaffPage>
   );
 }
 
-function OrderCard({ order, degradedNames }: { order: OrderRow; degradedNames: boolean }) {
-  const customer = order.customer?.display_name
-    || (order.customer?.username ? `@${order.customer.username}` : degradedNames ? "Customer name unavailable" : "Customer");
+/**
+ * One order, as a record line.
+ *
+ * The column order is fixed — identity, then the three states, then money, then
+ * what to do — because the value of a list is that the eye can travel straight
+ * down one column. The card this replaced put the states in a sentence whose
+ * length depended on which of them were set.
+ *
+ * The link carries the tab the work is done on, so clicking a row that says
+ * "Add the missing tracking number" opens Fulfillment, not Overview.
+ */
+function OrderLine({ order, degradedNames }: { order: OrderRow; degradedNames: boolean }) {
+  const customer =
+    order.customer?.display_name ||
+    (order.customer?.username ? `@${order.customer.username}` : degradedNames ? "Customer name unavailable" : "Customer");
   return (
-    <Link
-      href={`/staff/orders/${order.id}`}
-      className="ui-card ui-card-hover group grid gap-4 md:grid-cols-[1.6fr_1fr_auto] md:items-center"
-    >
-      <div>
+    <Link href={`/staff/orders/${order.id}#${actionTab(order)}`} className="staff-row">
+      <div className="staff-row-main">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold">{order.product_name}</span>
+          <span className="staff-row-title">{order.product_name}</span>
           {order.quantity > 1 ? <Badge>Qty {order.quantity}</Badge> : null}
           {order.priority && order.priority !== "normal" ? (
             <Badge tone={order.priority === "urgent" ? "danger" : order.priority === "high" ? "warning" : "neutral"}>
               {pretty(order.priority)}
             </Badge>
+          ) : null}
+        </div>
+        <div className="staff-row-detail">
+          {order.order_number || "New request"} · {customer} ·{" "}
+          {new Date(order.created_at).toLocaleDateString()}
+        </div>
+        {/* The three states this shop runs on, always in this order. */}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <StatusChip value={order.payment_status} prefix="Payment · " />
+          {order.production_status ? <StatusChip value={order.production_status} prefix="Production · " /> : null}
+          {order.fulfillment_status !== "not_required" ? (
+            <StatusChip value={order.fulfillment_status} prefix="Delivery · " />
           ) : null}
           {order.order_kind === "direct_purchase" ? <Badge tone="neutral">Direct</Badge> : null}
           {order.cancellation_open ? <Badge tone="danger">Cancellation</Badge> : null}
@@ -414,26 +484,17 @@ function OrderCard({ order, degradedNames }: { order: OrderRow; degradedNames: b
           {order.has_inventory_issue ? <Badge tone="warning">Stock hold</Badge> : null}
           {order.is_overdue ? <Badge tone="warning">Overdue</Badge> : null}
         </div>
-        <div className="mt-1 text-xs text-brand-textMuted">
-          {order.order_number || "New request"} · {customer} · {ageLabel(order.updated_at)}
-        </div>
       </div>
-      <div>
-        <div className="text-sm font-medium text-brand-accent">{nextAction(order)}</div>
-        <div className="mt-1 text-xs text-brand-textMuted">
-          {prettyStatus(order.status)} · {pretty(order.payment_status)}
-          {order.production_status ? ` · ${pretty(order.production_status)}` : ""}
-        </div>
-      </div>
-      <div className="text-left md:text-right">
-        <div className="font-medium">{money(order.agreed_price_cents)}</div>
-        <div className="mt-1 text-xs text-brand-textMuted">
-          {order.outstanding_cents > 0
-            ? `$${(order.outstanding_cents / 100).toFixed(2)} outstanding`
-            : order.target_date
-              ? `Target ${new Date(`${order.target_date}T00:00:00`).toLocaleDateString()}`
-              : "No target date"}
-        </div>
+      <div className="staff-row-aside flex-col !items-start gap-1 sm:!items-end">
+        <span className="text-sm font-medium">{money(order.agreed_price_cents)}</span>
+        <span className="text-xs font-semibold text-brand-accent">{nextAction(order)} →</span>
+        {order.outstanding_cents > 0 ? (
+          <span className="staff-row-meta">${(order.outstanding_cents / 100).toFixed(2)} outstanding</span>
+        ) : order.target_date ? (
+          <span className="staff-row-meta">
+            Target {new Date(`${order.target_date}T00:00:00`).toLocaleDateString()}
+          </span>
+        ) : null}
       </div>
     </Link>
   );
@@ -451,7 +512,7 @@ function Pagination({
   const first = (payload.page - 1) * payload.pageSize + 1;
   const last = Math.min(payload.total, payload.page * payload.pageSize);
   return (
-    <nav className="ui-filter-bar items-center justify-between" aria-label="Pagination">
+    <nav className="staff-toolbar justify-between" aria-label="Pagination">
       <p className="text-sm text-brand-textMuted" aria-live="polite">
         Showing <span className="tabular-nums">{first}</span>–<span className="tabular-nums">{last}</span> of{" "}
         <span className="tabular-nums font-semibold">{payload.total}</span>
@@ -481,18 +542,22 @@ function Pagination({
   );
 }
 
-function FilterBar({
+/**
+ * Everything that is not one of the six queues.
+ *
+ * Including the nine remaining saved views, as one dropdown. Rendering them as
+ * chips beside the six made every view look equally likely; here they read as
+ * what they are — a longer list you go and get when you want one of them. Being
+ * in the panel also means a view can now be combined with a date range, which
+ * the chip row never allowed.
+ */
+function FilterPanel({
   filters,
-  searchDraft,
-  onSearchDraft,
   onNavigate,
 }: {
   filters: OrderFilters;
-  searchDraft: string;
-  onSearchDraft: (value: string) => void;
   onNavigate: (next: OrderFilters) => void;
 }) {
-  /** A single-select dropdown writing into one array filter. */
   const select = <K extends keyof OrderFilters>(
     key: K,
     label: string,
@@ -501,12 +566,10 @@ function FilterBar({
   ) => {
     const current = (filters[key] as unknown as string[])[0] ?? "";
     return (
-      <label key={String(key)}>
-        <span className="sr-only">{label}</span>
+      <Field label={label}>
         <select
-          className="ui-input h-full"
+          className="ui-input w-full"
           value={current}
-          aria-label={label}
           onChange={(event) =>
             onNavigate({
               ...filters,
@@ -523,73 +586,52 @@ function FilterBar({
             </option>
           ))}
         </select>
-      </label>
+      </Field>
     );
   };
 
   return (
-    <form
-      className="ui-filter-bar"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onNavigate({ ...filters, view: null, search: searchDraft.trim(), page: 1 });
-      }}
-    >
-      <label className="min-w-[14rem] flex-1">
-        <span className="sr-only">Search orders</span>
-        <input
-          value={searchDraft}
-          onChange={(event) => onSearchDraft(event.target.value)}
-          className="ui-input h-full"
-          placeholder="Order number, product or customer…"
-          type="search"
-        />
-      </label>
-      <button type="submit" className="ui-btn ui-btn-secondary text-sm">
-        Search
-      </button>
-      {select("payment", "Filter by payment state", PAYMENT_STATUSES, "Any payment")}
-      {select("fulfillment", "Filter by fulfillment state", FULFILLMENT_STATUSES, "Any fulfillment")}
-      {select("method", "Filter by fulfillment method", FULFILLMENT_METHODS, "Any method")}
-      {select("kind", "Filter by order type", ORDER_KINDS, "Any type")}
-      {select("priority", "Filter by priority", PRIORITIES, "Any priority")}
-      <label>
-        <span className="sr-only">Created from</span>
+    <div id="staff-order-filters" className="staff-filter-panel">
+      <Field label="More queues" help="Named presets over the same filters.">
+        <select
+          className="ui-input w-full"
+          value={SECONDARY_SAVED_VIEWS.some((view) => view.id === filters.view) ? String(filters.view) : ""}
+          onChange={(event) =>
+            onNavigate(
+              event.target.value ? { ...emptyFilters(), view: event.target.value } : { ...filters, view: null }
+            )
+          }
+        >
+          <option value="">Choose a queue…</option>
+          {SECONDARY_SAVED_VIEWS.map((view) => (
+            <option key={view.id} value={view.id}>
+              {view.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {select("payment", "Payment state", PAYMENT_STATUSES, "Any payment")}
+      {select("fulfillment", "Delivery state", FULFILLMENT_STATUSES, "Any delivery state")}
+      {select("method", "Delivery method", FULFILLMENT_METHODS, "Any method")}
+      {select("kind", "Order type", ORDER_KINDS, "Any type")}
+      {select("priority", "Priority", PRIORITIES, "Any priority")}
+      <Field label="Created from">
         <input
           type="date"
-          className="ui-input h-full"
-          aria-label="Created from"
+          className="ui-input w-full"
           value={filters.from ?? ""}
           onChange={(event) => onNavigate({ ...filters, view: null, page: 1, from: event.target.value || null })}
         />
-      </label>
-      <label>
-        <span className="sr-only">Created to</span>
+      </Field>
+      <Field label="Created to">
         <input
           type="date"
-          className="ui-input h-full"
-          aria-label="Created to"
+          className="ui-input w-full"
           value={filters.to ?? ""}
           onChange={(event) => onNavigate({ ...filters, view: null, page: 1, to: event.target.value || null })}
         />
-      </label>
-      <label>
-        <span className="sr-only">Sort orders</span>
-        <select
-          className="ui-input h-full"
-          aria-label="Sort orders"
-          value={filters.sort}
-          onChange={(event) => onNavigate({ ...filters, page: 1, sort: event.target.value as OrderFilters["sort"] })}
-        >
-          <option value="updated_desc">Recently updated</option>
-          <option value="created_desc">Newest orders</option>
-          <option value="created_asc">Oldest orders</option>
-          <option value="priority">Highest priority</option>
-          <option value="target_date">Target date</option>
-          <option value="price_desc">Highest price</option>
-        </select>
-      </label>
-    </form>
+      </Field>
+    </div>
   );
 }
 
@@ -597,7 +639,7 @@ export default function StaffOrdersPage() {
   // `useSearchParams` needs a Suspense boundary; without one the route opts into
   // client-side rendering and the production build refuses to prerender it.
   return (
-    <Suspense fallback={<p className="text-sm text-brand-textMuted" role="status">Loading the order queue…</p>}>
+    <Suspense fallback={<LoadingState>Loading the order queue…</LoadingState>}>
       <StaffOrdersContent />
     </Suspense>
   );

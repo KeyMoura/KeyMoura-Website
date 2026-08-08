@@ -764,10 +764,18 @@ test("the filterable list is derived, so it cannot drift from the full one", () 
   }
 });
 
-test("the page offers only the filterable statuses", () => {
-  const page = read("src/app/staff/emails/deliveries/page.tsx");
+test("the delivery log offers only the filterable statuses", () => {
+  /*
+   * The markup moved out of `/staff/emails/deliveries` and into a component, so
+   * the delivery log could become a tab of `/staff/emails` rather than a route
+   * a menu click away from the templates it exists to debug. The route still
+   * exists and redirects. The invariant is unchanged: the filter must not offer
+   * a status nothing in the system produces.
+   */
+  const page = read("src/components/staff/EmailDeliveryCenter.tsx");
   assert.match(page, /FILTERABLE_DELIVERY_STATUSES\.map/);
-  assert.ok(!/\{DELIVERY_STATUSES\.map/.test(page), "the page must not offer a status nothing produces");
+  assert.ok(!/\{DELIVERY_STATUSES\.map/.test(page), "the log must not offer a status nothing produces");
+  assert.match(read("src/app/staff/emails/deliveries/page.tsx"), /redirect\("\/staff\/emails#deliveries"\)/);
 });
 
 test("the API still accepts every legal status, including one only the provider writes", () => {

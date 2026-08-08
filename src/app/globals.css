@@ -644,6 +644,142 @@
   .theme-accent-radial { background: radial-gradient(circle at top right, color-mix(in srgb, var(--brand-accent) 16%, transparent), transparent 45%); }
   .group:hover .theme-accent-drop-glow { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-accent) 60%, transparent)); }
 
+  /* ------------------------------------------------------------------
+     Staff page framework
+     ------------------------------------------------------------------
+     One visual language for every staff surface. Before this, each page
+     invented its own header (`ui-eyebrow` + `text-3xl` here, a bare `h1`
+     there), its own section spacing, and its own idea of what deserved a
+     border — which is why the staff area read as a stack of separately
+     built pages rather than one application.
+
+     Everything derives from the same `--panel` / `--border` / `--muted`
+     variables the Appearance page already drives, so the new framework is
+     themed by the existing controls rather than needing its own.
+     ------------------------------------------------------------------ */
+
+  /* Page: one rhythm, one width, set once. */
+  .staff-page { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
+
+  .staff-page-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem 1.5rem; }
+  .staff-page-heading { min-width: 0; max-width: 48rem; }
+  /* Muted, not accented: the Business tools' "you are holding an instrument"
+     label is a caveat above the title, not a second heading competing with it. */
+  .staff-page-kind {
+    margin-bottom: .375rem;
+    color: var(--muted);
+    font-size: .6875rem;
+    font-weight: 650;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .staff-page-title { color: var(--heading); font-size: 1.75rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.15; }
+  .staff-page-description { margin-top: .5rem; color: var(--muted); font-size: .875rem; line-height: 1.5rem; }
+  .staff-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  /* A primary action must not be a 90px target beside a 320px-wide page. */
+  @media (max-width: 639px) {
+    .staff-page-actions { width: 100%; }
+    .staff-page-actions > * { flex: 1 1 10rem; justify-content: center; text-align: center; }
+  }
+
+  /* Section: grouping by heading and whitespace. No border unless earned. */
+  .staff-section { display: flex; flex-direction: column; gap: .875rem; min-width: 0; }
+  .staff-section-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .5rem 1rem; }
+  .staff-section-title { color: var(--heading); font-size: 1.0625rem; font-weight: 650; letter-spacing: -.01em; }
+  .staff-section-description { margin-top: .25rem; max-width: 46rem; color: var(--muted); font-size: .8125rem; line-height: 1.25rem; }
+  .staff-section-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+
+  /* A card inside a section drops its own heading block: two nested
+     headings is the card-in-card look this framework exists to remove. */
+  .staff-section > .ui-card > .staff-section-head:first-child { margin-bottom: .875rem; }
+
+  /* Rows: the one list surface. Replaces four hand-rolled divide-y lists. */
+  .staff-rows { overflow: hidden; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); }
+  .staff-row { display: grid; gap: .5rem 1rem; border-top: 1px solid var(--border); padding: .875rem 1rem; min-width: 0; }
+  .staff-row:first-child { border-top: 0; }
+  a.staff-row, button.staff-row { width: 100%; text-align: left; transition: background-color 120ms ease; }
+  a.staff-row:hover, button.staff-row:hover { background: var(--panel-strong); }
+  a.staff-row:focus-visible, button.staff-row:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -2px; }
+  .staff-row-main { min-width: 0; }
+  .staff-row-title { color: var(--text); font-size: .9375rem; font-weight: 600; line-height: 1.4; }
+  .staff-row-detail { margin-top: .1875rem; color: var(--muted); font-size: .8125rem; line-height: 1.25rem; }
+  .staff-row-meta { color: var(--muted); font-size: .75rem; line-height: 1.1rem; }
+  .staff-row-aside { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  /* Two columns from `sm` up; stacked below, because a 3-column grid at
+     320px produces 60px columns and a wrapped word per line. */
+  @media (min-width: 640px) {
+    .staff-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+    .staff-row-aside { justify-content: flex-end; }
+  }
+
+  /* Toolbar: the common controls stay out; the rest go behind Filters. */
+  .staff-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  .staff-toolbar-search { flex: 1 1 15rem; min-width: 0; }
+  .staff-filter-panel { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: .875rem; }
+
+  /* Saved views. `min-height` is the 44px touch target the drawer uses. */
+  .staff-views { display: flex; flex-wrap: wrap; gap: .375rem; }
+  .staff-view {
+    display: inline-flex; min-height: 2.5rem; align-items: center; gap: .4rem;
+    border-radius: 9999px; border: 1px solid var(--border); padding: .25rem .8rem;
+    color: var(--muted); font-size: .8125rem; font-weight: 600;
+    transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+  }
+  .staff-view:hover { color: var(--text); }
+  .staff-view[aria-current="page"], .staff-view[aria-pressed="true"] {
+    border-color: color-mix(in srgb, var(--brand-accent) 50%, var(--border));
+    background: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+    color: var(--brand-accent);
+  }
+  .staff-view-count { font-variant-numeric: tabular-nums; opacity: .7; }
+
+  /* Definition pairs. Used wherever a page states facts rather than edits. */
+  .staff-facts { display: grid; gap: .875rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+  .staff-fact-label { color: var(--muted); font-size: .6875rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
+  .staff-fact-value { margin-top: .25rem; color: var(--text); font-size: .9375rem; font-weight: 550; line-height: 1.35; }
+
+  /* Forms: one field rhythm everywhere. `.ui-field` supplies the label. */
+  .staff-form { display: grid; gap: 1.125rem; }
+  .staff-form-grid { display: grid; gap: 1.125rem; }
+  @media (min-width: 640px) { .staff-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .staff-form-wide { grid-column: 1 / -1; }
+  /* A checkbox row is a control with a label beside it, not a field with a
+     label above it — so it gets its own rule instead of five variants. */
+  .staff-check { display: flex; align-items: flex-start; gap: .625rem; color: var(--text); font-size: .875rem; line-height: 1.35rem; }
+  .staff-check input[type="checkbox"] { margin-top: .25rem; flex: none; width: 1rem; height: 1rem; accent-color: var(--brand-primary); }
+  .staff-check-text { min-width: 0; }
+  .staff-check-help { display: block; margin-top: .125rem; color: var(--muted); font-size: .75rem; line-height: 1.1rem; }
+
+  /* The one save bar. Pages have a single save, in a single place. */
+  .staff-save-bar {
+    position: sticky; bottom: .75rem; z-index: 20;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;
+    border-radius: var(--control-radius); border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--panel-strong) 92%, transparent);
+    padding: .75rem .875rem; backdrop-filter: blur(8px);
+  }
+  .staff-save-status { color: var(--muted); font-size: .8125rem; }
+
+  /* Workspace header — the persistent identity bar on a record page. */
+  .staff-record-header { border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: 1rem 1.125rem; }
+  .staff-record-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1.5rem; }
+  .staff-record-eyebrow { color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .08em; }
+  .staff-record-title { margin-top: .1875rem; color: var(--heading); font-size: 1.375rem; font-weight: 650; letter-spacing: -.015em; line-height: 1.2; }
+  .staff-record-states { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .75rem; }
+  .staff-record-next {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1rem;
+    margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .875rem;
+  }
+  .staff-record-next-label { color: var(--brand-primary); font-size: .6875rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .staff-record-next-title { margin-top: .1875rem; color: var(--text); font-size: .9375rem; font-weight: 600; }
+  .staff-record-next-detail { margin-top: .1875rem; color: var(--muted); font-size: .8125rem; line-height: 1.25rem; }
+
+  /* Attention rows carry a severity stripe rather than a coloured card. */
+  .staff-attention { border-left: 3px solid var(--border); }
+  .staff-attention-critical { border-left-color: #fb7185; }
+  .staff-attention-warning { border-left-color: var(--brand-primary); }
+  .staff-attention-info { border-left-color: var(--brand-accent); }
+
   /* Staff chrome */
   .staff-shell {
     display: grid;
@@ -712,6 +848,33 @@
     color: var(--muted);
   }
   .staff-nav-group-toggle:hover { color: var(--text); }
+  /*
+   * "More tools" is a disclosure, not a section heading.
+   *
+   * It reads as a control — a rule above it, a normal-case label, and the
+   * hit area of a link rather than of a caption — because pressing it is how
+   * eleven destinations appear. Styled as a heading, it looked like the label
+   * of a list that had failed to render.
+   */
+  .staff-nav-group-toggle.is-secondary {
+    margin-top: 0.5rem;
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    padding-top: 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .staff-nav-group-toggle.is-secondary:hover { color: var(--text); }
+  /* In the compact rail the label is `sr-only`, so the chevron is the control
+     and needs a real target rather than the 12px glyph it would otherwise be. */
+  .staff-nav[data-compact="true"] .staff-nav-group-toggle.is-secondary {
+    justify-content: center;
+    min-height: 2.25rem;
+    margin-top: 0.25rem;
+    padding-inline: 0;
+  }
+
   .staff-nav-chevron { transition: transform 140ms ease-out; }
   .staff-nav-chevron.is-collapsed { transform: rotate(-90deg); }
   .staff-nav-list { display: grid; gap: 0.125rem; }
@@ -933,6 +1096,30 @@
     background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
     color: var(--brand-primary);
   }
+  /* The "More tools" disclosure in the drawer. 44px target, no marker glyph
+     shifting the label off the same left edge as every row above it. */
+  .staff-drawer-more-summary {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: pointer;
+    padding: 0.5rem 0.25rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+    font-weight: 600;
+    list-style: none;
+  }
+  .staff-drawer-more-summary::-webkit-details-marker { display: none; }
+  .staff-drawer-more-summary::after {
+    content: "▾";
+    transition: transform 140ms ease-out;
+    font-size: 0.75rem;
+  }
+  .staff-drawer-more[open] > .staff-drawer-more-summary { color: var(--text); }
+  .staff-drawer-more[open] > .staff-drawer-more-summary::after { transform: rotate(180deg); }
+
   .staff-drawer-item-icon { flex: none; margin-top: 0.1875rem; opacity: 0.75; }
   .staff-drawer-item-label { display: block; font-size: 0.9375rem; font-weight: 500; }
   .staff-drawer-item-description {

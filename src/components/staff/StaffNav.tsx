@@ -36,10 +36,19 @@ import { StaffNavIcon } from "@/components/staff/StaffNavIcon";
  * subscriptions that can disagree for a frame.
  */
 
-const COLLAPSED_GROUPS_KEY = "km.staffNav.collapsedGroups";
+/**
+ * Which groups the reader has flipped away from their default state.
+ *
+ * Storing *deviations* rather than "the collapsed ones" is what lets primary
+ * groups default to open and "More tools" default to closed while both use one
+ * mechanism. The key is new this pass: the old one held group ids
+ * (`operations`, `content`, `customers`) that no longer exist, so honouring it
+ * would have collapsed nothing and confused everything.
+ */
+const TOGGLED_GROUPS_KEY = "km.staffNav.toggledGroups";
 
 /** Stable module-scope defaults: a fresh `[]` each render would re-subscribe the store. */
-const NO_COLLAPSED_GROUPS: readonly string[] = [];
+const NO_TOGGLED_GROUPS: readonly string[] = [];
 
 export function StaffNav({
   variant = "sidebar",
@@ -55,9 +64,9 @@ export function StaffNav({
   const permissions = new Set(access?.permissions ?? []);
   const groups = visibleStaffNav(permissions);
 
-  const [collapsedGroups, setCollapsedGroups] = useStoredPreference<readonly string[]>(
-    COLLAPSED_GROUPS_KEY,
-    NO_COLLAPSED_GROUPS,
+  const [toggledGroups, setToggledGroups] = useStoredPreference<readonly string[]>(
+    TOGGLED_GROUPS_KEY,
+    NO_TOGGLED_GROUPS,
     parseStringArray
   );
 
@@ -66,8 +75,8 @@ export function StaffNav({
   const isCompact = variant === "sidebar" && compact;
 
   const toggleGroup = (id: string) => {
-    setCollapsedGroups(
-      collapsedGroups.includes(id) ? collapsedGroups.filter((value) => value !== id) : [...collapsedGroups, id]
+    setToggledGroups(
+      toggledGroups.includes(id) ? toggledGroups.filter((value) => value !== id) : [...toggledGroups, id]
     );
   };
 
@@ -76,32 +85,55 @@ export function StaffNav({
     // the row that says where you are is worse than ignoring a stored
     // preference for one render.
     const containsActive = isStaffNavGroupActive(group, pathname);
-    const collapsed = !isCompact && collapsedGroups.includes(group.id) && !containsActive;
+    const flipped = toggledGroups.includes(group.id);
+    /*
+     * Primary groups are open until flipped; "More tools" is closed until it is.
+     *
+     * The compact rail forces primary groups open — there is nothing to collapse
+     * when every label is already hidden — but **not** the secondary group. A
+     * compact rail that unfolded eleven diagnostic icons under the four that
+     * matter would be exactly the wall of undifferentiated targets this pass
+     * removed from the expanded sidebar.
+     */
+    const collapsed = !containsActive && (group.secondary ? !flipped : !isCompact && flipped);
     const headingId = `staff-nav-group-${group.id}`;
     const listId = `staff-nav-items-${group.id}`;
 
+    /*
+     * A one-item primary group renders as a bare row.
+     *
+     * Dashboard, Orders, Production and Fulfillment are each a single
+     * destination. Giving each of them a collapsible heading above one link
+     * would double the sidebar's height to say every name twice, and would
+     * offer a "collapse" control whose only effect is hiding the one thing the
+     * heading names.
+     */
+    const bare = !group.secondary && group.items.length === 1 && group.items[0].label === group.label;
+    // The secondary group keeps its control in the compact rail, as an icon.
+    const showToggle = !bare && (!isCompact || group.secondary);
+
     return (
       <section key={group.id} aria-labelledby={headingId} className="staff-nav-group">
-        {isCompact ? (
-          <h2 id={headingId} className="sr-only">
-            {group.label}
-          </h2>
-        ) : (
+        {showToggle ? (
           <h2 id={headingId}>
             <button
               type="button"
               onClick={() => toggleGroup(group.id)}
               aria-expanded={!collapsed}
               aria-controls={listId}
-              className="staff-nav-group-toggle"
+              className={`staff-nav-group-toggle${group.secondary ? " is-secondary" : ""}`}
             >
-              <span>{group.label}</span>
+              <span className={isCompact ? "sr-only" : undefined}>{group.label}</span>
               <FontAwesomeIcon
                 icon={faChevronDown}
                 className={`staff-nav-chevron h-3 w-3 ${collapsed ? "is-collapsed" : ""}`}
                 aria-hidden="true"
               />
             </button>
+          </h2>
+        ) : (
+          <h2 id={headingId} className="sr-only">
+            {group.label}
           </h2>
         )}
 

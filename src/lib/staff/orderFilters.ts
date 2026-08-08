@@ -147,6 +147,17 @@ export type SavedView = {
   /** What this view is for, shown as the list's subtitle so the queue explains itself. */
   description: string;
   group: "Attention" | "Money" | "Making" | "Sending" | "Closed";
+  /**
+   * True for the handful of views that get a chip above the list.
+   *
+   * All fifteen used to be rendered as a single wrapping row of chips, which at
+   * 1280px was three lines of pills before the list started and at 375px filled
+   * most of a screen. Six of them describe how a shop actually works through
+   * its orders; the rest are real and useful and live in the Filters panel,
+   * one dropdown away, rather than competing with the six every time the page
+   * is opened.
+   */
+  primary?: boolean;
   filters: Partial<OrderFilters>;
 };
 
@@ -158,7 +169,18 @@ export type SavedView = {
  */
 export const SAVED_VIEWS: readonly SavedView[] = [
   {
-    id: "needs_review", label: "Needs review", group: "Attention",
+    /*
+     * The default working queue, and the one the dashboard's "All open work"
+     * link opens. It existed only as a bare `?flags=requires_action` URL, so
+     * the page it landed on showed no chip selected and looked like an
+     * unfiltered list that happened to be short.
+     */
+    id: "needs_attention", label: "Needs attention", group: "Attention", primary: true,
+    description: "Every order waiting on somebody here — decisions, quotes, packing and chasing.",
+    filters: { flags: ["requires_action"] },
+  },
+  {
+    id: "needs_review", label: "New", group: "Attention", primary: true,
     description: "New requests waiting for someone to accept, decline or price them.",
     filters: { status: ["requested"], sort: "created_asc" },
   },
@@ -168,7 +190,7 @@ export const SAVED_VIEWS: readonly SavedView[] = [
     filters: { status: ["needs_information"] },
   },
   {
-    id: "awaiting_payment", label: "Awaiting payment", group: "Money",
+    id: "awaiting_payment", label: "Awaiting payment", group: "Money", primary: true,
     description: "A balance has to be collected before these can be made or sent.",
     filters: { status: ["awaiting_payment"], payment: ["unpaid", "payment_pending", "partial"] },
   },
@@ -178,12 +200,12 @@ export const SAVED_VIEWS: readonly SavedView[] = [
     filters: { payment: ["paid"], fulfillment: ["unfulfilled"], status: ["accepted", "in_progress", "ready"] },
   },
   {
-    id: "in_production", label: "In production", group: "Making",
+    id: "in_production", label: "In production", group: "Making", primary: true,
     description: "Being made right now.",
     filters: { status: ["in_progress"] },
   },
   {
-    id: "ready_to_fulfill", label: "Ready to fulfill", group: "Sending",
+    id: "ready_to_fulfill", label: "Ready to fulfill", group: "Sending", primary: true,
     description: "Made and waiting to be packed, labelled or handed over.",
     filters: { fulfillment: ["ready_to_fulfill", "processing"] },
   },
@@ -225,7 +247,7 @@ export const SAVED_VIEWS: readonly SavedView[] = [
     filters: { flags: ["overdue"] },
   },
   {
-    id: "completed", label: "Completed", group: "Closed",
+    id: "completed", label: "Completed", group: "Closed", primary: true,
     description: "Delivered, collected or otherwise finished.",
     filters: { status: ["completed"], sort: "updated_desc" },
   },
@@ -400,8 +422,20 @@ export const ATTENTION_VIEW: Readonly<Record<string, string>> = {
   tracking: "shipped",
 };
 
-/** Everything that wants a human, as one filtered list. */
-export const REQUIRES_ACTION_HREF = `/staff/orders?${PARAM.flags}=requires_action`;
+/**
+ * Everything that wants a human, as one filtered list.
+ *
+ * Points at the **saved view** rather than at the bare flag it applies. Both
+ * produce the same rows, but arriving by the raw parameter left the page with
+ * no chip selected — so a dashboard link landed on what looked like an
+ * unfiltered list that happened to be short, with no way to see what had been
+ * applied or to clear it.
+ */
+export const REQUIRES_ACTION_HREF = viewHref("needs_attention");
+
+/** The views that earn a chip above the list. The rest live in the Filters panel. */
+export const PRIMARY_SAVED_VIEWS: readonly SavedView[] = SAVED_VIEWS.filter((view) => view.primary);
+export const SECONDARY_SAVED_VIEWS: readonly SavedView[] = SAVED_VIEWS.filter((view) => !view.primary);
 
 // ---------------------------------------------------------------------------
 // Active-filter description

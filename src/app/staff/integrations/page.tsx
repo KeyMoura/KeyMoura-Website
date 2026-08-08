@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { Badge, EmptyState, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { supabaseBrowser } from "@/lib/supabaseClient";
@@ -82,7 +83,7 @@ export default function IntegrationsPage() {
     return () => window.clearTimeout(timer);
   }, [canView, load]);
 
-  if (isLoading) return <div className="ui-card text-sm text-brand-textMuted">Loading…</div>;
+  if (isLoading) return <LoadingState>Loading…</LoadingState>;
   if (!canView) {
     return <AccessDeniedCard message="Integration health reports platform configuration, so it needs the View integration health permission." />;
   }
@@ -90,25 +91,22 @@ export default function IntegrationsPage() {
   const ready = state.kind === "ready" ? state : null;
 
   return (
-    <main className="page-stack">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="ui-eyebrow">Business</p>
-          <h1 className="mt-1 text-3xl font-semibold">Integration health</h1>
-          <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
-            What every external service this shop depends on is doing. No secret value appears here, and
-            nothing on this page makes a call that charges, refunds or emails anybody.
-          </p>
-        </div>
+    <StaffPage>
+      <PageHeader
+        kind="Administrative tool"
+        title="Integration health"
+        description="What every external service this shop depends on is doing. No secret value appears here, and nothing on this page makes a call that charges, refunds or emails anybody."
+        actions={
         <button
           type="button"
           onClick={() => void load()}
           disabled={state.kind === "loading"}
-          className="ui-btn ui-btn-secondary disabled:opacity-50"
+          className="ui-btn ui-btn-secondary text-sm disabled:opacity-50"
         >
           {state.kind === "loading" ? "Checking…" : "Check again"}
         </button>
-      </div>
+        }
+      />
 
       <Notice tone="info">
         <strong>Verified</strong> means something actually happened — a webhook arrived and its signature
@@ -198,6 +196,6 @@ export default function IntegrationsPage() {
             </Panel>
           ))
         : null}
-    </main>
+    </StaffPage>
   );
 }

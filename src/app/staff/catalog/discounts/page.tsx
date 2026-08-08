@@ -1,8 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { EmptyState, Notice } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { discountStatus, discountValueLabel, parseDiscountValue } from "@/lib/commerce/discountAdmin";
@@ -273,47 +274,34 @@ export default function StaffDiscountsPage() {
     }
   }
 
-  if (accessLoading) {
-    return (
-      <main className="page-container">
-        <p aria-live="polite" className="text-sm text-brand-textMuted">
-          Loading…
-        </p>
-      </main>
-    );
-  }
+  if (accessLoading) return <LoadingState>Loading discount codes…</LoadingState>;
 
   if (!canManage) {
     return <AccessDeniedCard message="You do not have permission to manage discount codes." />;
   }
 
   return (
-    <main className="page-container">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Discount codes</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-brand-textMuted">
-            Codes are applied and priced by KeyMoura, not by Stripe. A customer submits a code; the amount it is worth
-            is always calculated here and confirmed again immediately before payment.
-          </p>
-        </div>
-        <Link href="/staff/catalog" className={subtle}>
-          Back to catalog
-        </Link>
-      </header>
+    // `page-container` here was a second max-width box inside the staff
+    // shell's own, so Discounts rendered narrower than Products beside it in
+    // the same menu group. `StaffPage` sets no width and inherits the shell's.
+    <StaffPage>
+      <PageHeader
+        title="Discounts"
+        description="Codes are applied and priced by KeyMoura, not by Stripe. A customer submits a code; the amount it is worth is always calculated here and confirmed again immediately before payment."
+      />
 
       {error ? (
-        <Notice tone="danger" role="alert" className="mt-6">
+        <Notice tone="danger" role="alert">
           {error}
         </Notice>
       ) : null}
       {message ? (
-        <Notice tone="success" role="status" className="mt-6">
+        <Notice tone="success" role="status">
           {message}
         </Notice>
       ) : null}
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_24rem] lg:items-start">
+      <div className="grid gap-6 lg:grid-cols-[1fr_24rem] lg:items-start">
         <section aria-labelledby="discount-list" className="ui-card">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="discount-list" className="text-lg font-semibold">
@@ -647,6 +635,6 @@ export default function StaffDiscountsPage() {
           </div>
         </form>
       </div>
-    </main>
+    </StaffPage>
   );
 }

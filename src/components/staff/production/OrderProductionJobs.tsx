@@ -34,9 +34,19 @@ type Props = {
   productId?: string | null;
   customerId?: string | null;
   productName?: string | null;
+  /**
+   * Reports what was found, so the order header can state the production state
+   * without loading the jobs a second time.
+   *
+   * The order workspace header answers "is this being made" beside payment and
+   * fulfillment. Fetching the same list twice to fill in one badge would be two
+   * requests that can disagree; this is the panel telling the page what it
+   * already knows.
+   */
+  onSummary?: (summary: { count: number; label: string }) => void;
 };
 
-export function OrderProductionJobs({ orderId, productId, customerId, productName }: Props) {
+export function OrderProductionJobs({ orderId, productId, customerId, productName, onSummary }: Props) {
   const { data: access } = useMeAccess();
   const permissions = useMemo(() => new Set(access?.permissions ?? []), [access]);
   const canView = permissions.has("production.view") || permissions.has("production.manage");
@@ -135,6 +145,28 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
   useEffect(() => {
     if (canView) void load();
   }, [canView, load]);
+
+  /*
+   * Report the summary upward once the jobs are known.
+   *
+   * In an effect keyed on `jobs` rather than inside `load`, so a parent that
+   * re-renders in response cannot re-enter the fetch. The label is the least
+   * finished status present — an order with one job done and one queued is not
+   * "done", and reporting the newest job's status would say so on half the
+   * loads depending on insertion order.
+   */
+  useEffect(() => {
+    if (!jobs || !onSummary) return;
+    const RANK: Record<string, number> = { blocked: 0, on_hold: 1, queued: 2, in_progress: 3, done: 4 };
+    const least = jobs.reduce<string | null>(
+      (worst, job) => (worst === null || (RANK[job.status] ?? 9) < (RANK[worst] ?? 9) ? job.status : worst),
+      null
+    );
+    onSummary({
+      count: jobs.length,
+      label: least ? least.replaceAll("_", " ") : "none",
+    });
+  }, [jobs, onSummary]);
 
   // Silent for staff without production access — an order page should not grow
   // a permission error for a section they were never meant to see.

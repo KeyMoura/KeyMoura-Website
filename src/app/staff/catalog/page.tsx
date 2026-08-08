@@ -5,11 +5,29 @@ import Image from "next/image";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
+import { useHashTab } from "@/lib/hooks/useHashTab";
 import { classifySupabaseError } from "@/lib/staff/loadState";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { CatalogProduct, optionKey, ProductMedia, ProductOptionGroup } from "@/lib/commerceTypes";
 import { MenuSelect } from "@/components/ui/MenuSelect";
-import { EmptyState, Notice } from "@/components/ui/DesignSystem";
+import { Badge, Field, Notice } from "@/components/ui/DesignSystem";
+import {
+  Card,
+  CheckField,
+  EmptyState,
+  Fact,
+  Facts,
+  FormGrid,
+  FormWide,
+  LoadingState,
+  PageHeader,
+  PageTabs,
+  SaveBar,
+  Section,
+  StaffPage,
+  TabPanel,
+} from "@/components/staff/StaffPage";
+import type { StaffTab } from "@/lib/staff/pageFramework";
 import { CategorySelect } from "@/components/staff/CategorySelect";
 import { visibleCategories, type CategoryRow } from "@/lib/commerce/categories";
 import { allowsDirectPurchase, PURCHASE_MODE_COPY, PURCHASE_MODES, type PurchaseMode } from "@/lib/commerce/purchaseModes";
@@ -17,9 +35,38 @@ import ProductContentEditor from "@/components/staff/ProductContentEditor";
 import { ProductShippingEditor } from "@/components/staff/ProductShippingEditor";
 import { EMPTY_DETAIL_CONTENT, parseDetailContent, serializeDetailContent, type ProductDetailContent } from "@/lib/commerce/productContent";
 
+/**
+ * The product editor.
+ *
+ * ## What this replaced
+ *
+ * A create-product form pinned above everything, then a product list, then the
+ * editor as **seven stacked cards** — a sticky save bar, a publish checklist, a
+ * "Product details" card holding fourteen unrelated fields, a product-content
+ * card, an inventory card, a delivery card, a media card and an options card.
+ * Editing a SKU and editing package dimensions were the same scroll. The
+ * checklist that told you what was missing was at the top; six of the seven
+ * things it named were somewhere below it.
+ *
+ * ## The shape now
+ *
+ * Nine tabs, each holding one kind of decision: **Basic, Media, Pricing,
+ * Purchase, Inventory, Shipping, Content, SEO, Advanced**. The publish
+ * checklist moved into the record header, where it belongs — it is a statement
+ * about the product, not a section of it — and each unfinished item names the
+ * tab that fixes it.
+ *
+ * ## One save
+ *
+ * There is exactly one Save, in the standard save bar, and it writes the
+ * product row and every option in one act. Two things still write immediately
+ * and say so: uploading a file, and adding or removing an option *group*, both
+ * of which create or destroy a row in another table and cannot be staged
+ * meaningfully in a draft.
+ */
+
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const input = "ui-input";
-const primary = "ui-btn ui-btn-primary disabled:opacity-50";
 const subtle = "ui-btn ui-btn-ghost text-sm disabled:opacity-50";
 // The structured content is part of "has this been edited": without it the
 // Save button stays disabled after adding a benefit, and the beforeunload
@@ -49,6 +96,24 @@ export default function StaffCatalogPage() {
   const [saveMessage, setSaveMessage] = useState("");
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [content, setContent] = useState<ProductDetailContent>(EMPTY_DETAIL_CONTENT);
+  /** The create form is an action, not a permanent fixture at the top of the page. */
+  const [creating, setCreating] = useState(false);
+
+  const tabs = useMemo<StaffTab[]>(
+    () => [
+      { id: "basic", label: "Basic" },
+      { id: "media", label: "Media", count: media.length || null },
+      { id: "pricing", label: "Pricing" },
+      { id: "purchase", label: "Purchase" },
+      { id: "inventory", label: "Inventory" },
+      { id: "shipping", label: "Shipping" },
+      { id: "content", label: "Content" },
+      { id: "seo", label: "SEO" },
+      { id: "advanced", label: "Advanced" },
+    ],
+    [media.length]
+  );
+  const [tab, setTab] = useHashTab(tabs);
 
   const filteredProducts = useMemo(() => products.filter(product => {
     const term = search.trim().toLowerCase();
@@ -69,18 +134,33 @@ export default function StaffCatalogPage() {
     }
     return counts;
   }, [products]);
-  const publishChecks = [
-    { label: "Product name", complete: Boolean(draft.name?.trim()) },
-    { label: "Short description", complete: Boolean(draft.short_description?.trim()) },
-    { label: "Starting price", complete: draft.starting_price_cents != null },
-    { label: "Product image", complete: imageCount > 0 || Boolean(draft.image_url) },
+  /*
+   * The publish checklist, each item naming the tab that fixes it.
+   *
+   * It was a five-across grid of pills at the top of a seven-card page: it told
+   * you "Product image" was missing and left you to find where images are set.
+   */
+  const publishChecks: { label: string; complete: boolean; tab: string; unknown?: boolean }[] = [
+    { label: "Product name", complete: Boolean(draft.name?.trim()), tab: "basic" },
+    { label: "Short description", complete: Boolean(draft.short_description?.trim()), tab: "basic" },
+    { label: "Starting price", complete: draft.starting_price_cents != null, tab: "pricing" },
+    { label: "Product image", complete: imageCount > 0 || Boolean(draft.image_url), tab: "media" },
     // `unknown` when the option list could not be read: reporting a custom
     // product as missing its choices, when the truth is that nobody could tell,
     // is a false blocker on publishing.
-    { label: "Customization choices", complete: !draft.is_custom || groups.length > 0, unknown: editorLoadFailed && draft.is_custom },
+    {
+      label: "Customization choices",
+      complete: !draft.is_custom || groups.length > 0,
+      unknown: editorLoadFailed && draft.is_custom,
+      tab: "purchase",
+    },
     // A directly purchasable product with no fixed price silently falls back to
     // the request path, which is not what the staff member chose.
-    { label: "Purchase mode", complete: !allowsDirectPurchase(draft.purchase_mode ?? "request_only") || draft.starting_price_cents != null },
+    {
+      label: "Purchase mode",
+      complete: !allowsDirectPurchase(draft.purchase_mode ?? "request_only") || draft.starting_price_cents != null,
+      tab: "purchase",
+    },
   ];
   const readyToPublish = publishChecks.every(check => check.complete);
 
@@ -155,8 +235,10 @@ export default function StaffCatalogPage() {
     setBusy(false);
     if (insertError) return setError(insertError.message);
     e.currentTarget.reset();
+    setCreating(false);
     await loadProducts();
     setSelectedId(data.id);
+    setTab("basic");
     await loadEditor(data as CatalogProduct);
   }
 
@@ -437,185 +519,648 @@ export default function StaffCatalogPage() {
     } : group));
   }
 
-  if (isLoading) return <div className="ui-card">Loading…</div>;
+  if (isLoading) return <LoadingState>Loading products…</LoadingState>;
   if (!canView) return <AccessDeniedCard message="You do not have access to catalog management." />;
 
   const hasUnsavedChanges = selectedId ? editorSnapshot(draft, groups, content) !== savedSnapshot : false;
+  const patch = (next: Partial<CatalogProduct>) => setDraft(current => ({ ...current, ...next }));
+  /*
+   * The purchase mode, narrowed to one this build knows.
+   *
+   * `PURCHASE_MODE_COPY[mode].help` throws on anything else, which white-screens
+   * the whole editor rather than one field. A CHECK constraint means the column
+   * cannot hold a surprise *today* — but this is precisely the page a row
+   * written by an older build would be opened on, and the failure mode is
+   * losing the editor rather than losing one label. Found by driving the
+   * rebuilt editor in a browser.
+   */
+  const purchaseMode: PurchaseMode = PURCHASE_MODES.includes(draft.purchase_mode as PurchaseMode)
+    ? (draft.purchase_mode as PurchaseMode)
+    : "request_only";
 
   return (
-    <main className="page-stack">
-      <div><p className="ui-eyebrow">Commerce</p>
-      <h1 className="mt-1 text-3xl font-semibold">Product catalog</h1>
-      <p className="mt-2 text-sm text-brand-textMuted">Build products, galleries, 3D previews, and the exact choices customers can request.</p></div>
+    <StaffPage>
+      <PageHeader
+        title="Products"
+        description="Everything customers can buy: details, media, pricing, options, stock rules and how each one is delivered."
+        actions={
+          canManage ? (
+            <button
+              type="button"
+              onClick={() => setCreating(open => !open)}
+              aria-expanded={creating}
+              className="ui-btn ui-btn-primary text-sm"
+            >
+              New product
+            </button>
+          ) : null
+        }
+      />
 
-      {canManage ? <form onSubmit={createProduct} className="ui-card grid gap-3 sm:grid-cols-2">
-        <input required name="name" className={input} placeholder="Product name" />
-        <input name="category" className={input} placeholder="Category" />
-        <input name="price" className={input} type="number" min="0" step=".01" placeholder="Starting price (optional)" />
-        <input name="description" className={input} placeholder="Short description" />
-        <button disabled={busy} className={`${primary} sm:col-span-2`}>Create draft product</button>
-      </form> : null}
+      {/* The create form is behind the page action rather than pinned above the
+          catalog. It was the first thing on the page every time, so opening
+          Products to check a price began with four empty fields. */}
+      {creating && canManage ? (
+        <Section title="New product" description="Creates a draft. Everything else is set in the editor.">
+          <Card>
+            <form onSubmit={createProduct}>
+              <FormGrid>
+                <Field label="Product name" required>
+                  <input required name="name" className={`${input} w-full`} />
+                </Field>
+                <Field label="Category" help="Free text; the structured category is set in the editor.">
+                  <input name="category" className={`${input} w-full`} />
+                </Field>
+                <Field label="Starting price ($)">
+                  <input name="price" className={`${input} w-full`} type="number" min="0" step=".01" />
+                </Field>
+                <Field label="Short description">
+                  <input name="description" className={`${input} w-full`} />
+                </Field>
+              </FormGrid>
+              <div className="ui-action-row mt-4">
+                <button disabled={busy} className="ui-btn ui-btn-primary text-sm disabled:opacity-50">
+                  Create draft product
+                </button>
+                <button type="button" onClick={() => setCreating(false)} className={subtle}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </Card>
+        </Section>
+      ) : null}
 
       {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
-        <aside className="space-y-3">
-          <input className={input} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search products or SKU" aria-label="Search catalog" />
-          <MenuSelect ariaLabel="Filter catalog products" className="ui-select-trigger" value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} options={[{value:"active",label:"Active products"},{value:"published",label:"Published"},{value:"draft",label:"Drafts"},{value:"archived",label:"Archived"},{value:"all",label:"All products"}]} />
-          <div className="space-y-2">
-          {filteredProducts.map(product => <button key={product.id} onClick={() => { setSelectedId(product.id); void loadEditor(product); }}
-            className={`ui-card ui-card-hover w-full text-left ${selectedId === product.id ? "!border-brand-primary !bg-brand-primary/10" : ""}`}>
-            <span className="flex items-center justify-between gap-2"><span className="font-semibold">{product.name}</span>{product.inventory_policy === "track" && product.inventory_quantity <= product.low_stock_threshold ? <span className="text-xs text-amber-300">{product.inventory_quantity} left</span> : null}</span>
-            <span className="mt-1 block text-xs text-brand-textMuted">{product.sku ? `${product.sku} · ` : ""}/{product.slug} · {product.archived_at ? "Archived" : product.is_published ? "Published" : "Draft"}</span>
-          </button>)}
+      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
+        {/* ---------------- Product list ---------------- */}
+        <aside className="min-w-0 space-y-3">
+          <input
+            className={`${input} w-full`}
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+            placeholder="Search products or SKU"
+            aria-label="Search products"
+          />
+          <MenuSelect
+            ariaLabel="Filter products"
+            className="ui-select-trigger"
+            value={statusFilter}
+            onChange={value => setStatusFilter(value as typeof statusFilter)}
+            options={[
+              { value: "active", label: "Active products" },
+              { value: "published", label: "Published" },
+              { value: "draft", label: "Drafts" },
+              { value: "archived", label: "Archived" },
+              { value: "all", label: "All products" },
+            ]}
+          />
+          {filteredProducts.length ? (
+            <div className="staff-rows">
+              {filteredProducts.map(product => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => { setSelectedId(product.id); void loadEditor(product); }}
+                  aria-current={selectedId === product.id ? "true" : undefined}
+                  className="staff-row"
+                >
+                  <span className="staff-row-main">
+                    <span className="staff-row-title block">{product.name}</span>
+                    <span className="staff-row-detail block">
+                      {product.sku ? `${product.sku} · ` : ""}/{product.slug}
+                    </span>
+                  </span>
+                  <span className="staff-row-aside">
+                    {product.inventory_policy === "track" && product.inventory_quantity <= product.low_stock_threshold ? (
+                      <Badge tone="warning">{product.inventory_quantity} left</Badge>
+                    ) : null}
+                    <Badge tone={product.archived_at ? "neutral" : product.is_published ? "success" : "neutral"}>
+                      {product.archived_at ? "Archived" : product.is_published ? "Published" : "Draft"}
+                    </Badge>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {/* "None match" is a claim about a successful query. A failed one gets
               its own sentence, because an empty catalog and an unreadable one
               look identical otherwise. */}
-          {productsFailed
-            ? <EmptyState>Products are not shown because the catalog could not be loaded. This is not the same as the catalog being empty.</EmptyState>
-            : filteredProducts.length === 0 ? <EmptyState>No products match this view.</EmptyState> : null}
-          </div>
+          {productsFailed ? (
+            <EmptyState>
+              Products are not shown because the catalog could not be loaded. This is not the same as the catalog
+              being empty.
+            </EmptyState>
+          ) : filteredProducts.length === 0 ? (
+            <EmptyState>No products match this view.</EmptyState>
+          ) : null}
         </aside>
 
-        {selectedId ? <section className="space-y-6">
-          <div className="ui-card sticky top-2 z-20 !border-brand-primary/30 !bg-zinc-950/95 shadow-xl backdrop-blur sm:top-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><p className="text-xs uppercase tracking-[.16em] text-brand-primary">Editing</p><p className="font-semibold">{draft.name || "Untitled product"}</p></div>
-              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                <span className={`text-xs ${hasUnsavedChanges ? "text-amber-200" : "text-brand-textMuted"}`} aria-live="polite">{busy ? "Saving all changes…" : hasUnsavedChanges ? "Unsaved changes" : saveMessage || "Everything saved"}</span>
-                {draft.slug ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>{draft.is_published ? "View live" : "Preview URL"} ↗</Link> : null}
-                <button disabled={!canManage || busy || !hasUnsavedChanges} onClick={() => void saveAllChanges()} className={`${primary} ml-auto sm:ml-0`}>{busy ? "Saving…" : "Save changes"}</button>
-              </div>
-            </div>
-          </div>
-
-          <div className="ui-card">
-            <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Publish checklist</h2><p className="mt-1 text-sm text-brand-textMuted">Finish these essentials before making the product visible to customers.</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${readyToPublish ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-400/10 text-amber-200"}`}>{publishChecks.filter(check => check.complete).length}/{publishChecks.length} ready</span></div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">{publishChecks.map(check => <div key={check.label} className={`rounded-xl border px-3 py-2 text-sm ${check.unknown ? "border-amber-500/40 text-amber-200" : check.complete ? "border-emerald-500/30 text-emerald-200" : "border-zinc-700 text-brand-textMuted"}`}><span aria-hidden="true">{check.unknown ? "?" : check.complete ? "✓" : "○"}</span> {check.label}{check.unknown ? " — could not be checked" : ""}</div>)}</div>
-          </div>
-          <div className="ui-card">
-            <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Product details</h2><div className="flex items-center gap-3"><span className={draft.archived_at ? "text-sm text-amber-300" : draft.is_published ? "text-sm text-emerald-300" : "text-sm text-brand-textMuted"}>{draft.archived_at ? "Archived" : draft.is_published ? "Published" : "Draft"}</span>{draft.slug && draft.is_published && !draft.archived_at ? <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>View live ↗</Link> : null}</div></div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="text-sm">Name<input className={`${input} mt-1`} value={draft.name ?? ""} onChange={e => setDraft(current => ({ ...current, name: e.target.value }))} /></label>
-              <label className="text-sm">Slug<input className={`${input} mt-1`} value={draft.slug ?? ""} onChange={e => setDraft(current => ({ ...current, slug: e.target.value }))} /></label>
-              <CategorySelect value={draft.category_id ?? null} onChange={categoryId => setDraft(current => ({ ...current, category_id: categoryId }))} categories={categories} productCounts={categoryCounts} disabled={!canManage} />
-              <label className="text-sm">SKU<input className={`${input} mt-1`} value={draft.sku ?? ""} onChange={e => setDraft(current => ({ ...current, sku: e.target.value }))} placeholder="Example: KM-SHIFT-001" /></label>
-              <label className="text-sm">Starting price ($)<input className={`${input} mt-1`} type="number" min="0" step=".01" value={draft.starting_price_cents == null ? "" : draft.starting_price_cents / 100} onChange={e => setDraft(current => ({ ...current, starting_price_cents: e.target.value ? Math.round(Number(e.target.value) * 100) : null }))} /></label>
-              <label className="text-sm">Availability<MenuSelect className="ui-select-trigger mt-1" value={draft.availability_status ?? "made_to_order"} onChange={value => setDraft(current => ({ ...current, availability_status: value as CatalogProduct["availability_status"] }))} options={[{value:"available",label:"Available"},{value:"limited",label:"Limited availability"},{value:"made_to_order",label:"Made to order"},{value:"unavailable",label:"Currently unavailable"}]} /></label>
-              <label className="text-sm">Lead time<input className={`${input} mt-1`} value={draft.lead_time_text ?? ""} onChange={e => setDraft(current => ({ ...current, lead_time_text: e.target.value }))} placeholder="Example: Usually 1–2 weeks" /></label>
-              <label className="text-sm sm:col-span-2">Short description<input className={`${input} mt-1`} value={draft.short_description ?? ""} onChange={e => setDraft(current => ({ ...current, short_description: e.target.value }))} /></label>
-              <label className="text-sm sm:col-span-2">Full description<textarea className={`${input} mt-1 min-h-32`} value={draft.description ?? ""} onChange={e => setDraft(current => ({ ...current, description: e.target.value }))} /></label>
-              <label className="text-sm sm:col-span-2">How customers buy this
-                <MenuSelect className="ui-select-trigger mt-1" value={draft.purchase_mode ?? "request_only"} onChange={value => setDraft(current => ({ ...current, purchase_mode: value as PurchaseMode }))} options={PURCHASE_MODES.map(mode => ({ value: mode, label: PURCHASE_MODE_COPY[mode].staffLabel }))} />
-                <span className="mt-1 block text-xs text-brand-textMuted">{PURCHASE_MODE_COPY[draft.purchase_mode ?? "request_only"].help}</span>
-                {allowsDirectPurchase(draft.purchase_mode ?? "request_only") && draft.starting_price_cents == null ? <span className="mt-1 block text-xs text-amber-200">A directly purchasable product needs a starting price, or customers will be sent to a request instead.</span> : null}
-              </label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(draft.is_custom)} onChange={e => setDraft(current => ({ ...current, is_custom: e.target.checked }))} /> Customer can customize this product</label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={Boolean(draft.archived_at) || (!draft.is_published && !readyToPublish)} checked={Boolean(draft.is_published)} onChange={e => setDraft(current => ({ ...current, is_published: e.target.checked }))} /> Published in catalog</label>
-            </div>
-            {!readyToPublish && !draft.is_published ? <p className="mt-3 text-xs text-amber-200">Complete the publish checklist to enable publishing. You can save the draft at any time.</p> : null}
-            <div className="ui-action-row mt-4"><button disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>Duplicate</button><button disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>{draft.archived_at ? "Restore" : "Archive"}</button><button disabled={!canManage || busy} onClick={() => void deleteProduct()} className="ui-btn ui-btn-danger">Delete permanently</button></div>
-          </div>
-
-          <div className="ui-card">
-            <h2 className="text-xl font-semibold">Product page content</h2>
-            <p className="mt-1 text-sm text-brand-textMuted">
-              The structured sections on the customer-facing product page. All optional — a section
-              with nothing in it is hidden rather than shown empty, so a sparse product simply gets a
-              shorter page.
-            </p>
-            <div className="mt-5">
-              <ProductContentEditor
-                draft={draft}
-                onChange={patch => setDraft(current => ({ ...current, ...patch }))}
-                content={content}
-                onContentChange={setContent}
-                disabled={!canManage}
-              />
-            </div>
-          </div>
-
-          <div className="ui-card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold">Inventory</h2>
-                <p className="mt-1 text-sm text-brand-textMuted">Use made-to-order for custom work, or track a real quantity for ready-to-ship items.</p>
-              </div>
-              {/* Setting a quantity here is a *definition*; moving stock is an
-                  event with a reason and a ledger entry. They are different
-                  actions, so the editor points at the surface that records the
-                  second rather than pretending this field is it. */}
-              {selectedId && permissions.has("inventory.view") ? <Link href={`/staff/inventory/${selectedId}`} className={subtle}>Stock, holds & history →</Link> : null}
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <label className="text-sm">Inventory mode<MenuSelect className="ui-select-trigger mt-1" value={draft.inventory_policy ?? "unlimited"} onChange={value => setDraft(current => ({ ...current, inventory_policy: value as CatalogProduct["inventory_policy"] }))} options={[{value:"unlimited",label:"Made to order / unlimited"},{value:"track",label:"Track quantity"}]} /></label>
-              <label className="text-sm">Quantity<input disabled={draft.inventory_policy !== "track"} className={`${input} mt-1 disabled:opacity-50`} type="number" min="0" value={draft.inventory_quantity ?? 0} onChange={e => setDraft(current => ({ ...current, inventory_quantity: Number(e.target.value) }))} /></label>
-              <label className="text-sm">Low-stock warning<input disabled={draft.inventory_policy !== "track"} className={`${input} mt-1 disabled:opacity-50`} type="number" min="0" value={draft.low_stock_threshold ?? 2} onChange={e => setDraft(current => ({ ...current, low_stock_threshold: Number(e.target.value) }))} /></label>
-              {draft.inventory_policy === "track" ? <label className="flex items-center gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={Boolean(draft.continue_selling_when_out_of_stock)} onChange={e => setDraft(current => ({ ...current, continue_selling_when_out_of_stock: e.target.checked }))} /> Keep accepting requests when quantity reaches zero</label> : null}
-              <label className="flex items-center gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={Boolean(draft.made_to_order)} onChange={e => setDraft(current => ({ ...current, made_to_order: e.target.checked }))} /> Made to order — never reserved at checkout, and never raises a low-stock alert</label>
-            </div>
-          </div>
-
-          <div className="ui-card">
-            <h2 className="text-xl font-semibold">Delivery, packaging &amp; returns</h2>
-            <p className="mt-1 text-sm text-brand-textMuted">
-              These decide which delivery methods a cart may offer and what a parcel is priced as. They have been
-              live since the shipping system shipped; this is the first surface that lets you set them.
-            </p>
-            <div className="mt-5">
-              <ProductShippingEditor
-                draft={draft}
-                onChange={patch => setDraft(current => ({ ...current, ...patch }))}
-                disabled={!canManage}
-              />
-            </div>
-          </div>
-
-          <div className="ui-card">
-            <h2 className="text-xl font-semibold">Images & 3D model</h2>
-            <p className="mt-1 text-sm text-brand-textMuted">Upload multiple images and one GLB/GLTF model. The first image becomes the catalog cover.</p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <label className={`${subtle} cursor-pointer`}>Upload images<input type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={e => { for (const file of Array.from(e.target.files ?? [])) void uploadAsset(file, "image"); e.target.value = ""; }} /></label>
-              <label className={`${subtle} cursor-pointer`}>Upload 3D model<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) void uploadAsset(file, "model"); e.target.value = ""; }} /></label>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              {media.map(item => <div key={item.id} className={`overflow-hidden rounded-xl border ${item.kind === "image" && draft.image_url === item.url ? "border-brand-primary" : "border-zinc-800"}`}>
-                {item.kind === "image" ? <Image src={item.url} alt={item.alt_text || ""} width={500} height={320} className="h-32 w-full object-cover" unoptimized /> : <div className="flex h-32 items-center justify-center bg-zinc-950 text-sm text-brand-primary">3D MODEL</div>}
-                <div className="flex items-center justify-between gap-2 p-2 text-xs"><span>{item.kind === "image" && draft.image_url === item.url ? "Cover image" : item.kind === "image" ? "Gallery image" : "Interactive model"}</span><span className="flex gap-2">{item.kind === "image" && draft.image_url !== item.url ? <button onClick={() => void setCoverImage(item)} className="text-brand-primary">Set cover</button> : null}<button onClick={() => void moveMedia(media.indexOf(item), -1)} aria-label="Move asset earlier">↑</button><button onClick={() => void moveMedia(media.indexOf(item), 1)} aria-label="Move asset later">↓</button><button onClick={() => void deleteMedia(item)} className="text-rose-300">Remove</button></span></div>
-              </div>)}
-            </div>
-          </div>
-
-          <div className="ui-card">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Customization options</h2><p className="mt-1 text-sm text-brand-textMuted">These fields appear on this product’s request form.</p></div>{/* Disabled after a failed read: `addGroup` derives the new sort_order from
-                `groups.length`, so adding one to a list that failed to load would
-                collide with the options the product actually has. */}
-              <button disabled={!canManage || !draft.is_custom || editorLoadFailed} title={editorLoadFailed ? "The existing options could not be loaded, so a new one cannot be positioned safely." : undefined} onClick={() => void addGroup()} className={subtle}>Add option</button></div>
-            {!draft.is_custom ? <p className="mt-4 rounded-xl border border-zinc-800 p-4 text-sm text-brand-textMuted">Customization is disabled. Enable it in Product details to show configured options.</p> : null}
-            <div className="mt-4 space-y-4">
-              {groups.map((group, groupIndex) => <div key={group.id} className="rounded-xl border border-zinc-800 p-4">
-                <div className="grid gap-3 md:grid-cols-4">
-                  <input className={input} value={group.name} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, name: e.target.value, option_key: optionKey(e.target.value) } : item))} placeholder="Option name" />
-                  <input className={input} value={group.option_key} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, option_key: optionKey(e.target.value) } : item))} placeholder="Saved key" />
-                  <MenuSelect className="ui-select-trigger" value={group.input_type} onChange={value => setGroups(current => current.map(item => item.id === group.id ? { ...item, input_type: value as ProductOptionGroup["input_type"] } : item))} options={[{value:"select",label:"Dropdown"},{value:"radio",label:"Choice cards"},{value:"text",label:"Short text"},{value:"textarea",label:"Long text"},{value:"number",label:"Number"},{value:"checkbox",label:"Checkbox"},{value:"file",label:"Reference file"}]} />
-                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={group.is_required} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, is_required: e.target.checked } : item))} /> Required</label>
-                  <input className={`${input} md:col-span-2`} value={group.description ?? ""} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, description: e.target.value } : item))} placeholder="Help text (optional)" />
-                  <input className={`${input} md:col-span-2`} value={group.placeholder ?? ""} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, placeholder: e.target.value } : item))} placeholder="Placeholder (optional)" />
+        {/* ---------------- Editor ---------------- */}
+        {selectedId ? (
+          <div className="staff-page min-w-0">
+            {/* The record header: what is being edited, whether it is live, and
+                what is still missing before it can be. */}
+            <header className="staff-record-header">
+              <div className="staff-record-top">
+                <div className="min-w-0">
+                  <p className="staff-record-eyebrow">
+                    {draft.archived_at ? "Archived" : draft.is_published ? "Published" : "Draft"}
+                  </p>
+                  <h2 className="staff-record-title">{draft.name || "Untitled product"}</h2>
+                  <p className="staff-row-meta mt-1">/{draft.slug || "no-slug"}</p>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2"><button onClick={() => void moveGroup(groupIndex, -1)} className={subtle} aria-label="Move option up">Move up</button><button onClick={() => void moveGroup(groupIndex, 1)} className={subtle} aria-label="Move option down">Move down</button><button onClick={() => void removeGroup(group.id)} className={`${subtle} text-rose-300`}>Delete option</button>{["select", "radio"].includes(group.input_type) ? <button onClick={() => void addValue(group)} className={subtle}>Add choice</button> : null}</div>
-                {["select", "radio"].includes(group.input_type) ? <div className="mt-4 space-y-2">
-                  {(group.product_option_values ?? []).map((value, valueIndex) => <div key={value.id} className="grid gap-2 rounded-xl bg-zinc-950/70 p-3 sm:grid-cols-[1fr_1fr_130px_auto]">
-                    <input className={input} value={value.label} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, label: e.target.value, value: optionKey(e.target.value) } : choice) }))} placeholder="Choice label" />
-                    <input className={input} value={value.value} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, value: optionKey(e.target.value) } : choice) }))} placeholder="Saved value" />
-                    <label className="text-xs text-brand-textMuted">Price change ($)<input className={`${input} mt-1`} type="number" step=".01" value={value.price_adjustment_cents / 100} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, price_adjustment_cents: Math.round(Number(e.target.value) * 100), sort_order: valueIndex } : choice) }))} /></label>
-                    <div className="flex items-center justify-end gap-2"><button onClick={() => void removeValue(group.id, value.id)} className={`${subtle} text-rose-300`} aria-label={`Remove ${value.label || "choice"}`}>Remove</button></div>
-                  </div>)}
-                </div> : null}
-              </div>)}
-            </div>
+                {draft.slug ? (
+                  <Link href={`/catalog/${draft.slug}`} target="_blank" className={subtle}>
+                    {draft.is_published ? "View live" : "Preview URL"} ↗
+                  </Link>
+                ) : null}
+              </div>
+
+              <div className="staff-record-next">
+                <div className="min-w-0">
+                  <p className="staff-record-next-label">
+                    {readyToPublish ? "Ready to publish" : "Before this can be published"}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {publishChecks.map(check => (
+                      <button
+                        key={check.label}
+                        type="button"
+                        onClick={() => setTab(check.tab)}
+                        className="staff-view"
+                        aria-pressed={false}
+                      >
+                        <span aria-hidden="true">{check.unknown ? "?" : check.complete ? "✓" : "○"}</span>
+                        {check.label}
+                        {check.unknown ? " — could not be checked" : ""}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </header>
+
+            <PageTabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Product sections" />
+
+            {/* ---- Basic ---- */}
+            <TabPanel id="basic" value={tab}>
+              <Section title="Identity" description="What this product is called and where it sits in the store.">
+                <Card>
+                  <FormGrid>
+                    <Field label="Name" required>
+                      <input className={`${input} w-full`} value={draft.name ?? ""} onChange={e => patch({ name: e.target.value })} />
+                    </Field>
+                    <Field label="SKU" help="Your own stock code. Optional.">
+                      <input className={`${input} w-full`} value={draft.sku ?? ""} onChange={e => patch({ sku: e.target.value })} placeholder="Example: KM-SHIFT-001" />
+                    </Field>
+                    <Field label="Category">
+                      <CategorySelect
+                        value={draft.category_id ?? null}
+                        onChange={categoryId => patch({ category_id: categoryId })}
+                        categories={categories}
+                        productCounts={categoryCounts}
+                        disabled={!canManage}
+                      />
+                    </Field>
+                    <Field label="Availability">
+                      <MenuSelect
+                        className="ui-select-trigger"
+                        ariaLabel="Availability"
+                        value={draft.availability_status ?? "made_to_order"}
+                        onChange={value => patch({ availability_status: value as CatalogProduct["availability_status"] })}
+                        options={[
+                          { value: "available", label: "Available" },
+                          { value: "limited", label: "Limited availability" },
+                          { value: "made_to_order", label: "Made to order" },
+                          { value: "unavailable", label: "Currently unavailable" },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Lead time" help="Shown to customers as an expectation, not a promise.">
+                      <input className={`${input} w-full`} value={draft.lead_time_text ?? ""} onChange={e => patch({ lead_time_text: e.target.value })} placeholder="Example: Usually 1–2 weeks" />
+                    </Field>
+                    <FormWide>
+                      <Field label="Short description" help="One line. Used on cards, in search results and as the page's meta description.">
+                        <input className={`${input} w-full`} value={draft.short_description ?? ""} onChange={e => patch({ short_description: e.target.value })} />
+                      </Field>
+                    </FormWide>
+                  </FormGrid>
+                </Card>
+              </Section>
+
+              <Section title="Status" description="Whether customers can see this product at all.">
+                <Card>
+                  <div className="grid gap-3">
+                    <CheckField
+                      label="Published in the store"
+                      help={
+                        !readyToPublish && !draft.is_published
+                          ? "Finish the checklist above first. You can save a draft at any time."
+                          : "Visible to customers and included in browse and search."
+                      }
+                      checked={Boolean(draft.is_published)}
+                      disabled={Boolean(draft.archived_at) || (!draft.is_published && !readyToPublish)}
+                      onChange={value => patch({ is_published: value })}
+                    />
+                  </div>
+                </Card>
+              </Section>
+            </TabPanel>
+
+            {/* ---- Media ---- */}
+            <TabPanel id="media" value={tab}>
+              <Section
+                title="Images and 3D model"
+                description="The first image is the cover customers see on cards. Uploads save immediately — they are files, not draft fields."
+                actions={
+                  canManage ? (
+                    <div className="ui-action-row">
+                      <label className={`${subtle} cursor-pointer`}>
+                        Upload images
+                        <input type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" className="hidden" onChange={e => { for (const file of Array.from(e.target.files ?? [])) void uploadAsset(file, "image"); e.target.value = ""; }} />
+                      </label>
+                      <label className={`${subtle} cursor-pointer`}>
+                        Upload 3D model
+                        <input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) void uploadAsset(file, "model"); e.target.value = ""; }} />
+                      </label>
+                    </div>
+                  ) : null
+                }
+              >
+                {media.length ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {media.map(item => (
+                      <div key={item.id} className={`overflow-hidden rounded-xl border ${item.kind === "image" && draft.image_url === item.url ? "border-brand-primary" : "border-[var(--border)]"}`}>
+                        {item.kind === "image" ? (
+                          <Image src={item.url} alt={item.alt_text || ""} width={500} height={320} className="h-32 w-full object-cover" unoptimized />
+                        ) : (
+                          <div className="flex h-32 items-center justify-center bg-black/40 text-sm text-brand-primary">3D MODEL</div>
+                        )}
+                        <div className="flex items-center justify-between gap-2 p-2 text-xs">
+                          <span>{item.kind === "image" && draft.image_url === item.url ? "Cover image" : item.kind === "image" ? "Gallery image" : "Interactive model"}</span>
+                          <span className="flex gap-2">
+                            {item.kind === "image" && draft.image_url !== item.url ? (
+                              <button type="button" onClick={() => void setCoverImage(item)} className="text-brand-primary">Set cover</button>
+                            ) : null}
+                            <button type="button" onClick={() => void moveMedia(media.indexOf(item), -1)} aria-label="Move asset earlier">↑</button>
+                            <button type="button" onClick={() => void moveMedia(media.indexOf(item), 1)} aria-label="Move asset later">↓</button>
+                            <button type="button" onClick={() => void deleteMedia(item)} className="text-rose-300">Remove</button>
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState>No images yet. A product with no cover image cannot be published.</EmptyState>
+                )}
+              </Section>
+            </TabPanel>
+
+            {/* ---- Pricing ---- */}
+            <TabPanel id="pricing" value={tab}>
+              <Section
+                title="Price"
+                description="What this product costs before options. Discount codes are configured under Store → Discounts and apply on top."
+              >
+                <Card>
+                  <FormGrid>
+                    <Field label="Starting price ($)" help="Leave blank for a quote-only product.">
+                      <input
+                        className={`${input} w-full`}
+                        type="number"
+                        min="0"
+                        step=".01"
+                        value={draft.starting_price_cents == null ? "" : draft.starting_price_cents / 100}
+                        onChange={e => patch({ starting_price_cents: e.target.value ? Math.round(Number(e.target.value) * 100) : null })}
+                      />
+                    </Field>
+                    <Field label="Tax code" help="Passed to Stripe when this product is bought. Optional.">
+                      <input className={`${input} w-full`} value={draft.tax_code ?? ""} onChange={e => patch({ tax_code: e.target.value })} />
+                    </Field>
+                  </FormGrid>
+                  {allowsDirectPurchase(purchaseMode) && draft.starting_price_cents == null ? (
+                    <Notice tone="warning" className="mt-4">
+                      This product can be bought directly but has no price, so customers are sent to a request form
+                      instead. Set a price, or change how it is bought under Purchase.
+                    </Notice>
+                  ) : null}
+                </Card>
+              </Section>
+            </TabPanel>
+
+            {/* ---- Purchase ---- */}
+            <TabPanel id="purchase" value={tab}>
+              <Section title="How customers buy this" description="Whether it goes in a cart, becomes a request, or both.">
+                <Card>
+                  <FormGrid>
+                    <FormWide>
+                      <Field label="Purchase mode" help={PURCHASE_MODE_COPY[purchaseMode].help}>
+                        <MenuSelect
+                          className="ui-select-trigger"
+                          ariaLabel="Purchase mode"
+                          value={purchaseMode}
+                          onChange={value => patch({ purchase_mode: value as PurchaseMode })}
+                          options={PURCHASE_MODES.map(mode => ({ value: mode, label: PURCHASE_MODE_COPY[mode].staffLabel }))}
+                        />
+                      </Field>
+                    </FormWide>
+                  </FormGrid>
+                  <div className="mt-4 grid gap-3">
+                    <CheckField
+                      label="Customers can customize this product"
+                      help="Shows the option list below on the product's request form."
+                      checked={Boolean(draft.is_custom)}
+                      onChange={value => patch({ is_custom: value })}
+                    />
+                    <CheckField
+                      label="Made to order"
+                      help="Never reserved at checkout, and never raises a low-stock alert."
+                      checked={Boolean(draft.made_to_order)}
+                      onChange={value => patch({ made_to_order: value })}
+                    />
+                  </div>
+                </Card>
+              </Section>
+
+              <Section
+                title="Customization options"
+                description="The fields that appear on this product's request form. Adding or deleting an option writes immediately; the labels and prices inside it save with the rest."
+                actions={
+                  /* Disabled after a failed read: `addGroup` derives the new
+                     sort_order from `groups.length`, so adding one to a list
+                     that failed to load would collide with the options the
+                     product actually has. */
+                  <button
+                    type="button"
+                    disabled={!canManage || !draft.is_custom || editorLoadFailed}
+                    title={editorLoadFailed ? "The existing options could not be loaded, so a new one cannot be positioned safely." : undefined}
+                    onClick={() => void addGroup()}
+                    className={subtle}
+                  >
+                    Add option
+                  </button>
+                }
+              >
+                {!draft.is_custom ? (
+                  <EmptyState>Customization is off. Turn it on above to configure the choices customers get.</EmptyState>
+                ) : groups.length === 0 ? (
+                  <EmptyState>No options yet. Add one to give customers something to choose.</EmptyState>
+                ) : (
+                  <div className="space-y-4">
+                    {groups.map((group, groupIndex) => (
+                      <Card key={group.id}>
+                        <FormGrid>
+                          <Field label="Option name">
+                            <input className={`${input} w-full`} value={group.name} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, name: e.target.value, option_key: optionKey(e.target.value) } : item))} />
+                          </Field>
+                          <Field label="Saved key" help="How the choice is stored on an order.">
+                            <input className={`${input} w-full`} value={group.option_key} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, option_key: optionKey(e.target.value) } : item))} />
+                          </Field>
+                          <Field label="Control type">
+                            <MenuSelect
+                              className="ui-select-trigger"
+                              ariaLabel="Control type"
+                              value={group.input_type}
+                              onChange={value => setGroups(current => current.map(item => item.id === group.id ? { ...item, input_type: value as ProductOptionGroup["input_type"] } : item))}
+                              options={[
+                                { value: "select", label: "Dropdown" },
+                                { value: "radio", label: "Choice cards" },
+                                { value: "text", label: "Short text" },
+                                { value: "textarea", label: "Long text" },
+                                { value: "number", label: "Number" },
+                                { value: "checkbox", label: "Checkbox" },
+                                { value: "file", label: "Reference file" },
+                              ]}
+                            />
+                          </Field>
+                          <Field label="Help text">
+                            <input className={`${input} w-full`} value={group.description ?? ""} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, description: e.target.value } : item))} />
+                          </Field>
+                          <Field label="Placeholder">
+                            <input className={`${input} w-full`} value={group.placeholder ?? ""} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, placeholder: e.target.value } : item))} />
+                          </Field>
+                          <div className="self-end">
+                            <CheckField
+                              label="Required"
+                              checked={group.is_required}
+                              onChange={value => setGroups(current => current.map(item => item.id === group.id ? { ...item, is_required: value } : item))}
+                            />
+                          </div>
+                        </FormGrid>
+
+                        {["select", "radio"].includes(group.input_type) ? (
+                          <div className="mt-4 space-y-2">
+                            {(group.product_option_values ?? []).map((value, valueIndex) => (
+                              <div key={value.id} className="grid gap-2 rounded-xl border border-[var(--border)] p-3 sm:grid-cols-[1fr_1fr_9rem_auto]">
+                                <Field label="Choice label">
+                                  <input className={`${input} w-full`} value={value.label} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, label: e.target.value, value: optionKey(e.target.value) } : choice) }))} />
+                                </Field>
+                                <Field label="Saved value">
+                                  <input className={`${input} w-full`} value={value.value} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, value: optionKey(e.target.value) } : choice) }))} />
+                                </Field>
+                                <Field label="Price change ($)">
+                                  <input className={`${input} w-full`} type="number" step=".01" value={value.price_adjustment_cents / 100} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, price_adjustment_cents: Math.round(Number(e.target.value) * 100), sort_order: valueIndex } : choice) }))} />
+                                </Field>
+                                <div className="flex items-end justify-end">
+                                  <button type="button" onClick={() => void removeValue(group.id, value.id)} className={`${subtle} text-rose-300`} aria-label={`Remove ${value.label || "choice"}`}>
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        <div className="ui-action-row mt-4">
+                          {["select", "radio"].includes(group.input_type) ? (
+                            <button type="button" onClick={() => void addValue(group)} className={subtle}>Add choice</button>
+                          ) : null}
+                          <button type="button" onClick={() => void moveGroup(groupIndex, -1)} className={subtle}>Move up</button>
+                          <button type="button" onClick={() => void moveGroup(groupIndex, 1)} className={subtle}>Move down</button>
+                          <button type="button" onClick={() => void removeGroup(group.id)} className={`${subtle} text-rose-300`}>Delete option</button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            </TabPanel>
+
+            {/* ---- Inventory ---- */}
+            <TabPanel id="inventory" value={tab}>
+              <Section
+                title="Stock"
+                description="Whether this product has a countable quantity, and when to warn about it."
+                actions={
+                  /* Setting a quantity here is a *definition*; moving stock is
+                     an event with a reason and a ledger entry. They are
+                     different actions, so the editor points at the surface that
+                     records the second rather than pretending this field is it. */
+                  permissions.has("inventory.view") ? (
+                    <Link href={`/staff/inventory/${selectedId}`} className={subtle}>
+                      Stock, holds &amp; history →
+                    </Link>
+                  ) : null
+                }
+              >
+                <Card>
+                  <FormGrid>
+                    <Field label="Inventory mode">
+                      <MenuSelect
+                        className="ui-select-trigger"
+                        ariaLabel="Inventory mode"
+                        value={draft.inventory_policy ?? "unlimited"}
+                        onChange={value => patch({ inventory_policy: value as CatalogProduct["inventory_policy"] })}
+                        options={[
+                          { value: "unlimited", label: "Made to order / unlimited" },
+                          { value: "track", label: "Track quantity" },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Quantity on hand">
+                      <input disabled={draft.inventory_policy !== "track"} className={`${input} w-full disabled:opacity-50`} type="number" min="0" value={draft.inventory_quantity ?? 0} onChange={e => patch({ inventory_quantity: Number(e.target.value) })} />
+                    </Field>
+                    <Field label="Low-stock threshold" help="The dashboard raises a warning at or below this number.">
+                      <input disabled={draft.inventory_policy !== "track"} className={`${input} w-full disabled:opacity-50`} type="number" min="0" value={draft.low_stock_threshold ?? 2} onChange={e => patch({ low_stock_threshold: Number(e.target.value) })} />
+                    </Field>
+                  </FormGrid>
+                  {draft.inventory_policy === "track" ? (
+                    <div className="mt-4">
+                      <CheckField
+                        label="Keep accepting orders at zero (backorders)"
+                        help="Customers can still buy when the count reaches zero."
+                        checked={Boolean(draft.continue_selling_when_out_of_stock)}
+                        onChange={value => patch({ continue_selling_when_out_of_stock: value })}
+                      />
+                    </div>
+                  ) : null}
+                </Card>
+              </Section>
+            </TabPanel>
+
+            {/* ---- Shipping ---- */}
+            <TabPanel id="shipping" value={tab}>
+              <Section
+                title="Delivery, packaging and returns"
+                description="These decide which delivery methods a cart may offer and what a parcel is priced as."
+              >
+                <Card>
+                  <ProductShippingEditor draft={draft} onChange={patch} disabled={!canManage} />
+                </Card>
+              </Section>
+            </TabPanel>
+
+            {/* ---- Content ---- */}
+            <TabPanel id="content" value={tab}>
+              <Section title="Full description" description="The main body of the product page.">
+                <Card>
+                  <Field label="Description">
+                    <textarea className={`${input} min-h-40 w-full`} value={draft.description ?? ""} onChange={e => patch({ description: e.target.value })} />
+                  </Field>
+                </Card>
+              </Section>
+              <Section
+                title="Structured sections"
+                description="Specifications, benefits and FAQs. All optional — a section with nothing in it is hidden rather than shown empty, so a sparse product simply gets a shorter page."
+              >
+                <Card>
+                  <ProductContentEditor
+                    draft={draft}
+                    onChange={patch}
+                    content={content}
+                    onContentChange={setContent}
+                    disabled={!canManage}
+                  />
+                </Card>
+              </Section>
+            </TabPanel>
+
+            {/* ---- SEO ---- */}
+            <TabPanel id="seo" value={tab}>
+              <Section
+                title="Address and search listing"
+                description="What this product's URL is, and what a search engine shows for it."
+              >
+                <Card>
+                  <FormGrid>
+                    <FormWide>
+                      <Field label="Slug" required help="The address customers and search engines use. Changing it breaks existing links.">
+                        <input className={`${input} w-full`} value={draft.slug ?? ""} onChange={e => patch({ slug: e.target.value })} />
+                      </Field>
+                    </FormWide>
+                  </FormGrid>
+                  {/*
+                    Stated rather than editable, because these are derived. The
+                    product page's `generateMetadata` uses the name as the title
+                    and the short description as the description; offering
+                    separate fields here would be inventing columns that do not
+                    exist and cannot be saved.
+                  */}
+                  <Facts className="mt-5">
+                    <Fact label="Address">/catalog/{draft.slug || "…"}</Fact>
+                    <Fact label="Search title">{draft.name || "—"}</Fact>
+                    <Fact label="Search description">
+                      {draft.short_description?.trim() || draft.description?.trim().slice(0, 200) || "Falls back to the product name."}
+                    </Fact>
+                  </Facts>
+                  <p className="mt-4 text-xs text-brand-textMuted">
+                    The title and description come from Basic and Content. There are no separate meta fields to set.
+                  </p>
+                </Card>
+              </Section>
+            </TabPanel>
+
+            {/* ---- Advanced ---- */}
+            <TabPanel id="advanced" value={tab}>
+              <Section title="Ordering" description="Where this product sits when the store lists several together.">
+                <Card>
+                  <FormGrid>
+                    <Field label="Sort order" help="Lower numbers come first.">
+                      <input className={`${input} w-full`} type="number" value={draft.sort_order ?? 0} onChange={e => patch({ sort_order: Number(e.target.value) })} />
+                    </Field>
+                    <Field label="3D model poster URL" help="The still image shown before the model loads.">
+                      <input className={`${input} w-full`} value={draft.model_poster_url ?? ""} onChange={e => patch({ model_poster_url: e.target.value })} />
+                    </Field>
+                  </FormGrid>
+                </Card>
+              </Section>
+
+              <Section
+                title="Product lifecycle"
+                description="Archiving hides a product from customers and keeps every order that referenced it. Deleting does not."
+              >
+                <Card>
+                  <div className="ui-action-row">
+                    <button type="button" disabled={!canManage || busy} onClick={() => void duplicateProduct()} className={subtle}>
+                      Duplicate
+                    </button>
+                    <button type="button" disabled={!canManage || busy} onClick={() => void toggleArchive()} className={subtle}>
+                      {draft.archived_at ? "Restore" : "Archive"}
+                    </button>
+                    <button type="button" disabled={!canManage || busy} onClick={() => void deleteProduct()} className="ui-btn ui-btn-danger text-sm">
+                      Delete permanently
+                    </button>
+                  </div>
+                </Card>
+              </Section>
+            </TabPanel>
+
+            {/* One save, for every tab. */}
+            {canManage ? (
+              <SaveBar
+                dirty={hasUnsavedChanges}
+                saving={busy}
+                onSave={() => void saveAllChanges()}
+                message={saveMessage}
+              />
+            ) : null}
           </div>
-        </section> : <EmptyState>Select a product to edit everything customers see.</EmptyState>}
+        ) : (
+          <EmptyState>Select a product to edit everything customers see.</EmptyState>
+        )}
       </div>
-    </main>
+    </StaffPage>
   );
 }

@@ -1,18 +1,55 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { Field, Notice } from "@/components/ui/DesignSystem";
+import {
+  Card,
+  CheckField,
+  EmptyState,
+  FormGrid,
+  FormWide,
+  LoadingState,
+  PageHeader,
+  PageTabs,
+  SaveBar,
+  Section,
+  StaffPage,
+  TabPanel,
+} from "@/components/staff/StaffPage";
+import { useHashTab } from "@/lib/hooks/useHashTab";
+import type { StaffTab } from "@/lib/staff/pageFramework";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import type { Address, CommerceSettings, ShippingMethod } from "@/lib/commerce/commerceSettings";
 import type { CommercePolicy } from "@/lib/commerce/orderLifecycle";
 
 /**
- * Shipping, local pickup, inventory and policy, in one place.
+ * Commerce configuration.
  *
- * Nothing here is consequential until Save is pressed. Selecting a value
- * changes local state and nothing else — the previous behaviour of these
- * settings living as constants scattered across route handlers is exactly what
- * made "what does this shop charge for delivery" unanswerable.
+ * ## What this pass changed
+ *
+ * Seven `ui-card` sections stacked in one column — Business, Shipping, Local
+ * pickup, Inventory, Return address, Cancellations and returns, Email — inside
+ * a single `<form>`-less page with one Save at the bottom. Finding "how long
+ * does a checkout hold stock" meant scrolling past two addresses and a delivery
+ * method editor. Two of the seven cards contained `<fieldset>`s that contained
+ * more bordered boxes, each holding four `Field`s: a panel inside a card inside
+ * a card, three borders deep before the first input.
+ *
+ * Now: **seven tabs, one per decision a shop makes** — Checkout, Shipping,
+ * Pickup, Inventory, Returns, Cancellations, Notifications — with fields filed
+ * where somebody would look for them rather than where the type happens to nest
+ * them. The return address moved from a section of its own onto Returns; the
+ * reservation duration moved from Inventory onto Checkout, because it is a rule
+ * about how long a customer may take to pay; sender and recipient addresses all
+ * gathered onto Notifications.
+ *
+ * The `<fieldset>` borders are gone. An address is a labelled group of fields,
+ * and a heading with whitespace under it says so without drawing a third box.
+ *
+ * Nothing here takes effect until Save is pressed, and there is still exactly
+ * one Save — now in the shared save bar, so it looks and behaves like the one
+ * on the product editor.
  *
  * Three addresses are edited separately and deliberately: the shipping origin,
  * the return address and the pickup location are frequently the same building
@@ -35,6 +72,20 @@ export default function CommerceSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState("");
   const [dirty, setDirty] = useState(false);
+
+  const tabs = useMemo<StaffTab[]>(
+    () => [
+      { id: "checkout", label: "Checkout" },
+      { id: "shipping", label: "Shipping" },
+      { id: "pickup", label: "Pickup" },
+      { id: "inventory", label: "Inventory" },
+      { id: "returns", label: "Returns" },
+      { id: "cancellations", label: "Cancellations" },
+      { id: "notifications", label: "Notifications" },
+    ],
+    []
+  );
+  const [tab, setTab] = useHashTab(tabs);
 
   useEffect(() => {
     if (accessLoading || !permissions.has("commerce.settings.view")) return;
@@ -72,6 +123,12 @@ export default function CommerceSettingsPage() {
     setSettings((current) => (current ? { ...current, ...next } : current));
   }, []);
 
+  const patchPolicy = useCallback((next: Partial<CommercePolicy>) => {
+    setDirty(true);
+    setSaved("");
+    setPolicy((current) => (current ? { ...current, ...next } : current));
+  }, []);
+
   async function save() {
     if (!settings || !policy) return;
     setSaving(true);
@@ -104,289 +161,513 @@ export default function CommerceSettingsPage() {
     }
   }
 
-  if (accessLoading || loading) return <div className="ui-card text-sm text-brand-textMuted">Loading settings…</div>;
+  if (accessLoading || loading) return <LoadingState>Loading settings…</LoadingState>;
   if (!permissions.has("commerce.settings.view")) {
     return <AccessDeniedCard message="You need the commerce.settings.view permission to see these settings." />;
   }
-  if (error) return <p role="alert" className="ui-notice ui-notice-danger text-sm">{error}</p>;
+  if (error) return <Notice tone="danger" role="alert">{error}</Notice>;
   if (!settings || !policy) return null;
 
   const disabled = !canManage || saving;
 
   return (
-    <main className="page-stack">
-      <header>
-        <p className="ui-eyebrow">Commerce</p>
-        <h1 className="mt-1 text-3xl font-semibold">Shipping, pickup &amp; inventory</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-textMuted">
-          Nothing here takes effect until you press Save. Shipping and local pickup are off until you turn them on, so
-          an unconfigured option refuses clearly rather than quoting a price it invented.
-        </p>
-        {!canManage ? (
-          <p className="ui-notice ui-notice-warning mt-3 text-sm">
-            You can read these settings but not change them. That needs the commerce.settings.manage permission.
-          </p>
+    <StaffPage>
+      <PageHeader
+        title="Commerce"
+        description="How orders are paid for, delivered, returned and announced. Nothing takes effect until you press Save."
+      />
+
+      {!canManage ? (
+        <Notice tone="warning">
+          You can read these settings but not change them. That needs the commerce.settings.manage permission.
+        </Notice>
+      ) : null}
+
+      <PageTabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Commerce settings sections" />
+
+      {/* ---------------- Checkout ---------------- */}
+      <TabPanel id="checkout" value={tab}>
+        <Section title="Business identity" description="Used on customer-facing pages and in every email.">
+          <Card>
+            <FormGrid>
+              <Field label="Public business name">
+                <input className="ui-input w-full" disabled={disabled} value={settings.business.publicName}
+                  onChange={(e) => patch({ business: { ...settings.business, publicName: e.target.value } })} />
+              </Field>
+              <Field label="Timezone" help="Decides what “today” means for due dates and overdue work.">
+                <input className="ui-input w-full" disabled={disabled} value={settings.business.timezone}
+                  onChange={(e) => patch({ business: { ...settings.business, timezone: e.target.value } })} />
+              </Field>
+            </FormGrid>
+          </Card>
+        </Section>
+
+        <Section
+          title="Holding stock during checkout"
+          description="How long a customer has to finish paying before the stock they are holding goes back on sale."
+        >
+          <Card>
+            <FormGrid>
+              <Field
+                label="Hold stock for (minutes)"
+                help="Stripe requires at least 30. A shorter value is clamped up to it."
+              >
+                <input className="ui-input w-full" inputMode="numeric" disabled={disabled}
+                  value={settings.inventory.reservationMinutes}
+                  onChange={(e) => patch({ inventory: { ...settings.inventory, reservationMinutes: Number(e.target.value) || 0 } })} />
+              </Field>
+            </FormGrid>
+            <div className="mt-4">
+              <CheckField
+                label="Release the hold when a payment fails"
+                help="Off means the stock stays held until the timer above expires."
+                checked={settings.inventory.releaseOnPaymentFailure}
+                disabled={disabled}
+                onChange={(v) => patch({ inventory: { ...settings.inventory, releaseOnPaymentFailure: v } })}
+              />
+            </div>
+          </Card>
+        </Section>
+
+        <Section
+          title="Which delivery options checkout may offer"
+          description="A cart holding a physical product refuses at checkout unless at least one of these is on."
+        >
+          <Card>
+            <div className="grid gap-3">
+              <CheckField
+                label="Offer shipping"
+                help="Configured under the Shipping tab."
+                checked={settings.shipping.enabled}
+                disabled={disabled}
+                onChange={(enabled) => patch({ shipping: { ...settings.shipping, enabled } })}
+              />
+              <CheckField
+                label="Offer local pickup"
+                help="Configured under the Pickup tab."
+                checked={settings.pickup.enabled}
+                disabled={disabled}
+                onChange={(enabled) => patch({ pickup: { ...settings.pickup, enabled } })}
+              />
+            </div>
+            {!settings.shipping.enabled && !settings.pickup.enabled ? (
+              <Notice tone="warning" className="mt-4">
+                Neither is enabled, so a cart holding a physical product cannot be checked out at all.
+              </Notice>
+            ) : null}
+          </Card>
+        </Section>
+      </TabPanel>
+
+      {/* ---------------- Shipping ---------------- */}
+      <TabPanel id="shipping" value={tab}>
+        {!settings.shipping.enabled ? (
+          <EmptyState>
+            Shipping is off, so none of this is used. Turn it on under Checkout to configure it.
+          </EmptyState>
         ) : null}
-      </header>
 
-      {/* ---------------------------------------------------------------- */}
-      <Section title="Business" hint="Used on customer-facing pages and in email.">
-        <Field label="Public business name">
-          <input className="ui-input w-full" disabled={disabled} value={settings.business.publicName}
-            onChange={(e) => patch({ business: { ...settings.business, publicName: e.target.value } })} />
-        </Field>
-        <Field label="Support email" hint="Where customers are told to write.">
-          <input className="ui-input w-full" type="email" disabled={disabled} value={settings.business.supportEmail}
-            onChange={(e) => patch({ business: { ...settings.business, supportEmail: e.target.value } })} />
-        </Field>
-        <Field label="Timezone">
-          <input className="ui-input w-full" disabled={disabled} value={settings.business.timezone}
-            onChange={(e) => patch({ business: { ...settings.business, timezone: e.target.value } })} />
-        </Field>
-      </Section>
+        <Section
+          title="Where parcels are posted from"
+          description="The origin address is never shown to a customer. It is used to price and label a parcel."
+        >
+          <Card>
+            <FormGrid>
+              <Field label="Origin name">
+                <input className="ui-input w-full" disabled={disabled} value={settings.shipping.originName}
+                  onChange={(e) => patch({ shipping: { ...settings.shipping, originName: e.target.value } })} />
+              </Field>
+            </FormGrid>
+            <div className="mt-5">
+              <AddressFields
+                legend="Origin address (private)"
+                value={settings.shipping.originAddress}
+                disabled={disabled}
+                onChange={(originAddress) => patch({ shipping: { ...settings.shipping, originAddress } })}
+              />
+            </div>
+          </Card>
+        </Section>
 
-      {/* ---------------------------------------------------------------- */}
-      <Section
-        title="Shipping"
-        hint="The origin address is where parcels are posted from. It is never shown to a customer."
-      >
-        <Toggle
-          label="Offer shipping"
-          checked={settings.shipping.enabled}
-          disabled={disabled}
-          onChange={(enabled) => patch({ shipping: { ...settings.shipping, enabled } })}
-        />
+        <Section title="Where you ship to" description="Anything outside this list is refused at checkout.">
+          <Card>
+            <FormGrid>
+              <Field label="Destination countries" help="Two-letter codes, comma separated.">
+                <input className="ui-input w-full" disabled={disabled}
+                  value={settings.shipping.destinationCountries.join(", ")}
+                  onChange={(e) =>
+                    patch({
+                      shipping: {
+                        ...settings.shipping,
+                        destinationCountries: e.target.value.split(/[,\s]+/).map((c) => c.trim().toUpperCase()).filter(Boolean),
+                      },
+                    })
+                  } />
+              </Field>
+              <Field label="Free shipping over (cents)" help="Leave blank for no free-shipping rule.">
+                <input className="ui-input w-full" inputMode="numeric" disabled={disabled}
+                  value={settings.shipping.freeShippingThresholdCents ?? ""}
+                  onChange={(e) =>
+                    patch({
+                      shipping: {
+                        ...settings.shipping,
+                        freeShippingThresholdCents: e.target.value.trim() === "" ? null : Number(e.target.value) || 0,
+                      },
+                    })
+                  } />
+              </Field>
+            </FormGrid>
+          </Card>
+        </Section>
 
-        {settings.shipping.enabled ? (
-          <>
-            <Field label="Origin name">
-              <input className="ui-input w-full" disabled={disabled} value={settings.shipping.originName}
-                onChange={(e) => patch({ shipping: { ...settings.shipping, originName: e.target.value } })} />
-            </Field>
-            <AddressFields
-              legend="Origin address (private)"
-              value={settings.shipping.originAddress}
-              disabled={disabled}
-              onChange={(originAddress) => patch({ shipping: { ...settings.shipping, originAddress } })}
-            />
+        <Section
+          title="Delivery methods"
+          description="What a customer chooses between at checkout, and what each one costs."
+          actions={
+            <button type="button" disabled={disabled} className="ui-btn ui-btn-secondary text-sm"
+              onClick={() =>
+                patch({
+                  shipping: {
+                    ...settings.shipping,
+                    methods: [
+                      ...settings.shipping.methods,
+                      { id: `method-${settings.shipping.methods.length + 1}`, name: "", description: "", priceCents: 0, freeThresholdCents: null, deliveryEstimate: "", enabled: true },
+                    ],
+                  },
+                })
+              }>
+              Add a method
+            </button>
+          }
+        >
+          {!settings.shipping.methods.length ? (
+            <EmptyState>No methods yet. Shipping cannot be turned on without one.</EmptyState>
+          ) : (
+            settings.shipping.methods.map((method, index) => (
+              <Card key={method.id || index}>
+                <FormGrid>
+                  <Field label="Name">
+                    <input className="ui-input w-full" disabled={disabled} value={method.name}
+                      onChange={(e) => updateMethod(settings, patch, index, { name: e.target.value })} />
+                  </Field>
+                  <Field label="Price (cents)">
+                    <input className="ui-input w-full" inputMode="numeric" disabled={disabled} value={method.priceCents}
+                      onChange={(e) => updateMethod(settings, patch, index, { priceCents: Number(e.target.value) || 0 })} />
+                  </Field>
+                  <Field label="Delivery estimate" help="Shown to the customer, e.g. “3–5 business days”.">
+                    <input className="ui-input w-full" disabled={disabled} value={method.deliveryEstimate}
+                      onChange={(e) => updateMethod(settings, patch, index, { deliveryEstimate: e.target.value })} />
+                  </Field>
+                  <Field label="Free over (cents)" help="Blank for none. A lower threshold here wins over the shop-wide one.">
+                    <input className="ui-input w-full" inputMode="numeric" disabled={disabled}
+                      value={method.freeThresholdCents ?? ""}
+                      onChange={(e) => updateMethod(settings, patch, index, { freeThresholdCents: e.target.value.trim() === "" ? null : Number(e.target.value) || 0 })} />
+                  </Field>
+                  <FormWide>
+                    <Field label="Description">
+                      <input className="ui-input w-full" disabled={disabled} value={method.description}
+                        onChange={(e) => updateMethod(settings, patch, index, { description: e.target.value })} />
+                    </Field>
+                  </FormWide>
+                </FormGrid>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <CheckField
+                    label="Offered at checkout"
+                    checked={method.enabled}
+                    disabled={disabled}
+                    onChange={(v) => updateMethod(settings, patch, index, { enabled: v })}
+                  />
+                  <button type="button" disabled={disabled} className="ui-btn ui-btn-danger text-sm"
+                    onClick={() => {
+                      // Removing a method never rewrites an order that used it:
+                      // the order carries its own snapshot.
+                      if (!window.confirm(`Remove "${method.name || "this method"}" from checkout?`)) return;
+                      patch({ shipping: { ...settings.shipping, methods: settings.shipping.methods.filter((_, i) => i !== index) } });
+                    }}>
+                    Remove
+                  </button>
+                </div>
+              </Card>
+            ))
+          )}
+        </Section>
 
-            <Field label="Destination countries" hint="Two-letter codes, comma separated. Anything else is refused at checkout.">
-              <input className="ui-input w-full" disabled={disabled}
-                value={settings.shipping.destinationCountries.join(", ")}
-                onChange={(e) =>
-                  patch({
-                    shipping: {
-                      ...settings.shipping,
-                      destinationCountries: e.target.value.split(/[,\s]+/).map((c) => c.trim().toUpperCase()).filter(Boolean),
-                    },
-                  })
-                } />
-            </Field>
-
-            <Field label="Free shipping over" hint="In cents. Leave blank for no free-shipping rule.">
-              <input className="ui-input w-full" inputMode="numeric" disabled={disabled}
-                value={settings.shipping.freeShippingThresholdCents ?? ""}
-                onChange={(e) =>
-                  patch({
-                    shipping: {
-                      ...settings.shipping,
-                      freeShippingThresholdCents: e.target.value.trim() === "" ? null : Number(e.target.value) || 0,
-                    },
-                  })
-                } />
-            </Field>
-
-            <MethodsEditor
-              methods={settings.shipping.methods}
-              disabled={disabled}
-              onChange={(methods) => patch({ shipping: { ...settings.shipping, methods } })}
-            />
-
-            <Field label="Handling note" hint="Shown to the customer at checkout. Optional.">
+        <Section title="Packing" description="What a customer is told about how long packing takes.">
+          <Card>
+            <Field label="Handling note" help="Shown to the customer at checkout. Optional.">
               <textarea className="ui-input w-full" rows={2} disabled={disabled} value={settings.shipping.handlingNote}
                 onChange={(e) => patch({ shipping: { ...settings.shipping, handlingNote: e.target.value } })} />
             </Field>
-          </>
-        ) : null}
-      </Section>
+          </Card>
+        </Section>
+      </TabPanel>
 
-      {/* ---------------------------------------------------------------- */}
-      <Section title="Local pickup" hint="Customers collect in person. The address is withheld until an order is ready unless you say otherwise.">
-        <Toggle
-          label="Offer local pickup"
-          checked={settings.pickup.enabled}
-          disabled={disabled}
-          onChange={(enabled) => patch({ pickup: { ...settings.pickup, enabled } })}
-        />
-        {settings.pickup.enabled ? (
-          <>
-            <Field label="Location name">
-              <input className="ui-input w-full" disabled={disabled} value={settings.pickup.locationName}
-                onChange={(e) => patch({ pickup: { ...settings.pickup, locationName: e.target.value } })} />
-            </Field>
+      {/* ---------------- Pickup ---------------- */}
+      <TabPanel id="pickup" value={tab}>
+        {!settings.pickup.enabled ? (
+          <EmptyState>
+            Local pickup is off, so none of this is used. Turn it on under Checkout to configure it.
+          </EmptyState>
+        ) : null}
+
+        <Section
+          title="Where customers collect"
+          description="The address is withheld until an order is ready unless you say otherwise."
+        >
+          <Card>
+            <FormGrid>
+              <Field label="Location name">
+                <input className="ui-input w-full" disabled={disabled} value={settings.pickup.locationName}
+                  onChange={(e) => patch({ pickup: { ...settings.pickup, locationName: e.target.value } })} />
+              </Field>
+            </FormGrid>
+            <div className="mt-5">
+              <AddressFields
+                legend="Pickup address"
+                value={settings.pickup.address}
+                disabled={disabled}
+                onChange={(addr) => patch({ pickup: { ...settings.pickup, address: addr } })}
+              />
+            </div>
+          </Card>
+        </Section>
+
+        <Section title="What customers are told" description="The exact wording a customer collecting an order sees.">
+          <Card>
+            <div className="staff-form">
+              <Field label="Customer-visible instructions" help="Required when pickup is on.">
+                <textarea className="ui-input w-full" rows={3} disabled={disabled} value={settings.pickup.instructions}
+                  onChange={(e) => patch({ pickup: { ...settings.pickup, instructions: e.target.value } })} />
+              </Field>
+              <Field label="Pickup hours" help="Free text. Leave blank rather than promising hours you cannot keep.">
+                <textarea className="ui-input w-full" rows={2} disabled={disabled} value={settings.pickup.hoursText}
+                  onChange={(e) => patch({ pickup: { ...settings.pickup, hoursText: e.target.value } })} />
+              </Field>
+              <CheckField
+                label="Email the customer when an order is ready to collect"
+                checked={settings.pickup.notifyWhenReady}
+                disabled={disabled}
+                onChange={(v) => patch({ pickup: { ...settings.pickup, notifyWhenReady: v } })}
+              />
+              <CheckField
+                label="Show the pickup address before an order is ready"
+                help="Off by default: until an order is ready, a customer has no reason to be given the address of the building the stock is in."
+                checked={settings.pickup.revealAddressBeforeReady}
+                disabled={disabled}
+                onChange={(v) => patch({ pickup: { ...settings.pickup, revealAddressBeforeReady: v } })}
+              />
+            </div>
+          </Card>
+        </Section>
+      </TabPanel>
+
+      {/* ---------------- Inventory ---------------- */}
+      <TabPanel id="inventory" value={tab}>
+        <Section
+          title="Defaults for new products"
+          description="Each product can override these. Changing them here does not rewrite products that already exist."
+        >
+          <Card>
+            <FormGrid>
+              <Field label="Default low-stock threshold" help="The level at which the dashboard raises a warning.">
+                <input className="ui-input w-full" inputMode="numeric" disabled={disabled}
+                  value={settings.inventory.lowStockThresholdDefault}
+                  onChange={(e) => patch({ inventory: { ...settings.inventory, lowStockThresholdDefault: Number(e.target.value) || 0 } })} />
+              </Field>
+            </FormGrid>
+            <p className="mt-4 text-xs text-brand-textMuted">
+              How long a checkout holds stock is a checkout rule, and lives under Checkout.
+            </p>
+          </Card>
+        </Section>
+      </TabPanel>
+
+      {/* ---------------- Returns ---------------- */}
+      <TabPanel id="returns" value={tab}>
+        <Section title="Return policy" description="Read by the lifecycle rules that decide what a customer may do.">
+          <Card>
+            <div className="staff-form">
+              <CheckField
+                label="Returns are accepted"
+                checked={policy.returns.enabled}
+                disabled={disabled}
+                onChange={(v) => patchPolicy({ returns: { ...policy.returns, enabled: v } })}
+              />
+              <CheckField
+                label="Custom and personalized work is returnable"
+                checked={policy.returns.allowCustomProducts}
+                disabled={disabled}
+                onChange={(v) => patchPolicy({ returns: { ...policy.returns, allowCustomProducts: v } })}
+              />
+              <FormGrid>
+                <Field label="Return window (days)" help="0 means no time limit.">
+                  <input className="ui-input w-full" inputMode="numeric" disabled={disabled} value={policy.returns.windowDays}
+                    onChange={(e) => patchPolicy({ returns: { ...policy.returns, windowDays: Number(e.target.value) || 0 } })} />
+                </Field>
+              </FormGrid>
+              <Field label="Return instructions" help="Shown to a customer whose return is approved.">
+                <textarea className="ui-input w-full" rows={3} disabled={disabled} value={policy.returns.instructions}
+                  onChange={(e) => patchPolicy({ returns: { ...policy.returns, instructions: e.target.value } })} />
+              </Field>
+            </div>
+          </Card>
+        </Section>
+
+        <Section
+          title="Return address"
+          description="Snapshotted onto a return when it is approved, so a later change never redirects a parcel already in the post."
+        >
+          <Card>
             <AddressFields
-              legend="Pickup address"
-              value={settings.pickup.address}
+              legend="Where returned parcels are sent"
+              value={settings.returnAddress}
               disabled={disabled}
-              onChange={(addr) => patch({ pickup: { ...settings.pickup, address: addr } })}
+              onChange={(returnAddress) => patch({ returnAddress })}
             />
-            <Field label="Customer-visible instructions" hint="Exactly what the customer is told. Required when pickup is on.">
-              <textarea className="ui-input w-full" rows={3} disabled={disabled} value={settings.pickup.instructions}
-                onChange={(e) => patch({ pickup: { ...settings.pickup, instructions: e.target.value } })} />
-            </Field>
-            <Field label="Pickup hours" hint="Free text. Leave blank rather than promising hours you cannot keep.">
-              <textarea className="ui-input w-full" rows={2} disabled={disabled} value={settings.pickup.hoursText}
-                onChange={(e) => patch({ pickup: { ...settings.pickup, hoursText: e.target.value } })} />
-            </Field>
-            <Toggle label="Email the customer when an order is ready to collect" checked={settings.pickup.notifyWhenReady}
-              disabled={disabled} onChange={(v) => patch({ pickup: { ...settings.pickup, notifyWhenReady: v } })} />
-            <Toggle label="Show the pickup address before an order is ready" checked={settings.pickup.revealAddressBeforeReady}
-              disabled={disabled} onChange={(v) => patch({ pickup: { ...settings.pickup, revealAddressBeforeReady: v } })} />
-          </>
-        ) : null}
-      </Section>
+          </Card>
+        </Section>
+      </TabPanel>
 
-      {/* ---------------------------------------------------------------- */}
-      <Section title="Inventory" hint="How stock is held during checkout, and when to warn about running low.">
-        <Field label="Hold stock for (minutes)" hint="How long a checkout keeps stock. Stripe requires at least 30.">
-          <input className="ui-input w-full" inputMode="numeric" disabled={disabled}
-            value={settings.inventory.reservationMinutes}
-            onChange={(e) => patch({ inventory: { ...settings.inventory, reservationMinutes: Number(e.target.value) || 0 } })} />
-        </Field>
-        <Field label="Default low-stock threshold">
-          <input className="ui-input w-full" inputMode="numeric" disabled={disabled}
-            value={settings.inventory.lowStockThresholdDefault}
-            onChange={(e) => patch({ inventory: { ...settings.inventory, lowStockThresholdDefault: Number(e.target.value) || 0 } })} />
-        </Field>
-        <Toggle label="Release the hold when a payment fails" checked={settings.inventory.releaseOnPaymentFailure}
-          disabled={disabled} onChange={(v) => patch({ inventory: { ...settings.inventory, releaseOnPaymentFailure: v } })} />
-        <Field label="Low-stock alert recipients" hint="Comma separated. Staff notifications are sent regardless.">
-          <input className="ui-input w-full" disabled={disabled} value={settings.inventory.lowStockRecipients.join(", ")}
-            onChange={(e) =>
-              patch({ inventory: { ...settings.inventory, lowStockRecipients: e.target.value.split(/[,\s;]+/).filter(Boolean) } })
-            } />
-        </Field>
-      </Section>
+      {/* ---------------- Cancellations ---------------- */}
+      <TabPanel id="cancellations" value={tab}>
+        <Section
+          title="Cancellation rules"
+          description="When a customer may ask to cancel, and when the shop stops allowing it."
+        >
+          <Card>
+            <div className="staff-form">
+              <CheckField
+                label="Paid orders may be cancelled by request"
+                help="A request still needs a staff decision; this only controls whether the customer can raise one."
+                checked={policy.cancellation.allowPaidRequests}
+                disabled={disabled}
+                onChange={(v) => patchPolicy({ cancellation: { ...policy.cancellation, allowPaidRequests: v } })}
+              />
+              <CheckField
+                label="Block cancellation once materials are committed"
+                checked={policy.cancellation.blockAfterMaterialsOrdered}
+                disabled={disabled}
+                onChange={(v) => patchPolicy({ cancellation: { ...policy.cancellation, blockAfterMaterialsOrdered: v } })}
+              />
+            </div>
+          </Card>
+        </Section>
+      </TabPanel>
 
-      {/* ---------------------------------------------------------------- */}
-      <Section title="Return address" hint="Snapshotted onto a return when it is approved, so a later change never redirects a parcel already in the post.">
-        <AddressFields
-          legend="Return address"
-          value={settings.returnAddress}
-          disabled={disabled}
-          onChange={(returnAddress) => patch({ returnAddress })}
-        />
-      </Section>
+      {/* ---------------- Notifications ---------------- */}
+      <TabPanel id="notifications" value={tab}>
+        <Section
+          title="Addresses"
+          description="Who customers write to, and who the shop tells when something needs a person."
+        >
+          <Card>
+            <FormGrid>
+              <Field label="Support email" help="Where customers are told to write.">
+                <input className="ui-input w-full" type="email" disabled={disabled} value={settings.business.supportEmail}
+                  onChange={(e) => patch({ business: { ...settings.business, supportEmail: e.target.value } })} />
+              </Field>
+              <Field label="Reply-To address" help="Where a reply to an automated email goes.">
+                <input className="ui-input w-full" type="email" disabled={disabled} value={settings.email.replyTo}
+                  onChange={(e) => patch({ email: { ...settings.email, replyTo: e.target.value } })} />
+              </Field>
+              <Field label="Staff alert recipients" help="Comma separated. Gets operational alerts.">
+                <input className="ui-input w-full" disabled={disabled} value={settings.email.staffAlertRecipients.join(", ")}
+                  onChange={(e) => patch({ email: { ...settings.email, staffAlertRecipients: e.target.value.split(/[,\s;]+/).filter(Boolean) } })} />
+              </Field>
+              <Field label="Low-stock alert recipients" help="Comma separated. On-site staff notifications are sent regardless.">
+                <input className="ui-input w-full" disabled={disabled} value={settings.inventory.lowStockRecipients.join(", ")}
+                  onChange={(e) => patch({ inventory: { ...settings.inventory, lowStockRecipients: e.target.value.split(/[,\s;]+/).filter(Boolean) } })} />
+              </Field>
+            </FormGrid>
+          </Card>
+        </Section>
 
-      {/* ---------------------------------------------------------------- */}
-      <Section title="Cancellations and returns" hint="Read by the lifecycle rules that decide what a customer may do.">
-        <Field label="Return window (days)" hint="0 means no time limit.">
-          <input className="ui-input w-full" inputMode="numeric" disabled={disabled} value={policy.returns.windowDays}
-            onChange={(e) => {
-              setDirty(true);
-              setPolicy({ ...policy, returns: { ...policy.returns, windowDays: Number(e.target.value) || 0 } });
-            }} />
-        </Field>
-        <Toggle label="Returns are accepted" checked={policy.returns.enabled} disabled={disabled}
-          onChange={(v) => { setDirty(true); setPolicy({ ...policy, returns: { ...policy.returns, enabled: v } }); }} />
-        <Toggle label="Custom and personalized work is returnable" checked={policy.returns.allowCustomProducts} disabled={disabled}
-          onChange={(v) => { setDirty(true); setPolicy({ ...policy, returns: { ...policy.returns, allowCustomProducts: v } }); }} />
-        <Toggle label="Paid orders may be cancelled by request" checked={policy.cancellation.allowPaidRequests} disabled={disabled}
-          onChange={(v) => { setDirty(true); setPolicy({ ...policy, cancellation: { ...policy.cancellation, allowPaidRequests: v } }); }} />
-        <Toggle label="Block cancellation once materials are committed" checked={policy.cancellation.blockAfterMaterialsOrdered} disabled={disabled}
-          onChange={(v) => { setDirty(true); setPolicy({ ...policy, cancellation: { ...policy.cancellation, blockAfterMaterialsOrdered: v } }); }} />
-        <Field label="Return instructions" hint="Shown to a customer whose return is approved.">
-          <textarea className="ui-input w-full" rows={3} disabled={disabled} value={policy.returns.instructions}
-            onChange={(e) => { setDirty(true); setPolicy({ ...policy, returns: { ...policy.returns, instructions: e.target.value } }); }} />
-        </Field>
-      </Section>
+        <Section
+          title="Which emails are sent"
+          description="Turning a category off stops every message in it. The templates themselves live under Business → Email."
+        >
+          <Card>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(Object.keys(settings.email.categories) as (keyof CommerceSettings["email"]["categories"])[]).map((key) => (
+                <CheckField
+                  key={key}
+                  label={`${key.charAt(0).toUpperCase()}${key.slice(1)} email`}
+                  checked={settings.email.categories[key]}
+                  disabled={disabled}
+                  onChange={(v) => patch({ email: { ...settings.email, categories: { ...settings.email.categories, [key]: v } } })}
+                />
+              ))}
+            </div>
+          </Card>
+        </Section>
+      </TabPanel>
 
-      {/* ---------------------------------------------------------------- */}
-      <Section title="Email" hint="Sender identity and which categories of message are sent.">
-        <Field label="Reply-To address">
-          <input className="ui-input w-full" type="email" disabled={disabled} value={settings.email.replyTo}
-            onChange={(e) => patch({ email: { ...settings.email, replyTo: e.target.value } })} />
-        </Field>
-        <Field label="Staff alert recipients" hint="Comma separated.">
-          <input className="ui-input w-full" disabled={disabled} value={settings.email.staffAlertRecipients.join(", ")}
-            onChange={(e) => patch({ email: { ...settings.email, staffAlertRecipients: e.target.value.split(/[,\s;]+/).filter(Boolean) } })} />
-        </Field>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {(Object.keys(settings.email.categories) as (keyof CommerceSettings["email"]["categories"])[]).map((key) => (
-            <Toggle
-              key={key}
-              label={`Send ${key} email`}
-              checked={settings.email.categories[key]}
-              disabled={disabled}
-              onChange={(v) => patch({ email: { ...settings.email, categories: { ...settings.email.categories, [key]: v } } })}
-            />
-          ))}
-        </div>
-      </Section>
+      {/*
+        Problems and the save bar sit outside the tabs on purpose.
 
+        A validation problem raised by the Shipping fields must be visible from
+        whichever tab the reader is on when they press Save; putting it inside a
+        panel would hide the reason the save failed behind a tab they have no
+        reason to open.
+      */}
       {problems.length ? (
-        <div role="alert" className="ui-notice ui-notice-danger text-sm">
+        <Notice tone="danger" role="alert">
           <p className="font-medium">This could not be saved:</p>
           <ul className="mt-1 list-disc pl-5">
             {problems.map((problem) => (
               <li key={problem}>{problem}</li>
             ))}
           </ul>
-        </div>
-      ) : null}
-      {saved ? (
-        <p role="status" className="ui-notice ui-notice-success text-sm">
-          {saved}
-        </p>
+        </Notice>
       ) : null}
 
-      <div className="sticky bottom-4 flex items-center gap-3">
-        <button type="button" onClick={() => void save()} disabled={disabled || !dirty}
-          className="ui-btn ui-btn-primary disabled:opacity-50">
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-        {dirty ? <span className="text-xs text-brand-textMuted">Unsaved changes</span> : null}
-      </div>
-    </main>
+      {canManage ? (
+        <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} message={saved} />
+      ) : null}
+    </StaffPage>
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section className="ui-card">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {hint ? <p className="mt-1 text-sm text-brand-textMuted">{hint}</p> : null}
-      <div className="mt-4 grid gap-3">{children}</div>
-    </section>
-  );
+/** One method's fields, written back into the settings object. */
+function updateMethod(
+  settings: CommerceSettings,
+  patch: (next: Partial<CommerceSettings>) => void,
+  index: number,
+  next: Partial<ShippingMethod>
+) {
+  patch({
+    shipping: {
+      ...settings.shipping,
+      methods: settings.shipping.methods.map((method, i) => (i === index ? { ...method, ...next } : method)),
+    },
+  });
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="block text-sm">
-      <span className="font-medium">{label}</span>
-      {hint ? <span className="mt-0.5 block text-xs text-brand-textMuted">{hint}</span> : null}
-      <span className="mt-1 block">{children}</span>
-    </label>
-  );
-}
-
-function Toggle({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-2 text-sm">
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function AddressFields({ legend, value, disabled, onChange }: { legend: string; value: Address; disabled: boolean; onChange: (a: Address) => void }) {
+/**
+ * An address, as a labelled group of fields.
+ *
+ * Was a `<fieldset>` with a visible border, inside a `ui-card`, inside the page
+ * — three nested boxes before the first input, for a group of eight text
+ * fields. A heading and whitespace group them just as clearly, and the
+ * `<fieldset>` is kept without its border so the grouping is still announced.
+ */
+function AddressFields({
+  legend,
+  value,
+  disabled,
+  onChange,
+}: {
+  legend: string;
+  value: Address;
+  disabled: boolean;
+  onChange: (a: Address) => void;
+}) {
   const set = (key: keyof Address) => (event: React.ChangeEvent<HTMLInputElement>) =>
     onChange({ ...value, [key]: event.target.value });
   return (
-    <fieldset className="rounded-lg border border-[var(--border)] p-3">
-      <legend className="px-1 text-sm font-medium">{legend}</legend>
-      <div className="grid gap-2 sm:grid-cols-2">
+    <fieldset className="min-w-0">
+      <legend className="staff-section-title mb-4">{legend}</legend>
+      <FormGrid>
         <Field label="Name"><input className="ui-input w-full" disabled={disabled} value={value.name} onChange={set("name")} /></Field>
         <Field label="Phone"><input className="ui-input w-full" disabled={disabled} value={value.phone} onChange={set("phone")} /></Field>
         <Field label="Address line 1"><input className="ui-input w-full" disabled={disabled} value={value.line1} onChange={set("line1")} /></Field>
@@ -394,63 +675,8 @@ function AddressFields({ legend, value, disabled, onChange }: { legend: string; 
         <Field label="City"><input className="ui-input w-full" disabled={disabled} value={value.city} onChange={set("city")} /></Field>
         <Field label="State / region"><input className="ui-input w-full" disabled={disabled} value={value.region} onChange={set("region")} /></Field>
         <Field label="Postal code"><input className="ui-input w-full" disabled={disabled} value={value.postalCode} onChange={set("postalCode")} /></Field>
-        <Field label="Country"><input className="ui-input w-full" maxLength={2} disabled={disabled} value={value.country} onChange={set("country")} /></Field>
-      </div>
-    </fieldset>
-  );
-}
-
-function MethodsEditor({ methods, disabled, onChange }: { methods: ShippingMethod[]; disabled: boolean; onChange: (m: ShippingMethod[]) => void }) {
-  const update = (index: number, next: Partial<ShippingMethod>) =>
-    onChange(methods.map((method, i) => (i === index ? { ...method, ...next } : method)));
-
-  return (
-    <fieldset className="rounded-lg border border-[var(--border)] p-3">
-      <legend className="px-1 text-sm font-medium">Delivery methods</legend>
-      {!methods.length ? (
-        <p className="text-sm text-brand-textMuted">No methods yet. Shipping cannot be turned on without one.</p>
-      ) : null}
-      <div className="grid gap-3">
-        {methods.map((method, index) => (
-          <div key={method.id || index} className="rounded-lg border border-[var(--border)] p-3">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Field label="Name"><input className="ui-input w-full" disabled={disabled} value={method.name}
-                onChange={(e) => update(index, { name: e.target.value })} /></Field>
-              <Field label="Price (cents)"><input className="ui-input w-full" inputMode="numeric" disabled={disabled} value={method.priceCents}
-                onChange={(e) => update(index, { priceCents: Number(e.target.value) || 0 })} /></Field>
-              <Field label="Delivery estimate"><input className="ui-input w-full" disabled={disabled} value={method.deliveryEstimate}
-                onChange={(e) => update(index, { deliveryEstimate: e.target.value })} /></Field>
-              <Field label="Free over (cents, blank for none)"><input className="ui-input w-full" inputMode="numeric" disabled={disabled}
-                value={method.freeThresholdCents ?? ""}
-                onChange={(e) => update(index, { freeThresholdCents: e.target.value.trim() === "" ? null : Number(e.target.value) || 0 })} /></Field>
-            </div>
-            <Field label="Description"><input className="ui-input w-full" disabled={disabled} value={method.description}
-              onChange={(e) => update(index, { description: e.target.value })} /></Field>
-            <div className="mt-2 flex items-center justify-between">
-              <Toggle label="Offered at checkout" checked={method.enabled} disabled={disabled}
-                onChange={(v) => update(index, { enabled: v })} />
-              <button type="button" disabled={disabled} className="ui-btn ui-btn-secondary text-xs"
-                onClick={() => {
-                  // Removing a method never rewrites an order that used it: the
-                  // order carries its own snapshot.
-                  if (!window.confirm(`Remove "${method.name || "this method"}" from checkout?`)) return;
-                  onChange(methods.filter((_, i) => i !== index));
-                }}>
-                Remove
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <button type="button" disabled={disabled} className="ui-btn ui-btn-secondary mt-3 text-xs"
-        onClick={() =>
-          onChange([
-            ...methods,
-            { id: `method-${methods.length + 1}`, name: "", description: "", priceCents: 0, freeThresholdCents: null, deliveryEstimate: "", enabled: true },
-          ])
-        }>
-        Add a delivery method
-      </button>
+        <Field label="Country" help="Two-letter code."><input className="ui-input w-full" maxLength={2} disabled={disabled} value={value.country} onChange={set("country")} /></Field>
+      </FormGrid>
     </fieldset>
   );
 }

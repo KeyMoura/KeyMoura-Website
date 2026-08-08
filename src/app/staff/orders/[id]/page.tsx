@@ -1,17 +1,39 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
+import { useHashTab } from "@/lib/hooks/useHashTab";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
 import { StaffOrderWorkspace } from "@/components/staff/StaffOrderWorkspace";
 import { OrderProductionJobs } from "@/components/staff/production/OrderProductionJobs";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
+import { Field } from "@/components/ui/DesignSystem";
 import { OrderLifecyclePanel } from "@/components/staff/OrderLifecyclePanel";
 import { OrderFulfillmentPanel } from "@/components/staff/OrderFulfillmentPanel";
+import {
+  Card,
+  CheckField,
+  EmptyState,
+  Fact,
+  Facts,
+  FormGrid,
+  FormWide,
+  LoadingState,
+  PageTabs,
+  Row,
+  Rows,
+  Section,
+  StaffPage,
+  StatusChip,
+  TabPanel,
+} from "@/components/staff/StaffPage";
+import { ORDER_TAB_ALIASES, type StaffTab } from "@/lib/staff/pageFramework";
 import {
   ConsequentialAction,
   resultFromResponse,
@@ -28,6 +50,42 @@ import {
 } from "@/lib/staff/loadState";
 
 /**
+ * The order workspace — the one place an order is managed.
+ *
+ * ## What this replaced
+ *
+ * A single 877-line column of eleven panels, every one of them mounted at once
+ * and most of them `lg:col-span-2`, so the "two column" grid was in practice a
+ * very long scroll: a header of four metric cards, a next-step banner, a
+ * six-step stepper, the production workspace, the shop-work list, a customer
+ * review composer, the lifecycle panel, the quote editor, the fulfillment
+ * panel, the conversation, the activity timeline, the email history, and an
+ * advanced status override. Three of those rendered the payment state, two
+ * rendered the fulfillment state, and the financial position appeared twice.
+ *
+ * ## The shape now
+ *
+ * A **persistent header** that answers the four questions without scrolling —
+ * who, how much, where is it, what next — and eight tabs beneath it. Each tab
+ * holds one kind of work, and each piece of state is rendered exactly once.
+ *
+ * ## Why the hash, not a query parameter
+ *
+ * The tabs are addressed by `#hash`, which is what the page's own sections used
+ * before this pass. `/staff/orders/<id>#fulfillment` is linked from the
+ * fulfillment queue, `#production` from the production panel, and the dashboard
+ * now links every attention row to the tab that holds its work. Those links all
+ * still mean what they meant — `ORDER_TAB_ALIASES` maps the retired anchors
+ * (`#conversation`, `#quote`, `#shop-work`) onto the tabs that replaced them,
+ * so a bookmark from last week lands on the right control rather than silently
+ * on Overview.
+ *
+ * Only tabs that apply are shown: a direct purchase with no production, an
+ * order with nothing to deliver, and a request that has never taken money each
+ * get a shorter strip rather than empty panels.
+ */
+
+/**
  * One section's failure, stated in the section.
  *
  * A page-level banner is not enough when the panels underneath keep rendering:
@@ -37,7 +95,7 @@ import {
 function SectionFailure({ state, what }: { state: LoadState<unknown>; what: string }) {
   if (!isFailed(state)) return null;
   return (
-    <Notice tone="danger" role="alert" className="mt-3">
+    <Notice tone="danger" role="alert">
       {what} could not be loaded, so nothing is shown here. This is not the same as there being none —
       {" "}{state.failure.message}
     </Notice>
@@ -62,6 +120,7 @@ type Order = {
   product_id: string | null;
   product_name: string;
   status: string;
+  order_kind: string | null;
   quantity: number;
   specifications: Record<string, unknown>;
   customer_notes: string | null;
@@ -74,7 +133,10 @@ type Order = {
   quote_expires_at: string | null;
   amount_refunded_cents: number;
   target_date: string | null;
+  fulfillment_status: string | null;
   fulfillment_method: "shipping" | "pickup";
+  cancellation_status: string | null;
+  return_status: string | null;
   shipping_address: Record<string, string> | null;
   shipping_carrier: string | null;
   tracking_number: string | null;
@@ -97,6 +159,8 @@ type EmailDelivery = { id:string; recipient:string; subject:string; status:"sent
 type History = { id:number; from_status:string|null; to_status:string; note:string|null; created_at:string };
 type Payment = { id:string; amount_cents:number; received_at:string };
 type Refund = { id:string; amount_cents:number; reason:string; created_at:string };
+type Profile = { display_name: string | null; username: string | null };
+
 const statuses = [
   "requested",
   "needs_information",
@@ -117,6 +181,8 @@ const statusLabel = (status: string) => {
   if (status === "final_review") return "Finished Product Review";
   return pretty(status);
 };
+const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
 const requestedEstimateCents = (order: Order) => {
   const value = order.specifications?.estimated_total_cents;
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -129,19 +195,28 @@ const optionAdjustmentCents = (order: Order) =>
     const adjustment = (raw as { price_adjustment_cents?: unknown }).price_adjustment_cents;
     return sum + (typeof adjustment === "number" && Number.isFinite(adjustment) ? Math.round(adjustment) : 0);
   }, 0);
-const nextStaffStep = (order: Order) => {
-  if (order.status === "requested") return { title: "Review the request", detail: "Confirm the specifications, then prepare and send the customer quote.", href: "#quote" };
-  if (order.status === "needs_information") return { title: "Waiting for customer information", detail: "Use the conversation to follow up if the customer has not replied.", href: "#conversation" };
-  if (order.status === "accepted") return { title: "Prepare the quote", detail: "The request is accepted. Set the customer price, deposit, schedule, and send the quote for approval.", href: "#quote" };
-  if (order.status === "awaiting_payment") return { title: "Waiting for payment", detail: "The quote is approved. Production begins automatically when the required payment is received.", href: "#activity" };
-  if (order.status === "customer_review") return { title: "Waiting for quote approval", detail: "The customer needs to approve the current quote before checkout.", href: "#quote" };
-  if (order.status === "in_progress") return { title: "Complete production", detail: "Use the production workspace, then send the finished product for customer review.", href: "#production" };
-  if (order.status === "final_review") return { title: "Waiting for finished-product approval", detail: "The customer is reviewing the finished product. Fulfillment unlocks after approval.", href: "#fulfillment" };
-  if (order.status === "ready") return { title: order.fulfillment_method === "pickup" ? "Prepare customer pickup" : "Ship the order", detail: "Confirm the balance is paid, then complete the fulfillment action below.", href: "#fulfillment" };
-  if (order.status === "completed") return { title: "Order complete", detail: "No action is required. The full record remains available below.", href: "#activity" };
-  if (order.status === "declined" || order.status === "cancelled") return { title: statusLabel(order.status), detail: "No normal workflow action is pending. Review payment and refund records if needed.", href: "#activity" };
-  return { title: "Review this order", detail: "Check the order details and choose the appropriate next action.", href: "#quote" };
+
+/**
+ * What has to happen next, and which tab it happens on.
+ *
+ * The `tab` replaces a `#quote`/`#fulfillment`/`#activity` anchor. It is the
+ * same idea — send the reader to the control — except that the control is now
+ * on a tab of its own rather than 2,000 pixels down a single page.
+ */
+const nextStaffStep = (order: Order): { title: string; detail: string; tab: string } => {
+  if (order.status === "requested") return { title: "Review the request", detail: "Confirm the specifications, then prepare and send the customer quote.", tab: "overview" };
+  if (order.status === "needs_information") return { title: "Waiting for customer information", detail: "Use the conversation to follow up if the customer has not replied.", tab: "messages" };
+  if (order.status === "accepted") return { title: "Prepare the quote", detail: "The request is accepted. Set the customer price, deposit and schedule, then send the quote for approval.", tab: "payment" };
+  if (order.status === "awaiting_payment") return { title: "Waiting for payment", detail: "The quote is approved. Production begins automatically when the required payment is received.", tab: "payment" };
+  if (order.status === "customer_review") return { title: "Waiting for quote approval", detail: "The customer needs to approve the current quote before checkout.", tab: "payment" };
+  if (order.status === "in_progress") return { title: "Complete production", detail: "Use the production workspace, then send the finished product for customer review.", tab: "production" };
+  if (order.status === "final_review") return { title: "Waiting for finished-product approval", detail: "The customer is reviewing the finished product. Fulfillment unlocks after approval.", tab: "overview" };
+  if (order.status === "ready") return { title: order.fulfillment_method === "pickup" ? "Prepare customer pickup" : "Ship the order", detail: "Confirm the balance is paid, then complete the fulfillment action.", tab: "fulfillment" };
+  if (order.status === "completed") return { title: "Order complete", detail: "No action is required. The full record remains available.", tab: "activity" };
+  if (order.status === "declined" || order.status === "cancelled") return { title: statusLabel(order.status), detail: "No normal workflow action is pending. Review payment and refund records if needed.", tab: "activity" };
+  return { title: "Review this order", detail: "Check the order details and choose the appropriate next action.", tab: "overview" };
 };
+
 const workflowSteps = [
   { label: "Request", statuses: ["requested", "needs_information"] },
   { label: "Quote", statuses: ["accepted"] },
@@ -154,31 +229,26 @@ const workflowStepIndex = (status: string) => {
   const index = workflowSteps.findIndex((step) => (step.statuses as readonly string[]).includes(status));
   return index < 0 ? 0 : index;
 };
+
 export default function StaffOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const supabase = useMemo(() => supabaseBrowser(), []);
   const { data: access, isLoading } = useMeAccess();
-  const perms = new Set(access?.permissions ?? []);
+  const perms = useMemo(() => new Set(access?.permissions ?? []), [access]);
   const canView = perms.has("orders.view") || perms.has("orders.manage");
   const canManage = perms.has("orders.manage");
+  const canViewProduction = perms.has("production.view") || perms.has("production.manage");
+
   const [order, setOrder] = useState<Order | null>(null);
+  const [customer, setCustomer] = useState<Profile | null>(null);
+  /** How many production jobs are linked, reported up by the panel below. */
+  const [jobSummary, setJobSummary] = useState<{ count: number; label: string } | null>(null);
   /*
    * Six independent loads, six independent states.
    *
-   * These used to be six `useState<T[]>([])` filled with `result.data ?? []`
-   * and one shared `error` string built by `??`-chaining the six messages. That
-   * had three separate consequences on a page that shows money:
-   *
-   * 1. A failed payments query rendered as *no payments*, which on an order
-   *    workspace reads as "this customer has not paid".
-   * 2. The activity timeline is assembled from four of these lists, so one
-   *    failed source silently vanished from the history and the timeline still
-   *    looked complete and chronological.
-   * 3. Only the first failure was shown, with a raw Postgres message, and
-   *    nothing said which section it belonged to.
-   *
-   * `LoadState` makes (1) and (2) unrepresentable — rows cannot be read without
-   * narrowing to `ready` — and the panels below name their own failure.
+   * `LoadState` makes it unrepresentable to read rows without narrowing to
+   * `ready`, so a failed payments query cannot render as *no payments* — which
+   * on an order workspace reads as "this customer has not paid".
    */
   const [messages, setMessages] = useState<LoadState<Message[]>>(loadingState<Message[]>());
   const [emails, setEmails] = useState<LoadState<EmailDelivery[]>>(loadingState<EmailDelivery[]>());
@@ -205,6 +275,7 @@ export default function StaffOrderDetail() {
    * same text reuses it; a genuinely new message gets a new one.
    */
   const [messageToken, setMessageToken] = useState("");
+
   const load = useCallback(async () => {
     const [o, m, e, h, p, r] = await Promise.all([
       supabase.from("orders").select("*").eq("id", id).maybeSingle(),
@@ -234,10 +305,14 @@ export default function StaffOrderDetail() {
       setTarget(row.target_date ?? "");
       setStaffNotes(row.staff_notes ?? "");
       setReviewNote(row.final_review_note ?? "");
-      // The refund amount is no longer seeded here. It lives in
-      // OrderLifecyclePanel, which computes what is refundable server-side with
-      // pending refunds already subtracted — this local subtraction did not
-      // know about refunds still in flight.
+      // The customer's name, for the header. A refused profile read leaves the
+      // header generic; it does not mean the order has no customer.
+      const profile = await supabase
+        .from("profiles")
+        .select("display_name,username")
+        .eq("id", row.customer_id)
+        .maybeSingle();
+      setCustomer(profile.error ? null : ((profile.data as Profile | null) ?? null));
     }
     /*
      * Only the order's own failure becomes the page-level error, and it is
@@ -248,11 +323,59 @@ export default function StaffOrderDetail() {
      */
     setError(o.error ? classifySupabaseError(o.error).message : "");
   }, [id, supabase]);
+
   useEffect(() => {
     if (!canView) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [canView, load]);
+
+  /*
+   * The tab strip.
+   *
+   * Built before the early returns below so the hook order is stable across
+   * the loading, refused and loaded renders — `useHashTab` cannot sit after a
+   * `return`. An order that has not loaded yet gets the full strip; the
+   * `available` flags narrow it as soon as the row arrives.
+   */
+  const tabs = useMemo<StaffTab[]>(
+    () => [
+      { id: "overview", label: "Overview" },
+      { id: "items", label: "Items" },
+      { id: "payment", label: "Payment" },
+      {
+        id: "production",
+        label: "Production",
+        // A direct purchase of a stocked item is not made to order. It still
+        // gets the tab if somebody has raised shop work against it, which the
+        // panel reports up once it has loaded.
+        available:
+          canViewProduction &&
+          (order == null || order.order_kind !== "direct_purchase" || (jobSummary?.count ?? 0) > 0),
+      },
+      {
+        id: "fulfillment",
+        label: "Fulfillment",
+        available: order == null || order.fulfillment_status !== "not_required",
+      },
+      { id: "messages", label: "Messages" },
+      {
+        id: "returns",
+        label: "Returns & cancellations",
+        // Nothing can be returned or refunded before money has moved, and a
+        // request that has never taken any does not need the tab.
+        available:
+          order == null ||
+          order.amount_paid_cents > 0 ||
+          (order.cancellation_status ?? "none") !== "none" ||
+          (order.return_status ?? "none") !== "none",
+      },
+      { id: "activity", label: "Activity" },
+    ],
+    [canViewProduction, jobSummary, order]
+  );
+  const [tab, setTab] = useHashTab(tabs, ORDER_TAB_ALIASES);
+
   async function authHeaders() {
     const session = await supabase.auth.getSession();
     return {
@@ -262,18 +385,15 @@ export default function StaffOrderDetail() {
         : {}),
     };
   }
+
   /**
    * Every write to the order row, through one place.
-   *
-   * The two things that make it safe are here rather than at each call site, so
-   * a control added later cannot forget them:
    *
    * - **`expected_status`** is always sent. The route puts it in the `WHERE`
    *   clause, so a colleague's change that landed since this page rendered is a
    *   409 rather than a silent overwrite.
    * - **A 409 becomes a conflict**, which `ConsequentialAction` shows in place
-   *   and refuses to retry. Retrying a consequential action against state that
-   *   has moved is the failure this whole pass is about.
+   *   and refuses to retry.
    */
   const patchOrder = useCallback(
     async (payload: Record<string, unknown>): Promise<ActionResult> => {
@@ -342,6 +462,7 @@ export default function StaffOrderDetail() {
     if (!result.ok) setError("conflict" in result ? result.conflict.message : result.error);
     setSavingInternal(false);
   }
+
   async function sendForReview(): Promise<ActionResult> {
     if (!order || reviewNote.trim().length < 3 || reviewFiles.length < 1) {
       return { ok: false, error: "Add a customer note and at least one finished-product photo." };
@@ -394,17 +515,26 @@ export default function StaffOrderDetail() {
     setSending(false);
     return result;
   }
-  if (isLoading) return <div className="ui-card">Loading…</div>;
-  if (!canView)
-    return <AccessDeniedCard message="You do not have access to orders." />;
-  if (!order)
-    return <p className="text-rose-200">{error || "Order not found."}</p>;
+
+  if (isLoading) return <LoadingState>Loading the order…</LoadingState>;
+  if (!canView) return <AccessDeniedCard message="You do not have access to orders." />;
+  if (!order) return <Notice tone="danger" role="alert">{error || "Order not found."}</Notice>;
+
   const input = "ui-input";
   const nextStep = nextStaffStep(order);
+  const activeStep = workflowStepIndex(order.status);
+  const isClosed = order.status === "cancelled" || order.status === "declined";
+  const requestedTotalCents = requestedEstimateCents(order);
+  const requestedOptionTotalCents = optionAdjustmentCents(order) * order.quantity;
+  const requestedBaseTotalCents = requestedTotalCents == null ? null : requestedTotalCents - requestedOptionTotalCents;
+  const netPaidCents = order.amount_paid_cents - (order.amount_refunded_cents || 0);
+  const balanceCents = Math.max(0, (order.agreed_price_cents || 0) - netPaidCents);
+  const customerName =
+    customer?.display_name || (customer?.username ? `@${customer.username}` : "Customer");
+
   /*
    * Which of the timeline's four sources are missing.
    *
-   * Named in the order they appear so the notice reads the way the list does.
    * Payments and refunds are called out by name rather than as "some data",
    * because a missing payment entry is the one omission that changes what a
    * staff member believes about money.
@@ -415,340 +545,578 @@ export default function StaffOrderDetail() {
     isFailed(payments) ? "payments" : null,
     isFailed(refunds) ? "refunds" : null,
   ].filter((source): source is string => source !== null);
-  const activeStep = workflowStepIndex(order.status);
-  const isClosed = order.status === "cancelled" || order.status === "declined";
-  const requestedTotalCents = requestedEstimateCents(order);
-  const requestedOptionTotalCents = optionAdjustmentCents(order) * order.quantity;
-  const requestedBaseTotalCents = requestedTotalCents == null ? null : requestedTotalCents - requestedOptionTotalCents;
+
   return (
-    <main className="page-stack">
-      <header className="ui-card p-5 sm:p-7">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">{order.order_number || "Request pending"}</p><h1 className="mt-2 text-3xl font-semibold">{order.product_name}</h1><p className="mt-2 text-sm text-brand-textMuted">Quantity {order.quantity} · Submitted {new Date(order.created_at).toLocaleDateString()}</p></div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Status</p><p className="mt-1 text-sm font-semibold text-brand-primary">{statusLabel(order.status)}</p></div>
-            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Customer price</p><p className="mt-1 text-sm font-semibold">{order.agreed_price_cents == null ? "Not quoted" : `$${(order.agreed_price_cents/100).toFixed(2)}`}</p></div>
-            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Net paid</p><p className="mt-1 text-sm font-semibold text-emerald-300">${((order.amount_paid_cents-(order.amount_refunded_cents||0))/100).toFixed(2)}</p>{order.amount_refunded_cents ? <p className="text-[10px] text-brand-textMuted">${(order.amount_refunded_cents/100).toFixed(2)} refunded</p> : null}</div>
-            <div className="ui-card !p-3"><p className="text-[10px] uppercase tracking-wider text-brand-textMuted">Balance</p><p className="mt-1 text-sm font-semibold">${(Math.max(0,(order.agreed_price_cents || 0)-order.amount_paid_cents)/100).toFixed(2)}</p></div>
+    <StaffPage>
+      {/* ================= Persistent header ================= */}
+      <header className="staff-record-header">
+        <div className="staff-record-top">
+          <div className="min-w-0">
+            <p className="staff-record-eyebrow">
+              {order.order_number || "Request pending"} ·{" "}
+              {order.order_kind === "direct_purchase" ? "Direct purchase" : "Custom request"}
+            </p>
+            <h1 className="staff-record-title">{order.product_name}</h1>
+            <p className="staff-row-meta mt-1">
+              {customerName} · Quantity {order.quantity} · Submitted{" "}
+              {new Date(order.created_at).toLocaleDateString()}
+            </p>
           </div>
+          {/*
+            The money, once. It was four `ui-card` tiles here *and* a four-tile
+            financial grid inside the lifecycle panel further down, which is two
+            places for "how much has this customer paid" to be read from.
+          */}
+          <Facts className="w-full sm:w-auto sm:min-w-[22rem]">
+            <Fact label="Total">
+              {order.agreed_price_cents == null ? "Not quoted" : money(order.agreed_price_cents)}
+            </Fact>
+            <Fact label="Net paid">
+              <span className="text-emerald-300">{money(netPaidCents)}</span>
+            </Fact>
+            <Fact label="Balance">{money(balanceCents)}</Fact>
+          </Facts>
+        </div>
+
+        {/* Every state this order is in, in one strip, each named. */}
+        <div className="staff-record-states">
+          <StatusChip value={order.status} label={statusLabel(order.status)} />
+          <StatusChip value={order.payment_status} prefix="Payment · " />
+          {order.fulfillment_status && order.fulfillment_status !== "not_required" ? (
+            <StatusChip value={order.fulfillment_status} prefix="Delivery · " />
+          ) : null}
+          {jobSummary && jobSummary.count > 0 ? (
+            <Badge tone="accent">
+              <span className="opacity-60">Production · </span>
+              {jobSummary.label}
+            </Badge>
+          ) : null}
+          {(order.cancellation_status ?? "none") !== "none" ? (
+            <StatusChip value={order.cancellation_status} prefix="Cancellation · " />
+          ) : null}
+          {(order.return_status ?? "none") !== "none" ? (
+            <StatusChip value={order.return_status} prefix="Return · " />
+          ) : null}
+        </div>
+
+        {/* The single next action, always visible, never scrolled past. */}
+        <div className="staff-record-next">
+          <div className="min-w-0">
+            <p className="staff-record-next-label">Next step</p>
+            <p className="staff-record-next-title">{nextStep.title}</p>
+            <p className="staff-record-next-detail">{nextStep.detail}</p>
+          </div>
+          {nextStep.tab !== tab ? (
+            <button type="button" onClick={() => setTab(nextStep.tab)} className="ui-btn ui-btn-primary text-sm">
+              Go to {tabs.find((candidate) => candidate.id === nextStep.tab)?.label ?? "next step"}
+            </button>
+          ) : null}
         </div>
       </header>
-      <div className="ui-card !border-brand-primary/35 !bg-brand-primary/10 sm:flex sm:items-center sm:justify-between sm:gap-5">
-        <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-primary">Next step</p><h2 className="mt-1 text-lg font-semibold">{nextStep.title}</h2><p className="mt-1 text-sm text-brand-textMuted">{nextStep.detail}</p></div>
-        <div className="mt-4 flex shrink-0 flex-wrap gap-2 sm:mt-0">
-          {(order.status === "requested" || order.status === "needs_information") && canManage ? <>
-            <a href="#conversation" className="ui-btn ui-btn-secondary">Message customer</a>
-            <ConsequentialAction
-              label="Cancel request"
-              title="Cancel this request?"
-              summary="The request is closed and the customer is told. This does not move any money — a refund is issued separately from the lifecycle panel."
-              currentState={statusLabel(order.status)}
-              nextState="Cancelled"
-              tone="danger"
-              confirmLabel="Cancel the request"
-              reason={{
-                label: "Why is this being cancelled?",
-                placeholder: "Kept with the order and shown to the customer.",
-                required: true,
-                help: "Stored on the order permanently and included in what the customer is told.",
-              }}
-              effects={{
-                customer: "The order reads Cancelled on their order page.",
-                financial: order.amount_paid_cents
-                  ? `No refund is issued here. ${`$${(order.amount_paid_cents / 100).toFixed(2)}`} remains collected until you refund it below.`
-                  : null,
-                inventory: null,
-                notification: "“Order cancelled”, with the reason above.",
-              }}
-              onConfirm={({ reason }) => changeStatus("cancelled", reason)}
-            />
-            <ConsequentialAction
-              label="Accept & continue"
-              title="Accept this request?"
-              summary="Moves the request into quoting. The customer is told you have taken it on; no price is sent yet."
-              currentState={statusLabel(order.status)}
-              nextState="Accepted"
-              confirmLabel="Accept the request"
-              effects={{
-                customer: "The order reads Accepted, with quote and payment details to follow.",
-                financial: null,
-                inventory: null,
-                notification: "“Order request accepted”.",
-              }}
-              onConfirm={() => changeStatus("accepted", "")}
-            />
-          </> : null}
-          {order.status === "in_progress" && canManage ? <a href="#customer-review-package" className="ui-btn ui-btn-primary">Prepare customer review</a> : null}
-          {order.status !== "requested" && order.status !== "needs_information" && order.status !== "in_progress" ? <a href={nextStep.href} className="ui-btn ui-btn-primary">{order.status === "accepted" ? "Continue to quote" : "View current stage"}</a> : null}
-        </div>
-      </div>
-      <nav className="ui-card overflow-x-auto" aria-label="Order workflow">
-        <ol className="ui-stepper min-w-[680px]">
-          {workflowSteps.map((step, index) => {
-            const complete = !isClosed && index < activeStep;
-            const active = !isClosed && index === activeStep;
-            return <li key={step.label} data-step={index + 1} aria-current={active ? "step" : undefined} className={cx("ui-step", active && "is-current", complete && "is-complete")}>{step.label}</li>;
-          })}
-        </ol>
-      </nav>
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <div id="production" className="scroll-mt-5 lg:col-span-2">
-          <StaffOrderWorkspace orderId={id} canManage={canManage} />
-        </div>
-        <div id="shop-work" className="scroll-mt-5 lg:col-span-2">
+
+      <PageTabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Order sections" />
+
+      {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
+
+      {/* ================= Overview ================= */}
+      <TabPanel id="overview" value={tab}>
+        <Section
+          title="Where this order is"
+          description="The six stages every custom order passes through."
+        >
+          <nav className="ui-card overflow-x-auto" aria-label="Order workflow">
+            <ol className="ui-stepper min-w-[680px]">
+              {workflowSteps.map((step, index) => {
+                const complete = !isClosed && index < activeStep;
+                const active = !isClosed && index === activeStep;
+                return (
+                  <li
+                    key={step.label}
+                    data-step={index + 1}
+                    aria-current={active ? "step" : undefined}
+                    className={cx("ui-step", active && "is-current", complete && "is-complete")}
+                  >
+                    {step.label}
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+        </Section>
+
+        <Section title="At a glance" description="The questions this page exists to answer.">
+          <Card>
+            <Facts>
+              <Fact label="Has it been paid?">
+                {balanceCents === 0 && order.amount_paid_cents > 0
+                  ? "Paid in full"
+                  : order.amount_paid_cents > 0
+                    ? `${money(balanceCents)} still to collect`
+                    : "Nothing collected yet"}
+              </Fact>
+              <Fact label="Does it need making?">
+                {order.order_kind === "direct_purchase" ? "Direct purchase — stock item" : "Custom work"}
+              </Fact>
+              <Fact label="Production linked">
+                {!canViewProduction
+                  ? "—"
+                  : jobSummary == null
+                    ? "Loading…"
+                    : jobSummary.count === 0
+                      ? "No production job yet"
+                      : `${jobSummary.count} job${jobSummary.count === 1 ? "" : "s"} · ${jobSummary.label}`}
+              </Fact>
+              <Fact label="Ready to fulfill?">
+                {order.fulfillment_status === "not_required"
+                  ? "Nothing to deliver"
+                  : order.fulfillment_status === "ready_to_fulfill" || order.fulfillment_status === "ready_for_pickup"
+                    ? "Yes — waiting to go out"
+                    : pretty(String(order.fulfillment_status || "unfulfilled"))}
+              </Fact>
+              <Fact label="Delivery method">
+                {order.fulfillment_method === "pickup" ? "Local pickup" : "Shipping"}
+              </Fact>
+              <Fact label="Target date">
+                {order.target_date
+                  ? new Date(`${order.target_date}T00:00:00`).toLocaleDateString()
+                  : "None set"}
+              </Fact>
+            </Facts>
+          </Card>
+        </Section>
+
+        {order.customer_notes ? (
+          <Section title="Customer notes" headingLevel={2}>
+            <Card>
+              <p className="whitespace-pre-wrap text-sm">{order.customer_notes}</p>
+            </Card>
+          </Section>
+        ) : null}
+
+        {/* The accept/decline decision lives with the thing being decided. */}
+        {(order.status === "requested" || order.status === "needs_information") && canManage ? (
+          <Section
+            title="Decide this request"
+            description="Accepting moves it into quoting. Nothing is charged either way."
+          >
+            <div className="ui-action-row">
+              <button type="button" onClick={() => setTab("messages")} className="ui-btn ui-btn-secondary">
+                Message customer
+              </button>
+              <ConsequentialAction
+                label="Cancel request"
+                title="Cancel this request?"
+                summary="The request is closed and the customer is told. This does not move any money — a refund is issued separately from Returns & cancellations."
+                currentState={statusLabel(order.status)}
+                nextState="Cancelled"
+                tone="danger"
+                confirmLabel="Cancel the request"
+                reason={{
+                  label: "Why is this being cancelled?",
+                  placeholder: "Kept with the order and shown to the customer.",
+                  required: true,
+                  help: "Stored on the order permanently and included in what the customer is told.",
+                }}
+                effects={{
+                  customer: "The order reads Cancelled on their order page.",
+                  financial: order.amount_paid_cents
+                    ? `No refund is issued here. ${money(order.amount_paid_cents)} remains collected until you refund it from Returns & cancellations.`
+                    : null,
+                  inventory: null,
+                  notification: "“Order cancelled”, with the reason above.",
+                }}
+                onConfirm={({ reason }) => changeStatus("cancelled", reason)}
+              />
+              <ConsequentialAction
+                label="Accept & continue"
+                title="Accept this request?"
+                summary="Moves the request into quoting. The customer is told you have taken it on; no price is sent yet."
+                currentState={statusLabel(order.status)}
+                nextState="Accepted"
+                confirmLabel="Accept the request"
+                effects={{
+                  customer: "The order reads Accepted, with quote and payment details to follow.",
+                  financial: null,
+                  inventory: null,
+                  notification: "“Order request accepted”.",
+                }}
+                onConfirm={() => changeStatus("accepted", "")}
+              />
+            </div>
+          </Section>
+        ) : null}
+
+        {order.status === "final_review" ? (
+          <Section
+            title="Sent for approval"
+            description="What the customer is looking at right now."
+          >
+            <Card>
+              {order.final_review_note ? (
+                <p className="whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p>
+              ) : null}
+              <OrderReviewGallery paths={order.final_review_asset_paths || []} />
+            </Card>
+          </Section>
+        ) : null}
+      </TabPanel>
+
+      {/* ================= Items ================= */}
+      <TabPanel id="items" value={tab}>
+        <Section
+          title="What was ordered"
+          description="The item, its options and what each contributed to the requested total."
+        >
+          <Card>
+            <Facts>
+              <Fact label="Item">{order.product_name}</Fact>
+              <Fact label="Quantity">{order.quantity}</Fact>
+              <Fact label="Base item price">
+                {requestedBaseTotalCents == null
+                  ? "Price pending"
+                  : money(requestedBaseTotalCents) +
+                    (order.quantity > 1 ? ` (${money(requestedBaseTotalCents / order.quantity)} each)` : "")}
+              </Fact>
+              <Fact label="Options">
+                {requestedOptionTotalCents ? money(requestedOptionTotalCents) : "No price change"}
+              </Fact>
+              <Fact label="Requested total">
+                <span className="text-brand-primary">
+                  {requestedTotalCents == null ? "Quoted after review" : money(requestedTotalCents)}
+                </span>
+              </Fact>
+              <Fact label="Quoted total">
+                {order.agreed_price_cents == null ? "Not quoted yet" : money(order.agreed_price_cents)}
+              </Fact>
+            </Facts>
+          </Card>
+        </Section>
+
+        <Section title="Chosen options" description="Exactly what the customer specified.">
+          <Card>
+            <dl className="staff-facts">
+              <RequestSpecifications specifications={order.specifications || {}} />
+            </dl>
+          </Card>
+        </Section>
+      </TabPanel>
+
+      {/* ================= Payment ================= */}
+      <TabPanel id="payment" value={tab}>
+        <Section
+          title="Customer quote"
+          description="The final price the customer pays — not your material or labor cost. Internal costs stay in Production."
+          actions={<Badge>Revision {order.quote_revision}</Badge>}
+        >
+          <Card>
+            <FormGrid>
+              <Field label="Total customer price ($)">
+                <input
+                  disabled={!canManage || quoteLocked(order)}
+                  className={`${input} w-full`}
+                  type="number"
+                  step=".01"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                />
+              </Field>
+              <Field label="Amount paid ($)" help="Updated automatically by Stripe.">
+                <input disabled className={`${input} w-full opacity-70`} type="number" value={paid} />
+              </Field>
+              <Field
+                label="Deposit due first ($)"
+                help="Leave blank to collect the full quote. Editing price or deposit creates a new quote revision."
+              >
+                <input
+                  disabled={!canManage || quoteLocked(order)}
+                  className={`${input} w-full`}
+                  type="number"
+                  min="0.5"
+                  step=".01"
+                  value={deposit}
+                  onChange={(e) => setDeposit(e.target.value)}
+                  placeholder="Blank = collect full price"
+                />
+              </Field>
+              <Field label="Quote valid through" help="Checkout is blocked after this date until a new quote is sent.">
+                <input
+                  disabled={!canManage || quoteLocked(order)}
+                  className={`${input} w-full`}
+                  type="date"
+                  value={quoteExpires}
+                  onChange={(e) => setQuoteExpires(e.target.value)}
+                />
+              </Field>
+              <Field label="Target date">
+                <input
+                  disabled={!canManage}
+                  className={`${input} w-full`}
+                  type="date"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                />
+              </Field>
+              <FormWide>
+                <Field label="Quote note" help="What changed, or what is included in this quote.">
+                  <textarea
+                    disabled={!canManage}
+                    className={`${input} min-h-20 w-full`}
+                    value={quoteNote}
+                    onChange={(e) => setQuoteNote(e.target.value)}
+                  />
+                </Field>
+              </FormWide>
+              <FormWide>
+                <Field label="Internal notes" help="Never shown to the customer.">
+                  <textarea
+                    disabled={!canManage}
+                    className={`${input} min-h-24 w-full`}
+                    value={staffNotes}
+                    onChange={(e) => setStaffNotes(e.target.value)}
+                  />
+                </Field>
+              </FormWide>
+            </FormGrid>
+
+            {/*
+              Two buttons, because these are two different actions. One button
+              whose label changed between "Review & send quote" and "Save
+              internal details" depending on whether a number had been typed
+              meant the consequence of pressing it depended on a field above it.
+            */}
+            {canManage ? (
+              <div className="ui-action-row mt-5">
+                <button
+                  type="button"
+                  onClick={() => void saveInternal()}
+                  disabled={savingInternal}
+                  className="ui-btn ui-btn-secondary disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {savingInternal ? "Saving…" : "Save internal details"}
+                </button>
+                <ConsequentialAction
+                  label="Send quote"
+                  title={`Send quote revision ${(order.quote_revision ?? 0) + 1}?`}
+                  summary="This is the price the customer pays. It moves the order to Quote Review and asks them to approve it. Material and labour costs are internal and are not this number."
+                  currentState={statusLabel(order.status)}
+                  nextState="Quote Review"
+                  confirmLabel="Send the quote"
+                  disabled={quoteLocked(order) || !price.trim() || Number(price) <= 0}
+                  disabledReason={
+                    quoteLocked(order)
+                      ? "This order has been paid, so its price cannot be rewritten."
+                      : !price.trim() || Number(price) <= 0
+                        ? "Enter a customer price first."
+                        : null
+                  }
+                  effects={{
+                    customer: `They are asked to approve ${price.trim() ? money(Math.round(Number(price) * 100)) : "the quote"}${deposit.trim() ? `, paying ${money(Math.round(Number(deposit) * 100))} up front` : ""}.`,
+                    financial: "Nothing is charged now. The customer pays at checkout after approving.",
+                    inventory: null,
+                    notification: "“Quote ready for review”, with the amount.",
+                  }}
+                  notificationPreview={quoteNote.trim() || undefined}
+                  onConfirm={() => sendQuote()}
+                />
+              </div>
+            ) : null}
+          </Card>
+        </Section>
+
+        <Section title="Payments received" description="Every collection Stripe has confirmed.">
+          <SectionFailure state={payments} what="The payment history" />
+          {rowsOrNull(payments)?.length ? (
+            <Rows>
+              {(rowsOrNull(payments) ?? []).map((payment) => (
+                <Row
+                  key={payment.id}
+                  title={money(payment.amount_cents)}
+                  detail={new Date(payment.received_at).toLocaleString()}
+                />
+              ))}
+            </Rows>
+          ) : isTrulyEmpty(payments) ? (
+            <EmptyState>No payment has been collected on this order yet.</EmptyState>
+          ) : null}
+        </Section>
+
+        <Section
+          title="Refunds"
+          description="The financial position, and the control that changes it."
+        >
+          <OrderLifecyclePanel orderId={id} productName={order.product_name} view="money" />
+        </Section>
+      </TabPanel>
+
+      {/* ================= Production ================= */}
+      <TabPanel id="production" value={tab}>
+        <Section
+          title="Linked shop work"
+          description="Production jobs raised against this order. Internal — never shown to the customer."
+        >
           <OrderProductionJobs
             orderId={id}
             productId={order.product_id}
             customerId={order.customer_id}
             productName={order.product_name}
+            onSummary={setJobSummary}
           />
-        </div>
-        {order.status === "in_progress" && canManage ? <section id="customer-review-package" className="scroll-mt-5 rounded-2xl border border-amber-400/35 bg-amber-400/5 p-5 lg:col-span-2">
-          <p className="text-xs font-semibold uppercase tracking-[.16em] text-amber-300">Next · Customer review</p>
-          <h2 className="mt-1 text-xl font-semibold">Show the customer the finished work</h2>
-          <p className="mt-2 text-sm text-brand-textMuted">Add the photos and note the customer should review. Nothing is sent until you confirm below.</p>
-          <label className="mt-5 block text-sm font-medium">Finished-product photos
-            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple onChange={event=>setReviewFiles(Array.from(event.target.files || []).slice(0,6))} className="mt-2 block w-full rounded-xl border border-dashed border-zinc-700 bg-black/30 px-4 py-5 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-white" />
-            <span className="mt-1 block text-xs text-brand-textMuted">Up to 6 photos. These are private to staff and this customer.</span>
-          </label>
-          {reviewFiles.length ? <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">{reviewFiles.map((file,index)=><div key={`${file.name}-${index}`} className="rounded-xl border border-zinc-700 bg-black/30 p-3"><p className="truncate text-sm font-medium">{file.name}</p><p className="mt-1 text-xs text-brand-textMuted">{(file.size/1024/1024).toFixed(1)} MB</p></div>)}</div> : null}
-          <label className="mt-5 block text-sm font-medium">Note to customer<textarea value={reviewNote} onChange={event=>setReviewNote(event.target.value)} maxLength={3000} className={`${input} mt-2 min-h-28 w-full`} placeholder="Here is the finished piece. Please review the photos, finish, color, and details…" /></label>
-          <div className="mt-5 rounded-xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">Customer preview</p><p className="mt-2 whitespace-pre-wrap text-sm">{reviewNote.trim() || "Your note will appear here."}</p><p className="mt-3 text-xs text-brand-textMuted">{reviewFiles.length ? `${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} attached` : "No photos attached yet"}</p></div>
-          <ConsequentialAction
-            className="mt-5"
-            label="Send to customer"
-            title="Send the finished product for approval?"
-            summary={`${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} and your note go to the customer. Fulfillment unlocks once they approve.`}
-            currentState={statusLabel(order.status)}
-            nextState="Finished Product Review"
-            confirmLabel="Send for approval"
-            disabled={reviewFiles.length < 1 || reviewNote.trim().length < 3}
-            disabledReason={
-              reviewFiles.length < 1 || reviewNote.trim().length < 3
-                ? "Add a note and at least one photo first."
-                : null
-            }
-            effects={{
-              customer: "They see the photos and your note, and can approve or ask for revisions.",
-              financial: null,
-              inventory: null,
-              notification: "“Finished product ready for review”.",
-            }}
-            notificationPreview={reviewNote.trim()}
-            onConfirm={() => sendForReview()}
-          />
-        </section> : null}
-        {order.status === "final_review" ? <section className="ui-card lg:col-span-2"><p className="ui-eyebrow">Sent to customer</p><h2 className="mt-1 text-xl font-semibold">Finished-product review package</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : null}<OrderReviewGallery paths={order.final_review_asset_paths || []} /></section> : null}
-        <OrderLifecyclePanel orderId={id} productName={order.product_name} />
-        <section id="quote" className="ui-card -order-1 scroll-mt-5 lg:col-span-2">
-          <div className="flex items-start justify-between gap-4"><div><p className="ui-eyebrow">Customer quote</p><h2 className="mt-1 text-xl font-semibold">Price & schedule</h2></div><Badge>Revision {order.quote_revision}</Badge></div>
-          <p className="mt-2 text-sm leading-6 text-brand-textMuted">This is the final price the customer pays—not your material or labor cost. Internal costs stay in the Production workspace.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              Total customer price ($)
-              <input
-                disabled={!canManage || quoteLocked(order)}
-                className={`${input} mt-1 w-full`}
-                type="number"
-                step=".01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-              />
-            </label>
-            <label className="text-sm">
-              Amount paid ($)
-              <input
-                disabled
-                className={`${input} mt-1 w-full opacity-70`}
-                type="number"
-                value={paid}
-              />
-              <span className="mt-1 block text-[10px] text-brand-textMuted">
-                Updated automatically by Stripe
-              </span>
-            </label>
-            <label className="text-sm">
-              Deposit due first ($)
-              <input disabled={!canManage || quoteLocked(order)} className={`${input} mt-1 w-full`} type="number" min="0.5" step=".01" value={deposit} onChange={(e)=>setDeposit(e.target.value)} placeholder="Blank = collect full price" />
-              <span className="mt-1 block text-[10px] text-brand-textMuted">Leave blank to collect the full quote. Editing price or deposit creates a new quote revision.</span>
-            </label>
-            <label className="text-sm sm:col-span-2">Quote note<textarea disabled={!canManage} className={`${input} mt-1 min-h-20 w-full`} value={quoteNote} onChange={e=>setQuoteNote(e.target.value)} placeholder="What changed or what is included in this quote?" /></label>
-            <label className="text-sm">Quote valid through<input disabled={!canManage || quoteLocked(order)} className={`${input} mt-1 w-full`} type="date" value={quoteExpires} onChange={e=>setQuoteExpires(e.target.value)} /><span className="mt-1 block text-[10px] text-brand-textMuted">Checkout is blocked after this date until a new quote is sent.</span></label>
-            <label className="text-sm">
-              Target date
-              <input
-                disabled={!canManage}
-                className={`${input} mt-1 w-full`}
-                type="date"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-              />
-            </label>
-            <label className="text-sm sm:col-span-2">
-              Internal notes
-              <textarea
-                disabled={!canManage}
-                className={`${input} mt-1 min-h-24 w-full`}
-                value={staffNotes}
-                onChange={(e) => setStaffNotes(e.target.value)}
-              />
-            </label>
-          </div>
-          {/*
-            Two buttons, because these are two different actions.
+        </Section>
 
-            One button whose label changed between "Review & send quote" and
-            "Save internal details" depending on whether a number had been typed
-            meant the consequence of pressing it depended on a field above it.
-            Sending a customer a price and jotting a target date are not the same
-            act and no longer share a control.
-          */}
-          {canManage ? (
-            <div className="ui-action-row mt-4">
-              <button
-                type="button"
-                onClick={() => void saveInternal()}
-                disabled={savingInternal}
-                className="ui-btn ui-btn-secondary disabled:cursor-not-allowed disabled:opacity-40"
+        <Section
+          title="Production workspace"
+          description="Private job planning, tasks, materials and costs for this order."
+        >
+          <StaffOrderWorkspace orderId={id} canManage={canManage} />
+        </Section>
+
+        {order.status === "in_progress" && canManage ? (
+          <Section
+            title="Show the customer the finished work"
+            description="Add the photos and note the customer should review. Nothing is sent until you confirm."
+          >
+            <Card>
+              <Field
+                label="Finished-product photos"
+                help="Up to 6 photos. These are private to staff and this customer."
               >
-                {savingInternal ? "Saving…" : "Save internal details"}
-              </button>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif"
+                  multiple
+                  onChange={(event) => setReviewFiles(Array.from(event.target.files || []).slice(0, 6))}
+                  className="block w-full rounded-xl border border-dashed border-[var(--border)] bg-black/20 px-4 py-5 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-white"
+                />
+              </Field>
+              {reviewFiles.length ? (
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {reviewFiles.map((file, index) => (
+                    <div key={`${file.name}-${index}`} className="rounded-xl border border-[var(--border)] p-3">
+                      <p className="truncate text-sm font-medium">{file.name}</p>
+                      <p className="mt-1 text-xs text-brand-textMuted">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-4">
+                <Field label="Note to customer">
+                  <textarea
+                    value={reviewNote}
+                    onChange={(event) => setReviewNote(event.target.value)}
+                    maxLength={3000}
+                    className={`${input} min-h-28 w-full`}
+                    placeholder="Here is the finished piece. Please review the photos, finish, colour and details…"
+                  />
+                </Field>
+              </div>
+              <div className="mt-4 rounded-xl border border-[var(--border)] bg-black/20 p-4">
+                <p className="staff-fact-label">Customer preview</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm">
+                  {reviewNote.trim() || "Your note will appear here."}
+                </p>
+                <p className="mt-3 text-xs text-brand-textMuted">
+                  {reviewFiles.length
+                    ? `${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} attached`
+                    : "No photos attached yet"}
+                </p>
+              </div>
               <ConsequentialAction
-                label="Send quote"
-                title={`Send quote revision ${(order.quote_revision ?? 0) + 1}?`}
-                summary="This is the price the customer pays. It moves the order to Quote Review and asks them to approve it. Material and labour costs are internal and are not this number."
+                className="mt-5"
+                label="Send to customer"
+                title="Send the finished product for approval?"
+                summary={`${reviewFiles.length} photo${reviewFiles.length === 1 ? "" : "s"} and your note go to the customer. Fulfillment unlocks once they approve.`}
                 currentState={statusLabel(order.status)}
-                nextState="Quote Review"
-                confirmLabel="Send the quote"
-                disabled={quoteLocked(order) || !price.trim() || Number(price) <= 0}
+                nextState="Finished Product Review"
+                confirmLabel="Send for approval"
+                disabled={reviewFiles.length < 1 || reviewNote.trim().length < 3}
                 disabledReason={
-                  quoteLocked(order)
-                    ? "This order has been paid, so its price cannot be rewritten."
-                    : !price.trim() || Number(price) <= 0
-                      ? "Enter a customer price first."
-                      : null
+                  reviewFiles.length < 1 || reviewNote.trim().length < 3
+                    ? "Add a note and at least one photo first."
+                    : null
                 }
                 effects={{
-                  customer: `They are asked to approve ${price.trim() ? `$${(Math.round(Number(price) * 100) / 100).toFixed(2)}` : "the quote"}${deposit.trim() ? `, paying $${Number(deposit).toFixed(2)} up front` : ""}.`,
-                  financial: "Nothing is charged now. The customer pays at checkout after approving.",
+                  customer: "They see the photos and your note, and can approve or ask for revisions.",
+                  financial: null,
                   inventory: null,
-                  notification: "“Quote ready for review”, with the amount.",
+                  notification: "“Finished product ready for review”.",
                 }}
-                notificationPreview={quoteNote.trim() || undefined}
-                onConfirm={() => sendQuote()}
+                notificationPreview={reviewNote.trim()}
+                onConfirm={() => sendForReview()}
               />
-            </div>
-          ) : null}
-          {/* Refunds, cancellations and returns moved into OrderLifecyclePanel
-              below. They used to be three unrelated controls in three places;
-              refunding sensibly means seeing the production and fulfillment
-              state at the same moment. */}
-          <dl className="mt-5 grid gap-3 border-t border-zinc-800 pt-4 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-brand-textMuted">Item</dt>
-              <dd className="mt-0.5 font-medium">{order.product_name}</dd>
-            </div>
-            <div>
-              <dt className="text-brand-textMuted">Base item price</dt>
-              <dd className="mt-0.5">
-                {requestedBaseTotalCents == null
-                  ? "Price pending"
-                  : "$" + (requestedBaseTotalCents / 100).toFixed(2) + (order.quantity > 1 ? " ($" + (requestedBaseTotalCents / order.quantity / 100).toFixed(2) + " each)" : "")}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-brand-textMuted">Quantity</dt>
-              <dd>{order.quantity}</dd>
-            </div>
-            <div>
-              <dt className="text-brand-textMuted">Requested total</dt>
-              <dd className="mt-0.5 font-semibold text-brand-primary">{requestedTotalCents == null ? "Quoted after review" : "$" + (requestedTotalCents / 100).toFixed(2)}</dd>
-            </div>
-            <RequestSpecifications
-              specifications={order.specifications || {}}
-            />
-          </dl>
-          <div className="mt-5 border-t border-zinc-800 pt-4 text-sm">
-            <div className="text-brand-textMuted">Customer notes</div>
-            <p className="mt-1 whitespace-pre-wrap">
-              {order.customer_notes || "None"}
-            </p>
-          </div>
-        </section>
-        {/*
-          The fulfillment control.
+            </Card>
+          </Section>
+        ) : null}
+      </TabPanel>
 
-          This replaces a local form that posted `shipment_action` to
-          `PATCH /api/staff/orders/[id]`. That path set `shipped_at` and moved
-          `orders.status`, but never wrote `orders.fulfillment_status` — the
-          column the cancellation and return eligibility rules actually read —
-          so a shipped order stayed "unfulfilled" to every rule that asked, and
-          still looked cancellable. The panel drives the pass-8 state machine,
-          which enforces the transition graph, the method narrowing, the
-          tracking requirement and the balance guard server-side.
+      {/* ================= Fulfillment ================= */}
+      <TabPanel id="fulfillment" value={tab}>
+        <Section
+          title="Delivery"
+          description="The method, its state and the actions the server says are legal right now."
+        >
+          <OrderFulfillmentPanel orderId={id} canManage={canManage} onChanged={() => void load()} />
+        </Section>
+      </TabPanel>
 
-          It is always mounted rather than gated on `status === "ready"`: a
-          direct purchase never passes through `ready`, and gating on it is why
-          direct purchases had no fulfillment surface at all.
-        */}
-        <OrderFulfillmentPanel orderId={id} canManage={canManage} onChanged={() => void load()} />
-        <section id="conversation" className="scroll-mt-5">
-          <h2 className="font-semibold">Conversation</h2>
+      {/* ================= Messages ================= */}
+      <TabPanel id="messages" value={tab}>
+        <Section
+          title="Conversation"
+          description="Everything said about this order, including notes only staff can see."
+        >
           <SectionFailure state={messages} what="The conversation" />
-          <div className="mt-3 max-h-[480px] space-y-3 overflow-y-auto">
+          <div className="max-h-[520px] space-y-3 overflow-y-auto">
             {(rowsOrNull(messages) ?? []).map((m) => (
               <div
                 key={m.id}
-                className={`rounded-xl border p-3 text-sm ${m.is_internal ? "border-sky-500/40 bg-sky-500/10" : "border-zinc-800 bg-black/30"}`}
+                className={cx(
+                  "rounded-xl border p-3 text-sm",
+                  m.is_internal ? "border-sky-500/40 bg-sky-500/10" : "border-[var(--border)] bg-black/20"
+                )}
               >
-                <div className="text-[10px] text-brand-textMuted">
+                <div className="staff-fact-label">
                   {m.is_internal
-                    ? "INTERNAL NOTE"
+                    ? "Internal note"
                     : m.sender_id === order.customer_id
-                      ? "CUSTOMER"
-                      : "KEYMOURA"}{" "}
+                      ? "Customer"
+                      : "KeyMoura"}{" "}
                   · {new Date(m.created_at).toLocaleString()}
                 </div>
                 <p className="mt-1 whitespace-pre-wrap">{m.body}</p>
               </div>
             ))}
+            {isTrulyEmpty(messages) ? <EmptyState>Nothing has been said about this order yet.</EmptyState> : null}
           </div>
+
           {/*
-            The checkbox decided whether text left the building, and the button
-            said "Send" either way. Now the choice repaints the composer — the
-            border, the label under it and the button all change — so which of
-            the two things you are about to do is readable without re-reading the
-            checkbox.
+            The checkbox decides whether text leaves the building, and the
+            composer repaints when it changes — the border, the sentence under
+            it and the button all change — so which of the two things you are
+            about to do is readable without re-reading the checkbox.
           */}
           {canManage ? (
-            <div className="mt-3">
-              <textarea
-                className={cx(
-                  input,
-                  "min-h-24 w-full",
-                  internal ? "!border-sky-500/50" : "!border-brand-primary/40"
-                )}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder={internal ? "Note for staff only…" : "Reply to the customer…"}
-                aria-label={internal ? "Internal note" : "Message to the customer"}
-              />
-              <label className="mt-2 flex items-center gap-2 text-xs text-brand-textMuted">
-                <input
-                  type="checkbox"
+            <Card>
+              <Field label={internal ? "Internal note" : "Message to the customer"}>
+                <textarea
+                  className={cx(input, "min-h-24 w-full", internal ? "!border-sky-500/50" : "!border-brand-primary/40")}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder={internal ? "Note for staff only…" : "Reply to the customer…"}
+                />
+              </Field>
+              <div className="mt-3">
+                <CheckField
+                  label="Internal note (the customer cannot see this)"
+                  help={
+                    internal
+                      ? "Stays on this order. No email, no notification."
+                      : "The customer reads this and is emailed a copy."
+                  }
                   checked={internal}
-                  onChange={(e) => setInternal(e.target.checked)}
-                />{" "}
-                Internal note (customer cannot see)
-              </label>
-              <p className="mt-1 text-xs">
-                {internal ? (
-                  <span className="text-sky-300">Stays on this order. No email, no notification.</span>
-                ) : (
-                  <span className="text-amber-200">The customer reads this and is emailed a copy.</span>
-                )}
-              </p>
-              <div className="ui-action-row mt-3">
+                  onChange={setInternal}
+                />
+              </div>
+              <div className="ui-action-row mt-4">
                 {internal ? (
                   <button
                     type="button"
@@ -777,66 +1145,162 @@ export default function StaffOrderDetail() {
                   />
                 )}
               </div>
-            </div>
+            </Card>
           ) : null}
-        </section>
-        <section id="activity" className="scroll-mt-5 md:col-span-2">
-          <h2 className="font-semibold">Activity timeline</h2>
+        </Section>
+      </TabPanel>
+
+      {/* ================= Returns & cancellations ================= */}
+      <TabPanel id="returns" value={tab}>
+        <Section
+          title="Cancellations and returns"
+          description="Lifecycle decisions for this order. The money they move is shown on Payment."
+          actions={
+            <button type="button" onClick={() => setTab("payment")} className="ui-btn ui-btn-ghost text-sm">
+              Payment & refunds
+            </button>
+          }
+        >
+          <OrderLifecyclePanel orderId={id} productName={order.product_name} view="lifecycle" />
+        </Section>
+      </TabPanel>
+
+      {/* ================= Activity ================= */}
+      <TabPanel id="activity" value={tab}>
+        <Section title="Activity timeline" description="Everything that happened, newest first.">
           {/*
             A timeline assembled from four independent sources is the one place
             a partial failure is genuinely invisible: the entries that did load
             still render in order and still look like a complete history. So the
-            sources that failed are named *above* the timeline, and the timeline
-            is explicitly labelled incomplete rather than being left to imply
-            that nothing else happened.
+            sources that failed are named *above* the timeline.
           */}
           {missingTimelineSources.length ? (
-            <Notice tone="warning" role="status" className="mt-3">
-              This timeline is incomplete: {missingTimelineSources.join(", ")} could not be loaded. Entries of that kind
-              are missing from the list below — they are not absent from the order.
+            <Notice tone="warning" role="status">
+              This timeline is incomplete: {missingTimelineSources.join(", ")} could not be loaded. Entries of that
+              kind are missing from the list below — they are not absent from the order.
             </Notice>
           ) : null}
-          <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 p-4">
-            {[...(rowsOrNull(history) ?? []).map(item=>({id:`h-${item.id}`,at:item.created_at,label:`Status changed to ${pretty(item.to_status)}`,detail:item.note})),...(rowsOrNull(messages) ?? []).map(item=>({id:`m-${item.id}`,at:item.created_at,label:item.is_internal?"Internal note added":item.sender_id===order.customer_id?"Customer message":"KeyMoura message",detail:item.body})),...(rowsOrNull(payments) ?? []).map(payment=>({id:`p-${payment.id}`,at:payment.received_at,label:"Payment received",detail:`$${(payment.amount_cents/100).toFixed(2)}`})),...(rowsOrNull(refunds) ?? []).map(refund=>({id:`r-${refund.id}`,at:refund.created_at,label:"Refund issued",detail:`$${(refund.amount_cents/100).toFixed(2)} — ${refund.reason}`})),...(order.shipped_at?[{id:"shipped",at:order.shipped_at,label:order.fulfillment_method==="pickup"?"Ready for pickup":"Order shipped",detail:order.tracking_number || null}]:[]),...(order.delivered_at?[{id:"delivered",at:order.delivered_at,label:"Order delivered / completed",detail:null}]:[]),{id:"created",at:order.created_at,label:"Request submitted",detail:null}].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()).map(item=><div key={item.id} className={`border-l-2 pl-4 ${item.id.startsWith("r-") ? "border-rose-400/70" : item.id.startsWith("p-") ? "border-emerald-400/70" : "border-brand-accent/60"}`}><div className="text-sm font-medium">{item.label}</div><div className="text-[11px] text-brand-textMuted">{new Date(item.at).toLocaleString()}</div>{item.detail?<p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p>:null}</div>)}
+          <div className="space-y-2 rounded-xl border border-[var(--border)] p-4">
+            {[
+              ...(rowsOrNull(history) ?? []).map((item) => ({
+                id: `h-${item.id}`,
+                at: item.created_at,
+                label: `Status changed to ${pretty(item.to_status)}`,
+                detail: item.note,
+              })),
+              ...(rowsOrNull(messages) ?? []).map((item) => ({
+                id: `m-${item.id}`,
+                at: item.created_at,
+                label: item.is_internal
+                  ? "Internal note added"
+                  : item.sender_id === order.customer_id
+                    ? "Customer message"
+                    : "KeyMoura message",
+                detail: item.body,
+              })),
+              ...(rowsOrNull(payments) ?? []).map((payment) => ({
+                id: `p-${payment.id}`,
+                at: payment.received_at,
+                label: "Payment received",
+                detail: money(payment.amount_cents),
+              })),
+              ...(rowsOrNull(refunds) ?? []).map((refund) => ({
+                id: `r-${refund.id}`,
+                at: refund.created_at,
+                label: "Refund issued",
+                detail: `${money(refund.amount_cents)} — ${refund.reason}`,
+              })),
+              ...(order.shipped_at
+                ? [
+                    {
+                      id: "shipped",
+                      at: order.shipped_at,
+                      label: order.fulfillment_method === "pickup" ? "Ready for pickup" : "Order shipped",
+                      detail: order.tracking_number || null,
+                    },
+                  ]
+                : []),
+              ...(order.delivered_at
+                ? [{ id: "delivered", at: order.delivered_at, label: "Order delivered / completed", detail: null }]
+                : []),
+              { id: "created", at: order.created_at, label: "Request submitted", detail: null },
+            ]
+              .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+              .map((item) => (
+                <div
+                  key={item.id}
+                  className={cx(
+                    "border-l-2 pl-4",
+                    item.id.startsWith("r-")
+                      ? "border-rose-400/70"
+                      : item.id.startsWith("p-")
+                        ? "border-emerald-400/70"
+                        : "border-brand-accent/60"
+                  )}
+                >
+                  <div className="text-sm font-medium">{item.label}</div>
+                  <div className="staff-row-meta">{new Date(item.at).toLocaleString()}</div>
+                  {item.detail ? <p className="mt-1 line-clamp-2 text-xs text-brand-textMuted">{item.detail}</p> : null}
+                </div>
+              ))}
           </div>
-        </section>
-        <section className="md:col-span-2">
-          <h2 className="font-semibold">Email history</h2>
+        </Section>
+
+        <Section title="Email history" description="Every message this order tried to send.">
           <SectionFailure state={emails} what="The email history" />
-          <div className="mt-3 overflow-hidden rounded-xl border border-zinc-800">
-            {(rowsOrNull(emails) ?? []).map(email=><div key={email.id} className="grid gap-1 border-b border-zinc-800 bg-black/20 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[1fr_1.4fr_auto]"><div><span className="text-brand-textMuted">To </span>{email.recipient}</div><div>{email.subject}</div><div className={email.status==="sent"?"text-emerald-300":email.status==="failed"?"text-rose-300":"text-amber-200"}>{pretty(email.status)} · {new Date(email.created_at).toLocaleString()}</div>{email.error_message?<div className="text-xs text-rose-200 md:col-span-3">{email.error_message}</div>:null}</div>)}
-            {/* Only a successful query that returned nothing earns this sentence. */}
-            {isTrulyEmpty(emails)?<div className="px-4 py-6 text-center text-sm text-brand-textMuted">No email attempts for this order yet.</div>:null}
-          </div>
-        </section>
+          {rowsOrNull(emails)?.length ? (
+            <Rows>
+              {(rowsOrNull(emails) ?? []).map((email) => (
+                <Row
+                  key={email.id}
+                  title={email.subject}
+                  detail={`To ${email.recipient}`}
+                  meta={email.error_message || undefined}
+                  aside={
+                    <>
+                      <StatusChip value={email.status === "sent" ? "delivered" : email.status} />
+                      <span className="staff-row-meta whitespace-nowrap">
+                        {new Date(email.created_at).toLocaleString()}
+                      </span>
+                    </>
+                  }
+                />
+              ))}
+            </Rows>
+          ) : isTrulyEmpty(emails) ? (
+            <EmptyState>No email attempts for this order yet.</EmptyState>
+          ) : null}
+        </Section>
+
         {/*
           The override stays, and stays explicit. Choosing in the dropdown still
-          writes nothing; the named button and the dialog behind it do. The
-          selection is what the dialog then describes, so "Now → After" is read
-          from the same value that will be posted.
+          writes nothing; the named button and the dialog behind it do. It lives
+          on Activity because that is where the record of what was forced is
+          read, and it is a `<details>` so it is never the first thing on a tab.
         */}
         {canManage ? (
-          <details className="ui-card md:col-span-2">
-            <summary className="cursor-pointer font-semibold">Advanced status override</summary>
+          <details className="ui-card">
+            <summary className="cursor-pointer text-sm font-semibold">Advanced status override</summary>
             <p className="mt-2 text-xs text-brand-textMuted">
-              Use this only when the normal quote, payment, review, or fulfillment buttons cannot represent what
+              Use this only when the normal quote, payment, review or fulfillment buttons cannot represent what
               happened. Choosing a status here changes nothing until you confirm.
             </p>
-            <div className="mt-3 sm:flex sm:items-end sm:gap-4">
-              <label className="block flex-1 text-sm font-medium">
-                Customer-facing status
-                <select
-                  value={pendingStatus || order.status}
-                  onChange={(e) => setPendingStatus(e.target.value)}
-                  className="ui-input mt-2 w-full"
-                >
-                  {statuses.map((s) => (
-                    <option key={s} value={s}>
-                      {statusLabel(s)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="mt-4 sm:flex sm:items-end sm:gap-4">
+              <div className="flex-1">
+                <Field label="Customer-facing status">
+                  <select
+                    value={pendingStatus || order.status}
+                    onChange={(e) => setPendingStatus(e.target.value)}
+                    className="ui-input w-full"
+                  >
+                    {statuses.map((s) => (
+                      <option key={s} value={s}>
+                        {statusLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
               <ConsequentialAction
                 className="mt-3 sm:mt-0"
                 label="Apply this status"
@@ -847,7 +1311,9 @@ export default function StaffOrderDetail() {
                 tone={pendingStatus === "cancelled" || pendingStatus === "declined" ? "danger" : "default"}
                 confirmLabel="Apply the override"
                 disabled={!pendingStatus || pendingStatus === order.status}
-                disabledReason={!pendingStatus || pendingStatus === order.status ? "Choose a different status first." : null}
+                disabledReason={
+                  !pendingStatus || pendingStatus === order.status ? "Choose a different status first." : null
+                }
                 reason={
                   pendingStatus === "cancelled"
                     ? {
@@ -860,7 +1326,7 @@ export default function StaffOrderDetail() {
                 effects={{
                   customer: `Their order page reads ${statusLabel(pendingStatus || order.status)}.`,
                   financial: order.amount_paid_cents
-                    ? "No money moves. Refunds are issued from the lifecycle panel."
+                    ? "No money moves. Refunds are issued from Returns & cancellations."
                     : null,
                   inventory: null,
                   notification: "A status-update email and an on-site notification.",
@@ -870,8 +1336,13 @@ export default function StaffOrderDetail() {
             </div>
           </details>
         ) : null}
-      </div>
-      {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
-    </main>
+
+        <p className="text-xs text-brand-textMuted">
+          <Link href="/staff/orders" className="text-brand-accent hover:underline">
+            ← Back to all orders
+          </Link>
+        </p>
+      </TabPanel>
+    </StaffPage>
   );
 }

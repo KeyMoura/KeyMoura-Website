@@ -197,7 +197,19 @@ test("the page distinguishes loading, error and empty as three separate branches
   const source = read(ORDERS_PAGE);
   assert.ok(/isFailed\(state\)/.test(source), "an explicit failure branch");
   assert.ok(/state\.status === "loading"/.test(source), "an explicit loading branch");
-  assert.ok(/role="alert"/.test(source), "the failure is announced as an alert");
+  assert.ok(/<ErrorState/.test(source), "the failure renders as a failure, not an empty state");
+  /*
+   * The alert role moved into the shared `ErrorState`, which is stronger than
+   * having it here: every staff page that reports a failure now announces it,
+   * rather than each page remembering to.
+   */
+  const framework = readFileSync(
+    new URL("../src/components/staff/StaffPage.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(framework, /Notice tone="danger" role="alert"/);
+  // …and an empty state is never a failure's fallback.
+  assert.match(framework, /export function ErrorState/);
 });
 
 // ---------------------------------------------------------------------------

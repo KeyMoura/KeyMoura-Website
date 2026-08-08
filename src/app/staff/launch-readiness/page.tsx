@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { ConsequentialAction, resultFromResponse } from "@/components/staff/ConsequentialAction";
 import { Badge, EmptyState, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
@@ -107,7 +108,7 @@ export default function LaunchReadinessPage() {
     return () => window.clearTimeout(timer);
   }, [canView, load]);
 
-  if (isLoading) return <div className="ui-card text-sm text-brand-textMuted">Loading…</div>;
+  if (isLoading) return <LoadingState>Loading…</LoadingState>;
   if (!canView) {
     return <AccessDeniedCard message="Launch readiness reads commerce configuration, so it needs the View launch readiness permission." />;
   }
@@ -115,25 +116,22 @@ export default function LaunchReadinessPage() {
   const ready = state.kind === "ready" ? state : null;
 
   return (
-    <main className="page-stack">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="ui-eyebrow">Business</p>
-          <h1 className="mt-1 text-3xl font-semibold">Launch readiness</h1>
-          <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
-            What would stop this shop taking a real order today. Every issue links to the exact setting or
-            record that fixes it and says which workflow depends on it.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={state.kind === "loading"}
-          className="ui-btn ui-btn-secondary disabled:opacity-50"
-        >
-          {state.kind === "loading" ? "Checking…" : "Check again"}
-        </button>
-      </div>
+    <StaffPage>
+      <PageHeader
+        kind="Administrative tool"
+        title="Launch readiness"
+        description="What would stop this shop taking a real order today. Every issue links to the exact setting or record that fixes it and says which workflow depends on it."
+        actions={
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={state.kind === "loading"}
+            className="ui-btn ui-btn-secondary text-sm disabled:opacity-50"
+          >
+            {state.kind === "loading" ? "Checking…" : "Check again"}
+          </button>
+        }
+      />
 
       <Notice tone="info">
         This checklist reports whether the configuration this application reads is complete and coherent. It is
@@ -228,7 +226,7 @@ export default function LaunchReadinessPage() {
       ) : state.kind === "loading" ? (
         <EmptyState>Running the checks…</EmptyState>
       ) : null}
-    </main>
+    </StaffPage>
   );
 }
 
