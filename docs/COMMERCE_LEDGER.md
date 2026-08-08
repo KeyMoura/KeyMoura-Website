@@ -4948,3 +4948,85 @@ The schema snapshot in `tests/fixtures/production-schema.json` was refreshed fro
 production after applying, and `pending_migrations` is now empty. The refreshed
 column lists were diffed against a fresh `information_schema.columns` query
 rather than hand-edited on trust.
+
+## Pass 14 — merged and in production
+
+Branch `staff-ia-catalog-schema-repair-20260808` → merged as **`1021e39`**, which
+is the current production SHA. Merged with `--no-ff`, never force-pushed.
+
+| SHA | What |
+|-----|------|
+| `e5087b5` | Repair the roles editor against the schema it actually writes to |
+| `1c2c15f` | Give avatar uploads a path the storage policy can accept |
+| `67e178e` | Reorganise the staff area around the work rather than the codebase |
+| `afc9609` | Stop a job save from detaching the job, and let staff link one on purpose |
+| `b9a0c0d` | Make the email editor show what actually sends each template |
+| `7200e9a` | Take Community out of the customer product without deleting any of it |
+| `60679d0` | Give the catalog a browsing rail instead of rows of pills |
+| `42bab8f` | Record pass 14 |
+| `b57a62f` | Repair the review history the submission page could never write |
+| `1021e39` | Merge commit |
+
+- Vercel **preview build: success** on `b57a62f` (the final branch head).
+- Vercel **production deployment: success** on `1021e39`.
+- Both migrations were applied **before** the merge, so production never served
+  code selecting a column that did not exist.
+
+### Production smoke test — on `1021e39`
+
+| Check | Result |
+|---|---|
+| Storefront | `/` 200 (0.80 s), `/catalog`, `/catalog/interior`, `/catalog/premade-shift-knob`, `/cart`, `/shipping`, `/terms` all 200 |
+| `/community` | **200** — dormant, not deleted, still reachable by direct URL |
+| `/community` robots | `noindex, follow` |
+| Staff pages gated | `/staff`, `/staff/orders`, `/staff/security/roles`, `/staff/emails`, `/staff/production` all **307** |
+| New link API gated | `POST /api/staff/production/jobs/[id]/link` → **307** |
+| Catalog rail deployed | the production CSS chunk carries `catalog-rail-link`, `catalog-rail-sublist`, `catalog-rail-heading` and `15rem minmax(0,1fr)` |
+
+**The roles repair, proven against production rather than asserted.**
+`GET /api/public/roles` now returns all four roles carrying `label`, `priority`
+and `badge_icon`:
+
+    {"roles":[{"key":"admin","label":"Administrator","priority":100,…,"badge_icon":null}, …]}
+
+Before this pass that endpoint answered `{"roles":[]}` — the select named three
+columns the table does not have, and the route dropped the error. This is the
+single clearest confirmation that the drift is closed: the same request, the same
+data, a different answer.
+
+### Production data after the run
+
+| Count | Value |
+|---|---|
+| Orders / order items / products | 9 / 3 / 2 — unchanged |
+| Users / identities | 3 / **4** |
+| Roles / role permissions | 4 / 92 — unchanged |
+| Forum threads / posts / categories | **1 / 1 / 1 — untouched** |
+| Email templates / deliveries | 43 / 26 — unchanged |
+| Deliveries in the deployment window | **0 — no email was sent** |
+| Refunds / Stripe charges created | **0 / 0** |
+| Production jobs | **1** |
+| Review events | 0 |
+| Migrations | 47 |
+
+Two counts differ from what pass 13 recorded, and **neither came from this pass**:
+`identities` reads 4 where pass 13 recorded 3, and `production_jobs` reads 1
+where pass 13 recorded 0. This pass never called an auth API and never created a
+job — both are owner activity between passes. Recorded here so the next reader
+does not attribute them to this work, which is the same care pass 5 took over a
+discount code appearing between passes.
+
+### Owner checks worth five minutes
+
+1. **Create a role.** `/staff/security/roles` → type a key and a label → Create.
+   That is the reported failure, and it is the one path no automated session can
+   reach. The list should also now show all four existing roles; it has been
+   empty this whole time.
+2. **Set a badge icon** on a role from the new dropdown, and confirm the pill
+   changes. Six names are available; anything else is refused by the database.
+3. **Upload an avatar** at `/account`. It has never worked for anyone — the
+   bucket is still empty — so this is the first one.
+4. **Open a production job, edit a field and save**, then check the order still
+   lists it under Shop work. Before this pass that save detached it.
+5. **Open `/staff/emails`** and look at any template's new "Used by" panel.
+   `staff_fulfillment_due` should be badged "Not sent yet" with a reason.
