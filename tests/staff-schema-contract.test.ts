@@ -165,7 +165,8 @@ test("every literal .from().select() names only columns the database has", () =>
 
 test("known drift is genuinely drift, and each entry states its cost", () => {
   // An exclusion list is only honest if it is small, specific and explained.
-  // These assertions stop it becoming somewhere to put a red result.
+  // These assertions stop it becoming somewhere to put a red result. It is
+  // empty as of pass 14 — the one entry it held was fixed rather than carried.
   assert.ok(driftEntries.length <= 2, "the known-drift list must stay short; fix entries rather than add them");
 
   for (const [table, entry] of driftEntries) {
@@ -179,6 +180,60 @@ test("known drift is genuinely drift, and each entry states its cost", () => {
     assert.ok(entry.effect.length > 40, "an entry must say what the user sees");
     assert.ok(entry.why_not_fixed_in_pass_14.length > 40, "an entry must say why it was left");
   }
+});
+
+test("every pending-migration column is actually created by a migration in the repo", () => {
+  /*
+   * `pending_migrations` is the other way this suite could be quietly defeated:
+   * listing a column there makes the sweep accept it. So each one has to be
+   * traceable to a migration file that adds it — an entry with no migration
+   * behind it is drift wearing a different label.
+   */
+  const migrations = readdirSync(new URL("../supabase/migrations", import.meta.url))
+    .filter((name) => name.endsWith(".sql"))
+    .map((name) => read(`supabase/migrations/${name}`))
+    .join("\n");
+
+  for (const [table, columns] of Object.entries(snapshot.pending_migrations)) {
+    if (!Array.isArray(columns)) continue;
+    for (const column of columns) {
+      assert.match(
+        migrations,
+        new RegExp(`add column if not exists ${column}\\b`, "i"),
+        `${table}.${column} is listed as pending but no migration adds it`
+      );
+      // And it must genuinely be absent from production, or the entry is stale.
+      assert.ok(
+        !snapshot.tables[table]?.includes(column),
+        `${table}.${column} exists in production — refresh the snapshot and drop the pending entry`
+      );
+    }
+  }
+});
+
+test("the info-page revision migration is additive and backfills nothing", () => {
+  const migration = read("supabase/migrations/20260808020000_info_review_event_revisions.sql");
+  for (const column of ["previous_title", "new_title", "previous_content_markdown", "new_content_markdown"]) {
+    assert.match(migration, new RegExp(`add column if not exists ${column} text`));
+  }
+
+  // Comments stripped. This migration's header explains the grant situation,
+  // and that explanation names TRUNCATE and NOT NULL — an assertion that a
+  // statement is *absent* has to read the SQL, not the prose about it. The
+  // roles migration's equivalent test learned this the same way.
+  const sql = migration.replace(/--.*$/gm, "");
+  assert.doesNotMatch(sql, /\bdrop column\b/i);
+  assert.doesNotMatch(sql, /\btruncate\b/i);
+  assert.doesNotMatch(sql, /\bdelete from\b/i);
+  assert.doesNotMatch(sql, /\bnot null\b/i, "a NOT NULL column would need a backfill");
+  // Reconstructing history nobody recorded would put invented content behind an
+  // Undo button, so the migration must not write to these columns at all.
+  assert.doesNotMatch(sql, /^\s*update\s+public\./im, "nothing may be backfilled");
+  assert.match(
+    read("supabase/installer/00000000000002_application_baseline.sql"),
+    /info_page_review_events add column if not exists previous_content_markdown text/i,
+    "a fresh install must reach the same shape, or the drift restarts"
+  );
 });
 
 // ---------------------------------------------------------------------------

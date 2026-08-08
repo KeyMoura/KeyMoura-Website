@@ -17,7 +17,7 @@
     "Refresh this deliberately, as part of applying a migration — never to make a red test",
     "go green. A column appearing here that no migration creates is itself the finding."
   ],
-  "captured_at": "2026-08-08",
+  "captured_at": "2026-08-08 (refreshed after applying 20260808010000 and 20260808020000)",
   "captured_from": "huuwtihvtccsiknfflkv (KeyMoura CNC), information_schema.columns where table_schema='public'",
   "tables": {
     "account_admission_review_queue": ["discovered_at", "email", "reason", "user_id"],
@@ -48,7 +48,7 @@
     "info_admin_todos": ["content_updated_at", "created_at", "created_by", "created_by_name", "description", "done_at", "done_by", "done_by_name", "id", "priority", "related_info_page_id", "related_info_page_slug", "resolution_notes", "status", "title", "updated_at"],
     "info_page_contributors": ["contributed_at", "info_page_id", "user_id"],
     "info_page_drafts": ["category", "chassis", "content_markdown", "created_at", "created_by", "id", "slug", "tags", "title", "updated_at"],
-    "info_page_review_events": ["action", "created_at", "id", "info_page_id", "info_page_update_id", "notes", "performed_by"],
+    "info_page_review_events": ["action", "created_at", "id", "info_page_id", "info_page_update_id", "new_content_markdown", "new_title", "notes", "performed_by", "previous_content_markdown", "previous_title"],
     "info_page_updates": ["created_at", "created_by", "id", "info_page_id", "original_category", "original_chassis", "original_content_markdown", "original_tags", "original_title", "proposed_category", "proposed_chassis", "proposed_content_markdown", "proposed_tags", "proposed_title", "status", "updated_at"],
     "info_pages": ["category", "chassis", "content_markdown", "created_at", "created_by", "id", "slug", "status", "tags", "title", "updated_at"],
     "info_search_click_events": ["clicked_page_id", "clicked_page_slug", "created_at", "id", "meta", "position", "query", "raw_query", "results_count", "search_event_id", "source", "tokens", "user_id"],
@@ -96,7 +96,7 @@
     "report_messages": ["author_user_id", "created_at", "id", "kind", "message", "report_id"],
     "reports": ["assigned_to", "category", "created_at", "escalated_at", "escalated_by", "id", "reason", "reporter_user_id", "status", "target_id", "target_type", "updated_at"],
     "role_permissions": ["permission_key", "role_key"],
-    "roles": ["badge_bg", "badge_border", "badge_text", "description", "is_staff", "is_system", "key", "name", "rank"],
+    "roles": ["badge_bg", "badge_border", "badge_icon", "badge_text", "description", "is_staff", "is_system", "key", "name", "rank"],
     "schema_versions": ["applied_at", "checksum", "module_key", "version"],
     "shared_carts": ["created_at", "created_by", "expires_at", "id", "items", "note", "owner_hash", "revoked_at", "snapshot_subtotal_cents", "token", "view_count"],
     "shops": ["created_at", "description", "featured", "id", "is_published", "logo_url", "name", "slug", "sort_order", "tags", "trust_status", "updated_at", "url", "warning_text"],
@@ -117,21 +117,18 @@
     "workshop_project_images": ["alt_text", "created_at", "id", "image_url", "owner_id", "project_id", "sort_order", "storage_path"]
   },
   "pending_migrations": {
-    "_comment": "Columns a migration in this repository adds but which are not yet applied to production. The contract test treats these as legal so a branch can be red on production and green on itself; the entry is removed when the migration is applied and the snapshot refreshed.",
-    "roles": ["badge_icon"]
+    "_comment": "Columns a migration in this repository adds but which are not yet applied to production. The contract test treats these as legal so a branch can be red on production and green on itself; the entry is removed when the migration is applied and the snapshot refreshed. Empty: both pass-14 migrations are applied, and their columns now appear in `tables` above because they genuinely exist."
   },
   "known_drift": {
     "_comment": [
       "Drift this suite has found, confirmed against production, and deliberately not fixed yet.",
       "Every entry is a real defect with a stated reason and an owner decision, not a mute button.",
       "Adding to this list is a choice to be made explicitly and recorded in docs/COMMERCE_LEDGER.md.",
-      "The list must only ever shrink. New drift that is not listed here fails the suite."
-    ],
-    "info_page_review_events": {
-      "columns": ["previous_title", "new_title", "previous_content_markdown", "new_content_markdown"],
-      "surface": "src/app/staff/info/pending/[id]/page.tsx",
-      "effect": "The submission revision history and its Undo control read and write four columns that have never existed, so both the insert and the select fail: the history list is permanently empty and Undo cannot restore anything. It fails closed — no wrong content is ever written.",
-      "why_not_fixed_in_pass_14": "The repair is an additive migration for a content-review feature that is not on this pass's priority list, and it needs its own approval, dry run and rollback rehearsal. Fixing it here would mean shipping a second unrelated migration alongside the roles one."
-    }
+      "The list must only ever shrink. New drift that is not listed here fails the suite.",
+      "",
+      "Empty as of pass 14: the one entry it held — the four revision-history columns on",
+      "info_page_review_events — was fixed rather than carried, at the owner's direction.",
+      "It now sits in pending_migrations above, behind 20260808020000."
+    ]
   }
 }

@@ -4873,3 +4873,78 @@ the deliberately fake service-role key.
 - The schema snapshot is a capture. It is only as true as the last time it was
   regenerated, and regenerating it to make a test pass would defeat it — the
   fixture says so in its own header.
+
+## Second migration — `20260808020000_info_review_event_revisions`
+
+Added at the owner's direction after the audit, rather than carried as known
+drift. `/staff/info/pending/[id]` records a before-and-after for every review
+action and offers an Undo that restores from it; `info_page_review_events` has
+never had `previous_title`, `new_title`, `previous_content_markdown` or
+`new_content_markdown`.
+
+Both halves failed silently: the insert was refused, so **zero events were ever
+stored**, and the select was refused, so the history rendered empty rather than
+erroring. The page showed "no events" for a table nothing could write to, and
+Undo had nothing to restore. It failed **closed** — no wrong content was ever
+written to a page — which is why it went unnoticed.
+
+Four nullable `text` columns, no default, no backfill. There are zero existing
+rows precisely because every insert was refused, so nothing needs migrating.
+Reconstructing history from `info_pages` was deliberately **not** done: there is
+no record of what those revisions were, and inventing one would put fabricated
+content behind an Undo button. A test asserts the migration contains no `update`.
+
+The `known_drift` register is now **empty**, and a new test closes the other way
+it could have been defeated: every `pending_migrations` entry must be traceable
+to a migration file that adds it, and must genuinely be absent from production.
+An entry with no migration behind it is drift wearing a different label.
+
+## Both migrations applied — 2026-08-08
+
+Applied with approval through `execute_sql` in **two separate guarded
+transactions**, not `apply_migration` — that tool stamps its own timestamp as the
+version, which caused six of the seven ledger drifts repaired in pass 3. Each
+ledger row was inserted by hand inside the same transaction under the repository
+filename's version.
+
+Each was dry-run first against production inside a transaction ended with a
+sentinel exception, with production verified untouched after each.
+
+**`20260808010000_role_badge_icon`** — dry run proved five things: existing roles
+survive with `badge_icon` null and none backfilled; a legal icon (`gavel`) is
+accepted; an icon `RolePill` cannot draw (`rocket`) is refused by
+`roles_badge_icon_check`; null remains legal; and **creating a role now
+succeeds**, which is the reported failure. Guards before: column absent, 45
+migration rows, version not recorded, 4 roles. After: column present, constraint
+present, 46 rows, 4 roles, **0 carrying an icon**.
+
+**`20260808020000_info_review_event_revisions`** — dry run proved five things:
+four nullable text columns present; the 0 existing events unchanged; the insert
+the page has always attempted now succeeds; the select reads the before-and-after
+back, so Undo has a source; and an event without a diff is still storable.
+Guards before: columns absent, 46 rows, version not recorded. After: 4 nullable
+text columns, 47 rows, event count unchanged.
+
+Both committed. Verified independently afterwards.
+
+### Verification after applying
+
+| Check | Result |
+|---|---|
+| `roles.badge_icon` + `roles_badge_icon_check` | both present |
+| Roles | **4**, all `badge_icon` null — none backfilled |
+| `info_page_review_events` revision columns | **4**, nullable text |
+| Review events | **0**, unchanged |
+| Migration rows | **47** |
+| Migration ledger | **exact** — 47 repo files, 47 rows, newest two matching their filenames |
+| Data preserved | 9 orders, 2 products, 3 users, 43 templates, 26 deliveries — all unchanged |
+| Community data | **1 forum thread, 1 forum post, untouched** |
+| Supabase security advisors | **no new findings**. The 14 `rls_enabled_no_policy` notices, the SECURITY DEFINER warnings and the leaked-password warning are all pre-existing; neither migration created a table or a function, and neither table appears in any of them. |
+| Grants | none issued and none needed — both are column additions on existing tables, and a column inherits the table ACL |
+| Emails sent | **0** |
+| Stripe charges or refunds | **0** |
+
+The schema snapshot in `tests/fixtures/production-schema.json` was refreshed from
+production after applying, and `pending_migrations` is now empty. The refreshed
+column lists were diffed against a fresh `information_schema.columns` query
+rather than hand-edited on trust.
