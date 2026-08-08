@@ -93,7 +93,10 @@ export const DESTINATIONS: DestinationItem[] = [
   { kind: "destination", id: "catalog", title: "Catalog", href: "/catalog", description: "Browse every published product", keywords: ["shop", "products", "buy", "store"] },
   { kind: "destination", id: "custom", title: "Request custom work", href: "/orders/new", description: "Start a custom order request", keywords: ["quote", "custom", "commission", "request", "order"] },
   { kind: "destination", id: "projects", title: "Projects", href: "/projects", description: "Build write-ups and reference pages", keywords: ["guides", "builds", "knowledge", "info", "articles"] },
-  { kind: "destination", id: "community", title: "Community", href: "/community", description: "Categories, threads, and discussion", keywords: ["forum", "threads", "posts", "discussion"] },
+  // Community is dormant (pass 14) and deliberately absent from this palette:
+  // offering it here would be the one customer-facing entry point left after it
+  // was taken out of the navigation and the footer. The routes still work for
+  // anyone holding a link, and no content was removed.
   { kind: "destination", id: "capabilities", title: "Capabilities & materials", href: "/capabilities", description: "What this shop can make", keywords: ["materials", "aluminum", "wood", "plastic", "limits"] },
   { kind: "destination", id: "design-guide", title: "Design & tolerance guide", href: "/design-guide", description: "How to prepare a part for production", keywords: ["tolerance", "cad", "drawing", "design"] },
   { kind: "destination", id: "contact", title: "Contact", href: "/contact", description: "Ask a question before ordering", keywords: ["support", "email", "help", "question"] },

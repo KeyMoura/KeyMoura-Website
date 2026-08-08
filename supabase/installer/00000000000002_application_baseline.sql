@@ -75,6 +75,12 @@ alter table public.roles add column if not exists is_staff boolean not null defa
 alter table public.roles add column if not exists badge_bg text;
 alter table public.roles add column if not exists badge_border text;
 alter table public.roles add column if not exists badge_text text;
+-- The fourth badge attribute. Added here as well as in
+-- `20260808010000_role_badge_icon.sql` so a fresh install and a migrated
+-- database end up with the same `roles` shape — the drift that migration
+-- repairs began exactly here, with a column the editor wrote and no schema
+-- created.
+alter table public.roles add column if not exists badge_icon text;
 update public.roles set is_staff = key in ('admin', 'moderator', 'support');
 
 insert into public.permissions(key, name, description, category)
@@ -412,6 +418,15 @@ create table if not exists public.info_page_review_events (
   performed_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
+-- The before-and-after the review page records for every action, and the source
+-- its Undo restores from. Added here as well as in
+-- `20260808020000_info_review_event_revisions.sql` so a fresh install and a
+-- migrated database reach the same shape — the drift that migration repairs
+-- began exactly here, with four columns the page wrote and no schema created.
+alter table public.info_page_review_events add column if not exists previous_title text;
+alter table public.info_page_review_events add column if not exists new_title text;
+alter table public.info_page_review_events add column if not exists previous_content_markdown text;
+alter table public.info_page_review_events add column if not exists new_content_markdown text;
 create index if not exists info_review_events_page_idx on public.info_page_review_events(info_page_id, created_at);
 
 create table if not exists public.info_search_events (

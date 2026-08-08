@@ -3,6 +3,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
+import {
+  CUSTOMER_SAFE_VARIABLES,
+  findPlaceholderProblems,
+  templateWiring,
+} from "@/lib/comms/emailEvents";
 
 type Config = {
   enabled: boolean;
@@ -79,6 +84,22 @@ const templateExplanations: Record<string, { trigger: string; recipient: string;
 };
 
 const input = "ui-input w-full";
+
+/**
+ * Placeholder problems across every editable field of one template.
+ *
+ * All four fields are checked, not just the message: a mistyped variable in the
+ * subject line is the most visible place it can possibly appear.
+ */
+function malformedPlaceholders(template: Template): string[] {
+  const problems = new Set<string>();
+  for (const field of [template.subject, template.heading, template.body, template.button_label]) {
+    const found = findPlaceholderProblems(field ?? "");
+    for (const token of found.malformed) problems.add(token);
+    for (const token of found.unknown) problems.add(token);
+  }
+  return [...problems];
+}
 
 function Toggle({
   checked,
@@ -284,6 +305,10 @@ export default function StaffEmailPage() {
           </div>
           {templates.map((template, index) => {
             const explanation = templateExplanations[template.key];
+            // Derived from the catalogue that `tests/transactional-emails.test.ts`
+            // asserts against the send calls themselves — so "what sends this"
+            // cannot drift from what actually sends it.
+            const wiring = templateWiring(template.key);
             return (
               <details key={template.key} className="ui-card" open={index === 0}>
                 <summary className="cursor-pointer list-none">
@@ -294,15 +319,57 @@ export default function StaffEmailPage() {
                         To: {explanation?.recipient || "Configured recipient"} · {explanation?.group || "Individual email"}
                       </span>
                     </div>
-                    <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${template.is_enabled ? "bg-brand-accent/15 text-brand-accent" : "bg-brand-surface2 text-brand-textMuted"}`}>
-                      {template.is_enabled ? "Enabled" : "Disabled"}
-                    </span>
+                    <div className="flex w-fit flex-wrap gap-2">
+                      {/* A template nothing can send yet is marked here rather
+                          than hidden: it is a real, specified email that is
+                          waiting on something, and staff editing its wording
+                          deserve to know it will not reach anyone today. */}
+                      {!wiring.wired ? (
+                        <span className="w-fit rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-200">
+                          Not sent yet
+                        </span>
+                      ) : null}
+                      <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${template.is_enabled ? "bg-brand-accent/15 text-brand-accent" : "bg-brand-surface2 text-brand-textMuted"}`}>
+                        {template.is_enabled ? "Enabled" : "Disabled"}
+                      </span>
+                    </div>
                   </div>
                 </summary>
                 <div className="mt-5 space-y-4 border-t border-brand-border pt-5">
                   <div className="grid gap-3 rounded-xl bg-brand-surface2 p-4 text-sm md:grid-cols-2">
                     <div><span className="block text-xs font-semibold uppercase tracking-wide text-brand-textMuted">When it sends</span><span className="mt-1 block leading-5">{explanation?.trigger}</span></div>
                     <div><span className="block text-xs font-semibold uppercase tracking-wide text-brand-textMuted">Who receives it</span><span className="mt-1 block leading-5">{explanation?.recipient}</span></div>
+                  </div>
+
+                  {/* Used by — the exact triggers, from the catalogue. */}
+                  <div className="rounded-xl border border-brand-border p-4 text-sm">
+                    <span className="block text-xs font-semibold uppercase tracking-wide text-brand-textMuted">
+                      Used by
+                    </span>
+                    {wiring.events.length ? (
+                      <ul className="mt-2 space-y-1.5">
+                        {wiring.events.map((event) => (
+                          <li key={event.id} className="leading-5">
+                            <span className="font-mono text-xs text-brand-textMuted">{event.id}</span>
+                            <span className="mx-1.5 text-brand-textMuted">·</span>
+                            <span>{event.trigger}</span>
+                            {!event.wired ? (
+                              <span className="ml-1.5 text-xs text-amber-200">(not built yet)</span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 leading-5 text-amber-200">
+                        Nothing in the application sends this template. Editing it changes no email.
+                      </p>
+                    )}
+                    {!wiring.wired && wiring.pendingReason ? (
+                      <p className="mt-3 leading-5 text-brand-textMuted">
+                        <span className="font-medium text-amber-200">Why it does not send: </span>
+                        {wiring.pendingReason}
+                      </p>
+                    ) : null}
                   </div>
                   <Toggle
                     checked={template.is_enabled}
@@ -320,9 +387,43 @@ export default function StaffEmailPage() {
                     <span className="mb-1 block font-medium">Email message</span>
                     <textarea className={`${input} min-h-28`} value={template.body} onChange={(event) => setTemplates((current) => current.map((item) => item.key === template.key ? { ...item, body: event.target.value } : item))} />
                   </label>
-                  <p className="text-xs leading-5 text-brand-textMuted">
-                    Variables you can use: {"{{customer_name}}, {{product_name}}, {{order_label}}, {{status}}, {{price}}, {{carrier}}, {{tracking_number}}"}
-                  </p>
+                  {/* Derived from `CUSTOMER_SAFE_VARIABLES` rather than typed
+                      out again. The hard-coded list this replaces named seven
+                      of the fourteen, so half the usable variables were
+                      undiscoverable and the list could not follow the allow-list
+                      it was describing. A name outside that allow-list is
+                      dropped by `filterCustomerVariables` before sending, so an
+                      invented one renders as empty text. */}
+                  <details className="rounded-xl border border-brand-border p-4">
+                    <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-brand-textMuted">
+                      Variables you can use ({CUSTOMER_SAFE_VARIABLES.length})
+                    </summary>
+                    <ul className="mt-3 flex flex-wrap gap-1.5">
+                      {CUSTOMER_SAFE_VARIABLES.map((name) => (
+                        <li
+                          key={name}
+                          className="rounded-md bg-brand-surface2 px-2 py-1 font-mono text-xs text-brand-textMuted"
+                        >
+                          {`{{${name}}}`}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-3 text-xs leading-5 text-brand-textMuted">
+                      Not every email supplies every variable. One that is not supplied renders as nothing,
+                      so prefer wording that still reads correctly when a value is absent.
+                    </p>
+                  </details>
+
+                  {/* Malformed placeholder warning. `interpolate` only replaces
+                      `{{name}}`; a single brace or a stray space is left in the
+                      message exactly as typed and goes out to a customer. */}
+                  {malformedPlaceholders(template).length ? (
+                    <p className="rounded-xl bg-amber-500/10 p-3 text-xs leading-5 text-amber-200" role="status">
+                      This looks like a mistyped variable and will be sent to the customer as written:{" "}
+                      <span className="font-mono">{malformedPlaceholders(template).join(", ")}</span>. A
+                      variable looks like <span className="font-mono">{"{{customer_name}}"}</span>.
+                    </p>
+                  ) : null}
                 </div>
               </details>
             );

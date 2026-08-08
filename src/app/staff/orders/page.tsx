@@ -243,11 +243,16 @@ function StaffOrdersContent() {
     <main className="page-stack">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[.2em] text-brand-accent">Commerce</p>
-          <h1 className="mt-1 text-3xl font-semibold">Order cockpit</h1>
+          {/* "Order cockpit" was the only name this page ever had, and it named
+              a concept rather than a place: staff reading the sidebar saw
+              "Orders" and staff reading the page saw "Order cockpit", which is
+              how it came to look like a second order system beside
+              /staff/fulfillment. It is the orders list. It is called Orders. */}
+          <p className="text-xs uppercase tracking-[.2em] text-brand-accent">Today</p>
+          <h1 className="mt-1 text-3xl font-semibold">Orders</h1>
           <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
             {currentView?.description ??
-              "Every order, filtered the way the shop works. Pick a queue or narrow it yourself — the filters live in the address bar, so a view can be bookmarked and shared."}
+              "Every order, filtered the way the shop works. Open an order to manage all of it — payment, production, fulfillment, returns and messages are all on that one page."}
           </p>
         </div>
         <Link href="/staff/orders/new" className="ui-btn ui-btn-primary w-full text-center text-sm sm:w-auto">

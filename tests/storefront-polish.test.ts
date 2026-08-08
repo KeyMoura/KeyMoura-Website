@@ -21,7 +21,9 @@ test("catalog supports discovery controls and clear empty states", () => {
   for (const token of ["Search products", "No products match"]) {
     assert.match(client, new RegExp(token));
   }
-  assert.match(client, /Product categories/, "the browse menu is its own labelled nav");
+  // Renamed with the rail in pass 14: the menu now carries filters as well as
+  // categories, so "Browse products" describes what it is for.
+  assert.match(client, /aria-label="Browse products"/, "the browse menu is its own labelled nav");
   // The filter labels moved beside the values they belong to, so a control
   // cannot offer a value the parser drops.
   const rules = read("src/lib/commerce/catalogBrowse.ts");

@@ -298,11 +298,11 @@ test("useSearchParams is wrapped in Suspense, or the route stops prerendering", 
 // ---------------------------------------------------------------------------
 
 test("the catalog menu is a distinct labelled nav, not a copy of the global navbar", () => {
-  assert.match(browser, /aria-label="Product categories"/);
+  assert.match(browser, /aria-label="Browse products"/);
   const header = read("src/components/SiteHeader.tsx");
   // The global bar links to the catalog; it does not list categories, which
   // would give a screen reader two routes to the same place.
-  assert.doesNotMatch(header, /catalog-nav-chip/);
+  assert.doesNotMatch(header, /catalog-rail-link/);
   assert.doesNotMatch(header, /buildBrowseMenu/);
 });
 
@@ -332,7 +332,7 @@ test("the sheet offers categories, filters, sorting and a reset", () => {
 });
 
 test("touch targets in the catalog menu meet 44px", () => {
-  for (const selector of ["catalog-nav-chip", "catalog-drawer-trigger", "catalog-drawer-item", "catalog-drawer-close"]) {
+  for (const selector of ["catalog-rail-link", "catalog-drawer-trigger", "catalog-drawer-item", "catalog-drawer-close"]) {
     const rule = css.match(new RegExp(`\\.${selector}[,\\s][^{]*\\{([^}]*)\\}|\\.${selector} \\{([^}]*)\\}`));
     const body = rule ? rule[1] ?? rule[2] ?? "" : "";
     assert.ok(rule, `globals.css must define .${selector}`);
@@ -340,11 +340,42 @@ test("touch targets in the catalog menu meet 44px", () => {
   }
 });
 
-test("the chip rows give way to the sheet on a phone rather than scrolling sideways", () => {
-  const nav = css.match(/\.catalog-nav \{([^}]*)\}/);
-  assert.ok(nav);
-  assert.match(nav[1], /display: none/, "hidden below sm, where the sheet takes over");
-  assert.match(css, /\.catalog-nav-row,\s*\n?\s*\.catalog-nav-subrow \{[^}]*flex-wrap: wrap/, "and wraps rather than overflowing above it");
+test("the rail gives way to the sheet below lg rather than squeezing the grid", () => {
+  /*
+   * Re-pointed in pass 14, when the wrapping chip rows became a browsing rail.
+   * The property is unchanged and is what matters: on a narrow screen the
+   * browse menu is the drawer, never a cramped column or a sideways scroller.
+   */
+  const rail = css.match(/\.catalog-rail \{([^}]*)\}/);
+  assert.ok(rail, "globals.css must define .catalog-rail");
+  assert.match(rail[1], /display: none/, "hidden by default; the sheet takes over");
+
+  // It appears only from `lg`, beside a grid track that can shrink.
+  assert.match(
+    css,
+    /@media \(min-width: 1024px\) \{[\s\S]*?\.catalog-rail \{[\s\S]*?display: flex/,
+    "the rail is shown from lg up"
+  );
+  assert.match(
+    css,
+    /grid-template-columns: 15rem minmax\(0, 1fr\)/,
+    "a fixed rail track and a shrinkable product track — 1fr would let the grid overflow"
+  );
+});
+
+test("the rail states hierarchy structurally rather than as another row of pills", () => {
+  // The reported problem was that categories read as filters. Children are
+  // nested markup under their parent, not a second flat row.
+  assert.match(browser, /catalog-rail-sublist/);
+  assert.match(browser, /entry\.isCurrentBranch && entry\.children\?\.length/);
+  assert.match(css, /\.catalog-rail-sublist \{[^}]*border-left/, "children are ruled to their parent");
+  assert.match(css, /\.catalog-rail-heading \{[^}]*text-transform: uppercase/, "sections carry real headings");
+
+  // Sorting stays with the grid it reorders; availability and purchase type
+  // moved into the rail.
+  assert.match(browser, /ariaLabel="Sort products"/);
+  const toolbar = browser.slice(browser.indexOf("catalog-toolbar"));
+  assert.doesNotMatch(toolbar, /ariaLabel="Availability"/, "availability belongs in the rail");
 });
 
 // ---------------------------------------------------------------------------

@@ -53,6 +53,31 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
   // a panel its reader was never meant to see.
   const [denied, setDenied] = useState(false);
 
+  // Linking existing work. `standalone === null` means "not fetched yet", which
+  // is a different thing from "fetched and there are none" — the two render
+  // different sentences, and collapsing them is how an empty list reads as a
+  // loading state that never finishes.
+  const [linking, setLinking] = useState(false);
+  const [standalone, setStandalone] = useState<Job[] | null>(null);
+  const [chosen, setChosen] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [linkError, setLinkError] = useState("");
+
+  const loadStandalone = useCallback(async () => {
+    setLinkError("");
+    try {
+      const response = await fetch("/api/staff/production/jobs?scope=open&orderId=none&limit=50", {
+        credentials: "same-origin",
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Could not load unlinked jobs.");
+      setStandalone(body.jobs ?? []);
+    } catch (cause) {
+      setStandalone([]);
+      setLinkError(cause instanceof Error ? cause.message : "Could not load unlinked jobs.");
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -76,6 +101,36 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
       setLoading(false);
     }
   }, [orderId]);
+
+  // Declared after `load` because it calls it: a `useCallback` naming `load` in
+  // its dependency array before the `const` exists is a temporal-dead-zone
+  // error at render, not a lint nit.
+  const linkChosen = useCallback(async () => {
+    if (!chosen) return;
+    setBusy(true);
+    setLinkError("");
+    try {
+      const response = await fetch(`/api/staff/production/jobs/${chosen}/link`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        // The job is being taken from "no order", and the server re-checks that
+        // before writing. A job linked elsewhere in the meantime gets a 409
+        // rather than being quietly moved.
+        body: JSON.stringify({ orderId, expectedOrderId: null }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "Could not link that job.");
+      setChosen("");
+      setLinking(false);
+      setStandalone(null);
+      await load();
+    } catch (cause) {
+      setLinkError(cause instanceof Error ? cause.message : "Could not link that job.");
+    } finally {
+      setBusy(false);
+    }
+  }, [chosen, orderId, load]);
 
   useEffect(() => {
     if (canView) void load();
@@ -103,11 +158,79 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
           </p>
         </div>
         {canManage ? (
-          <Link href={newJobHref} className="ui-btn ui-btn-secondary text-sm">
-            Raise a job
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ui-btn ui-btn-ghost text-sm"
+              aria-expanded={linking}
+              onClick={() => {
+                setLinking((open) => !open);
+                setLinkError("");
+                if (!linking && standalone === null) void loadStandalone();
+              }}
+            >
+              Link existing work
+            </button>
+            <Link href={newJobHref} className="ui-btn ui-btn-secondary text-sm">
+              Raise a job
+            </Link>
+          </div>
         ) : null}
       </div>
+
+      {/* Linking existing work.
+          The choice is limited to jobs that belong to no order, so this control
+          cannot take a job away from another order by accident — moving work
+          between orders is a deliberate act, and it happens on the job itself
+          where the previous link is visible. */}
+      {canManage && linking ? (
+        <div className="ui-card mt-4 p-3">
+          <label htmlFor="link-existing-job" className="block text-xs font-medium text-brand-textMuted">
+            Unlinked production jobs
+          </label>
+
+          {standalone === null ? (
+            <p className="mt-2 text-sm text-brand-textMuted" role="status">
+              Loading jobs…
+            </p>
+          ) : standalone.length === 0 ? (
+            <p className="mt-2 text-sm text-brand-textMuted">
+              There is no unlinked shop work to attach. Raise a job instead.
+            </p>
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select
+                id="link-existing-job"
+                className="ui-input min-w-0 flex-1 basis-56 text-sm"
+                value={chosen}
+                onChange={(event) => setChosen(event.target.value)}
+                disabled={busy}
+              >
+                <option value="">Choose a job…</option>
+                {standalone.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.job_number} — {job.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="ui-btn ui-btn-primary text-sm"
+                disabled={!chosen || busy}
+                onClick={() => void linkChosen()}
+              >
+                {busy ? "Linking…" : "Link to this order"}
+              </button>
+            </div>
+          )}
+
+          {linkError ? (
+            <Notice tone="danger" role="alert" className="mt-3">
+              <p>{linkError}</p>
+            </Notice>
+          ) : null}
+        </div>
+      ) : null}
 
       {error ? (
         <Notice tone="danger" role="alert" className="mt-4">

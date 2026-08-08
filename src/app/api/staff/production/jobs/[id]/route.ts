@@ -131,9 +131,39 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   const { draft, errors } = parseJobDraft({ ...body, status: before.status });
   if (!draft) return NextResponse.json({ error: errors[0], errors }, { status: 400 });
 
-  // `status` is stripped: this endpoint saves fields, it does not move work.
-  const { status: _ignored, ...fields } = draft;
-  void _ignored;
+  /*
+   * `status` is stripped: this endpoint saves fields, it does not move work.
+   *
+   * The four link columns are stripped for a sharper reason. `parseJobDraft`
+   * resolves each of them with `uuid(input.orderId)`, which answers `null` for
+   * an absent key — and the job form has never sent them: `toDraft` builds
+   * fourteen fields and none is a link. So every "Save" on the details form
+   * wrote `order_id = null, order_item_id = null, product_id = null,
+   * customer_id = null` and **silently detached the job from its order**.
+   *
+   * Nothing surfaced it. The job simply stopped appearing in the order's Shop
+   * work panel, and the audit event faithfully recorded `fields: ["order_id",
+   * …]` for anyone who thought to look.
+   *
+   * Links now move only through ./link, which checks the order exists, refuses
+   * a relink that raced another one, and writes its own event — the same
+   * separation ./status already has, and for the same reason: a save that can
+   * change what a record *is* should not be the same call as a save that
+   * changes what it *says*.
+   */
+  const {
+    status: _status,
+    order_id: _orderId,
+    order_item_id: _orderItemId,
+    product_id: _productId,
+    customer_id: _customerId,
+    ...fields
+  } = draft;
+  void _status;
+  void _orderId;
+  void _orderItemId;
+  void _productId;
+  void _customerId;
 
   const { data, error } = await routeServiceClient
     .from("production_jobs")

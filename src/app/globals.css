@@ -2657,59 +2657,112 @@
     Below `sm` both rows are replaced by the drawer trigger: a scrolling chip
     row hides everything past the third item behind a gesture nobody discovers.
   */
-  .catalog-nav { margin-top: 2rem; display: none; }
+  /*
+    The catalog browsing rail.
+
+    One column of navigation beside the grid from `lg` up, and nothing at all
+    below it — the drawer covers small screens. The grid track is fixed at 15rem
+    rather than a fraction so the rail cannot grow with a long category name and
+    steal width from the products; `minmax(0, 1fr)` on the second track is what
+    lets the grid inside it shrink rather than overflow the page.
+  */
+  .catalog-layout { margin-top: 2rem; display: block; }
   .catalog-nav-placeholder { min-height: 12rem; }
-  @media (min-width: 640px) {
-    .catalog-nav { display: block; }
+  .catalog-rail { display: none; }
+  @media (min-width: 1024px) {
+    .catalog-layout {
+      display: grid;
+      grid-template-columns: 15rem minmax(0, 1fr);
+      gap: 2.5rem;
+      align-items: start;
+    }
+    .catalog-rail {
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+      position: sticky;
+      /* Clears the site header. Capped and scrollable so a long category list
+         can never put its own foot below the fold with no way to reach it —
+         the failure a `max-height` with `overflow` on a sticky panel is for. */
+      top: 5.5rem;
+      max-height: calc(100dvh - 7rem);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-right: 0.25rem;
+    }
+    /* The rail is the page's only nested scroller, and only when it overflows.
+       The product column scrolls with the page. */
+    .catalog-main { min-width: 0; }
   }
-  .catalog-nav-row,
-  .catalog-nav-subrow {
+
+  .catalog-rail-section { display: flex; flex-direction: column; gap: 0.5rem; }
+  .catalog-rail-heading {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .catalog-rail-list,
+  .catalog-rail-sublist { list-style: none; padding: 0; margin: 0; }
+  .catalog-rail-list { display: flex; flex-direction: column; gap: 0.125rem; }
+
+  /* Children are indented and ruled rather than boxed: the line carries the
+     "belongs to" relationship at a fraction of the visual weight of a card. */
+  .catalog-rail-sublist {
+    margin: 0.25rem 0 0.5rem 0.5rem;
+    padding-left: 0.625rem;
+    border-left: 1px solid var(--border);
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    list-style: none;
-    padding: 0;
+    flex-direction: column;
+    gap: 0.125rem;
   }
-  .catalog-nav-subrow {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border);
-  }
-  .catalog-nav-chip,
-  .catalog-nav-subchip {
-    display: inline-flex;
+
+  .catalog-rail-link,
+  .catalog-rail-sublink {
+    display: flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: space-between;
+    gap: 0.75rem;
+    /* 44px, the same floor the drawer items and queue chips meet. The rail is
+       only shown from `lg`, but a touch laptop is a `lg` viewport with fingers
+       on it, so it gets a real target rather than a mouse-sized one. */
     min-height: 2.75rem;
-    padding-inline: 0.875rem;
-    border-radius: 9999px;
-    border: 1px solid var(--border);
-    background: var(--panel);
+    padding: 0.375rem 0.625rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
     font-size: 0.875rem;
     font-weight: 550;
     color: var(--text);
-    transition: border-color 120ms ease-out, background 120ms ease-out;
+    transition: background 120ms ease-out, color 120ms ease-out;
   }
-  .catalog-nav-subchip { min-height: 2.5rem; font-weight: 500; background: transparent; }
-  .catalog-nav-chip:hover,
-  .catalog-nav-subchip:hover { border-color: var(--brand-primary); }
-  .catalog-nav-chip.is-active,
-  .catalog-nav-subchip.is-active {
-    border-color: var(--brand-primary);
+  .catalog-rail-sublink { font-weight: 450; color: var(--muted); min-height: 2.75rem; }
+  .catalog-rail-link:hover,
+  .catalog-rail-sublink:hover { background: var(--panel); color: var(--text); }
+
+  .catalog-rail-link.is-active,
+  .catalog-rail-sublink.is-active {
     background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
     color: var(--text);
+    font-weight: 650;
   }
   /* The parent of the subcategory you are in stays marked without claiming to
      be the current page — `aria-current` is on exactly one link at a time. */
-  .catalog-nav-chip.is-branch { border-color: color-mix(in srgb, var(--brand-primary) 50%, var(--border)); }
-  .catalog-nav-count {
+  .catalog-rail-link.is-branch { color: var(--text); font-weight: 650; }
+
+  .catalog-rail-label { min-width: 0; overflow-wrap: anywhere; }
+  .catalog-rail-count {
+    flex: none;
     font-size: 0.75rem;
     font-variant-numeric: tabular-nums;
     color: var(--muted);
   }
 
+  /* Search and sort. Availability and purchase type moved into the rail, so
+     this row carries only what belongs beside the grid it acts on. */
   .catalog-toolbar {
-    margin-top: 1.25rem;
+    margin-top: 0;
     display: grid;
     gap: 0.75rem;
     grid-template-columns: 1fr;

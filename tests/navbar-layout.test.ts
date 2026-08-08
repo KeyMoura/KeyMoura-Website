@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { badgeCount, badgeLabel, MAX_BADGE_TEXT } from "../src/lib/navBadge.ts";
@@ -38,14 +38,28 @@ test("the primary navigation leads with what a customer can buy", () => {
   assert.ok(primaryNav.length <= 5, "a storefront header with six links is a forum masthead");
 });
 
-test("Community is available but not in the primary navigation", () => {
+test("Community is dormant: off every customer surface, and still not deleted", () => {
+  /*
+   * Re-pointed in pass 14. This previously required Community to stay in the
+   * More menu — "moved, not deleted". KeyMoura is a shop, and a discussion area
+   * nobody is answering in is worse than none, so it is now off every customer
+   * surface. The pair of facts is what matters: no entry points, and no data or
+   * routes destroyed. Asserting only the first would be satisfied by deleting
+   * the feature, which is explicitly not what was wanted.
+   */
   const primary = primaryNav.map((item) => item.href);
-  assert.ok(!primary.includes("/community"), "Community must not occupy prime ecommerce navigation");
-
-  // Moved, not deleted. It must remain reachable from a customer surface.
   const secondary = secondaryNav.map((item) => item.href);
-  assert.ok(secondary.includes("/community"), "Community must stay reachable from the More menu");
-  assert.match(drawer, /secondaryNav\.map/, "and from the mobile drawer");
+  assert.ok(!primary.includes("/community"), "Community must not occupy prime ecommerce navigation");
+  assert.ok(!secondary.includes("/community"), "Community must not be offered in the More menu while dormant");
+
+  // The drawer is still derived from the same list, so it cannot reintroduce it.
+  assert.match(drawer, /secondaryNav\.map/, "the mobile drawer reads the same list");
+
+  // Not deleted: the routes still resolve, and the module says why they are unlisted.
+  assert.ok(existsSync(new URL("../src/app/community/page.tsx", import.meta.url)));
+  assert.ok(existsSync(new URL("../src/app/community/[slug]/page.tsx", import.meta.url)));
+  const nav = readFileSync(new URL("../src/lib/navigation.ts", import.meta.url), "utf8");
+  assert.match(nav, /dormant, not deleted/i, "the omission must be explained where it is made");
 });
 
 test("staff access is never in the customer link row", () => {

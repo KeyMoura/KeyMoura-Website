@@ -314,7 +314,7 @@ export default function StaffDashboardPage() {
               reader then has to filter by hand. */}
           {attention.length > 8 ? (
             <Link href={REQUIRES_ACTION_HREF} className="mt-4 inline-block text-xs font-medium text-brand-accent hover:underline">
-              {attention.length - 8} more in the order cockpit →
+              {attention.length - 8} more in Orders →
             </Link>
           ) : null}
         </Panel>

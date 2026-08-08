@@ -4498,3 +4498,453 @@ different thing from the project refusing it.
    no automated session can complete.
 3. Set `TURNSTILE_SECRET_KEY` if you want the guest-request check live; until
    then it is a deliberate no-op.
+
+---
+
+# Pass 14 — staff information architecture, schema repair, catalog rail
+
+Branch `staff-ia-catalog-schema-repair-20260808`, from `2c0e0f6`.
+**Not merged. One migration awaits approval and has not been applied.**
+
+## Verified starting state — 2026-08-08
+
+| Check | Result |
+|---|---|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| `origin/main` = local `main` | both `2c0e0f6` |
+| Production health | `/` 200, `/catalog` 200 |
+| Migration ledger | 45 repo files, 45 rows |
+
+## The headline: three defects that had never worked at all
+
+Not regressions. Each has been broken since the day it shipped, and each was
+invisible for the same structural reason — the failure was a *silent wrong
+answer* rather than an error.
+
+### 1. The roles editor named three columns that do not exist
+
+Reported as `Could not find the 'badge_icon' column of 'roles' in the schema
+cache`. The audit found three, not one:
+
+| Code said | The table holds |
+|---|---|
+| `label` | `name` |
+| `priority` | `rank` |
+| `badge_icon` | nothing |
+
+Only the `insert` failed loudly. A `select` naming a missing column is refused
+just as hard — but all three call sites destructured `{ data }` and dropped
+`error`, so **the roles list and the public badge endpoint answered "there are
+no roles"** rather than failing. The reported bug was the visible half.
+
+`roles` predates this repository's migration set; no file creates it, which is
+how a column the editor writes was never added. `20260808010000_role_badge_icon`
+adds `badge_icon` — chosen over deleting the editor's icon field because the
+other three badge attributes are already columns and already editable — with a
+CHECK pinning the six names `RolePill` can actually draw. The installer baseline
+adds it too, so a fresh install and a migrated database reach the same shape.
+
+`src/lib/staff/roleSchema.ts` is now the single declaration. Reads use PostgREST
+aliases (`label:name`) so the wire vocabulary the UI consumes is unchanged;
+writes translate. `key` and `is_system` are deliberately not writable.
+
+Also closed while here: **deleting a role had no guard at all.** `admin` was
+deletable from inside the page that requires it. Built-in roles, and roles
+people still hold, are now refused.
+
+### 2. Avatar upload could never have worked, for anyone
+
+Proven before anything was changed: the `avatars` bucket holds **zero objects**,
+and the only non-null `profiles.avatar_url` is a Google OAuth URL that never
+passed through storage.
+
+One missing slash. The bucket's insert policy is
+
+    bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text
+
+and `/account` uploaded to a flat `<uuid>.jpg` key with no folder. Postgres was
+asked live:
+
+    (storage.foldername('<uuid>.jpg'))[1]                    -> NULL
+    NULL = '<uuid>'                                          -> NULL
+    (storage.foldername('<uuid>/avatar.jpg'))[1] = '<uuid>'  -> TRUE
+
+RLS admits a row only on `TRUE`. The policy could never pass.
+
+The key is now `<uid>/avatar.<ext>` — first segment the user id, which is the
+whole of the policy check — and **stable rather than timestamped**, so a
+replacement overwrites in place. That is what makes this repair need **no
+storage policy change**: the bucket has no DELETE policy, and a timestamped key
+would have orphaned every previous avatar with no way to remove it.
+
+The staff upload route had three faults of its own, invisible because it runs as
+`service_role` and bypasses the policy that would have objected: it wrote
+`avatars/<id>/…` *inside* the `avatars` bucket (so objects landed outside the
+prefix those policies govern), it timestamped every key, and it passed the file
+through unvalidated while returning the provider's error text to the browser.
+
+### 3. Saving a production job detached it from its order
+
+`parseJobDraft` resolves each link column with `uuid(input.orderId)`, and `uuid`
+answers `null` for an absent key. The job workspace's `toDraft` builds fourteen
+fields and **not one is a link**, so every press of Save wrote
+`order_id = null, order_item_id = null, product_id = null, customer_id = null`.
+
+Editing a note detached the job. Nothing surfaced it: the job simply stopped
+appearing in that order's Shop work panel, and the audit entry faithfully
+recorded `fields: ["order_id", …]` for anyone who thought to look.
+
+PATCH now strips all four, exactly as it already stripped `status`.
+
+## A reusable schema-contract test, and what it found
+
+`tests/staff-schema-contract.test.ts` checks every literal `.from(t).select(c)`
+in `src/` against `tests/fixtures/production-schema.json`, a capture of
+`information_schema.columns` taken from production.
+
+It exists because **no existing layer could catch this**. TypeScript sees
+`select()` take a string. The generated Supabase types agree with whichever
+schema produced them, so the disagreement lived entirely in hand-written types.
+Every roles test read source or checked a pure function; none knew what the live
+table held.
+
+A first version allowed 400 characters between `.from` and `.select` and
+reported 54 problems, of which 40 were the test pairing a `.from` with the
+*next* query's `.select`. Tightened to require adjacency: **14 findings, all
+real**, six distinct sites.
+
+Fixed here:
+
+| Site | Effect |
+|---|---|
+| `inventory_adjustments.actor_user_id` (is `created_by`) | every product's stock-movement history rendered empty |
+| `user_bans.banned_at` (is `created_at`) | every account reported as not banned |
+| `forum_moderators.id` (no such column) | category moderators could never lock a thread |
+
+Removed: `src/lib/adminForumGuard.ts` — dead code (nothing imported it) whose
+two broken queries made its guard deny everyone, including admins.
+
+Registered as **known drift**, with a stated reason rather than silently
+excluded: the four revision-history columns on `info_page_review_events`. The
+submission history and its Undo control on `/staff/info/pending/[id]` read and
+write columns that have never existed, so both fail — the list is permanently
+empty and Undo restores nothing. It fails closed. The repair is an additive
+migration for a content-review feature that is not on this pass's priority list
+and needs its own approval and dry run. The register asserts each entry names
+its surface, its effect and why it was left, and caps its own length.
+
+## Staff information architecture
+
+**"Order Cockpit" was never a page.** It was the `h1` of `/staff/orders` — so
+the sidebar said Orders, the page said Order cockpit, and beside
+`/staff/fulfillment` that read as two competing order systems. There was no
+second surface to remove. The heading is now Orders.
+
+`/staff/fulfillment` keeps its page and gains an explicit purpose: **a queue,
+not a second order editor**, stated on the page and in its description. That
+boundary is why it earns a place, and it is what stops there being two places to
+ship an order from.
+
+| Before (6 groups, 23 items) | After |
+|---|---|
+| Overview: Dashboard, To-do board | **Today**: Dashboard, Orders, Production, Fulfillment |
+| Commerce: Orders, Fulfillment, Production | **Catalog**: Products, Categories, Inventory, Discounts |
+| Catalog: Products, Categories, Discount codes, Inventory | **Customers**: Customers, Reports |
+| Customers & content: 6 items incl. Community | **Operations**: Emails, Analytics, Reconciliation, Integration health, Launch readiness, Audit log |
+| Business: Analytics, Reconciliation, Integration health, Launch readiness, Audit log | **Site content**: To-do board, Pending submissions, Content updates, Shops |
+| Settings: 8 items | **Settings**: 7 items |
+
+Today is ordered the way a job travels: it arrives, it is made, it goes out.
+Operations exists to get Reconciliation and Launch readiness *out* of the daily
+path — they sat in "Business" beside Orders, giving a page opened twice a month
+the same weight as the page staff live in.
+
+Renamed: "Shipping, pickup & policy" to **Commerce**, "Email & notifications" to
+**Emails**, "Customers & users" to **Customers**, "Discount codes" to
+**Discounts**, "Order cockpit" to **Orders**. Each described contents rather
+than naming a destination.
+
+No page was added. Every entry still resolves to a route that exists.
+
+## Production and order linking
+
+`production_jobs` has carried `order_id`, `order_item_id`, `product_id` and
+`customer_id` since pass 5, and both surfaces displayed the link. Nothing could
+*change* it — and the PATCH above destroyed it.
+
+`POST /api/staff/production/jobs/[id]/link` is its own endpoint for the reason
+`./status` is: a save that changes what a record *is* should not be the same
+call as a save that changes what it *says*.
+
+- The order must resolve to a real row before an id is stored, so a mistyped or
+  deleted reference is refused rather than found later from the order side.
+- A relink sends `expectedOrderId`, compared to the stored value **and**
+  re-asserted in the `WHERE` clause, so a change that landed in between matches
+  zero rows instead of overwriting a decision.
+- Detaching is `orderId: null` stated explicitly. Conflating "null" with
+  "absent" is exactly what erased links.
+- `order_item_id` is cleared on a move — an item id belongs to one order and
+  would otherwise point at a stranger's line. Product and customer come from the
+  order just verified, never from the request.
+- Both the job timeline and `audit_logs` are written, carrying order numbers and
+  no customer detail.
+- Re-confirming the current link is **not** a write, so the log never records
+  something that did not happen.
+
+From the order page, staff can link existing shop work. The picker offers only
+jobs attached to no order (`orderId=none`), so it cannot take a job from another
+order by accident; moving work between orders stays deliberate.
+
+## Email settings — audited, and they are real
+
+The question was whether `/staff/emails` controls the emails. **It does**, and
+the path was traced rather than trusted:
+
+1. `sendCommerceEmail` reads `email_templates` on **every send** — subject,
+   heading, body, button_label, is_enabled.
+2. No cache in front of it, so an edit applies to the next email with no deploy.
+3. The hard-coded strings are fallbacks used only when a row is missing.
+4. Body reaches **both** the HTML and the plain-text part; all three interpolated
+   fields pass through `escapeHtml`, and the subject strips CR/LF.
+
+**No dead template settings.** Checked against production: 43 rows, 43
+catalogued keys, symmetric difference empty, every key referenced by at least
+one event. That comparison is now a test rather than a claim.
+
+What the page could not do was say any of it. Two hand-maintained sources sat
+beside the catalogue: a prose sentence per template, and a hard-coded variable
+list naming **7 of the 14** usable variables — so half were undiscoverable and
+the list could not follow the allow-list it described. Both now derive from
+`emailEvents.ts`, which `transactional-emails.test.ts` already asserts against
+the send calls.
+
+Each template now shows **Used by** — the events that send it, with triggers.
+One template, `staff_fulfillment_due`, has no wired event: it needs the
+scheduled job runner pass 12 recorded as unbuilt. It is badged **"Not sent yet"**
+and says why, rather than hidden — hiding it would lose a real specified email,
+and showing it silently is the dead setting this audit ruled out.
+
+**Mistyped placeholders are now caught.** The sender substitutes exactly
+`{{[a-z_]+}}`, so a spaced, capitalised or hyphenated placeholder is not
+ignored — it is mailed to the customer with the braces intact. A well-formed
+name nothing supplies is reported separately, because it fails differently: it
+substitutes to an empty string and the sentence loses a word. Both are warnings
+beside the field, not a refusal — a brace in prose is legal.
+
+**No email was sent at any point in this pass.**
+
+## Catalog: a browsing rail
+
+Pills are a *filter* shape — uniform, small, equal weight — so a category, a
+subcategory and an availability toggle all rendered as the same control, and
+hierarchy could only be inferred from which row something landed on.
+
+Pass 13 chose rows because one category would leave a sidebar mostly empty. True,
+and the wrong thing to optimise for: the layout has to be right at forty
+categories too, and a wrapping chip row is a wall long before that.
+
+The rail states hierarchy structurally — sections with headings, categories as a
+list, children indented and ruled beneath their parent, shown for the branch you
+are in. Expanding *is* navigating, so there is no disclosure state to fall out of
+step with the page. Availability and purchase type move into the rail; sorting
+stays above the grid with what it reorders.
+
+`grid-template-columns: 15rem minmax(0, 1fr)` — a fraction would let a long
+category name steal width from the products, and a bare `1fr` would let the grid
+overflow rather than shrink. The rail is sticky and scrolls within a capped
+height so a long list cannot put its own foot out of reach.
+
+Below `lg` the rail gives way to the existing drawer.
+
+## Community — dormant, nothing deleted
+
+Removed from the desktop More menu, the mobile drawer (both derive from one
+list), the footer, the command palette, and the staff sidebar.
+
+**Nothing was deleted.** Every route under `/community` resolves, every thread,
+post, comment, vote and category is untouched, the `community.*` permissions are
+unchanged, and no migration was written. Notification deep links still work.
+
+`noindex, follow` while dormant: the site no longer points here, so continuing to
+take search traffic to it sends visitors to a dead end — but the links back into
+the shop still count.
+
+Reviving it is two edits, both named in the code: add the entry back to
+`secondaryNav`, drop the `robots` line in `src/app/community/layout.tsx`. There
+is no data to restore.
+
+Three existing suites required Community's presence and are re-pointed to assert
+**dormancy** — absent from every surface *and* the routes and files still exist.
+Asserting only the first would have been satisfied by deleting the feature.
+
+## Migration — written, **not applied**
+
+| File | What |
+|---|---|
+| `20260808010000_role_badge_icon.sql` | One nullable `roles.badge_icon` column plus a CHECK pinning the six renderable names. |
+
+Additive and default-safe: no default, so all four existing rows keep `null`,
+which already means "use the code registry's icon" — behaviour before and after
+is identical until somebody sets a value. **No grant is issued and none is
+needed**: privileges on `roles` are table-level (`service_role` holds
+SELECT/INSERT/UPDATE/DELETE; `anon` and `authenticated` hold SELECT) and a new
+column inherits them. `roles` carries no RLS policies, and adding a column does
+not change `relrowsecurity`.
+
+**This migration must be applied before the branch merges**, because the repaired
+code selects `badge_icon`. Until then `tests/fixtures/production-schema.json`
+carries it under `pending_migrations`, so the contract test is green on the
+branch and would fail if the column were referenced without a migration.
+
+## Validation
+
+- **1376 tests pass, 0 fail** (1323 at `2c0e0f6`; 53 added across four new
+  suites, plus six existing suites re-pointed and made stricter).
+- Typecheck clean. Production build clean from a cleared `.next`, exit 0; the new
+  `/api/staff/production/jobs/[id]/link` route is present.
+- **Lint unchanged at the 332 baseline** (178 errors, 154 warnings). The one
+  warning this pass introduced was found and removed.
+
+### Driven in a real browser
+
+Dev server, cold start from a cleared `.next`.
+
+| Check | Result |
+|---|---|
+| `/catalog` desktop | rail 240px beside 832px of products, sticky at 88px, exact counts |
+| `/catalog/interior` | correct `h1`, breadcrumb, one active rail link, 1 card |
+| Rail link height | **44px**, raised from 36 rather than argued for as mouse-only |
+| 320 / 375 | rail hidden, drawer trigger 310x44, **no horizontal overflow**, no nested scrollers |
+| Drawer at 320 | portalled dialog 320x634, body locked `position: fixed`, Escape restores |
+| 1024 / 1280 / 1920 | rail and products **never overlap**, no overflow at any width |
+| Accessibility | one `h1`, clean outline, no image without alt, every link named |
+
+**A duplicate `aria-current` investigated and dismissed:** three elements claimed
+it, two of them the same rail link. The second lives inside React's
+streaming-SSR container for the page's existing Suspense boundary — carrying the
+`hidden` attribute and therefore out of the accessibility tree. It predates this
+pass. The third is the global navbar marking its own current item, which is
+correct.
+
+Console carried only the **pre-existing** `data-motion` hydration mismatch on the
+root `html` (reproduces on `/`, present since pass 3) and the local 503s from
+the deliberately fake service-role key.
+
+### What could not be verified, and why
+
+- **A signed-in staff session.** Unchanged limitation since pass 3: middleware
+  redirects `/staff/*` to `/auth/login` even locally, and signing in means
+  handling a password. So the populated roles editor, the job-link control and
+  the email editor's new panels were not driven in a browser. Their rules are
+  covered by the 53 new tests; the rendering of populated states is not.
+- **A real avatar upload.** It needs an authenticated browser session. The fix is
+  a path change, and the policy arithmetic behind it was evaluated directly in
+  Postgres rather than reasoned about.
+- **The `badge_icon` column itself**, which is not yet applied.
+
+## External setup still required
+
+1. **Apply `20260808010000_role_badge_icon`** — needs approval. Until it is
+   applied, creating a role still fails and the roles list is still empty.
+2. Nothing else. No storage bucket or policy change is required, no Supabase Auth
+   change, and no new environment variable.
+
+## Deferred, honestly
+
+1. **`info_page_review_events` revision history** — four columns that have never
+   existed, registered as known drift with its cost stated. Needs its own
+   additive migration.
+2. **Guest cancellations and returns**, **cross-device guest access**, **guest
+   file uploads**, **server-side catalog pagination** — unchanged from pass 13.
+3. **Scheduled work**: quote expiry, payment reminders, fulfillment-overdue and
+   reservation-inconsistency emails. `staff_fulfillment_due` is now badged in the
+   UI as a result.
+
+## Residual risks
+
+- The catalog rail is verified against **one** category with no children. Nested
+  subcategories, many top-level categories, long names, and empty and hidden
+  categories are covered by `tests/catalog-navigation.test.ts` against mocked
+  depth, not by a browser at real depth — production has one category.
+- `known_drift` in the schema fixture is an exclusion list. It is asserted to
+  stay short and to explain every entry, but it is still a place a red result
+  could be put. It must only ever shrink.
+- The schema snapshot is a capture. It is only as true as the last time it was
+  regenerated, and regenerating it to make a test pass would defeat it — the
+  fixture says so in its own header.
+
+## Second migration — `20260808020000_info_review_event_revisions`
+
+Added at the owner's direction after the audit, rather than carried as known
+drift. `/staff/info/pending/[id]` records a before-and-after for every review
+action and offers an Undo that restores from it; `info_page_review_events` has
+never had `previous_title`, `new_title`, `previous_content_markdown` or
+`new_content_markdown`.
+
+Both halves failed silently: the insert was refused, so **zero events were ever
+stored**, and the select was refused, so the history rendered empty rather than
+erroring. The page showed "no events" for a table nothing could write to, and
+Undo had nothing to restore. It failed **closed** — no wrong content was ever
+written to a page — which is why it went unnoticed.
+
+Four nullable `text` columns, no default, no backfill. There are zero existing
+rows precisely because every insert was refused, so nothing needs migrating.
+Reconstructing history from `info_pages` was deliberately **not** done: there is
+no record of what those revisions were, and inventing one would put fabricated
+content behind an Undo button. A test asserts the migration contains no `update`.
+
+The `known_drift` register is now **empty**, and a new test closes the other way
+it could have been defeated: every `pending_migrations` entry must be traceable
+to a migration file that adds it, and must genuinely be absent from production.
+An entry with no migration behind it is drift wearing a different label.
+
+## Both migrations applied — 2026-08-08
+
+Applied with approval through `execute_sql` in **two separate guarded
+transactions**, not `apply_migration` — that tool stamps its own timestamp as the
+version, which caused six of the seven ledger drifts repaired in pass 3. Each
+ledger row was inserted by hand inside the same transaction under the repository
+filename's version.
+
+Each was dry-run first against production inside a transaction ended with a
+sentinel exception, with production verified untouched after each.
+
+**`20260808010000_role_badge_icon`** — dry run proved five things: existing roles
+survive with `badge_icon` null and none backfilled; a legal icon (`gavel`) is
+accepted; an icon `RolePill` cannot draw (`rocket`) is refused by
+`roles_badge_icon_check`; null remains legal; and **creating a role now
+succeeds**, which is the reported failure. Guards before: column absent, 45
+migration rows, version not recorded, 4 roles. After: column present, constraint
+present, 46 rows, 4 roles, **0 carrying an icon**.
+
+**`20260808020000_info_review_event_revisions`** — dry run proved five things:
+four nullable text columns present; the 0 existing events unchanged; the insert
+the page has always attempted now succeeds; the select reads the before-and-after
+back, so Undo has a source; and an event without a diff is still storable.
+Guards before: columns absent, 46 rows, version not recorded. After: 4 nullable
+text columns, 47 rows, event count unchanged.
+
+Both committed. Verified independently afterwards.
+
+### Verification after applying
+
+| Check | Result |
+|---|---|
+| `roles.badge_icon` + `roles_badge_icon_check` | both present |
+| Roles | **4**, all `badge_icon` null — none backfilled |
+| `info_page_review_events` revision columns | **4**, nullable text |
+| Review events | **0**, unchanged |
+| Migration rows | **47** |
+| Migration ledger | **exact** — 47 repo files, 47 rows, newest two matching their filenames |
+| Data preserved | 9 orders, 2 products, 3 users, 43 templates, 26 deliveries — all unchanged |
+| Community data | **1 forum thread, 1 forum post, untouched** |
+| Supabase security advisors | **no new findings**. The 14 `rls_enabled_no_policy` notices, the SECURITY DEFINER warnings and the leaked-password warning are all pre-existing; neither migration created a table or a function, and neither table appears in any of them. |
+| Grants | none issued and none needed — both are column additions on existing tables, and a column inherits the table ACL |
+| Emails sent | **0** |
+| Stripe charges or refunds | **0** |
+
+The schema snapshot in `tests/fixtures/production-schema.json` was refreshed from
+production after applying, and `pending_migrations` is now empty. The refreshed
+column lists were diffed against a fresh `information_schema.columns` query
+rather than hand-edited on trust.

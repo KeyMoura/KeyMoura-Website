@@ -60,8 +60,13 @@ export async function GET(req: NextRequest) {
   if (assignedTo === "unassigned") query = query.is("assigned_to", null);
   else if (assignedTo) query = query.eq("assigned_to", assignedTo);
 
+  // `orderId=none` lists standalone shop work — jobs raised against no order at
+  // all. That is both a real way to look at the queue ("what are we making for
+  // stock?") and what the order page offers when linking existing work, so the
+  // choice there is only ever between jobs that are not already spoken for.
   const orderId = params.get("orderId");
-  if (orderId) query = query.eq("order_id", orderId);
+  if (orderId === "none") query = query.is("order_id", null);
+  else if (orderId) query = query.eq("order_id", orderId);
 
   const customerId = params.get("customerId");
   if (customerId) query = query.eq("customer_id", customerId);

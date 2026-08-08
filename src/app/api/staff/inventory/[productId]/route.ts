@@ -68,7 +68,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ product
       .limit(50),
     routeServiceClient
       .from("inventory_adjustments")
-      .select("id,delta,quantity_before,quantity_after,reason,note,order_id,created_at,actor_user_id", {
+      // `created_by`, not `actor_user_id` — the latter has never been a column
+      // on this table, so this whole read failed and the stock-movement history
+      // rendered as "no movements" for every product.
+      .select("id,delta,quantity_before,quantity_after,reason,note,order_id,created_at,created_by", {
         count: "exact",
       })
       .eq("product_id", productId)
