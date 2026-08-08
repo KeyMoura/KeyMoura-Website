@@ -166,11 +166,31 @@ test("the job timeline has no update or delete policy", () => {
 // The separations the design depends on
 // ---------------------------------------------------------------------------
 
-test("saving fields cannot change status", () => {
+test("saving fields cannot change status, or the order the job belongs to", () => {
   // PATCH pins the status to whatever the row already holds and strips it from
   // the update, so a field save can never move a job through the workflow.
   assert.match(detailRoute, /status: before\.status/);
-  assert.match(detailRoute, /const \{ status: _ignored, \.\.\.fields \} = draft/);
+
+  /*
+   * Re-pointed in pass 14. This used to pin the destructuring line verbatim
+   * (`const { status: _ignored, ...fields } = draft`), which broke on a rename
+   * while missing a far worse defect on the very same line: the four link
+   * columns were *not* stripped, and `parseJobDraft` resolves an absent
+   * `orderId` to `null`. The job form has never sent them, so every field save
+   * wrote `order_id = null` and detached the job from its order.
+   *
+   * The assertion is now on the property — each column is removed before the
+   * write — rather than on how the removal is spelled.
+   */
+  for (const column of ["status", "order_id", "order_item_id", "product_id", "customer_id"]) {
+    assert.match(
+      detailRoute,
+      new RegExp(`${column}:\\s*_[A-Za-z]+`),
+      `${column} must be stripped from the fields PATCH writes`
+    );
+  }
+  assert.match(detailRoute, /\.update\(fields\)/);
+  assert.doesNotMatch(detailRoute, /\.update\(draft\)/);
 });
 
 test("a status change is guarded against a stale page", () => {
