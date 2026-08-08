@@ -55,18 +55,26 @@ type CatalogBrowserProps = {
  * server component and a `router.replace` per keystroke costs a full RSC
  * round trip for a result the browser already has.
  *
- * ## Why a horizontal bar rather than a permanent sidebar
+ * ## Why a rail rather than the row of chips it replaces
  *
- * The brief allows either. This catalog has one top-level category today, so a
- * full-height sidebar would be a mostly empty column taking a third of the
- * width away from the products — which the brief names as the thing not to do.
- * A top-level row plus a second row of subcategories reads the same at one
- * category and at twenty, and it does not compete with the global navbar for
- * the top of the page.
+ * The previous version put categories, subcategories and filters in wrapping
+ * rows of pills. The reasoning at the time was that one top-level category
+ * would leave a sidebar mostly empty — true, and it turned out to be the wrong
+ * thing to optimise for. Pills are *filter* shapes: uniform, small, equal
+ * weight. A category, a subcategory and an availability toggle all rendered as
+ * the same control, so the only cue for hierarchy was which row something
+ * happened to be on, and the storefront's main organising idea looked like a
+ * bank of toggles.
  *
- * On small screens the rows are replaced by one trigger and a real drawer:
- * a scrolling row of chips hides everything past the third one, and the
- * filters have to go somewhere anyway.
+ * The rail states the hierarchy structurally instead — sections with headings,
+ * categories as a list, children indented beneath their parent — so it reads
+ * correctly with one category and still reads correctly with forty, where a
+ * wrapping chip row becomes a wall. Sorting stays above the grid, with the
+ * thing it reorders.
+ *
+ * Below `lg` the rail gives way to the drawer: a narrow column beside a
+ * two-column product grid leaves neither enough room, and the filters have to
+ * go somewhere on a phone anyway.
  */
 export default function CatalogBrowser({
   allProducts,
@@ -159,184 +167,213 @@ export default function CatalogBrowser({
     router.replace(pathname, { scroll: false });
   };
 
-  const branch = menu.categories.find((entry) => entry.isCurrentBranch);
-  const subcategories = branch?.children ?? [];
-
   return (
-    <>
+    <div className="catalog-layout">
       {/*
+        The browsing rail.
+
         A `nav` of its own, labelled, and deliberately not part of the global
         navbar: duplicating the site navigation here would give a screen reader
         two "Products" links to the same place and give a customer two
         different mental models of where they are.
-      */}
-      <nav aria-label="Product categories" className="catalog-nav">
-        <ul className="catalog-nav-row">
-          <li>
-            <Link
-              href={menu.all.href}
-              aria-current={menu.all.isActive ? "page" : undefined}
-              className={`catalog-nav-chip${menu.all.isActive ? " is-active" : ""}`}
-            >
-              {menu.all.name}
-              <span className="catalog-nav-count">{menu.all.count}</span>
-            </Link>
-          </li>
-          {menu.categories.map((entry) => (
-            <li key={entry.id}>
-              <Link
-                href={entry.href}
-                aria-current={entry.isActive ? "page" : undefined}
-                className={`catalog-nav-chip${entry.isActive ? " is-active" : ""}${
-                  entry.isCurrentBranch && !entry.isActive ? " is-branch" : ""
-                }`}
-              >
-                {entry.name}
-                <span className="catalog-nav-count">{entry.count}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
 
-        {/* Subcategories appear only for the branch you are in. Showing every
-            child of every category at once is a wall, and showing none makes
-            subcategories undiscoverable — this is the middle, and it is why
-            the parent chip stays highlighted while a child is selected. */}
-        {subcategories.length ? (
-          <ul className="catalog-nav-subrow" aria-label={`${branch?.name} subcategories`}>
+        It is a rail rather than the row of pill chips this replaced. Chips read
+        as *filters* — small, uniform, equal-weight — so a category and a
+        subcategory and an availability toggle all looked like the same kind of
+        control, and hierarchy had to be inferred from which row something was
+        on. A rail states the hierarchy in space and type instead: sections with
+        headings, categories as a list, children indented under their parent.
+        It also stops being a wall at twenty categories, which a wrapping chip
+        row does not.
+
+        Below `lg` the whole rail gives way to the drawer — a narrow column
+        beside a two-column grid leaves neither enough room.
+      */}
+      <nav aria-label="Browse products" className="catalog-rail">
+        <section className="catalog-rail-section">
+          <h2 className="catalog-rail-heading">Categories</h2>
+          <ul className="catalog-rail-list">
             <li>
               <Link
-                href={branch?.href ?? menu.all.href}
-                aria-current={branch?.isActive ? "page" : undefined}
-                className={`catalog-nav-subchip${branch?.isActive ? " is-active" : ""}`}
+                href={menu.all.href}
+                aria-current={menu.all.isActive ? "page" : undefined}
+                className={`catalog-rail-link${menu.all.isActive ? " is-active" : ""}`}
               >
-                All {branch?.name}
+                <span className="catalog-rail-label">{menu.all.name}</span>
+                <span className="catalog-rail-count">{menu.all.count}</span>
               </Link>
             </li>
-            {subcategories.map((child) => (
-              <li key={child.id}>
+
+            {menu.categories.map((entry) => (
+              <li key={entry.id}>
                 <Link
-                  href={child.href}
-                  aria-current={child.isActive ? "page" : undefined}
-                  className={`catalog-nav-subchip${child.isActive ? " is-active" : ""}`}
+                  href={entry.href}
+                  aria-current={entry.isActive ? "page" : undefined}
+                  className={`catalog-rail-link${entry.isActive ? " is-active" : ""}${
+                    entry.isCurrentBranch && !entry.isActive ? " is-branch" : ""
+                  }`}
                 >
-                  {child.name}
-                  <span className="catalog-nav-count">{child.count}</span>
+                  <span className="catalog-rail-label">{entry.name}</span>
+                  <span className="catalog-rail-count">{entry.count}</span>
                 </Link>
+
+                {/* Children are shown for the branch you are in and folded away
+                    otherwise. Every child of every category at once is a wall;
+                    none at all makes subcategories undiscoverable. Expanding is
+                    navigating — there is no separate disclosure control to get
+                    out of step with the page you are on. */}
+                {entry.isCurrentBranch && entry.children?.length ? (
+                  <ul className="catalog-rail-sublist" aria-label={`${entry.name} subcategories`}>
+                    {entry.children.map((child) => (
+                      <li key={child.id}>
+                        <Link
+                          href={child.href}
+                          aria-current={child.isActive ? "page" : undefined}
+                          className={`catalog-rail-sublink${child.isActive ? " is-active" : ""}`}
+                        >
+                          <span className="catalog-rail-label">{child.name}</span>
+                          <span className="catalog-rail-count">{child.count}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             ))}
           </ul>
-        ) : null}
-      </nav>
+        </section>
 
-      <section aria-label="Search and filter products" className="catalog-toolbar">
-        <div className="catalog-search">
-          <label className="sr-only" htmlFor="catalog-search">
-            Search products
-          </label>
-          <input
-            id="catalog-search"
-            type="search"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            placeholder="Search products…"
-            className="ui-input"
-          />
-        </div>
-
-        <div className="catalog-filter-controls">
+        {/* Refinements, kept visually distinct from the category list above.
+            Sorting is deliberately *not* here — it belongs with the grid it
+            reorders, where the reader can see the effect. */}
+        <section className="catalog-rail-section">
+          <h2 className="catalog-rail-heading">Availability</h2>
           <MenuSelect
             ariaLabel="Availability"
-            className="ui-select-trigger"
+            className="ui-select-trigger w-full"
             value={filters.availability}
             onChange={(value) => setFilters({ availability: value as CatalogFilters["availability"] }, "push")}
             options={AVAILABILITY_OPTIONS}
           />
+        </section>
+
+        <section className="catalog-rail-section">
+          <h2 className="catalog-rail-heading">How it is bought</h2>
           <MenuSelect
             ariaLabel="How it is bought"
-            className="ui-select-trigger"
+            className="ui-select-trigger w-full"
             value={filters.mode}
             onChange={(value) => setFilters({ mode: value as CatalogFilters["mode"] }, "push")}
             options={MODE_OPTIONS}
           />
-          <MenuSelect
-            ariaLabel="Sort products"
-            className="ui-select-trigger"
-            value={filters.sort}
-            onChange={(value) => setFilters({ sort: value as CatalogFilters["sort"] }, "push")}
-            options={SORT_OPTIONS}
-          />
-        </div>
+        </section>
 
-        <CatalogBrowseDrawer
-          menu={menu}
-          filters={effectiveFilters}
-          filterCount={filterCount}
-          onChange={(next, mode) => {
-            // The drawer's search box shares the debounce; its dropdowns do not.
-            if (typeof next.query === "string" && Object.keys(next).length === 1) setTyped(next.query);
-            else setFilters(next, mode);
-          }}
-          onClear={clear}
-        />
-      </section>
-
-      <div className="catalog-summary">
-        {/* A real count of what is on screen. No "1,000+", no per-category
-            estimate, nothing derived from anything but this list. */}
-        <p aria-live="polite">
-          {visible.length} {visible.length === 1 ? "product" : "products"}
-          {!isDefault && visible.length !== scopedProducts.length ? ` of ${scopedProducts.length}` : null}
-        </p>
         <button
           type="button"
           onClick={clear}
           disabled={isDefault}
-          className="ui-btn ui-btn-ghost !py-1.5 text-sm disabled:opacity-40"
+          className="ui-btn ui-btn-ghost w-full !py-2 text-sm disabled:opacity-40"
         >
           Clear filters
         </button>
-      </div>
+      </nav>
 
-      {visible.length ? (
-        <section className="mt-6" aria-labelledby="catalog-products">
-          {/* Product names are h3 inside the shared card, so the grid needs an
-              h2 above them to keep the heading outline unbroken. */}
-          <h2 id="catalog-products" className="sr-only">
-            Products
-          </h2>
-          <div className="catalog-grid">
-            {visible.map((product, index) => (
-              <ProductCard key={product.id} product={product} priority={index < 3} />
-            ))}
+      <div className="catalog-main">
+        <section aria-label="Search and sort products" className="catalog-toolbar">
+          <div className="catalog-search">
+            <label className="sr-only" htmlFor="catalog-search">
+              Search products
+            </label>
+            <input
+              id="catalog-search"
+              type="search"
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              placeholder="Search products…"
+              className="ui-input"
+            />
           </div>
+
+          <div className="catalog-filter-controls">
+            <MenuSelect
+              ariaLabel="Sort products"
+              className="ui-select-trigger"
+              value={filters.sort}
+              onChange={(value) => setFilters({ sort: value as CatalogFilters["sort"] }, "push")}
+              options={SORT_OPTIONS}
+            />
+          </div>
+
+          <CatalogBrowseDrawer
+            menu={menu}
+            filters={effectiveFilters}
+            filterCount={filterCount}
+            onChange={(next, mode) => {
+              // The drawer's search box shares the debounce; its dropdowns do not.
+              if (typeof next.query === "string" && Object.keys(next).length === 1) setTyped(next.query);
+              else setFilters(next, mode);
+            }}
+            onClear={clear}
+          />
         </section>
-      ) : (
-        <div className="ui-empty-state mt-6 !p-10">
-          <h2 className="text-xl font-semibold text-brand-text">
-            {scopedProducts.length ? "No products match those filters." : "Nothing is listed here yet."}
-          </h2>
-          <p className="mt-2">
-            {scopedProducts.length
-              ? "Try clearing a filter — or describe what you need and we will quote it."
-              : "Browse everything, or describe what you need and we will quote it."}
+
+        <div className="catalog-summary">
+          {/* A real count of what is on screen. No "1,000+", no per-category
+              estimate, nothing derived from anything but this list. */}
+          <p aria-live="polite">
+            {visible.length} {visible.length === 1 ? "product" : "products"}
+            {!isDefault && visible.length !== scopedProducts.length ? ` of ${scopedProducts.length}` : null}
           </p>
-          <div className="ui-action-row mt-5 justify-center">
-            {scopedProducts.length ? (
-              <button type="button" onClick={clear} className="ui-btn ui-btn-secondary">
-                Clear filters
-              </button>
-            ) : (
-              <Link href="/catalog" className="ui-btn ui-btn-secondary">
-                All products
-              </Link>
-            )}
-            <Link href="/orders/new" className="ui-btn ui-btn-primary">
-              Start a custom project
-            </Link>
-          </div>
+          <button
+            type="button"
+            onClick={clear}
+            disabled={isDefault}
+            className="ui-btn ui-btn-ghost !py-1.5 text-sm disabled:opacity-40"
+          >
+            Clear filters
+          </button>
         </div>
-      )}
-    </>
+
+        {visible.length ? (
+          <section className="mt-6" aria-labelledby="catalog-products">
+            {/* Product names are h3 inside the shared card, so the grid needs an
+                h2 above them to keep the heading outline unbroken. */}
+            <h2 id="catalog-products" className="sr-only">
+              Products
+            </h2>
+            <div className="catalog-grid">
+              {visible.map((product, index) => (
+                <ProductCard key={product.id} product={product} priority={index < 3} />
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className="ui-empty-state mt-6 !p-10">
+            <h2 className="text-xl font-semibold text-brand-text">
+              {scopedProducts.length ? "No products match those filters." : "Nothing is listed here yet."}
+            </h2>
+            <p className="mt-2">
+              {scopedProducts.length
+                ? "Try clearing a filter — or describe what you need and we will quote it."
+                : "Browse everything, or describe what you need and we will quote it."}
+            </p>
+            <div className="ui-action-row mt-5 justify-center">
+              {scopedProducts.length ? (
+                <button type="button" onClick={clear} className="ui-btn ui-btn-secondary">
+                  Clear filters
+                </button>
+              ) : (
+                <Link href="/catalog" className="ui-btn ui-btn-secondary">
+                  All products
+                </Link>
+              )}
+              <Link href="/orders/new" className="ui-btn ui-btn-primary">
+                Start a custom project
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

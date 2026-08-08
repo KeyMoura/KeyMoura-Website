@@ -104,8 +104,10 @@ test("template content is escaped, so a template cannot inject markup or script"
 // ---------------------------------------------------------------------------
 
 test("production holds exactly the templates the catalogue describes", () => {
-  const catalogue = [...EMAIL_TEMPLATE_KEYS].sort();
-  const live = [...PRODUCTION_TEMPLATE_KEYS].sort();
+  // Widened to `string[]` on both sides: comparing a literal-union array to a
+  // plain one otherwise makes `includes` reject the very keys it is looking for.
+  const catalogue: string[] = [...EMAIL_TEMPLATE_KEYS].sort();
+  const live: string[] = [...PRODUCTION_TEMPLATE_KEYS].sort();
 
   const dead = live.filter((key) => !catalogue.includes(key));
   const missing = catalogue.filter((key) => !live.includes(key));
