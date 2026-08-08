@@ -8,7 +8,16 @@ import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
 import { RolePill } from "@/components/RolePill";
 import { useBlocks } from "@/components/BlocksProvider";
+import {
+  AVATAR_BUCKET,
+  avatarObjectKey,
+  avatarRejectionReason,
+  versionedAvatarUrl,
+} from "@/lib/avatars";
 import type { UserIdentity } from "@supabase/supabase-js";
+
+/** The crop modal always hands back a JPEG blob, so the stored key is always .jpg. */
+const AVATAR_CONTENT_TYPE = "image/jpeg";
 
 type SimpleUser = {
   id: string;
@@ -451,15 +460,11 @@ useEffect(() => {
 
     setAvatarMessage(null);
 
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-    if (!allowedTypes.includes(file.type)) {
-      setAvatarMessage("Please upload a JPEG, PNG, or WebP image.");
-      return;
-    }
-
-    const maxOriginalSize = 5 * 1024 * 1024;
-    if (file.size > maxOriginalSize) {
-      setAvatarMessage("Image is too large. Please use something under 5 MB.");
+    // Same rules the staff upload route applies, from one module, so the two
+    // cannot disagree about what an avatar may be.
+    const rejection = avatarRejectionReason(file);
+    if (rejection) {
+      setAvatarMessage(rejection);
       return;
     }
 
@@ -473,14 +478,18 @@ useEffect(() => {
     setAvatarMessage(null);
     setAvatarUploading(true);
     try {
-      const filePath = `${user.id}.jpg`;
+      // The first path segment has to be the user's own id: the bucket's insert
+      // policy compares `storage.foldername(name)[1]` to `auth.uid()`, and the
+      // previous flat `<uuid>.jpg` key had no folder at all, so that comparison
+      // was NULL and every upload was refused.
+      const filePath = avatarObjectKey(user.id, AVATAR_CONTENT_TYPE);
 
       const { error: uploadError } = await supabase.storage
-        .from("avatars")
+        .from(AVATAR_BUCKET)
         .upload(filePath, blob, {
           cacheControl: "3600",
           upsert: true,
-          contentType: "image/jpeg",
+          contentType: AVATAR_CONTENT_TYPE,
         });
 
       if (uploadError) {
@@ -489,9 +498,11 @@ useEffect(() => {
         return;
       }
 
-      const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const { data: publicData } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(filePath);
       const publicUrl = publicData.publicUrl;
-      const versionedUrl = `${publicUrl}?t=${Date.now()}`;
+      // The key is stable so the object is overwritten in place; the version
+      // is what makes the browser fetch the new bytes.
+      const versionedUrl = versionedAvatarUrl(publicUrl);
 
       const { error: updateError } = await supabase
         .from("profiles")
