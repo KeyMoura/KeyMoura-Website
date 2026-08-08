@@ -4,15 +4,17 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("customer navigation exposes projects and community without workshop", async () => {
+test("customer navigation exposes the shop destinations without workshop", async () => {
   // The destinations moved out of SiteHeader into the shared navigation module
-  // when the header was rebuilt around shopping; the requirement that all six
-  // stay reachable did not change.
+  // when the header was rebuilt around shopping. `/community` left this list in
+  // pass 14 — it is dormant rather than removed, and `navbar-layout.test.ts`
+  // asserts both halves of that. The remaining five must still be reachable.
   const { primaryNav, secondaryNav, allCustomerNavHrefs } = await import("../src/lib/navigation.ts");
   const hrefs = allCustomerNavHrefs();
-  for (const route of ["/about", "/capabilities", "/projects", "/catalog", "/contact", "/community"]) {
+  for (const route of ["/about", "/capabilities", "/projects", "/catalog", "/contact"]) {
     assert.ok(hrefs.includes(route), `${route} must stay in the customer navigation`);
   }
+  assert.ok(!hrefs.includes("/community"), "Community is dormant and must not be linked");
   assert.ok(primaryNav.some((item) => item.href === "/projects"));
   const nav = read("src/lib/navigation.ts");
   assert.doesNotMatch(nav, /Community is coming soon|aria-disabled="true"/);

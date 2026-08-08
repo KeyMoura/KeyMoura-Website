@@ -32,10 +32,8 @@ export type NavItem = {
  * Ordered the way a customer arrives at the business: what you can buy, what
  * you can have made, proof that it gets made well, then who is making it.
  *
- * Community is deliberately absent. It is a real part of the site and keeps
- * every one of its routes — it simply does not earn a slot in a storefront
- * header, so it lives in the More menu, the account menu and the footer. See
- * `secondaryNav`.
+ * Community is deliberately absent — and as of pass 14 it is absent from every
+ * other customer surface too. See the note on `secondaryNav`.
  */
 export const primaryNav: readonly NavItem[] = [
   { href: "/catalog", label: "Products", description: "Ready designs and made-to-order parts" },
@@ -48,14 +46,25 @@ export const primaryNav: readonly NavItem[] = [
  * Secondary destinations, reachable from the More menu on desktop and listed in
  * full in the mobile drawer.
  *
- * These are pages a customer visits once — reference material, a contact form,
- * and the community area — rather than places they shop.
+ * These are pages a customer visits once — reference material and a contact
+ * form — rather than places they shop.
+ *
+ * **Community is dormant, not deleted.** KeyMoura is a shop today, and a
+ * discussion area with no discussion in it is worse than no discussion area:
+ * it invites a customer to a room where nobody answers. So it is removed from
+ * every customer surface — this menu, the mobile drawer, the footer and the
+ * search palette — while `/community` and every thread under it keeps working
+ * for anyone holding a link, and every post, comment and category stays exactly
+ * where it is. Nothing was dropped, archived or migrated.
+ *
+ * The pages are `noindex` while dormant, so search engines stop offering a
+ * section the site no longer points at. Bringing it back is adding an entry
+ * here and removing that directive; there is no data to restore.
  */
 export const secondaryNav: readonly NavItem[] = [
   { href: "/capabilities", label: "Capabilities", description: "Materials, sizes, and limits" },
   { href: "/design-guide", label: "Design guide", description: "Tolerances and drawing tips" },
   { href: "/contact", label: "Contact", description: "Ask a question first" },
-  { href: "/community", label: "Community", description: "Discussion and build threads" },
 ] as const;
 
 /**
@@ -106,7 +115,6 @@ export const footerNav: readonly { heading: string; items: readonly NavItem[] }[
       { href: "/capabilities", label: "Capabilities & materials" },
       { href: "/projects", label: "Gallery" },
       { href: "/design-guide", label: "Design & tolerance guide" },
-      { href: "/community", label: "Community" },
     ],
   },
   {
