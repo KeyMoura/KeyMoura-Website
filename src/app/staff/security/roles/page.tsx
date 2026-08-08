@@ -6,8 +6,15 @@ import { supabaseBrowser } from "@/lib/supabaseClient";
 import { isArray, isRecord, isString } from "@/lib/typeGuards";
 import { RolePill } from "@/components/RolePill";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { ROLE_BADGE_ICONS } from "@/lib/staff/roleSchema";
 
 type LoadState = "loading" | "denied" | "loaded";
+
+/** "No icon" is a real choice, so it is an option rather than an empty field. */
+const BADGE_ICON_OPTIONS = [
+  { value: "", label: "No icon" },
+  ...ROLE_BADGE_ICONS.map((name) => ({ value: name as string, label: name })),
+];
 
 type RoleRow = {
   key: string;
@@ -409,19 +416,28 @@ export default function StaffSecurityRolesPage() {
                     className="ui-input mt-1 text-sm"
                   />
 
-                  <label className="mt-3 block text-xs text-brand-textMuted">Icon</label>
-                  <input
-                    value={iconDraft}
-                    onChange={(e) => setIconDraft(e.target.value)}
-                    onBlur={() => {
-                      if (!selectedRole) return;
-                      const next = iconDraft.trim();
-                      const normalized = next.length ? next : null;
-                      if (normalized !== (selectedRole.badge_icon ?? null)) void updateRole({ badge_icon: normalized });
-                    }}
-                    placeholder="gavel / chess-rook / book / shield-heart …"
-                    className="ui-input mt-1 text-sm"
-                  />
+                  {/* A closed list rather than a text box. `RolePill` resolves
+                      the name through an allow-list and draws nothing for
+                      anything else, so free text let a typo save cleanly,
+                      report success, and render no icon. */}
+                  <label className="mt-3 block text-xs text-brand-textMuted" id="role-badge-icon-label">
+                    Icon
+                  </label>
+                  <div className="mt-1">
+                    <MenuSelect
+                      ariaLabel="Badge icon"
+                      value={iconDraft}
+                      onChange={(next) => {
+                        setIconDraft(next);
+                        if (!selectedRole) return;
+                        const normalized = next.length ? next : null;
+                        if (normalized !== (selectedRole.badge_icon ?? null)) {
+                          void updateRole({ badge_icon: normalized });
+                        }
+                      }}
+                      options={BADGE_ICON_OPTIONS}
+                    />
+                  </div>
 
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     <div>

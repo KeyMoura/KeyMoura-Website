@@ -75,6 +75,12 @@ alter table public.roles add column if not exists is_staff boolean not null defa
 alter table public.roles add column if not exists badge_bg text;
 alter table public.roles add column if not exists badge_border text;
 alter table public.roles add column if not exists badge_text text;
+-- The fourth badge attribute. Added here as well as in
+-- `20260808010000_role_badge_icon.sql` so a fresh install and a migrated
+-- database end up with the same `roles` shape — the drift that migration
+-- repairs began exactly here, with a column the editor wrote and no schema
+-- created.
+alter table public.roles add column if not exists badge_icon text;
 update public.roles set is_staff = key in ('admin', 'moderator', 'support');
 
 insert into public.permissions(key, name, description, category)

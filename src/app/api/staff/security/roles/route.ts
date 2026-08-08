@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { readJson, asRecord } from "@/lib/json";
 import { isArray, isBoolean, isNumber, isString } from "@/lib/typeGuards";
 import { requireAnyPermission, routeServiceClient } from "@/lib/api/routeAuth";
+import {
+  DEFAULT_BADGE_BG,
+  DEFAULT_BADGE_BORDER,
+  DEFAULT_BADGE_TEXT,
+  ROLE_ORDER_COLUMN,
+  ROLE_SELECT,
+  isRoleBadgeIcon,
+  normalizeBadgeIcon,
+  toRoleDbColumns,
+} from "@/lib/staff/roleSchema";
 
 type RoleRow = {
   key: string;
@@ -9,6 +19,7 @@ type RoleRow = {
   description: string | null;
   priority: number;
   is_staff: boolean;
+  is_system: boolean;
   badge_bg: string;
   badge_border: string;
   badge_text: string;
@@ -29,14 +40,22 @@ function normalizeRoleRow(v: unknown): RoleRow | null {
     description: isString(r.description) ? r.description : null,
     priority: isNumber(r.priority) ? r.priority : 0,
     is_staff: isBoolean(r.is_staff) ? r.is_staff : false,
-    badge_bg: isString(r.badge_bg) ? r.badge_bg : "#111827",
-    badge_border: isString(r.badge_border) ? r.badge_border : "#374151",
-    badge_text: isString(r.badge_text) ? r.badge_text : "#E5E7EB",
+    is_system: isBoolean(r.is_system) ? r.is_system : false,
+    badge_bg: isString(r.badge_bg) ? r.badge_bg : DEFAULT_BADGE_BG,
+    badge_border: isString(r.badge_border) ? r.badge_border : DEFAULT_BADGE_BORDER,
+    badge_text: isString(r.badge_text) ? r.badge_text : DEFAULT_BADGE_TEXT,
     badge_icon: isString(r.badge_icon) ? r.badge_icon : null,
   };
 }
 
-function parseCreatePayload(v: unknown): {
+/**
+ * A role key becomes `profiles.role` and the target of `role_permissions`, so it
+ * has to be a stable identifier rather than whatever was typed. Lowercase
+ * letters, digits, underscore and hyphen only.
+ */
+const ROLE_KEY_PATTERN = /^[a-z][a-z0-9_-]{1,39}$/;
+
+type CreatePayload = {
   key: string;
   label: string;
   description: string | null;
@@ -46,33 +65,57 @@ function parseCreatePayload(v: unknown): {
   badge_border: string;
   badge_text: string;
   badge_icon: string | null;
-} | null {
+};
+
+function parseCreatePayload(v: unknown): { value: CreatePayload } | { error: string } {
   const r = asRecord(v);
-  if (!r) return null;
+  if (!r) return { error: "Send a role to create." };
+
   const key = isString(r.key) ? r.key.trim().toLowerCase() : "";
   const label = isString(r.label) ? r.label.trim() : "";
-  if (!key || !label) return null;
-  const description = isString(r.description) ? r.description : null;
-  const priority = isNumber(r.priority) ? r.priority : 0;
-  const is_staff = isBoolean(r.is_staff) ? r.is_staff : false;
-  const badge_bg = isString(r.badge_bg) ? r.badge_bg : "#111827";
-  const badge_border = isString(r.badge_border) ? r.badge_border : "#374151";
-  const badge_text = isString(r.badge_text) ? r.badge_text : "#E5E7EB";
-  const badge_icon = isString(r.badge_icon) ? r.badge_icon : null;
-  return { key, label, description, priority, is_staff, badge_bg, badge_border, badge_text, badge_icon };
+  if (!key) return { error: "Give the role a key." };
+  if (!ROLE_KEY_PATTERN.test(key)) {
+    return {
+      error:
+        "A role key starts with a letter and uses only lowercase letters, numbers, hyphens and underscores.",
+    };
+  }
+  if (!label) return { error: "Give the role a label." };
+  if (label.length > 60) return { error: "A role label is at most 60 characters." };
+
+  // An unknown icon name renders as no icon at all, so accepting it would store
+  // a value that silently does nothing. Refuse it and say which names work.
+  if (r.badge_icon !== undefined && r.badge_icon !== null && r.badge_icon !== "") {
+    if (!isRoleBadgeIcon(r.badge_icon)) return { error: "That is not one of the available badge icons." };
+  }
+
+  return {
+    value: {
+      key,
+      label,
+      description: isString(r.description) ? r.description : null,
+      priority: isNumber(r.priority) ? Math.trunc(r.priority) : 0,
+      is_staff: isBoolean(r.is_staff) ? r.is_staff : false,
+      badge_bg: isString(r.badge_bg) ? r.badge_bg : DEFAULT_BADGE_BG,
+      badge_border: isString(r.badge_border) ? r.badge_border : DEFAULT_BADGE_BORDER,
+      badge_text: isString(r.badge_text) ? r.badge_text : DEFAULT_BADGE_TEXT,
+      badge_icon: normalizeBadgeIcon(r.badge_icon),
+    },
+  };
 }
 
 export async function GET(req: NextRequest) {
-  const actor = await requireAnyPermission(req, [
-    "roles.manage",
-    "roles.assign",
-  ]);
+  const actor = await requireAnyPermission(req, ["roles.manage", "roles.assign"]);
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { data } = await routeServiceClient
+  const { data, error } = await routeServiceClient
     .from("roles")
-    .select("key,label,description,priority,is_staff,badge_bg,badge_border,badge_text,badge_icon")
-    .order("priority", { ascending: false });
+    .select(ROLE_SELECT)
+    .order(ROLE_ORDER_COLUMN, { ascending: false });
+
+  // A refused read used to fall through to `roles: []`, which rendered as "this
+  // shop has no roles" — the most confident possible wrong answer. Say so.
+  if (error) return NextResponse.json({ error: "Could not load roles." }, { status: 500 });
 
   const roles: RoleRow[] = [];
   if (isArray(data)) {
@@ -92,10 +135,20 @@ export async function POST(req: NextRequest) {
 
   const payload = await readJson(req);
   const parsed = parseCreatePayload(payload);
-  if (!parsed) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
-  const { error } = await routeServiceClient.from("roles").insert(parsed);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  const { key, ...rest } = parsed.value;
+  const row = { key, ...toRoleDbColumns(rest) };
+
+  const { error } = await routeServiceClient.from("roles").insert(row);
+  if (error) {
+    // 23505 is the primary key: a role with this key already exists. Naming the
+    // cause beats echoing a constraint name at somebody creating a role.
+    if (error.code === "23505") {
+      return NextResponse.json({ error: "A role with that key already exists." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Could not create the role." }, { status: 400 });
+  }
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

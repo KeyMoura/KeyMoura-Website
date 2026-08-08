@@ -27,10 +27,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
 
   const { data: banRow, error: banErr } = await routeServiceClient
     .from("user_bans")
-    .select("user_id, reason, active, banned_at")
+    // `user_bans` records the ban time as `created_at`; `banned_at` does not
+    // exist, so this read failed and every account reported as not banned.
+    .select("user_id, reason, active, created_at")
     .eq("user_id", targetUserId)
     .eq("active", true)
-    .maybeSingle<{ user_id: string; reason: string | null; active: boolean; banned_at: string | null }>();
+    .maybeSingle<{ user_id: string; reason: string | null; active: boolean; created_at: string | null }>();
 
   if (banErr) {
     console.error("ban-status error", banErr);
@@ -41,6 +43,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
     ok: true,
     banned: !!banRow?.active,
     reason: banRow?.reason ?? null,
-    banned_at: banRow?.banned_at ?? null,
+    // The response key stays `banned_at` — that is what callers read, and it is
+    // the better name for what it means. Only the column it comes from changes.
+    banned_at: banRow?.created_at ?? null,
   });
 }

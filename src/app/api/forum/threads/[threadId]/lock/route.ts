@@ -84,10 +84,13 @@ export async function POST(
     // 4) Permission: staff permission, category moderator, or thread owner
     const { data: modRow } = await routeServiceClient
       .from("forum_moderators")
-      .select("id")
+      // The table is keyed on (category_id, user_id) and has no `id` column, so
+      // this read failed and `isCategoryModerator` was false for everyone —
+      // category moderators could never lock a thread.
+      .select("user_id")
       .eq("user_id", actorUserId)
       .eq("category_id", threadRow.category_id)
-      .maybeSingle<{ id: number }>();
+      .maybeSingle<{ user_id: string }>();
 
     const isCategoryModerator = !!modRow;
     const isOwner = threadRow.created_by === actorUserId;

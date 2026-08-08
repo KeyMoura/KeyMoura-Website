@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isArray, isRecord, isString } from "@/lib/typeGuards";
+import { ROLE_ORDER_COLUMN, ROLE_PUBLIC_SELECT } from "@/lib/staff/roleSchema";
 
 type RoleRow = {
   key: string;
@@ -47,9 +48,12 @@ export async function GET() {
 
   const { data } = await client
     .from("roles")
-    .select("key,label,priority,is_staff,badge_bg,badge_border,badge_text,badge_icon")
-    .order("priority", { ascending: false });
+    .select(ROLE_PUBLIC_SELECT)
+    .order(ROLE_ORDER_COLUMN, { ascending: false });
 
+  // A failed read stays `[]` here on purpose, unlike the staff route: `RolePill`
+  // treats these rows as optional overrides and falls back to the code registry,
+  // so an empty list renders correct badges rather than a broken page.
   const roles: RoleRow[] = [];
   if (isArray(data)) {
     for (const row of data) {
