@@ -29,13 +29,27 @@ function NewJobContent() {
   const canManage = permissions.has("production.manage");
 
   const orderId = params.get("orderId");
+  const orderItemId = params.get("orderItemId");
   const productId = params.get("productId");
   const customerId = params.get("customerId");
   const presetTitle = params.get("title");
+  /** Display only — never stored. The job's link is `orderId`; this is what to call it. */
+  const orderNumber = params.get("orderNumber");
+  const presetQuantity = params.get("quantity");
 
   const [draft, setDraft] = useState<JobDraftState>(() => ({
     ...emptyJobDraft,
-    title: presetTitle ?? "",
+    /*
+     * The title names the order as well as the product.
+     *
+     * A queue of jobs all called "Shift knob" is unreadable, and the job number
+     * is the shop's reference rather than the customer's. Prefilled, not forced:
+     * it is an ordinary text field and staff can rewrite it.
+     */
+    title: presetTitle ? (orderNumber ? `${presetTitle} — ${orderNumber}` : presetTitle) : "",
+    // An order for six is six to make. Defaulting to 1 beside an order that says
+    // six is the kind of quiet wrong answer that reaches the shop floor.
+    quantity: presetQuantity && Number(presetQuantity) > 0 ? String(Math.trunc(Number(presetQuantity))) : "1",
   }));
   const [people, setPeople] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<string[]>([]);
@@ -74,7 +88,12 @@ function NewJobContent() {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...draft, orderId, productId, customerId }),
+        // The link columns are sent alongside the draft rather than being part
+        // of it: `JobForm` has no control for any of them, which is exactly the
+        // property that stops an ordinary save from rewriting what a job is
+        // attached to. `parseJobDraft` resolves each with `uuid()`, so an absent
+        // one becomes null rather than throwing.
+        body: JSON.stringify({ ...draft, orderId, orderItemId, productId, customerId }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
@@ -86,7 +105,7 @@ function NewJobContent() {
       setError(cause instanceof Error ? cause.message : "Could not create the job.");
       setBusy(false);
     }
-  }, [draft, orderId, productId, customerId, router]);
+  }, [draft, orderId, orderItemId, productId, customerId, router]);
 
   if (accessLoading) {
     return (
@@ -124,9 +143,33 @@ function NewJobContent() {
         </p>
       </header>
 
+      {/*
+        Which order, by name.
+
+        This used to read "This job will be linked to the order it was raised
+        from" — true, and unverifiable from where the reader is standing. Naming
+        the order and linking to it means a staff member who arrived here from
+        the wrong tab can see it before they create anything.
+      */}
       {orderId ? (
-        <Notice tone="info">This job will be linked to the order it was raised from.</Notice>
-      ) : null}
+        <Notice tone="info">
+          <p>
+            <strong>Source order:</strong>{" "}
+            <Link href={`/staff/orders/${orderId}`} className="text-brand-accent underline hover:no-underline">
+              {orderNumber ? `Order ${orderNumber}` : "Open the order"}
+            </Link>
+          </p>
+          <p className="mt-1 text-sm">
+            Creating this job links it to that order. The customer and product come from the order, and
+            editing the job later never changes the link.
+          </p>
+        </Notice>
+      ) : (
+        <Notice tone="info">
+          This job will not be attached to an order — stock work. Raise it from an order instead if it is
+          for a customer.
+        </Notice>
+      )}
 
       {error ? (
         <Notice tone="danger" role="alert">

@@ -5,6 +5,7 @@ import CatalogPageView from "@/components/catalog/CatalogPageView";
 import { categoryPath, productsInCategory, resolveCategoryPath } from "@/lib/commerce/catalogBrowse";
 import { loadCatalogData } from "@/lib/commerce/catalogData";
 import ProductGallery, { type GalleryImage } from "@/components/product/ProductGallery";
+import { ProductGalleryProvider } from "@/components/product/ProductGalleryContext";
 import ProductPurchasePanel from "@/components/product/ProductPurchasePanel";
 import ProductSections from "@/components/product/ProductSections";
 import ProductRequestForm from "@/components/product/ProductRequestForm";
@@ -334,6 +335,13 @@ export default async function CatalogSlugPage({ params }: { params: Promise<{ sl
         </ol>
       </nav>
 
+      {/*
+        The gallery and the purchase panel are siblings in two columns, and
+        picking a colour in one has to move the other. This provider is the only
+        thing they share: one nullable media id plus a token. See
+        `ProductGalleryContext` for why it is a token rather than just the id.
+      */}
+      <ProductGalleryProvider>
       <div className="product-layout">
         <div className="product-media-column">
           <ProductGallery
@@ -383,6 +391,10 @@ export default async function CatalogSlugPage({ params }: { params: Promise<{ sl
             groups={groups}
             requestHref="#request-form"
             shareUrl={shareUrl}
+            /* The same array the gallery renders, so an option value's linked
+               media id resolves against what is actually on screen rather than
+               against a second list that could disagree with it. */
+            gallery={images}
           />
 
           {factsRow.length ? (
@@ -405,6 +417,7 @@ export default async function CatalogSlugPage({ params }: { params: Promise<{ sl
           </ul>
         </div>
       </div>
+      </ProductGalleryProvider>
 
       <ProductSections sections={sections} />
 

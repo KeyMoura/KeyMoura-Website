@@ -29,9 +29,10 @@ import {
 } from "@/components/staff/StaffPage";
 import type { StaffTab } from "@/lib/staff/pageFramework";
 import { CategorySelect } from "@/components/staff/CategorySelect";
-import { visibleCategories, type CategoryRow } from "@/lib/commerce/categories";
+import { type CategoryRow } from "@/lib/commerce/categories";
 import { allowsDirectPurchase, PURCHASE_MODE_COPY, PURCHASE_MODES, type PurchaseMode } from "@/lib/commerce/purchaseModes";
 import ProductContentEditor from "@/components/staff/ProductContentEditor";
+import { ProductOptionValueRow } from "@/components/staff/ProductOptionValueRow";
 import { ProductShippingEditor } from "@/components/staff/ProductShippingEditor";
 import { EMPTY_DETAIL_CONTENT, parseDetailContent, serializeDetailContent, type ProductDetailContent } from "@/lib/commerce/productContent";
 
@@ -98,6 +99,15 @@ export default function StaffCatalogPage() {
   const [content, setContent] = useState<ProductDetailContent>(EMPTY_DETAIL_CONTENT);
   /** The create form is an action, not a permanent fixture at the top of the page. */
   const [creating, setCreating] = useState(false);
+  /**
+   * The new product's category.
+   *
+   * Held in state rather than read from `FormData` on submit, because the
+   * picker is a listbox — there is no form control carrying the value, and a
+   * hidden input mirroring it would be a second source of truth for the one
+   * field this pass exists to stop being guessable.
+   */
+  const [newCategoryId, setNewCategoryId] = useState<string | null>(null);
 
   const tabs = useMemo<StaffTab[]>(
     () => [
@@ -172,7 +182,18 @@ export default function StaffCatalogPage() {
     // A refused product query clears the list rather than leaving a previous
     // load on screen as though it were current.
     setProducts((queryError ? [] : (data ?? [])) as CatalogProduct[]);
-    setCategories(visibleCategories((categoryRows ?? []) as CategoryRow[]));
+    /*
+     * Every category row, archived ones included.
+     *
+     * This used to store `visibleCategories(...)`, and two things read it: the
+     * picker, and the line that derives the legacy `category` text column from
+     * the chosen id. For a product filed under a category that was archived
+     * later, both went wrong quietly — the picker showed "Uncategorized", and
+     * the next save of any unrelated field wrote `category: null` because the
+     * lookup missed. `CategorySelect` now does its own filtering and only
+     * *offers* the usable ones, so the full list is what belongs here.
+     */
+    setCategories((categoryRows ?? []) as CategoryRow[]);
     setProductsFailed(Boolean(queryError));
     setError(queryError ? "The product catalog could not be loaded. No products are shown; none have been changed." : "");
   }, [supabase]);
@@ -226,7 +247,19 @@ export default function StaffCatalogPage() {
     const name = String(form.get("name") ?? "").trim();
     setBusy(true); setError("");
     const { data, error: insertError } = await supabase.from("products").insert({
-      name, slug: slugify(name), category: String(form.get("category") ?? "").trim() || null,
+      name, slug: slugify(name),
+      /*
+       * Both columns, from one choice.
+       *
+       * `category_id` is the real relationship — a foreign key the database
+       * refuses to break, which is what makes an arbitrary category string
+       * impossible now rather than merely discouraged. `category` is the legacy
+       * free-text column that some readers still use; it is *derived* from the
+       * selected row's name, exactly as the editor's save does, so the two can
+       * never disagree while the text column is being retired.
+       */
+      category_id: newCategoryId,
+      category: categories.find(row => row.id === newCategoryId)?.name ?? null,
       short_description: String(form.get("description") ?? "").trim() || null,
       description: String(form.get("description") ?? "").trim() || null,
       starting_price_cents: form.get("price") ? Math.round(Number(form.get("price")) * 100) : null,
@@ -235,6 +268,7 @@ export default function StaffCatalogPage() {
     setBusy(false);
     if (insertError) return setError(insertError.message);
     e.currentTarget.reset();
+    setNewCategoryId(null);
     setCreating(false);
     await loadProducts();
     setSelectedId(data.id);
@@ -316,11 +350,27 @@ export default function StaffCatalogPage() {
         name: group.name.trim(), option_key: optionKey(group.option_key || group.name), input_type: group.input_type,
         description: group.description?.trim() || null, placeholder: group.placeholder?.trim() || null,
         is_required: group.is_required, sort_order: groupIndex,
+        display_style: group.display_style === "swatches" ? "swatches" : "buttons",
       }).eq("id", group.id),
       ...(group.product_option_values ?? []).map((value, valueIndex) => supabase.from("product_option_values").update({
         label: value.label.trim(), value: optionKey(value.value || value.label),
-        price_adjustment_cents: value.price_adjustment_cents, is_default: value.is_default,
-        is_active: value.is_active, sort_order: valueIndex,
+        /*
+         * `Math.trunc`, and a floor of "a real number".
+         *
+         * The field is dollars and the column is integer cents; an empty box
+         * gives `Number("") === 0`, but a half-typed "1.2e" gives NaN, and
+         * PostgREST would send that as `null` into a NOT NULL column. Coercing
+         * here means a mistyped keystroke cannot fail the whole save.
+         */
+        price_adjustment_cents: Number.isFinite(value.price_adjustment_cents)
+          ? Math.trunc(value.price_adjustment_cents)
+          : 0,
+        is_default: value.is_default,
+        is_active: value.is_active,
+        // Both new this pass, and both previously uneditable anywhere.
+        requires_request: Boolean(value.requires_request),
+        media_id: value.media_id ?? null,
+        sort_order: valueIndex,
       }).eq("id", value.id)),
     ]));
     const optionError = optionResults.find(result => result.error)?.error;
@@ -371,9 +421,35 @@ export default function StaffCatalogPage() {
   }
 
   async function deleteMedia(item: ProductMedia) {
-    if (!confirm("Remove this asset from the product?")) return;
+    const usedBy = groups.flatMap(group =>
+      (group.product_option_values ?? []).filter(value => value.media_id === item.id)
+    );
+    // Named, before the deletion, because afterwards the link is gone and there
+    // is nothing left to say which choices used to show this photograph.
+    const warning = usedBy.length
+      ? `\n\nIt is the associated image for ${usedBy.length} option choice${usedBy.length === 1 ? "" : "s"} (${usedBy
+          .map(value => value.label)
+          .join(", ")}). ${usedBy.length === 1 ? "That choice" : "Those choices"} will stay on sale but stop switching the gallery.`
+      : "";
+    if (!confirm(`Remove this asset from the product?${warning}`)) return;
     const { error: deleteError } = await supabase.from("product_media").delete().eq("id", item.id);
     if (deleteError) return setError(deleteError.message);
+    /*
+     * Mirror the foreign key's `ON DELETE SET NULL` into local state.
+     *
+     * The database has already nulled these. Leaving the editor holding the old
+     * id would make the next Save write it straight back — into a column whose
+     * target no longer exists, which the FK would refuse and which would fail
+     * the whole save with an error about a row nobody had touched.
+     */
+    if (usedBy.length) {
+      setGroups(current => current.map(group => ({
+        ...group,
+        product_option_values: group.product_option_values?.map(value =>
+          value.media_id === item.id ? { ...value, media_id: null } : value
+        ),
+      })));
+    }
     const next = media.filter(value => value.id !== item.id);
     const patch: Record<string, string | null> = {};
     if (draft.image_url === item.url) patch.image_url = next.find(value => value.kind === "image")?.url ?? null;
@@ -486,16 +562,45 @@ export default function StaffCatalogPage() {
       package_dimensions_text: draft.package_dimensions_text || null,
     }).select("*").single();
     if (copyError || !copy) { setBusy(false); return setError(copyError ? classifySupabaseError(copyError).message : "Could not duplicate product"); }
-    if (media.length) await supabase.from("product_media").insert(media.map(item => ({ product_id: copy.id, kind: item.kind, url: item.url, alt_text: item.alt_text, sort_order: item.sort_order })));
+    /*
+     * Media is copied as new rows, so the copy's images have their own ids.
+     *
+     * Those ids are captured here because the option values below have to point
+     * at *the copy's* photograph, not the original's. Keeping the source id
+     * would attach one product's image to another product's colour — which the
+     * database now refuses outright, so a duplicate carrying swatches would have
+     * failed the insert and silently lost its choices.
+     */
+    const copiedMediaId = new Map<string, string>();
+    if (media.length) {
+      const { data: copiedMedia } = await supabase
+        .from("product_media")
+        .insert(media.map(item => ({ product_id: copy.id, kind: item.kind, url: item.url, alt_text: item.alt_text, sort_order: item.sort_order })))
+        .select("id,url,sort_order,kind");
+      // Matched on the pair that is unique within a product's gallery. The rows
+      // come back in insertion order in practice, but relying on that would be
+      // relying on something PostgREST does not promise.
+      for (const source of media) {
+        const match = (copiedMedia ?? []).find(
+          item => item.url === source.url && item.sort_order === source.sort_order && item.kind === source.kind
+        );
+        if (match) copiedMediaId.set(source.id, match.id);
+      }
+    }
     for (const group of groups) {
       const { data: newGroup, error: groupError } = await supabase.from("product_option_groups").insert({
         product_id: copy.id, name: group.name, option_key: group.option_key, input_type: group.input_type,
         description: group.description, placeholder: group.placeholder, is_required: group.is_required, sort_order: group.sort_order,
+        display_style: group.display_style === "swatches" ? "swatches" : "buttons",
       }).select("id").single();
       if (groupError || !newGroup) continue;
       if (group.product_option_values?.length) await supabase.from("product_option_values").insert(group.product_option_values.map(value => ({
         option_group_id: newGroup.id, label: value.label, value: value.value, price_adjustment_cents: value.price_adjustment_cents,
-        is_default: value.is_default, is_active: value.is_active, sort_order: value.sort_order,
+        is_default: value.is_default, is_active: value.is_active, requires_request: Boolean(value.requires_request),
+        // Re-pointed at the copy's own image, or dropped if that image could not
+        // be matched. A wrong link is worse than no link.
+        media_id: value.media_id ? copiedMediaId.get(value.media_id) ?? null : null,
+        sort_order: value.sort_order,
       })));
     }
     setBusy(false); await loadProducts(); setSelectedId(copy.id); await loadEditor(copy as CatalogProduct);
@@ -568,9 +673,19 @@ export default function StaffCatalogPage() {
                 <Field label="Product name" required>
                   <input required name="name" className={`${input} w-full`} />
                 </Field>
-                <Field label="Category" help="Free text; the structured category is set in the editor.">
-                  <input name="category" className={`${input} w-full`} />
-                </Field>
+                {/* The same picker the editor uses, over the same rows.
+                    This was a free-text box writing the legacy `category`
+                    string, so a new product could be filed under "Interor" and
+                    then belong to no real category at all — the structured
+                    `category_id` stayed null until somebody opened the editor
+                    and set it again. */}
+                <CategorySelect
+                  value={newCategoryId}
+                  onChange={setNewCategoryId}
+                  categories={categories}
+                  productCounts={categoryCounts}
+                  help={<Link href="/staff/catalog/categories" className="underline hover:no-underline">Manage categories →</Link>}
+                />
                 <Field label="Starting price ($)">
                   <input name="price" className={`${input} w-full`} type="number" min="0" step=".01" />
                 </Field>
@@ -715,15 +830,17 @@ export default function StaffCatalogPage() {
                     <Field label="SKU" help="Your own stock code. Optional.">
                       <input className={`${input} w-full`} value={draft.sku ?? ""} onChange={e => patch({ sku: e.target.value })} placeholder="Example: KM-SHIFT-001" />
                     </Field>
-                    <Field label="Category">
-                      <CategorySelect
-                        value={draft.category_id ?? null}
-                        onChange={categoryId => patch({ category_id: categoryId })}
-                        categories={categories}
-                        productCounts={categoryCounts}
-                        disabled={!canManage}
-                      />
-                    </Field>
+                    {/* Not wrapped in `Field`: the picker owns its own label and
+                        help, because `Field` is a `<label>` and a listbox
+                        trigger inside one is activated by clicking the caption. */}
+                    <CategorySelect
+                      value={draft.category_id ?? null}
+                      onChange={categoryId => patch({ category_id: categoryId })}
+                      categories={categories}
+                      productCounts={categoryCounts}
+                      disabled={!canManage}
+                      help={<Link href="/staff/catalog/categories" className="underline hover:no-underline">Manage categories →</Link>}
+                    />
                     <Field label="Availability">
                       <MenuSelect
                         className="ui-select-trigger"
@@ -951,26 +1068,60 @@ export default function StaffCatalogPage() {
                         </FormGrid>
 
                         {["select", "radio"].includes(group.input_type) ? (
-                          <div className="mt-4 space-y-2">
-                            {(group.product_option_values ?? []).map((value, valueIndex) => (
-                              <div key={value.id} className="grid gap-2 rounded-xl border border-[var(--border)] p-3 sm:grid-cols-[1fr_1fr_9rem_auto]">
-                                <Field label="Choice label">
-                                  <input className={`${input} w-full`} value={value.label} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, label: e.target.value, value: optionKey(e.target.value) } : choice) }))} />
-                                </Field>
-                                <Field label="Saved value">
-                                  <input className={`${input} w-full`} value={value.value} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, value: optionKey(e.target.value) } : choice) }))} />
-                                </Field>
-                                <Field label="Price change ($)">
-                                  <input className={`${input} w-full`} type="number" step=".01" value={value.price_adjustment_cents / 100} onChange={e => setGroups(current => current.map(item => item.id !== group.id ? item : { ...item, product_option_values: item.product_option_values?.map(choice => choice.id === value.id ? { ...choice, price_adjustment_cents: Math.round(Number(e.target.value) * 100), sort_order: valueIndex } : choice) }))} />
-                                </Field>
-                                <div className="flex items-end justify-end">
-                                  <button type="button" onClick={() => void removeValue(group.id, value.id)} className={`${subtle} text-rose-300`} aria-label={`Remove ${value.label || "choice"}`}>
-                                    Remove
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          <>
+                            {/* Presentation, chosen explicitly. Never inferred
+                                from the option's name: a group called "Colour"
+                                with no photographs should keep its buttons. */}
+                            <div className="mt-4 max-w-sm">
+                              <Field
+                                label="Display as"
+                                help={
+                                  group.display_style === "swatches"
+                                    ? "Thumbnails from each choice's associated image. Choices without one still show as labelled tiles."
+                                    : "Uses the control type above — a dropdown, or choice cards."
+                                }
+                              >
+                                <MenuSelect
+                                  className="ui-select-trigger"
+                                  ariaLabel="Display as"
+                                  value={group.display_style ?? "buttons"}
+                                  onChange={value => setGroups(current => current.map(item => item.id === group.id ? { ...item, display_style: value as ProductOptionGroup["display_style"] } : item))}
+                                  options={[
+                                    { value: "buttons", label: "Buttons" },
+                                    { value: "swatches", label: "Image swatches" },
+                                  ]}
+                                />
+                              </Field>
+                            </div>
+
+                            <div className="mt-4 space-y-2">
+                              {(group.product_option_values ?? []).map(value => (
+                                <ProductOptionValueRow
+                                  key={value.id}
+                                  value={value}
+                                  media={media}
+                                  disabled={!canManage}
+                                  onChange={patch => setGroups(current => current.map(item => item.id !== group.id ? item : {
+                                    ...item,
+                                    product_option_values: item.product_option_values?.map(choice => {
+                                      if (choice.id !== value.id) return choice;
+                                      const next = { ...choice, ...patch };
+                                      // The saved value follows the label while
+                                      // it is being typed, exactly as before —
+                                      // but only when the label is what changed,
+                                      // so editing the key by hand still sticks.
+                                      if (patch.label !== undefined && patch.value === undefined) {
+                                        next.value = optionKey(patch.label);
+                                      }
+                                      if (patch.value !== undefined) next.value = optionKey(patch.value);
+                                      return next;
+                                    }),
+                                  }))}
+                                  onRemove={() => void removeValue(group.id, value.id)}
+                                />
+                              ))}
+                            </div>
+                          </>
                         ) : null}
 
                         <div className="ui-action-row mt-4">

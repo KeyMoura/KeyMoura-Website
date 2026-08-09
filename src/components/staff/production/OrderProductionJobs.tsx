@@ -26,6 +26,16 @@ type Job = {
   due_date: string | null;
   assigned_to: string | null;
   created_at: string;
+  /**
+   * Where the job is attached right now.
+   *
+   * Read from the queue endpoint, which has always returned it — the type
+   * simply did not name it, which is why the link picker could not show a
+   * candidate's current order and had to restrict itself to unlinked work.
+   * It is also what `expectedOrderId` is set from, so the relink's stale check
+   * compares against what the reader was actually shown.
+   */
+  order_id: string | null;
 };
 
 type Props = {
@@ -34,6 +44,10 @@ type Props = {
   productId?: string | null;
   customerId?: string | null;
   productName?: string | null;
+  /** Shown on the panel and carried into the new job, so both surfaces name the same order. */
+  orderNumber?: string | null;
+  /** Prefills the job quantity. An order for six is six to make, not one. */
+  quantity?: number | null;
   /**
    * Reports what was found, so the order header can state the production state
    * without loading the jobs a second time.
@@ -46,7 +60,15 @@ type Props = {
   onSummary?: (summary: { count: number; label: string }) => void;
 };
 
-export function OrderProductionJobs({ orderId, productId, customerId, productName, onSummary }: Props) {
+export function OrderProductionJobs({
+  orderId,
+  productId,
+  customerId,
+  productName,
+  orderNumber,
+  quantity,
+  onSummary,
+}: Props) {
   const { data: access } = useMeAccess();
   const permissions = useMemo(() => new Set(access?.permissions ?? []), [access]);
   const canView = permissions.has("production.view") || permissions.has("production.manage");
@@ -63,30 +85,58 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
   // a panel its reader was never meant to see.
   const [denied, setDenied] = useState(false);
 
-  // Linking existing work. `standalone === null` means "not fetched yet", which
-  // is a different thing from "fetched and there are none" — the two render
-  // different sentences, and collapsing them is how an empty list reads as a
-  // loading state that never finishes.
+  /*
+   * Linking existing work.
+   *
+   * `candidates === null` means "not fetched yet", which is a different thing
+   * from "fetched and there are none" — the two render different sentences, and
+   * collapsing them is how an empty list reads as a loading state that never
+   * finishes.
+   *
+   * The search covers **every** open job, not only unlinked ones. The previous
+   * version offered `orderId=none` on the reasoning that this made it impossible
+   * to steal a job from another order by accident. It also made moving work
+   * between orders impossible from the place you notice it is on the wrong one,
+   * and "impossible" is not the same as "deliberate". A job that already belongs
+   * somewhere now shows where, and takes a second, explicit confirmation naming
+   * both orders before it moves.
+   */
   const [linking, setLinking] = useState(false);
-  const [standalone, setStandalone] = useState<Job[] | null>(null);
-  const [chosen, setChosen] = useState("");
+  const [candidates, setCandidates] = useState<Job[] | null>(null);
+  const [orderNumbers, setOrderNumbers] = useState<Record<string, { order_number: string | null }>>({});
+  const [term, setTerm] = useState("");
+  const [confirming, setConfirming] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
   const [linkError, setLinkError] = useState("");
 
-  const loadStandalone = useCallback(async () => {
-    setLinkError("");
-    try {
-      const response = await fetch("/api/staff/production/jobs?scope=open&orderId=none&limit=50", {
-        credentials: "same-origin",
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error || "Could not load unlinked jobs.");
-      setStandalone(body.jobs ?? []);
-    } catch (cause) {
-      setStandalone([]);
-      setLinkError(cause instanceof Error ? cause.message : "Could not load unlinked jobs.");
-    }
-  }, []);
+  const loadCandidates = useCallback(
+    async (search: string) => {
+      setLinkError("");
+      try {
+        const query = new URLSearchParams({ scope: "open", limit: "25" });
+        if (search.trim()) query.set("q", search.trim());
+        const response = await fetch(`/api/staff/production/jobs?${query}`, { credentials: "same-origin" });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(body?.error || "Could not load jobs.");
+        // Jobs already on this order are not candidates for linking to it.
+        setCandidates((body.jobs ?? []).filter((job: Job) => job.order_id !== orderId));
+        setOrderNumbers(body.orders ?? {});
+      } catch (cause) {
+        setCandidates([]);
+        setLinkError(cause instanceof Error ? cause.message : "Could not load jobs.");
+      }
+    },
+    [orderId]
+  );
+
+  // The search box writes on a pause rather than per keystroke: each one is a
+  // round trip to a staff endpoint, and the list is short enough that a 300ms
+  // wait costs nothing.
+  useEffect(() => {
+    if (!linking) return;
+    const timer = window.setTimeout(() => void loadCandidates(term), 300);
+    return () => window.clearTimeout(timer);
+  }, [linking, term, loadCandidates]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,32 +165,40 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
   // Declared after `load` because it calls it: a `useCallback` naming `load` in
   // its dependency array before the `const` exists is a temporal-dead-zone
   // error at render, not a lint nit.
-  const linkChosen = useCallback(async () => {
-    if (!chosen) return;
-    setBusy(true);
-    setLinkError("");
-    try {
-      const response = await fetch(`/api/staff/production/jobs/${chosen}/link`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        // The job is being taken from "no order", and the server re-checks that
-        // before writing. A job linked elsewhere in the meantime gets a 409
-        // rather than being quietly moved.
-        body: JSON.stringify({ orderId, expectedOrderId: null }),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error || "Could not link that job.");
-      setChosen("");
-      setLinking(false);
-      setStandalone(null);
-      await load();
-    } catch (cause) {
-      setLinkError(cause instanceof Error ? cause.message : "Could not link that job.");
-    } finally {
-      setBusy(false);
-    }
-  }, [chosen, orderId, load]);
+  const linkJob = useCallback(
+    async (job: Job) => {
+      setBusy(true);
+      setLinkError("");
+      try {
+        const response = await fetch(`/api/staff/production/jobs/${job.id}/link`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          /*
+           * `expectedOrderId` is where the browser believes the job currently
+           * is — null for unattached work, the other order's id for a move. The
+           * server compares it to the stored value *and* re-asserts it in the
+           * WHERE clause, so if somebody linked this job while the picker was
+           * open the request matches zero rows and comes back 409 naming the
+           * conflict, instead of overwriting a decision that landed first.
+           */
+          body: JSON.stringify({ orderId, expectedOrderId: job.order_id ?? null }),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(body?.error || "Could not link that job.");
+        setConfirming(null);
+        setLinking(false);
+        setCandidates(null);
+        setTerm("");
+        await load();
+      } catch (cause) {
+        setLinkError(cause instanceof Error ? cause.message : "Could not link that job.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [orderId, load]
+  );
 
   useEffect(() => {
     if (canView) void load();
@@ -172,13 +230,27 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
   // a permission error for a section they were never meant to see.
   if (!canView || denied) return null;
 
+  /*
+   * Everything the order already knows, handed to the new-job form.
+   *
+   * The point is that raising a job from an order should require typing
+   * nothing. The order number travels too — not to be stored, but so the form
+   * can *say* which order it is about; "This job will be linked to the order it
+   * was raised from" named no order at all, which is the sentence you write when
+   * you have not decided whether the reader can trust it.
+   */
   const newJobHref = (() => {
     const params = new URLSearchParams({ orderId });
     if (productId) params.set("productId", productId);
     if (customerId) params.set("customerId", customerId);
     if (productName) params.set("title", productName);
+    if (orderNumber) params.set("orderNumber", orderNumber);
+    if (quantity && quantity > 0) params.set("quantity", String(quantity));
     return `/staff/production/new?${params}`;
   })();
+
+  /** Open work already on this order. A second job is allowed — it just should not be an accident. */
+  const openJobs = (jobs ?? []).filter((job) => !["completed", "cancelled"].includes(job.status));
 
   return (
     <Panel>
@@ -198,62 +270,116 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
               onClick={() => {
                 setLinking((open) => !open);
                 setLinkError("");
-                if (!linking && standalone === null) void loadStandalone();
+                setConfirming(null);
               }}
             >
-              Link existing work
+              Link existing job
             </button>
-            <Link href={newJobHref} className="ui-btn ui-btn-secondary text-sm">
-              Raise a job
+            {/* Primary, because raising the work is the common act and linking
+                existing work is the exception. */}
+            <Link href={newJobHref} className="ui-btn ui-btn-primary text-sm">
+              Create production job
             </Link>
           </div>
         ) : null}
       </div>
 
-      {/* Linking existing work.
-          The choice is limited to jobs that belong to no order, so this control
-          cannot take a job away from another order by accident — moving work
-          between orders is a deliberate act, and it happens on the job itself
-          where the previous link is visible. */}
+      {/*
+        Linking existing work.
+
+        Every open job is searchable, and each row states where it currently
+        lives. A job that already belongs to another order can be moved — that is
+        the case the previous version made impossible rather than deliberate —
+        but only through a confirmation that names both orders.
+      */}
       {canManage && linking ? (
         <div className="ui-card mt-4 p-3">
           <label htmlFor="link-existing-job" className="block text-xs font-medium text-brand-textMuted">
-            Unlinked production jobs
+            Search production jobs by number or title
           </label>
+          <input
+            id="link-existing-job"
+            type="search"
+            className="ui-input mt-1 w-full text-sm"
+            value={term}
+            disabled={busy}
+            placeholder="KM-JOB-12, or “shift knob”…"
+            onChange={(event) => setTerm(event.target.value)}
+          />
 
-          {standalone === null ? (
+          {confirming ? (
+            /*
+              A relink is a second decision, not a second click in the same
+              gesture. Both order numbers are named because "move this job" is
+              only checkable if you can see what it is moving *from*.
+            */
+            <Notice tone="warning" className="mt-3">
+              <p className="font-medium">
+                {confirming.order_id
+                  ? `Move ${confirming.job_number} off order ${
+                      orderNumbers[confirming.order_id]?.order_number ?? "it is currently on"
+                    }?`
+                  : `Link ${confirming.job_number} to this order?`}
+              </p>
+              <p className="mt-1 text-sm">
+                {confirming.title}
+                {confirming.order_id
+                  ? ` — it will be attached to ${orderNumber ? `order ${orderNumber}` : "this order"} instead, and its order item is cleared.`
+                  : ""}
+              </p>
+              <div className="ui-action-row mt-3">
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-primary text-sm"
+                  disabled={busy}
+                  onClick={() => void linkJob(confirming)}
+                >
+                  {busy ? "Linking…" : confirming.order_id ? "Move it here" : "Link it"}
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-ghost text-sm"
+                  disabled={busy}
+                  onClick={() => setConfirming(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </Notice>
+          ) : candidates === null ? (
             <p className="mt-2 text-sm text-brand-textMuted" role="status">
               Loading jobs…
             </p>
-          ) : standalone.length === 0 ? (
+          ) : candidates.length === 0 ? (
             <p className="mt-2 text-sm text-brand-textMuted">
-              There is no unlinked shop work to attach. Raise a job instead.
+              {term.trim()
+                ? `No open job matches “${term.trim()}”.`
+                : "There is no other open shop work. Create a production job instead."}
             </p>
           ) : (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select
-                id="link-existing-job"
-                className="ui-input min-w-0 flex-1 basis-56 text-sm"
-                value={chosen}
-                onChange={(event) => setChosen(event.target.value)}
-                disabled={busy}
-              >
-                <option value="">Choose a job…</option>
-                {standalone.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.job_number} — {job.title}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="ui-btn ui-btn-primary text-sm"
-                disabled={!chosen || busy}
-                onClick={() => void linkChosen()}
-              >
-                {busy ? "Linking…" : "Link to this order"}
-              </button>
-            </div>
+            <ul className="mt-2 space-y-1">
+              {candidates.map((job) => (
+                <li key={job.id}>
+                  <button
+                    type="button"
+                    className="ui-card ui-card-hover flex w-full flex-wrap items-center gap-x-3 gap-y-1 p-2 text-left"
+                    disabled={busy}
+                    onClick={() => setConfirming(job)}
+                  >
+                    <span className="font-mono text-xs text-brand-textMuted">{job.job_number}</span>
+                    <span className="min-w-0 flex-1 basis-40 truncate text-sm font-medium">{job.title}</span>
+                    <StatusBadge status={job.status} />
+                    {/* Where it is now, stated on every row — including "not
+                        linked", because silence there reads as a failed lookup. */}
+                    <span className="text-xs text-brand-textMuted">
+                      {job.order_id
+                        ? `On order ${orderNumbers[job.order_id]?.order_number ?? "—"}`
+                        : "Not linked"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
 
           {linkError ? (
@@ -283,9 +409,31 @@ export function OrderProductionJobs({ orderId, productId, customerId, productNam
         <EmptyState className="mt-4">
           <p className="font-medium">No production job for this order yet.</p>
           {canManage ? (
-            <p className="mt-1">Raise one when the work is ready to be scheduled.</p>
+            <p className="mt-1">
+              <strong>Create production job</strong> starts one with this order, its customer and its
+              quantity already filled in. Use <strong>Link existing job</strong> if the work is already
+              on the board.
+            </p>
           ) : null}
         </EmptyState>
+      ) : null}
+
+      {/*
+        The duplicate guard.
+
+        A second job on one order is legitimate — two parts, or a remake — so it
+        is not refused. It is *named*, before the button that would create a
+        third, because the accident this prevents is raising the same job twice
+        after a page reload and then machining it twice.
+      */}
+      {canManage && openJobs.length > 0 ? (
+        <Notice tone="info" className="mt-4">
+          <p>
+            This order already has {openJobs.length} open production{" "}
+            {openJobs.length === 1 ? "job" : "jobs"} ({openJobs.map((job) => job.job_number).join(", ")}).
+            Create another only if it is genuinely separate work.
+          </p>
+        </Notice>
       ) : null}
 
       {jobs?.length ? (

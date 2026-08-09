@@ -959,6 +959,11 @@ export default function StaffOrderDetail() {
             productId={order.product_id}
             customerId={order.customer_id}
             productName={order.product_name}
+            /* So both surfaces call the order the same thing, and the new-job
+               form can name it rather than saying "the order it was raised
+               from". Display only — the link is the id. */
+            orderNumber={order.order_number}
+            quantity={order.quantity}
             onSummary={setJobSummary}
           />
         </Section>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faAnglesLeft, faAnglesRight } from "@fortawesome/free-solid-svg-icons";
 
@@ -69,6 +70,28 @@ export function StaffNav({
     NO_TOGGLED_GROUPS,
     parseStringArray
   );
+
+  /*
+   * The collapsed rail's tooltip, rendered once and positioned from the link.
+   *
+   * It used to be an absolutely-positioned child of each link, escaping the
+   * 72px rail with `left: calc(100% + 0.5rem)`. That worked until the group
+   * list became a scroll container: a scroller clips its other axis too, and
+   * `overflow-x: clip` with `overflow-clip-margin` — which should have let the
+   * tooltip through — is treated as plain `hidden` by Chrome once the box
+   * scrolls in the other direction. Measured in the browser: the tooltip's
+   * geometry sat 82px outside the rail and not one pixel of it was hit-testable.
+   *
+   * So there is now a single tooltip, rendered *outside* the scrolling list and
+   * positioned against the viewport, which nothing clips. It also means one
+   * element instead of twenty-seven.
+   */
+  const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(null);
+
+  const showTip = (label: string) => (event: { currentTarget: HTMLElement }) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTip({ label, top: rect.top + rect.height / 2, left: rect.right + 8 });
+  };
 
   if (!groups.length) return null;
 
@@ -148,6 +171,14 @@ export function StaffNav({
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className="staff-nav-link"
+                  /* A real tooltip rather than `title`: no browser raises a
+                     `title` on keyboard focus, so a keyboard user tabbing a
+                     collapsed rail would see nothing at all. Only wired up when
+                     compact — the expanded rail already shows the label. */
+                  onMouseEnter={isCompact ? showTip(item.label) : undefined}
+                  onMouseLeave={isCompact ? () => setTip(null) : undefined}
+                  onFocus={isCompact ? showTip(item.label) : undefined}
+                  onBlur={isCompact ? () => setTip(null) : undefined}
                 >
                   <StaffNavIcon icon={item.icon} className="staff-nav-link-icon h-4 w-4" />
                   {/* `sr-only` is `position: absolute`, so the label leaves the
@@ -155,16 +186,6 @@ export function StaffNav({
                       the link's accessible name, which is the whole point of an
                       icon-only rail. */}
                   <span className={isCompact ? "sr-only" : "staff-nav-link-label"}>{item.label}</span>
-                  {/* A real tooltip rather than `title`. No browser raises a
-                      `title` on keyboard focus, so a keyboard user tabbing a
-                      collapsed rail previously saw nothing at all. `aria-hidden`
-                      because the span above already names the link; announcing
-                      both would read every item twice. */}
-                  {isCompact ? (
-                    <span className="staff-nav-tip" aria-hidden="true">
-                      {item.label}
-                    </span>
-                  ) : null}
                 </Link>
               </li>
             );
@@ -175,10 +196,19 @@ export function StaffNav({
   };
 
   return (
+    /*
+     * Stickiness is the *rail's* job, not this element's.
+     *
+     * `lg:sticky lg:top-4` used to live on this nav, which had no height bound
+     * — so once the menu grew past the viewport (which it does the moment
+     * "More tools" is open) its lower half pinned itself permanently
+     * off-screen. `.staff-shell-rail` is now the sticky, viewport-height box,
+     * and this nav is a flex column inside it whose group list scrolls.
+     */
     <nav
       aria-label="Staff sections"
       data-compact={isCompact ? "true" : "false"}
-      className={variant === "sidebar" ? "staff-nav lg:sticky lg:top-4" : "staff-nav staff-nav-in-drawer"}
+      className={variant === "sidebar" ? "staff-nav" : "staff-nav staff-nav-in-drawer"}
     >
       {variant === "sidebar" ? (
         <div className="staff-nav-head">
@@ -206,6 +236,19 @@ export function StaffNav({
       ) : null}
 
       <div className="staff-nav-groups">{groups.map(renderGroup)}</div>
+
+      {/* Outside the scrolling list, so nothing clips it, and `aria-hidden`
+          because the link's `sr-only` span already names it — announcing both
+          would read every item twice. */}
+      {isCompact && tip ? (
+        <span
+          className="staff-nav-tip"
+          aria-hidden="true"
+          style={{ top: `${tip.top}px`, left: `${tip.left}px` }}
+        >
+          {tip.label}
+        </span>
+      ) : null}
     </nav>
   );
 }

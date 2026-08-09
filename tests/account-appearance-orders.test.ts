@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 
 import { SORTS, emptyFilters } from "../src/lib/staff/orderFilters.ts";
 import { buildQueryPlan } from "../src/lib/staff/orderQueryPlan.ts";
+import { APPEARANCE_SETTINGS } from "../src/theme/appearanceMap.ts";
+import { ownedKeys } from "../src/theme/appearanceTasks.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -87,14 +89,32 @@ test("appearance is organized into focused sections with explicit publishing", (
  * make: a control exists because the map declares it, so the page cannot ship a
  * colour picker with no explanation attached.
  */
-test("every colour control is rendered from the declared map", () => {
+test("every colour control is rendered from the declared task list", () => {
+  /*
+   * Re-pointed, and made stricter.
+   *
+   * The page used to render one control per colour, straight from
+   * `APPEARANCE_SETTINGS`. It now renders one editor per *task* — the thing on
+   * the screen — with that thing's two or three colours inside it, and the
+   * partition is asserted to be total and disjoint in `appearance-tasks.test.ts`.
+   * So "from the declared map" is still the property; the declaration simply
+   * gained a layer that speaks the owner's vocabulary.
+   */
   const page = read("src/app/staff/appearance/page.tsx");
-  assert.match(page, /searchAppearanceSettings/, "the colour list is filtered by the shared search");
-  assert.match(page, /APPEARANCE_GROUPS/, "groups come from the map, not from the page");
-  assert.match(page, /setting\.usedBy/, "every control states what it changes");
-  // A hand-written colour field beside the mapped ones would be a control with
-  // no description and no search terms — exactly what this pass removed.
+  assert.match(page, /searchAppearanceTasks/, "the list is filtered by the shared search");
+  assert.match(page, /APPEARANCE_TASK_SECTIONS/, "sections come from the declaration, not from the page");
+  assert.match(page, /settingFor\(field\.key\)/, "each field resolves to its real map entry");
+
+  // A hand-written colour field beside the declared ones would be a control with
+  // no description and no search terms — exactly what these passes removed.
   assert.doesNotMatch(page, /function ColorField/, "there is no second, unexplained colour control");
+
+  // Every colour still reaches a control, and no colour reaches two. Asserted
+  // here as well as in the task suite because this is the test that would be
+  // deleted if somebody decided the task layer had replaced the map.
+  const owned = ownedKeys();
+  assert.equal(new Set(owned).size, owned.length, "a colour with two controls");
+  assert.equal(owned.length, APPEARANCE_SETTINGS.length, "a colour with no control");
 });
 
 test("account tabs use the shared configurable tab system", () => {

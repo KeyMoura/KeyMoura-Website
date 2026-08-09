@@ -5,12 +5,14 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 
 import { Badge, MetricCard, Notice, cx } from "@/components/ui/DesignSystem";
 import { defaultSiteTheme, optionalVars, type SiteTheme } from "@/theme/runtime";
+import { APPEARANCE_SETTINGS, type AppearanceSetting } from "@/theme/appearanceMap";
 import {
-  APPEARANCE_GROUPS,
-  APPEARANCE_SETTINGS,
-  searchAppearanceSettings,
-  type AppearanceSetting,
-} from "@/theme/appearanceMap";
+  APPEARANCE_TASK_SECTIONS,
+  searchAppearanceTasks,
+  settingFor,
+  taskById,
+  type AppearanceTask,
+} from "@/theme/appearanceTasks";
 import {
   BUILT_IN_PRESETS,
   normalizeAppearanceTemplateConfig,
@@ -92,11 +94,13 @@ const sectionCopy: Record<Section, { label: string; description: string }> = {
   templates: { label: "Saved looks", description: "Save a complete look, try saved looks before publishing, and manage them." },
 };
 
-const SCOPE_LABEL: Record<"storefront" | "staff" | "both", string> = {
-  storefront: "Storefront",
-  staff: "Staff area",
-  both: "Storefront & staff",
-};
+/*
+ * `SCOPE_LABEL` used to live here, badging each colour group Storefront / Staff
+ * area / Storefront & staff. It went with the token groups: a task is named
+ * after a thing on the screen ("Customizable badge", "Navbar"), and where that
+ * thing lives is already obvious from what it is called. A badge saying
+ * "Storefront" over a group called Navbar was restating the heading.
+ */
 
 /** The part of the form a template captures. */
 function templateConfigFrom(form: Appearance): AppearanceTemplateConfig {
@@ -645,12 +649,8 @@ function ColorSection({
   onQueryChange: (value: string) => void;
   onChange: (setting: AppearanceSetting, value: string) => void;
 }) {
-  const matches = searchAppearanceSettings(query);
-  const matched = new Set(matches.map((setting) => setting.key));
-  const groups = APPEARANCE_GROUPS.map((group) => ({
-    ...group,
-    settings: matches.filter((setting) => setting.group === group.id),
-  })).filter((group) => group.settings.length > 0);
+  const matches = searchAppearanceTasks(query);
+  const searching = Boolean(query.trim());
 
   const valueOf = (setting: AppearanceSetting) =>
     setting.key === "primaryColor"
@@ -659,142 +659,214 @@ function ColorSection({
         ? form.accentColor
         : (form.theme[setting.key as keyof SiteTheme] as string);
 
+  const renderTask = (task: AppearanceTask) => (
+    <TaskEditor
+      key={task.id}
+      task={task}
+      valueOf={valueOf}
+      accent={form.accentColor}
+      onChange={onChange}
+    />
+  );
+
+  const everyday = APPEARANCE_TASK_SECTIONS.filter((section) => section.id !== "advanced")
+    .map((section) => ({ ...section, tasks: matches.filter((task) => task.section === section.id) }))
+    .filter((section) => section.tasks.length > 0);
+  const advanced = matches.filter((task) => task.section === "advanced");
+
   return (
     <>
       <div>
         <label className="block">
-          <span className="ui-label">Search colours</span>
+          <span className="ui-label">Search</span>
           <input
             type="search"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Try: cart, badge, button, customizable, navbar, input"
+            placeholder="Try: customizable, custom project, navbar, price, cart"
             className="ui-input"
           />
         </label>
         <p aria-live="polite" className="mt-2 text-xs text-brand-textMuted">
-          {query.trim()
-            ? `${matched.size} of ${APPEARANCE_SETTINGS.length} colours match “${query.trim()}”.`
-            : `${APPEARANCE_SETTINGS.length} colours, grouped by what they change.`}
+          {searching
+            ? `${matches.length} ${matches.length === 1 ? "result" : "results"} for “${query.trim()}”.`
+            : "Pick the thing you want to change. Each one shows only its own colours."}
         </p>
       </div>
 
-      {groups.length === 0 ? (
+      {matches.length === 0 ? (
         <p className="ui-empty-state">
           Nothing matches “{query.trim()}”. Try the name of something you can see on the site — “cart”, “price”,
           “badge”, “menu”.
         </p>
       ) : null}
 
-      {groups.map((group) => (
-        <AppearanceGroup
-          key={group.id}
-          title={group.label}
-          description={group.description}
-          scope={SCOPE_LABEL[group.scope]}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            {group.settings.map((setting) => (
-              <SettingField
-                key={setting.key}
-                setting={setting}
-                value={valueOf(setting)}
-                // What the element renders as while the setting is unset. Every
-                // optional setting today follows the accent, so that is the
-                // honest swatch to show.
-                inherited={form.accentColor}
-                onChange={(value) => onChange(setting, value)}
-              />
-            ))}
-          </div>
+      {everyday.map((section) => (
+        <AppearanceGroup key={section.id} title={section.label} description={section.description}>
+          <div className="grid gap-3">{section.tasks.map(renderTask)}</div>
         </AppearanceGroup>
       ))}
+
+      {/*
+        Advanced is a disclosure, closed by default — and it *opens itself* when
+        a search matches something inside it. Leaving it shut would make the
+        result count say "1 result" over an empty list, which is the worst
+        version of both behaviours.
+      */}
+      {advanced.length ? (
+        <details className="ui-card p-4" open={searching}>
+          <summary className="cursor-pointer text-sm font-semibold">
+            Advanced
+            <span className="ml-2 font-normal text-brand-textMuted">
+              {advanced.length} uncommon {advanced.length === 1 ? "control" : "controls"}
+            </span>
+          </summary>
+          <p className="mt-2 text-xs text-brand-textMuted">
+            Hover states, dropdown panels and count badges. Nothing here needs setting for the site to look
+            finished.
+          </p>
+          <div className="mt-3 grid gap-3">{advanced.map(renderTask)}</div>
+        </details>
+      ) : null}
     </>
   );
 }
 
 /**
- * One colour, with the thing it changes stated beside it.
+ * One thing on the screen, with only its own colours.
  *
- * `Used for` is the whole point. A label alone ("Secondary button text") only
- * works for somebody who already knows the vocabulary; the list underneath is
- * what lets an owner recognise the control for the button they are looking at.
+ * The fields are labelled by the role the colour plays *in this thing* —
+ * Background, Text, Border — rather than by the token's name. "Secondary button
+ * background" is only meaningful to somebody who already knows the custom
+ * project button is a secondary button; under a heading that says **Custom
+ * project button**, the field is simply called Background.
  */
-function SettingField({
-  setting,
-  value,
-  inherited,
+function TaskEditor({
+  task,
+  valueOf,
+  accent,
   onChange,
 }: {
-  setting: AppearanceSetting;
-  value: string;
-  /** What this element renders as today when the setting is left unset. */
-  inherited: string;
-  onChange: (value: string) => void;
+  task: AppearanceTask;
+  valueOf: (setting: AppearanceSetting) => string;
+  accent: string;
+  onChange: (setting: AppearanceSetting, value: string) => void;
 }) {
-  const describedBy = `appearance-help-${setting.key}`;
-  const isUnset = Boolean(setting.optional) && !value;
+  if (task.pointer) {
+    const target = taskById(task.pointer.toTaskId);
+    return (
+      <div className="rounded-[var(--control-radius)] border border-brand-border p-3">
+        <p className="text-sm font-semibold">{task.label}</p>
+        <p className="mt-1 text-xs text-brand-textMuted">{task.description}</p>
+        {/* An honest non-answer beats an empty search result, and beats a second
+            control writing the same value. */}
+        <p className="mt-2 text-xs text-brand-textMuted">
+          {task.pointer.because} Change it under <b>{target?.label ?? task.pointer.toTaskId}</b>.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-[var(--control-radius)] border border-brand-border p-3">
+    <div className="rounded-[var(--control-radius)] border border-brand-border p-3" id={`appearance-${task.id}`}>
+      <p className="text-sm font-semibold">{task.label}</p>
+      <p className="mt-1 text-xs text-brand-textMuted">{task.description}</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        {task.fields.map((field) => {
+          const setting = settingFor(field.key);
+          return (
+            <TaskColorField
+              key={field.key}
+              role={field.role}
+              setting={setting}
+              value={valueOf(setting)}
+              accent={accent}
+              onChange={(value) => onChange(setting, value)}
+            />
+          );
+        })}
+      </div>
+      {task.fields.some((field) => settingFor(field.key).shared) ? (
+        <p className="mt-2 text-xs text-amber-300">
+          Shared — this colour is used in more than one place, so changing it moves them together.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** A single colour inside a task: role name, swatch, hex, and the inheritance toggle. */
+function TaskColorField({
+  role,
+  setting,
+  value,
+  accent,
+  onChange,
+}: {
+  role: string;
+  setting: AppearanceSetting;
+  value: string;
+  accent: string;
+  onChange: (value: string) => void;
+}) {
+  const following = Boolean(setting.optional) && !value;
+
+  return (
+    <div>
       <label className="block">
-        <span className="ui-label">{setting.label}</span>
-        <span className="flex gap-2">
+        <span className="ui-label">{role}</span>
+        <span className="flex gap-1.5">
           {/*
-            An unset optional setting shows the colour it currently *renders* as,
-            so the swatch is never a lie — but the text field beside it stays
-            empty and the caption says it is following something else. A picker
-            pre-filled with a stored-looking hex would make "unset" indis-
-            tinguishable from "set to exactly the accent", and the two behave
-            differently the next time the palette changes.
+            An optional colour that is following shows the colour it *renders*
+            as, so the swatch is never a lie — but the text box beside it stays
+            empty, because a pre-filled hex would make "following" indis-
+            tinguishable from "set to exactly this", and the two behave
+            differently the next time the accent changes.
           */}
           <input
             type="color"
-            value={value || inherited}
+            value={value || accent}
             aria-label={`${setting.label} colour picker`}
             onChange={(event) => onChange(event.target.value)}
             className="ui-color-input"
           />
           <input
             value={value}
-            aria-describedby={describedBy}
-            placeholder={isUnset ? "Automatic" : undefined}
+            placeholder={following ? "Automatic" : undefined}
             onChange={(event) => onChange(event.target.value)}
-            className="ui-input font-mono uppercase"
+            className="ui-input min-w-0 font-mono uppercase"
             maxLength={7}
           />
-          {setting.optional && value ? (
-            <button
-              type="button"
-              onClick={() => onChange("")}
-              className="ui-btn ui-btn-ghost !px-2 text-xs"
-              title={`Go back to following ${setting.optional.inheritsFrom}`}
-            >
-              Clear
-            </button>
-          ) : null}
         </span>
       </label>
-      <p id={describedBy} className="mt-2 text-xs text-brand-textMuted">
-        {setting.description}
-      </p>
-      <p className="mt-2 text-xs text-brand-textMuted">
-        <span className="font-semibold text-brand-text">Used for: </span>
-        {setting.usedBy.join(" · ")}
-      </p>
-      {isUnset && setting.optional ? (
-        <p className="mt-2 text-xs text-brand-textMuted">
-          <b>Automatic</b> — following {setting.optional.inheritsFrom}. Pick a colour to set it on its own.
-        </p>
-      ) : null}
-      {setting.shared ? (
-        <p className="mt-2 text-xs text-amber-300">
-          Shared — changing this moves everything listed above at once.
-        </p>
+
+      {/*
+        "Use brand accent", not "unset" and not "clear".
+
+        The stored value is an empty string and the mechanism is variable
+        absence, but neither of those is what the owner is deciding. They are
+        deciding whether this thing has its own colour or follows the brand.
+      */}
+      {setting.optional ? (
+        <label className="mt-1.5 flex items-center gap-1.5 text-xs text-brand-textMuted">
+          <input
+            type="checkbox"
+            checked={following}
+            onChange={(event) => onChange(event.target.checked ? "" : accent)}
+          />
+          <span>Use brand accent</span>
+        </label>
       ) : null}
     </div>
   );
 }
+
+/* * `SettingField` used to render one control per colour token, with a "Used * for" list underneath naming everything it reached. `TaskEditor` replaced it:
+ * the same information, but grouped under the thing on the screen that owns
+ * those colours, so the list is two or three fields rather than thirty-four
+ * rows the owner has to disambiguate. Removed rather than left unreferenced —
+ * a second colour control nobody renders is the next thing to drift.
+ */
 
 function TemplateSwatch({ primary, accent }: { primary: string; accent: string }) {
   return (

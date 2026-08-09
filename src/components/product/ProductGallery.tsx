@@ -11,6 +11,7 @@ import {
   faCube,
 } from "@fortawesome/free-solid-svg-icons";
 import { ProductModelViewer } from "@/components/ProductModelViewer";
+import { useProductGallery } from "@/components/product/ProductGalleryContext";
 import { isOptimizableImageUrl } from "@/lib/productImages";
 
 export type GalleryImage = { id: string; url: string; alt: string; caption: string | null };
@@ -69,6 +70,35 @@ export default function ProductGallery({ images, productName, modelUrl, modelPos
   const usable = images.filter((image) => !failed.includes(image.url));
   const active = usable[Math.min(index, Math.max(usable.length - 1, 0))] ?? null;
   const count = usable.length;
+
+  /*
+   * An option selection asking for a particular image.
+   *
+   * Adjusted during render rather than in an effect. React documents this as
+   * the way to derive state from a changing input: setting state during render
+   * restarts the render immediately, so the correct photograph is the first one
+   * painted. An effect would paint the previous image, then correct it — a
+   * visible flicker every time somebody picks a colour, on the exact element
+   * they are looking at. It is also what `react-hooks/set-state-in-effect`
+   * objects to, and it was right to.
+   *
+   * Keyed on the token, not the media id: re-picking Blue after browsing away
+   * has to move the gallery back, and comparing ids would make that a no-op.
+   * Manual browsing is untouched — it simply does not bump the token.
+   */
+  const { request } = useProductGallery();
+  const [lastToken, setLastToken] = useState(0);
+  if (request && request.token !== lastToken) {
+    setLastToken(request.token);
+    const target = usable.findIndex((image) => image.id === request.mediaId);
+    // A value linked to an image this product no longer shows leaves the
+    // gallery exactly where it was, rather than jumping to the first image.
+    if (target !== -1) {
+      setIndex(target);
+      setShowModel(false);
+      setZoom(null);
+    }
+  }
 
   const step = useCallback(
     (direction: -1 | 1) => {

@@ -136,21 +136,46 @@ test("a link change is recorded on both the timeline and the audit log", () => {
   assert.doesNotMatch(metadata, /email|name|address|guest/i);
 });
 
-test("the queue can list standalone work, which is what the link picker offers", () => {
+test("the queue can still list standalone work", () => {
+  // Kept as a queue capability — "what are we making for stock?" is a real way
+  // to look at the board — even though the link picker no longer restricts
+  // itself to it. See the next test for why.
   assert.match(listRoute, /orderId === "none"/);
   assert.match(listRoute, /\.is\("order_id", null\)/);
-  // The picker asks for exactly that, so it can never take a job away from
-  // another order by accident.
-  assert.match(orderPanel, /orderId=none/);
-  assert.match(orderPanel, /expectedOrderId: null/);
+});
+
+test("the link picker searches every open job and states where each one lives", () => {
+  /*
+   * Re-pointed, deliberately.
+   *
+   * The picker used to request `orderId=none`, on the reasoning that this made
+   * it impossible to take a job from another order by accident. It also made
+   * moving work between orders impossible from the place you notice it is on the
+   * wrong one — and "impossible" is not the same as "deliberate". The safety now
+   * comes from three things this asserts instead: the current owner is shown on
+   * every row, a move requires a second confirmation naming both orders, and
+   * `expectedOrderId` carries what the reader was actually shown so a race is a
+   * 409 rather than an overwrite.
+   */
+  assert.match(orderPanel, /scope: "open"/);
+  assert.match(orderPanel, /query\.set\("q", search\.trim\(\)\)/);
+  assert.match(orderPanel, /On order \$\{orderNumbers\[job\.order_id\]/);
+  assert.match(orderPanel, /"Not linked"/);
+  assert.match(orderPanel, /setConfirming\(job\)/);
+  assert.match(orderPanel, /Move \$\{confirming\.job_number\} off order/);
+  // The stale guard sends the job's actual current link, not a hardcoded null.
+  assert.match(orderPanel, /expectedOrderId: job\.order_id \?\? null/);
 });
 
 test("the order panel distinguishes 'not loaded' from 'none exist'", () => {
   // Collapsing the two is how an empty list renders as a spinner that never
-  // resolves.
-  assert.match(orderPanel, /standalone === null/);
-  assert.match(orderPanel, /standalone\.length === 0/);
-  assert.match(orderPanel, /There is no unlinked shop work to attach\./);
+  // resolves. The state was renamed from `standalone` to `candidates` when the
+  // picker stopped being restricted to unlinked work; the property is unchanged.
+  assert.match(orderPanel, /candidates === null/);
+  assert.match(orderPanel, /candidates\.length === 0/);
+  assert.match(orderPanel, /There is no other open shop work\./);
+  // And a search that matches nothing says so differently from "there is none".
+  assert.match(orderPanel, /No open job matches/);
 });
 
 test("both directions of the link are visible", () => {
