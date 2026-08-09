@@ -5816,6 +5816,78 @@ installed.
 | Tests | 1623 → **1651**, all green |
 | Lint | **332**, unchanged |
 
+## Deployed
+
+| | |
+|---|---|
+| `origin/main` | **`e2792b6`** — merge commit, no force push (`e4f8bfb..e2792b6`) |
+| Production deployment | `keymoura-website-2rxsocpkt` — **Ready**, 3m build |
+| `GUEST_ORDER_VERIFICATION_SECRET` | Configured for **Production and Preview**, marked Sensitive/Hidden |
+| Migration ledger | 50 repo files == 50 production rows, version sets hash-identical |
+
+The secret was configured *before* the merge, so the code that depends on it never
+existed in an environment without it.
+
+### How the deployment was confirmed to contain this work
+
+Vercel's CLI exposes no git metadata for a deployment, so the build was identified
+by serving code that exists only in `e2792b6`, from three separate files:
+
+- `/api/orders/guest/[id]/verification` responds at all, with the exact new wording
+  ("That code is not right. Check the digits and try again.") — a route that did not
+  exist in `e4f8bfb`.
+- The guest page renders `Codes expire after <!-- -->15 minutes` and
+  `Enter the <!-- -->6<!-- -->-digit code` — React's SSR split around
+  `GUEST_CODE_TTL_LABEL` and `GUEST_CODE_LENGTH`, both new constants.
+- The deployed cart chunk contains the new 24-hour copy and **no longer contains**
+  the old 90-day sentence.
+
+### Production smoke results
+
+- `/`, `/catalog`, `/orders/new` — 200.
+- **A real guest order id with no session leaks nothing.** Fetched server-side so no
+  client JS ran and no email was sent: no order number, no guest email, no product
+  name, no total, no Summary panel, no Items panel, no pickup or tracking detail, no
+  `?token=` or `?code=`. The only "tracking" match was the Tailwind class
+  `tracking-tight`, which appears identically on a page for an order that does not
+  exist. `noindex` present.
+- **The account route still refuses anonymously.** Neither an account order nor a
+  guest order rendered its order number, email, or any money value.
+- Malformed order id and malformed code both answer 400 with the generic wording.
+- The verification POST answered **400, not 503** — which is how the runtime proved
+  it can read the secret without the value ever being displayed.
+- Deployed form: `inputMode="numeric"`, `autocomplete="one-time-code"`, label bound
+  to the input, `aria-describedby` resolving to the live error node, `aria-invalid`
+  set. Pasting `123 456` and `12-34-56` normalise to six digits, overflow truncates,
+  `000042` keeps its leading zeros, and five digits leaves Verify disabled. Mobile
+  at 375px: no horizontal overflow, 46px touch targets, 16px input font.
+
+### Not live-tested, and why
+
+**The real send → verify → session flow was never exercised in production.** Both
+existing guest orders belong to real customers, and emailing a verification code to
+a customer to satisfy a test is not an acceptable trade. There is no owner-controlled
+guest order. So the code generation, the HMAC comparison, the attempt counter, the
+cooldown, the consume-and-rotate step and the resulting 24-hour session are covered
+by tests and by the SQL that enforces them — not by a live message. That gap is
+stated rather than papered over.
+
+### Found while verifying, not fixed here
+
+- **A guest submitting a product request is still routed to the account page.**
+  `/api/orders/custom` correctly returns `href: /orders/guest/<id>` for a guest, but
+  `ProductRequestForm.tsx` and `orders/new/page.tsx` both ignore that field and push
+  to `/orders/<id>/confirmed`, whose "View request" button links to `/orders/<id>`.
+  `orders/new` is signed-in only so it is unaffected; `ProductRequestForm` accepts
+  guests, so a guest dead-ends on a page that cannot show them their order. This is
+  **pre-existing and unchanged by this pass** — the email audit this pass covered is
+  clean — and it is left alone rather than fixed, because it is a different surface
+  and this pass was scoped to verification.
+- **The two live guest sessions still expire in November**, having been minted under
+  the old 90-day rule, while the page now tells them 24 hours. Existing sessions are
+  deliberately not shortened — invalidating a paying customer's access to make a
+  sentence true would be the wrong trade. It self-resolves as those sessions lapse.
+
 ## Deferred, honestly
 
 1. **Account claiming.** A signed-in account whose address equals `guest_email` is
