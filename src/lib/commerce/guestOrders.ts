@@ -30,8 +30,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const GUEST_ORDER_COOKIE = "km_guest_order";
 
-/** Guest access is deliberately short-lived; checkout and email verification both mint this session. */
-export const GUEST_ORDER_COOKIE_MAX_AGE = 60 * 60 * 24;
+/** Long enough that a guest who came back a month later still gets their order. */
+export const GUEST_ORDER_COOKIE_MAX_AGE = 60 * 60 * 24 * 90;
 
 const GUEST_SALT = "keymoura.guestorder.v1";
 
@@ -71,7 +71,7 @@ export function guestTokenMatches(token: string | null, storedHash: string | nul
 }
 
 /** How long a guest may reach their order for. Matches the cookie's life. */
-export const GUEST_ACCESS_WINDOW_DAYS = 1;
+export const GUEST_ACCESS_WINDOW_DAYS = 90;
 
 export function guestAccessExpiry(from: Date = new Date()): string {
   return new Date(from.getTime() + GUEST_ACCESS_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
