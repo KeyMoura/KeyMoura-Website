@@ -47,7 +47,6 @@ const page = read("src/app/staff/emails/page.tsx");
 const PRODUCTION_TEMPLATE_KEYS = [
   "cancellation_approved", "cancellation_denied", "cancellation_requested", "cancellation_withdrawn",
   "customer_message", "fulfillment_processing", "low_stock_alert", "needs_information",
-  "guest_order_access",
   "order_cancelled", "order_delivered", "order_picked_up", "order_ready_for_pickup",
   "order_ready_to_fulfill", "order_received", "order_shipped", "out_of_stock_alert",
   "payment_failed", "payment_received", "production_completed", "production_started",
@@ -118,7 +117,7 @@ test("production holds exactly the templates the catalogue describes", () => {
   // A catalogued template with no row means the sender silently uses its
   // hard-coded fallback and the editor shows nothing to change.
   assert.deepEqual(missing, [], `catalogued templates with no database row: ${missing.join(", ")}`);
-  assert.equal(live.length, 44);
+  assert.equal(live.length, 43);
 });
 
 test("every template is referenced by at least one event", () => {

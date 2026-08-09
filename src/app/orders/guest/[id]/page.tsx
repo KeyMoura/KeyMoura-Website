@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import GuestOrderActions from "@/components/commerce/GuestOrderActions";
-import { GuestOrderVerification } from "@/components/commerce/GuestOrderVerification";
 import { OrderFulfillmentStatus } from "@/components/commerce/OrderFulfillmentStatus";
 import { resolveGuestOrder } from "@/lib/commerce/guestOrderAccess";
 import { lifecycleLabel, PAYMENT_LABELS, paymentWasTaken } from "@/lib/commerce/orderLifecycle";
@@ -49,17 +48,28 @@ export default async function GuestOrderPage({
   const result = await resolveGuestOrder(id);
 
   if (!result.ok) {
-    if (result.reason !== "unavailable") return <GuestOrderVerification orderId={id} />;
     /**
-     * Routine authorization denials use the verification form above. This
-     * branch is reserved for an infrastructure failure and says nothing about
-     * whether the requested order exists.
+     * Every denial renders the same page, with one exception.
+     *
+     * "Expired" is only reachable by a token that *matched*, so saying so
+     * tells the holder nothing they did not already have. Every other reason —
+     * no cookie, wrong cookie, revoked, or an order id that does not exist —
+     * gets identical wording, because distinguishing them would turn this page
+     * into an oracle for whether an order id is real.
      */
+    const expired = result.reason === "expired";
+    const unavailable = result.reason === "unavailable";
     return (
       <main className="page-container">
-        <h1 className="text-3xl font-semibold tracking-tight">That order could not be loaded</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {unavailable ? "That order could not be loaded" : expired ? "That link has expired" : "Order not available"}
+        </h1>
         <p className="mt-4 max-w-prose leading-7 text-brand-textMuted">
-          Something went wrong reading this order. Nothing has changed — please try again in a moment.
+          {unavailable
+            ? "Something went wrong reading this order. Nothing has changed — please try again in a moment."
+            : expired
+              ? "Guest order links stop working after 90 days. Your confirmation email still has the details, and support can help if you need anything else."
+              : "We could not confirm this order belongs to you on this device. If you checked out as a guest, open the link from the same browser you used, or reply to your confirmation email."}
         </p>
         <div className="ui-action-row mt-6">
           <Link href="/contact" className="ui-btn ui-btn-primary">
