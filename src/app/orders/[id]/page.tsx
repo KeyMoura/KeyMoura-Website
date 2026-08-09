@@ -241,7 +241,11 @@ export default function OrderDetailPage() {
               We could not open this order on your account. If you placed it as a guest, use the link in your
               confirmation email — guest orders open from the browser you checked out with.
             </p>
-            {error ? <Notice tone="danger" role="alert" className="mt-4">{error}</Notice> : null}
+            {/* The underlying reason is deliberately not printed. RLS refuses
+                this read with "permission denied for table orders", which is a
+                schema detail rather than an answer, and showing it for a denial
+                but not for a missing row would make the two distinguishable
+                again. The sentence above is the whole answer. */}
             <div className="ui-action-row mt-5">
               <Link href="/orders" className="ui-btn ui-btn-primary">Your orders</Link>
               <Link href="/contact" className="ui-btn ui-btn-ghost">Contact support</Link>
