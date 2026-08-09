@@ -16,22 +16,59 @@
  * that, and the only place a guest needs the credential is the browser that
  * just checked out.
  *
- * The cost is stated rather than hidden: the credential is per-browser, so a
- * guest who checks out on a phone cannot open the order on a laptop. Their
- * confirmation email carries the order number and the details; a cross-device
- * lookup by order number and email is a separate piece of work and is recorded
- * as not built.
+ * The credential is per-browser, so the browser that checked out is the one
+ * that opens the order without being asked anything. A *different* browser —
+ * the laptop, after checking out on a phone — is not refused outright: it is
+ * sent to the six-digit email challenge in `guestOrderVerification`, which
+ * mints this same session once the mailbox has been proven. So the cookie is
+ * the fast path and the mailbox is the recovery path, and neither one is a URL.
+ *
+ * There is still deliberately **no lookup by order number and email**. That
+ * form answers differently for a real customer's address than for a stranger's,
+ * which tells an attacker who has bought from this shop. The challenge is only
+ * ever sent to the address already stored on an order somebody already holds
+ * the id for.
  *
  * The salt differs from the rate limiter's and the shared-cart owner hash's,
  * so no two of those tables' digests can be joined against each other.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { GUEST_ACCESS_WINDOW_HOURS, GUEST_ACCESS_WINDOW_LABEL } from "@/lib/commerce/guestAccessWindow";
 
 export const GUEST_ORDER_COOKIE = "km_guest_order";
 
-/** Long enough that a guest who came back a month later still gets their order. */
-export const GUEST_ORDER_COOKIE_MAX_AGE = 60 * 60 * 24 * 90;
+/**
+ * The session window, defined once in a client-safe module and re-exported here.
+ *
+ * The cookie's `Max-Age`, the order row's `guest_access_expires_at`, and the
+ * sentence the customer reads all come from `GUEST_ACCESS_WINDOW_HOURS`. Those
+ * three drifted apart the first time this shipped: the session was shortened to
+ * a day while the checkout copy still promised 90 days.
+ */
+export { GUEST_ACCESS_WINDOW_HOURS, GUEST_ACCESS_WINDOW_LABEL };
+
+export const GUEST_ORDER_COOKIE_MAX_AGE = 60 * 60 * GUEST_ACCESS_WINDOW_HOURS;
+
+/**
+ * The cookie's flags, in one object.
+ *
+ * Three routes mint this session — cart checkout, custom request, and code
+ * verification — and a flag that is right in two of them and missing in the
+ * third is exactly the kind of drift nobody notices. `httpOnly` so no script
+ * can read it, `SameSite=Lax` so it is withheld from a cross-site POST but
+ * still sent on the top-level GET that Stripe redirects back with, and `Secure`
+ * everywhere but local development.
+ */
+export function guestOrderCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: GUEST_ORDER_COOKIE_MAX_AGE,
+  } as const;
+}
 
 const GUEST_SALT = "keymoura.guestorder.v1";
 
@@ -70,11 +107,17 @@ export function guestTokenMatches(token: string | null, storedHash: string | nul
   return computed.length === stored.length && timingSafeEqual(computed, stored);
 }
 
-/** How long a guest may reach their order for. Matches the cookie's life. */
-export const GUEST_ACCESS_WINDOW_DAYS = 90;
+/**
+ * How long a guest may reach their order for. Matches the cookie's life.
+ *
+ * Derived from `GUEST_ACCESS_WINDOW_HOURS` rather than restated, so the server
+ * expiry and the browser's `Max-Age` cannot disagree — a cookie that outlives
+ * the row's expiry is a guest staring at a denial they cannot explain.
+ */
+export const GUEST_ACCESS_WINDOW_DAYS = GUEST_ACCESS_WINDOW_HOURS / 24;
 
 export function guestAccessExpiry(from: Date = new Date()): string {
-  return new Date(from.getTime() + GUEST_ACCESS_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return new Date(from.getTime() + GUEST_ORDER_COOKIE_MAX_AGE * 1000).toISOString();
 }
 
 export type GuestAccessRow = {

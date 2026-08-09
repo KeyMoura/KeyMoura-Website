@@ -71,6 +71,7 @@ export const EMAIL_TEMPLATE_KEYS = [
   "out_of_stock_alert",
   "staff_fulfillment_due",
   "staff_integration_failure",
+  "guest_order_access",
 ] as const;
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number];
@@ -822,6 +823,20 @@ export const EMAIL_EVENTS: readonly EmailEvent[] = [
     eventKeyShape: "inventory-alert-{alertId}-out-{recipient}",
     idempotency: "suppressed",
     activity: "inventory_alerts",
+    resendable: false,
+    wired: true,
+  },
+  {
+    id: "guest_order_access_requested",
+    templateKey: "guest_order_access",
+    audience: "customer",
+    related: "order",
+    trigger: "A guest opens their order without a valid session, or asks for a new code.",
+    // One key per challenge row, so a retried request cannot deliver a second
+    // copy of the same code and a refresh cannot deliver anything at all.
+    eventKeyShape: "guest-access-{challengeId}",
+    idempotency: "suppressed",
+    activity: "guest_order_access_codes",
     resendable: false,
     wired: true,
   },

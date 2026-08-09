@@ -7,6 +7,7 @@ import {
   type EmailFailureCategory,
   type EmailTemplateKey,
 } from "@/lib/comms/emailEvents";
+import { customerOrderUrl } from "@/lib/commerce/orderUrls";
 
 /**
  * The one transactional sender. There is deliberately no second template
@@ -231,7 +232,28 @@ export async function sendCommerceEmail(input: {
   if (!config.enabled || template?.is_enabled === false) return stop("disabled", "Email disabled");
   if (!process.env.RESEND_API_KEY) return stop("not_configured", "RESEND_API_KEY is not configured");
 
-  const url = input.href?.startsWith("http") ? input.href : `${config.siteUrl}${input.href || (input.orderId ? `/orders/${input.orderId}` : "/")}`;
+  /**
+   * The link in the button, derived from ownership exactly once.
+   *
+   * Every customer email that names an order goes through here, so this is the
+   * only place that has to know a guest order lives at `/orders/guest/<id>`.
+   * Doing it at the call sites instead meant a dozen places each deciding, and
+   * a guest reliably being sent to `/orders/<id>` — a page that reads through
+   * RLS as a signed-in customer and can only ever show them a permission error
+   * for their own order.
+   *
+   * Staff emails keep whatever explicit `href` they set: `/staff/orders/<id>`
+   * is not an ownership question. The lookup is skipped when there is no order.
+   */
+  let url = input.href?.startsWith("http") ? input.href : `${config.siteUrl}${input.href || "/"}`;
+  if (input.orderId && audience === "customer") {
+    const ownership = await routeServiceClient
+      .from("orders")
+      .select("customer_id")
+      .eq("id", input.orderId)
+      .maybeSingle();
+    url = customerOrderUrl(config.siteUrl, input.orderId, ownership.data?.customer_id as string | null | undefined);
+  }
   const heading = interpolate(template?.heading || "Order update", input.variables);
   const body = interpolate(template?.body || "There is an update to your order.", input.variables);
   const button = interpolate(template?.button_label || "View order", input.variables);
@@ -246,11 +268,20 @@ export async function sendCommerceEmail(input: {
     `\n${heading}`,
     `\n${body}`,
     `\n${button}: ${url}`,
+    // The verification code goes in the *body* and nowhere else. Never appended
+    // to `url`: a code in a link is a code in browser history, in the `Referer`
+    // of the next click, and in any analytics that sees the path.
+    input.variables.verification_code
+      ? `\nVerification code: ${input.variables.verification_code}\nYou'll need this code to access your order.`
+      : "",
   ].filter(Boolean).join("\n").replace(/\n{3,}/g, "\n\n").trim();
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const { data, error } = await resend.emails.send({ from: `${config.fromName} <${config.fromEmail}>`, to: recipient, replyTo: config.replyTo || undefined, subject, text: plainText, html: `<div style="background:#0b0b0c;padding:36px 16px;color:#f4f4f5;font-family:Arial,sans-serif"><div style="max-width:580px;margin:auto;background:#151517;border:1px solid #333;border-radius:16px;padding:32px">${logo}<div style="color:${escapeHtml(config.accentColor)};font-size:12px;letter-spacing:.16em;text-transform:uppercase">${escapeHtml(input.variables.order_label || "KeyMoura")}</div><h1 style="font-size:26px;line-height:1.2;margin:12px 0">${escapeHtml(heading)}</h1><p style="color:#d4d4d8;line-height:1.65;white-space:pre-line">${escapeHtml(body)}</p><a href="${escapeHtml(url)}" style="display:inline-block;margin-top:18px;background:${escapeHtml(config.primaryColor)};border-radius:10px;padding:12px 18px;color:#fff;text-decoration:none;font-weight:700">${escapeHtml(button)}</a></div></div>` }, { idempotencyKey: input.eventKey });
+    const codeBlock = input.variables.verification_code
+      ? `<div style="margin-top:24px;padding:18px;border:1px solid #52525b;border-radius:10px"><div style="color:#d4d4d8">Verification code:</div><div style="font-size:30px;font-weight:700;letter-spacing:.18em;margin-top:8px">${escapeHtml(input.variables.verification_code)}</div><div style="color:#d4d4d8;margin-top:10px">You&#39;ll need this code to access your order.</div></div>`
+      : "";
+    const { data, error } = await resend.emails.send({ from: `${config.fromName} <${config.fromEmail}>`, to: recipient, replyTo: config.replyTo || undefined, subject, text: plainText, html: `<div style="background:#0b0b0c;padding:36px 16px;color:#f4f4f5;font-family:Arial,sans-serif"><div style="max-width:580px;margin:auto;background:#151517;border:1px solid #333;border-radius:16px;padding:32px">${logo}<div style="color:${escapeHtml(config.accentColor)};font-size:12px;letter-spacing:.16em;text-transform:uppercase">${escapeHtml(input.variables.order_label || "KeyMoura")}</div><h1 style="font-size:26px;line-height:1.2;margin:12px 0">${escapeHtml(heading)}</h1><p style="color:#d4d4d8;line-height:1.65;white-space:pre-line">${escapeHtml(body)}</p><a href="${escapeHtml(url)}" style="display:inline-block;margin-top:18px;background:${escapeHtml(config.primaryColor)};border-radius:10px;padding:12px 18px;color:#fff;text-decoration:none;font-weight:700">${escapeHtml(button)}</a>${codeBlock}</div></div>` }, { idempotencyKey: input.eventKey });
     if (error) {
       const category = classifyEmailFailure(error.message);
       await finishDelivery(deliveryId, input.eventKey, "failed", { error: error.message, category });

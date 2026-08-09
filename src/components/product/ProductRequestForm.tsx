@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import QuantityField from "@/components/commerce/QuantityField";
+import { GUEST_ACCESS_WINDOW_LABEL } from "@/lib/commerce/guestAccessWindow";
 import { useCheckoutContext } from "@/lib/hooks/useCart";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { money, type CatalogProduct, type ProductOptionGroup } from "@/lib/commerceTypes";
@@ -666,8 +667,8 @@ export default function ProductRequestForm({
               />
             </label>
             <p className="text-xs text-brand-textMuted sm:col-span-2">
-              Nothing is charged. You will be able to read the quote, reply and pay from this browser for 90 days —
-              or{" "}
+              Nothing is charged. You can read the quote, reply and pay from this browser for{" "}
+              {GUEST_ACCESS_WINDOW_LABEL}, and we email you a 6-digit code to open it after that — or{" "}
               <a href={`/auth/login?next=${encodeURIComponent(`/catalog/${product.slug}`)}`} className="underline hover:no-underline">
                 sign in
               </a>{" "}

@@ -133,6 +133,7 @@ strings as the HTML, so the two cannot drift.
 
 | Event | Template | To | Record | Trigger | Event key | Repeat | Activity / audit | Wired |
 |---|---|---|---|---|---|---|---|---|
+| `guest_order_access_requested` | `guest_order_access` | customer | order | A guest opens their order without a valid session, or asks for a new code. | `guest-access-{challengeId}` | suppressed | guest_order_access_codes | yes |
 | `low_stock` | `low_stock_alert` | staff | product | A tracked product falls to or below its low-stock threshold. | `inventory-alert-{alertId}-low-{recipient}` | suppressed | inventory_alerts | yes |
 | `out_of_stock` | `out_of_stock_alert` | staff | product | A tracked product reaches zero, or an open low alert escalates. | `inventory-alert-{alertId}-out-{recipient}` | suppressed | inventory_alerts | yes |
 | `fulfillment_overdue` | `staff_fulfillment_due` | staff | order | An order sits unfulfilled past the configured window. | `fulfillment-overdue-{orderId}-{windowDays}` | suppressed | — | **no** |
@@ -141,7 +142,7 @@ strings as the HTML, so the two cannot drift.
 | `email_delivery_failure` | `staff_integration_failure` | staff | system | A customer email is refused by Resend. | `ops-email_failure-{deliveryEventKey}` | suppressed | email_deliveries | yes |
 
 
-Totals: 51 events across 43 templates; 47 wired, 4 recorded-not-built.
+Totals: 52 events across 44 templates; 48 wired, 4 recorded-not-built.
 
 ## Recorded, not built
 

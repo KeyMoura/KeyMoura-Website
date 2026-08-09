@@ -9,6 +9,7 @@ import CheckoutFulfillmentPanel, {
   type FulfillmentSelection,
   type QuotedTotals,
 } from "@/components/commerce/CheckoutFulfillmentPanel";
+import { GUEST_ACCESS_WINDOW_LABEL } from "@/lib/commerce/guestAccessWindow";
 import { quoteMatchesCart } from "@/lib/commerce/commerceSettings";
 import { formatCents, useCart, useCartMutations, useCheckoutContext } from "@/lib/hooks/useCart";
 
@@ -435,7 +436,8 @@ export default function CartPage() {
                   />
                 </label>
                 <p className="text-xs text-brand-textMuted">
-                  You will be able to open this order from this browser for 90 days.{" "}
+                  This browser opens the order for {GUEST_ACCESS_WINDOW_LABEL}. After that we email you a 6-digit
+                  code.{" "}
                   <Link href={`/auth/login?next=${encodeURIComponent("/cart")}`} className="underline hover:no-underline">
                     Sign in instead
                   </Link>{" "}

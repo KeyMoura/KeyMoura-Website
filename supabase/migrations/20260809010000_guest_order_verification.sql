@@ -1,29 +1,6 @@
-\ir ../../migrations/20260731030000_catalog_order_requests.sql
-\ir ../../migrations/20260731060000_configurable_products_recovery.sql
-\ir ../../migrations/20260731070000_stripe_payments.sql
-\ir ../../migrations/20260731130000_storefront_availability.sql
-\ir ../../migrations/20260731180000_catalog_inventory_editor.sql
-\ir ../../migrations/20260731190000_checkout_inventory_reservations.sql
+begin;
 
--- ---------------------------------------------------------------------------
--- Guest order verification
--- ---------------------------------------------------------------------------
---
--- The schema of 20260809010000_guest_order_verification, restated idempotently.
---
--- Written out here rather than `\ir`-ing that migration, for a reason worth
--- stating. The migration file is *history*: it is already applied in production
--- and is kept byte-exact so the repository's migration list matches the
--- database's ledger. It uses bare `create table` and `create index`, which is
--- correct for a migration that runs exactly once and wrong for a baseline the
--- README promises is re-runnable against an existing installation.
---
--- So the two files have different jobs and say the same thing. This block is
--- the one a fresh install applies; every object below matches production
--- exactly — columns, constraints, indexes, RLS, grants, function bodies and
--- their ACLs. If you change one, change the other and re-check against live.
-
-create table if not exists public.guest_order_access_codes (
+create table public.guest_order_access_codes (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
   code_digest text not null check (char_length(code_digest) between 40 and 100),
@@ -33,18 +10,10 @@ create table if not exists public.guest_order_access_codes (
   last_attempt_at timestamptz,
   created_at timestamptz not null default now()
 );
-
-create index if not exists guest_order_access_codes_order_created_idx
-  on public.guest_order_access_codes(order_id, created_at desc);
--- One unconsumed challenge per order. This is what makes "a new code
--- invalidates the previous one" a database guarantee rather than a convention.
-create unique index if not exists guest_order_access_codes_one_active_idx
-  on public.guest_order_access_codes(order_id) where consumed_at is null;
+create index guest_order_access_codes_order_created_idx on public.guest_order_access_codes(order_id, created_at desc);
+create unique index guest_order_access_codes_one_active_idx on public.guest_order_access_codes(order_id) where consumed_at is null;
 
 alter table public.guest_order_access_codes enable row level security;
--- No policies, deliberately. RLS with an empty policy set denies everything,
--- and there is no caller other than the service role: a browser must never read
--- a digest, and an authenticated account has no business here either.
 revoke all on public.guest_order_access_codes from public, anon, authenticated;
 grant select, insert, update, delete on public.guest_order_access_codes to service_role;
 
@@ -80,10 +49,6 @@ begin
   return found;
 end $$;
 
--- SECURITY DEFINER is justified: the table denies every role but service_role,
--- and these run as owner so the expiry, attempt and single-use rules are
--- enforced in the same statement that mutates the row. EXECUTE is still revoked
--- from anon and authenticated so neither can reach them over PostgREST.
 revoke all on function public.replace_guest_order_access_code(uuid,text,timestamptz,integer) from public, anon, authenticated;
 revoke all on function public.record_guest_order_code_failure(uuid,integer) from public, anon, authenticated;
 revoke all on function public.consume_guest_order_access_code(uuid,uuid,text,timestamptz) from public, anon, authenticated;
@@ -91,17 +56,9 @@ grant execute on function public.replace_guest_order_access_code(uuid,text,times
 grant execute on function public.record_guest_order_code_failure(uuid,integer) to service_role;
 grant execute on function public.consume_guest_order_access_code(uuid,uuid,text,timestamptz) to service_role;
 
--- Seeded only if the template table is present. This module's include list does
--- not itself create `email_templates`, and a baseline that aborts on a table it
--- never claimed to install would be a worse failure than a missing seed row —
--- the sender falls back to its hard-coded copy either way.
-do $$
-begin
-  if to_regclass('public.email_templates') is not null then
-    insert into public.email_templates(key,name,subject,heading,body,button_label) values
-    ('guest_order_access','Guest order access','Your KeyMoura order verification code','View your order','Use the verification code below to securely open your guest order.','View your order')
-    on conflict (key) do nothing;
-  end if;
-end $$;
+insert into public.email_templates(key,name,subject,heading,body,button_label) values
+('guest_order_access','Guest order access','Your KeyMoura order verification code','View your order','Use the verification code below to securely open your guest order.','View your order')
+on conflict (key) do nothing;
 
 notify pgrst, 'reload schema';
+commit;

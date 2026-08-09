@@ -5688,3 +5688,151 @@ contains the string the assertion forbade.
 5. **Appearance, then search "customizable".** One obvious result with three fields.
 6. **A product with a 3D model.** The notice should be under the model, always.
 7. **`/catalog`.** Three columns; try the density control and reload.
+
+# Pass 18 — guest order email verification, restored and finished
+
+| | |
+|---|---|
+| Started from | **`e4f8bfb`** — `main == origin/main`, clean tree, 1623 tests green |
+| Preserved implementation | **`aae7980`** — merged as `aaba2b4`, reverted as `13cfa05` |
+| Migration ledger | **48 repo files, 48 production rows — reconciled** |
+| Scope | Only the guest six-digit verification feature. No Appearance, Production, catalog or option work. |
+
+## What this pass is
+
+`20260809010000_guest_order_verification` has been applied in production since
+pass 17, with no file in this repository and no code reading it: the table and
+its three functions sat dormant because the *application* was reverted while the
+migration stayed. This pass restores the feature onto current `main`, fixes the
+four defects that made the first attempt not integration-ready, and reconciles
+the ledger.
+
+## The migration drift is resolved, by restoring the file rather than deleting the line
+
+The rule `staff-schema-contract.test.ts` enforces is that a drift entry may only
+be removed by restoring the file or by dropping the objects. The file was
+restored, and only after the live objects were proven identical to it:
+
+| Checked | Result |
+|---|---|
+| Columns | 8/8 identical, same types, nullability and defaults |
+| Indexes | `pkey`, `order_created_idx`, partial unique `one_active_idx` — identical |
+| Constraints | Both checks and the `orders` FK with `on delete cascade` — identical |
+| RLS | Enabled, **zero policies** — deny-all, as written |
+| Table grants | `postgres` and `service_role` only; `anon` and `authenticated` hold nothing |
+| Function bodies | All three byte-identical via `pg_get_functiondef` |
+| Function ACLs | `postgres=X`, `service_role=X` — no PUBLIC, no anon, no authenticated |
+| `email_templates` | `guest_order_access` row present with the file's exact values |
+
+The one apparent difference — `service_role` additionally holding `Dxtm` on the
+table — is Supabase's own default privilege on any new `public` table, not
+something the file could have granted. `pg_default_acl` confirms it, and sibling
+tables created by ordinary repo migrations carry the same grant. So the file
+represents history rather than creating it, and it was **not re-executed**.
+
+The historical file is kept byte-exact (sha256 `b22b9faa…12e05`), which is why it
+still says `create table` rather than `create table if not exists`.
+
+## The four defects, and what each actually was
+
+**A. A missing secret produced an HTTP 500.** `digestGuestVerificationCode` threw
+when `GUEST_ORDER_VERIFICATION_SECRET` was absent and nothing caught it, so a
+deployment without the secret answered a routine page load with an uncaught
+exception. Absence is now a checkable state: every entry point tests
+`guestVerificationConfigured()` *before* touching the database, returns
+`not_configured`, and the route answers 503 with a sentence that names no
+environment variable. One server-side line names the variable and never its
+value. Verified in a browser — 503, calm inline notice, no cookie set, no order
+exposed.
+
+**B. 24 hours and 90 days both claimed.** The first attempt shortened the session
+to a day but left three customer-facing pages promising 90 days. The number now
+lives once, in a `node:crypto`-free module so client components can quote it
+without dragging Node's crypto into the browser bundle. The cookie's `Max-Age`,
+the order row's expiry and the sentence the customer reads all derive from it.
+
+**C. Two focused failures.** Both asserted the *old* shape rather than a weakened
+rule. The session-token assertion used a lazy regex that matched the
+`Set-Cookie` line following `NextResponse.json({ verified: true })` and so failed
+on correct code; it now asserts the literal body and that no token appears in it.
+The denial assertion required a branch that intentionally no longer exists —
+every routine denial now renders the same challenge, which is strictly stronger
+than wording them differently. The cookie-flag assertions moved to the shared
+`guestOrderCookieOptions`, and every minting route is now required to use it, so
+a fourth route cannot get the flags wrong unnoticed.
+
+**D. The installer baseline had no `guest_order_access_codes`.** The migration
+runs once and the baseline is promised re-runnable, so they cannot be the same
+text. `supabase/installer/modules/commerce.sql` now restates the schema
+idempotently — same columns, indexes, RLS, grants, function bodies and ACLs —
+and the template seed is guarded by `to_regclass`, because that module's include
+list does not itself create `email_templates`.
+
+## The anti-spam rule is server-side, because a client guard is a suggestion
+
+The first attempt sent a code on every mount and relied on the 60-second
+cooldown. That only rate-limits: a refresh every 61 seconds for fifteen minutes
+would have delivered fourteen codes. The page now asks the server to *ensure* a
+challenge exists — `ensureGuestCode` reuses a live one and returns the masked
+address without sending anything. Only the explicit button replaces a challenge,
+and only that is governed by the cooldown. A per-challenge delivery key means
+even a duplicated request cannot deliver two copies of one code.
+
+## Email links are derived from ownership in exactly one place
+
+`sendCommerceEmail` was building `/orders/{id}` unconditionally, which sent every
+guest to a page that reads through RLS as a signed-in customer and can only
+refuse them. It now resolves `customer_id` once and calls `customerOrderUrl`, so
+all 52 catalogued events are covered by one decision. An audit found no other
+customer order URL constructed anywhere: the remaining `/orders/{id}` in
+`orderNotifications.ts` is an in-app notification that requires a
+`recipientUserId`, which a guest by definition does not have.
+
+## Verified in a browser, and what was not
+
+Driven locally: the challenge form renders for a guest route with no session; the
+missing-secret path returns 503 and renders inline rather than crashing; the form
+carries `inputMode="numeric"`, `autocomplete="one-time-code"`, a bound label and
+`aria-describedby`; pasting `123 456`, `12-34-56` and `abc123456789` all normalise
+to six digits while `000042` keeps its leading zeros; Verify stays disabled below
+six digits; the cooldown counts down and disables the button; mobile has no
+horizontal overflow, 46px touch targets and a 16px input font.
+
+**Not verified, and stated plainly:** anything requiring a working database. The
+local Supabase key is deliberately fake, so a real send, a real code entry, a
+real session mint and cross-order isolation were proven by tests and by the SQL,
+not by a browser. The Vercel preview remains SSO-gated and the CLI is not
+installed.
+
+## Numbers
+
+| | |
+|---|---|
+| Code | 6 digits, `randomInt`, HMAC-SHA-256 at rest, order-bound |
+| Code lifetime | 15 minutes |
+| Attempts | 5 |
+| Resend cooldown | 60 seconds |
+| Session | 24 hours, httpOnly, SameSite=Lax, Secure in production |
+| Tests | 1623 → **1651**, all green |
+| Lint | **332**, unchanged |
+
+## Deferred, honestly
+
+1. **Account claiming.** A signed-in account whose address equals `guest_email` is
+   deliberately *not* given a bypass — an address is not an authorization. Letting
+   an account adopt a guest order is a separate feature.
+2. **The advisor finding on `guest_order_access_codes`** is `rls_enabled_no_policy`
+   at INFO, which is the intended deny-all and matches fourteen sibling tables.
+   `unused_index` on `order_created_idx` is true only because the feature was
+   dormant. Neither warrants a migration, so none was written.
+3. Everything carried from pass 17 that this pass did not touch.
+
+## Owner checks worth five minutes
+
+1. **Open a guest order link from a different browser.** You should get "Order
+   access" and a six-digit field, not a permission error.
+2. **Refresh that page several times.** Exactly one email, not one per refresh.
+3. **Press "Send a new code" twice.** The second press should be a countdown.
+4. **Type five digits.** Verify should stay disabled.
+5. **Open any order email as a guest.** The button should go to
+   `/orders/guest/<id>` and carry no `?code=` or `?token=`.
