@@ -5874,15 +5874,14 @@ stated rather than papered over.
 
 ### Found while verifying, not fixed here
 
-- **A guest submitting a product request is still routed to the account page.**
-  `/api/orders/custom` correctly returns `href: /orders/guest/<id>` for a guest, but
-  `ProductRequestForm.tsx` and `orders/new/page.tsx` both ignore that field and push
-  to `/orders/<id>/confirmed`, whose "View request" button links to `/orders/<id>`.
-  `orders/new` is signed-in only so it is unaffected; `ProductRequestForm` accepts
-  guests, so a guest dead-ends on a page that cannot show them their order. This is
-  **pre-existing and unchanged by this pass** — the email audit this pass covered is
-  clean — and it is left alone rather than fixed, because it is a different surface
-  and this pass was scoped to verification.
+- ~~**A guest submitting a product request is still routed to the account page.**~~
+  **This claim was wrong and is corrected in pass 19.** It was inferred from a grep
+  for `/orders/${...}` without reading the branch guard above the match. The guest
+  branch of `ProductRequestForm` returns early at
+  `router.push(guestData.href ?? \`/orders/guest/${guestData.id}\`)` and never reaches
+  the `/orders/<id>/confirmed` line below it, and `orders/new` redirects to login
+  before submitting. No guest was ever misrouted. Pass 19 re-audited the flow, found
+  the real defect to be latent rather than live, and fixed that.
 - **The two live guest sessions still expire in November**, having been minted under
   the old 90-day rule, while the page now tells them 24 hours. Existing sessions are
   deliberately not shortened — invalidating a paying customer's access to make a
@@ -5908,3 +5907,92 @@ stated rather than papered over.
 4. **Type five digits.** Verify should stay disabled.
 5. **Open any order email as a guest.** The button should go to
    `/orders/guest/<id>` and carry no `?code=` or `?token=`.
+
+# Pass 19 — order-success navigation, and a correction to pass 18
+
+| | |
+|---|---|
+| Started from | **`68d78cf`** — clean tree, 1651 tests green |
+| Scope | The custom/product-request success navigation only. No schema, no migration, no change to guest verification. |
+| Result | Code-only: three files, two of them one-line-ish, plus a focused test file. |
+
+## The reported bug did not exist
+
+Pass 18 recorded that a guest submitting a product request was routed to the
+account page and dead-ended. **That was wrong**, and this pass exists partly to
+say so. It came from grepping for `/orders/${...}` and reading the match without
+the branch guard above it.
+
+`ProductRequestForm` has two submit paths, and the grep found the second:
+
+- **Guest** — `if (!auth.user)` posts to `/api/orders/custom` and returns early at
+  `router.push(guestData.href ?? \`/orders/guest/${guestData.id}\`)`. It already
+  honoured the server's href, and even its fallback is the guest route.
+- **Account** — everything below that early return. It posts to `/api/orders`,
+  which answers 401 without a user, and lands on `/orders/<id>/confirmed`.
+
+`orders/new` redirects to login before it submits at all. So both routes to
+`/confirmed` were signed-in only, and the reconstruction there happened to be
+correct. No customer was affected.
+
+## What was actually wrong: the same defect, one guard away
+
+The real problem was that ownership was being decided **twice** — once by the
+server, which knows whether the row got a `customer_id` or a guest token, and
+again by a client rebuilding a path from an id. Both copies agreed, so nothing
+failed; the client was simply computing an answer it had no information for, and
+it was the copy the customer followed.
+
+Two places, both now fixed:
+
+1. **`orders/new/page.tsx`** discarded the server's `href` — the response type did
+   not even declare the field — and rebuilt `/orders/<id>/confirmed`. It now uses
+   `result.href` and keeps the rebuild only as a fallback.
+2. **`/orders/[id]/confirmed`** was a client component building `/orders/<id>` out
+   of the route parameter, with no way to know whose order it was. It is now a
+   server component that resolves `customer_id` and hands it to
+   `customerOrderPath` — the same single decision the emails use since pass 18.
+
+That makes requirement "a guest never routes through `/orders/<id>`" **structural
+rather than conditional**: it holds however the page is reached, instead of
+holding because two client-side guards are currently correct.
+
+## What the confirmation page does and does not do
+
+It reads one indexed column and renders none of it — no order number, no email,
+no product, no money, asserted by test. The markup is identical either way; only
+the button's target differs. Both targets refuse an unauthorized viewer anyway:
+the account page through RLS, the guest page through the six-digit challenge, so
+pointing a guest at their guest page is not an access path. A failed or malformed
+lookup keeps the historical `/orders/<id>`, which is where every route that leads
+here belongs — failing to the guest path instead would send an account customer
+to a verification form for an order that can never issue a code.
+
+The page moves from static to dynamic in the build output, which is the expected
+cost of the lookup.
+
+## Verified
+
+Locally: the confirmation page renders as a server component, leaks no order
+data, and with the local Supabase key deliberately invalid the CTA falls back to
+`/orders/<id>` — the fail-safe branch, exercised end to end. The guest route
+still renders the six-digit challenge, unchanged.
+
+In production, read-only and sending nothing: the confirmation page for a real
+**account** order links to `/orders/<id>`, and for a real **guest** order links to
+`/orders/guest/<id>`. That is both ownership branches proven against real data.
+
+**Not verified:** a full guest custom-request *submission* was not driven in a
+browser. The local Supabase key is deliberately fake, so `/api/orders/custom`
+cannot create an order locally, and creating a real guest order in production to
+watch a redirect would put a real row and a real email into the system. The
+navigation decision is covered by tests against the source and by the production
+check of both confirmation branches.
+
+## Numbers
+
+| | |
+|---|---|
+| Tests | 1651 → **1662**, all green |
+| Lint | **332**, unchanged |
+| Migrations | none — 50 repo files == 50 production rows, untouched |
