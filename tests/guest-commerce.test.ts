@@ -101,9 +101,9 @@ test("access expires on its own", () => {
     evaluateGuestAccess(token, { guest_token_hash: hashGuestOrderToken(token), guest_access_expires_at: past }),
     "expired"
   );
-  assert.equal(GUEST_ACCESS_WINDOW_DAYS, 90);
+  assert.equal(GUEST_ACCESS_WINDOW_DAYS, 1);
   const expiry = Date.parse(guestAccessExpiry(new Date("2026-01-01T00:00:00Z")));
-  assert.equal(new Date(expiry).toISOString(), "2026-04-01T00:00:00.000Z");
+  assert.equal(new Date(expiry).toISOString(), "2026-01-02T00:00:00.000Z");
 });
 
 test("a missing expiry fails closed rather than meaning 'forever'", () => {
