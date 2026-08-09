@@ -45,10 +45,16 @@ const read = (relative: string) => readFileSync(repoFile(relative), "utf8");
 
 type KnownDrift = { columns: string[]; surface: string; effect: string; why_not_fixed_in_pass_14: string };
 
+type LedgerDrift = { what: string; how: string; effect: string; why_not_fixed: string };
+
 type Snapshot = {
   tables: Record<string, string[]>;
   pending_migrations: Record<string, string[] | string>;
   known_drift: Record<string, KnownDrift | string[]>;
+  migration_ledger_drift: {
+    _comment: string[];
+    applied_without_a_repo_file: Record<string, LedgerDrift>;
+  };
 };
 
 const snapshot = JSON.parse(read("tests/fixtures/production-schema.json")) as Snapshot;
@@ -179,6 +185,51 @@ test("known drift is genuinely drift, and each entry states its cost", () => {
     assert.match(entry.surface, /^src\//, "an entry must name the surface it breaks");
     assert.ok(entry.effect.length > 40, "an entry must say what the user sees");
     assert.ok(entry.why_not_fixed_in_pass_14.length > 40, "an entry must say why it was left");
+  }
+});
+
+test("migrations applied without a repo file are recorded, and stay recorded honestly", () => {
+  /*
+   * History drift, which is a different thing from column drift.
+   *
+   * `20260809010000_guest_order_verification` was merged, applied to production,
+   * and then the *application code* was reverted. Reverting code does not
+   * un-apply a migration, so the database now carries a table this repository
+   * cannot reproduce. The schema is fine; the reproducibility is not.
+   *
+   * This asserts three things a comment alone could not: the entry exists and
+   * explains itself, no repo file quietly restores it (which would change what
+   * ships without anybody deciding to), and the entry names something that is
+   * genuinely missing rather than being left behind after a fix.
+   */
+  const files = readdirSync(new URL("../supabase/migrations", import.meta.url)).filter((name) =>
+    name.endsWith(".sql")
+  );
+  const entries = Object.entries(snapshot.migration_ledger_drift.applied_without_a_repo_file);
+
+  assert.ok(entries.length <= 1, "this list must shrink, never grow");
+
+  for (const [version, entry] of entries) {
+    assert.ok(
+      !files.some((name) => name.startsWith(version.slice(0, 14))),
+      `${version} now has a repo file — remove the drift entry rather than keeping both`
+    );
+    for (const [field, text] of Object.entries(entry)) {
+      assert.ok(text.length > 40, `${version}.${field} must actually explain itself`);
+    }
+  }
+});
+
+test("every migration this pass added is present as a file", () => {
+  // The applied versions are assigned by the migration runner, not by the
+  // filename, so a file named differently from its recorded version leaves the
+  // ledger comparing two lists that only look the same by count.
+  const files = readdirSync(new URL("../supabase/migrations", import.meta.url));
+  for (const version of ["20260809102004", "20260809102051"]) {
+    assert.ok(
+      files.some((name) => name.startsWith(version)),
+      `${version} is applied in production but has no file named for it`
+    );
   }
 });
 

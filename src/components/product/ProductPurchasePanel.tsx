@@ -1,13 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faShareNodes, faCheck } from "@fortawesome/free-solid-svg-icons";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import QuantityField from "@/components/commerce/QuantityField";
 import WishlistButton from "@/components/commerce/WishlistButton";
 import ProductStickyBar from "@/components/product/ProductStickyBar";
+import { useProductGallery } from "@/components/product/ProductGalleryContext";
 import { useCartMutations } from "@/lib/hooks/useCart";
 import {
   allowsDirectPurchase,
@@ -15,6 +17,12 @@ import {
   PURCHASE_MODE_COPY,
   type PurchaseMode,
 } from "@/lib/commerce/purchaseModes";
+import {
+  imageForSelection,
+  optionImageIndex,
+  rendersAsSwatches,
+  type GalleryMediaRef,
+} from "@/lib/commerce/optionMedia";
 import { money, type ProductOptionGroup } from "@/lib/commerceTypes";
 
 type ProductPurchasePanelProps = {
@@ -28,6 +36,12 @@ type ProductPurchasePanelProps = {
   groups: ProductOptionGroup[];
   requestHref: string;
   shareUrl: string;
+  /**
+   * The gallery this product is showing, in display order, so an option value's
+   * `media_id` can be resolved to something actually on screen. Optional: a
+   * product with no images simply never switches.
+   */
+  gallery?: GalleryMediaRef[];
 };
 
 type Selections = Record<string, string>;
@@ -61,8 +75,10 @@ export default function ProductPurchasePanel({
   groups,
   requestHref,
   shareUrl,
+  gallery = [],
 }: ProductPurchasePanelProps) {
   const { add } = useCartMutations();
+  const { showMedia } = useProductGallery();
 
   const [selections, setSelections] = useState<Selections>(() => {
     const initial: Selections = {};
@@ -100,6 +116,31 @@ export default function ProductPurchasePanel({
         ? groups.filter((group) => ["select", "radio"].includes(group.input_type))
         : [],
     [groups, purchaseMode]
+  );
+
+  /** Which `option_key:value` pairs resolve to an image this gallery is showing. */
+  const imageIndex = useMemo(() => optionImageIndex(groups, gallery), [groups, gallery]);
+
+  /*
+   * One place every option choice goes through.
+   *
+   * The gallery switch has to sit with the state change rather than in an
+   * effect watching `selections`: an effect cannot tell *which* group moved, and
+   * "the most recently selected image-bearing option wins" is a fact about the
+   * interaction. A `Record` has no order to recover it from.
+   *
+   * Choosing a value with no image is explicitly not a gallery event — the
+   * customer keeps whatever they were looking at, including a photograph they
+   * browsed to by hand.
+   */
+  const choose = useCallback(
+    (optionKey: string, value: string) => {
+      setSelections((current) => ({ ...current, [optionKey]: value }));
+      setMessage("");
+      const mediaId = imageForSelection(imageIndex, optionKey, value);
+      if (mediaId) showMedia(mediaId);
+    },
+    [imageIndex, showMedia]
   );
 
   const missing = useMemo(
@@ -234,13 +275,62 @@ export default function ProductPurchasePanel({
                   </p>
                 ) : null}
 
-                {group.input_type === "select" ? (
+                {rendersAsSwatches(group, imageIndex) ? (
+                  /*
+                   * Image swatches.
+                   *
+                   * A radio group, so it is one tab stop with arrow keys inside
+                   * it, and every swatch carries its label as real text — the
+                   * thumbnail is `aria-hidden` decoration. That is what stops
+                   * this being colour-only: the name is written under the image,
+                   * the selected one is ringed *and* ticked *and* `aria-checked`,
+                   * and a value with no image of its own still appears here as a
+                   * labelled tile rather than silently vanishing from the list.
+                   */
+                  <div
+                    role="radiogroup"
+                    aria-label={group.name}
+                    className={`product-option-swatches${isMissing ? " is-invalid" : ""}`}
+                  >
+                    {values.map((value) => {
+                      const checked = selections[group.option_key] === value.value;
+                      const mediaId = imageIndex.get(`${group.option_key}:${value.value}`);
+                      const image = mediaId ? gallery.find((entry) => entry.id === mediaId) : undefined;
+                      return (
+                        <button
+                          key={value.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={checked}
+                          tabIndex={checked || (!selections[group.option_key] && value === values[0]) ? 0 : -1}
+                          id={checked ? `option-${group.option_key}` : undefined}
+                          onClick={() => choose(group.option_key, value.value)}
+                          className={`product-option-swatch${checked ? " is-selected" : ""}`}
+                        >
+                          <span className="product-option-swatch-frame" aria-hidden="true">
+                            {image?.url ? (
+                              <Image src={image.url} alt="" fill sizes="72px" className="object-cover" />
+                            ) : (
+                              <span className="product-option-swatch-blank">—</span>
+                            )}
+                          </span>
+                          <span className="product-option-swatch-label">{value.label}</span>
+                          {value.price_adjustment_cents ? (
+                            <span className="product-option-swatch-price">
+                              {money(value.price_adjustment_cents)}
+                            </span>
+                          ) : null}
+                          {value.requires_request ? (
+                            <span className="product-option-choice-note">Quoted</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : group.input_type === "select" ? (
                   <MenuSelect
                     value={selections[group.option_key] ?? ""}
-                    onChange={(value) => {
-                      setSelections((current) => ({ ...current, [group.option_key]: value }));
-                      setMessage("");
-                    }}
+                    onChange={(value) => choose(group.option_key, value)}
                     ariaLabel={group.name}
                     align="left"
                     className={`ui-select-trigger product-option-select${isMissing ? " is-invalid" : ""}`}
@@ -268,10 +358,7 @@ export default function ProductPurchasePanel({
                             name={group.option_key}
                             id={checked ? `option-${group.option_key}` : undefined}
                             checked={checked}
-                            onChange={() => {
-                              setSelections((current) => ({ ...current, [group.option_key]: value.value }));
-                              setMessage("");
-                            }}
+                            onChange={() => choose(group.option_key, value.value)}
                             className="sr-only"
                           />
                           <span className="product-option-choice-label">{value.label}</span>

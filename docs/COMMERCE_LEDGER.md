@@ -5392,3 +5392,299 @@ one draft, one save.
    no longer sit inside a bordered box inside a card.
 5. **Business → Email.** Templates, Delivery history and Settings as three tabs;
    the old `/staff/emails/deliveries` link should redirect into the tab.
+
+---
+
+# Pass 17 — sidebar scroll, real production linking, option media, catalog density, 3D disclaimer
+
+Branch `staff-production-options-catalog-3d-20260808`, work commit `53ec643`,
+from `e012e9f`.
+
+## Verified starting state — 2026-08-09
+
+| Check | Result |
+|---|---|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| Local `main` | `e012e9f` (the expected baseline) |
+| `origin/main` | **`17309b2`** — four commits ahead, tree identical to `e012e9f` |
+| Production health | `/` 200, `/catalog` 200 |
+| Migration ledger | **47 repo files, 48 production rows** — see the drift below |
+
+`origin/main` moved while this pass was being prepared: a guest-order
+verification branch was merged (`aaba2b4`) and reverted (`13cfa05`), and the
+revert was itself merged (`17309b2`). `git diff e012e9f origin/main` is empty,
+so the *tree* is the baseline; only the history is longer.
+
+## The migration ledger no longer reconciles, and that is recorded
+
+`20260809010000_guest_order_verification` is **applied in production and has no
+file in this repository**. Reverting application code does not un-apply a
+migration, so the database carries `guest_order_access_codes` plus
+`replace_guest_order_access_code` and `record_guest_order_code_failure`, and
+nothing in the repository reads them.
+
+Left exactly as found, at the owner's direction. It is recorded in
+`tests/fixtures/production-schema.json` under a new `migration_ledger_drift`
+key, and `staff-schema-contract.test.ts` asserts the entry explains itself, that
+the list only shrinks, and that no repo file quietly restores it — which would
+change what ships without anybody deciding to.
+
+It is self-contained: it alters no existing table, so it interferes with nothing
+in this pass.
+
+## The headline: two defects found only by driving a browser
+
+### 1. The sidebar could not reach its own bottom
+
+`.staff-nav` carried `lg:sticky lg:top-4` and nothing bounded its height. That
+is the pathological case for `position: sticky`: an element taller than the
+viewport pins at `top`, and the part below the viewport's bottom edge cannot be
+reached at all, because sticky does not scroll and the page scroll moves the
+content column instead. With "More tools" expanded that is eleven destinations
+you can see the top of and never click. It also rode up under the site header,
+which is `sticky top-0` at `z-60`.
+
+The rail is now the sticky box, sized to the space under the header, as a flex
+column: head `flex: none`, group list `flex: 1` with its own scroll. A
+`min-height: 0` in both places is load-bearing — a flex item's default
+`min-height: auto` refuses to shrink below its content and would push the
+overflow straight back out. `--km-header-height` moved from `.site-header-inner`
+to `:root`, because a variable scoped to a box *inside* the header is reachable
+from nowhere else.
+
+Measured at 1280x900, page scrolled to 3000: rail pinned at 76px and unmoved,
+menu scrolled independently, page did not move when the menu did, last link
+("Audit log") inside the viewport, no horizontal overflow. Same at 1024 and 1920.
+
+### 2. Fixing that silently broke the collapsed rail's tooltips
+
+A scroll container clips its **cross axis** too. `overflow-x: clip` with
+`overflow-clip-margin: 14rem` was written specifically to let the 72px rail's
+tooltips out, and it does nothing: once the box scrolls in one axis Chrome
+treats `clip` on the other as plain `hidden` and ignores the margin.
+
+This looked correct in CSS and passed a test asserting the CSS. It was caught by
+probing `document.elementFromPoint` at the tooltip's own centre: the box sat 82px
+outside the rail and **not one pixel was hit-testable**. Those labels are the
+only thing naming an icon-only link for a sighted keyboard user.
+
+Now a single `position: fixed` element rendered *outside* the scroller and
+positioned from the hovered or focused link — one element instead of
+twenty-seven, and nothing clips it. Re-probed: with `pointer-events` restored
+for the measurement, `elementFromPoint` returns the tooltip. Focus and blur were
+driven with real `focusin`/`focusout` events, because the Browser pane is not
+displayed, so `document.hasFocus()` is false and `.focus()` sets `activeElement`
+without firing an event.
+
+## Production and orders
+
+`production_jobs` has carried `order_id`, `order_item_id`, `product_id` and
+`customer_id` since pass 5, and `./link` has been correct since pass 14. What
+did not work was everything around it.
+
+| Before | After |
+|---|---|
+| "This job will be linked to the order it was raised from" — naming no order | **Source order: KM-xxxx**, as a link, before anything is created |
+| Quantity defaulted to 1 beside an order for six | Prefilled from the order |
+| `order_item_id` accepted by `parseJobDraft`, sent by nothing | Sent, so a job points at a line and not just an order |
+| Link picker offered only jobs attached to no order | Searches **every** open job |
+| A bare `select` showing neither status nor owner | Status badge and "On order KM-xxxx" / "Not linked" on every row |
+| Moving work between orders impossible | Possible, behind a confirmation naming both orders |
+| Nothing said an order already had work | Duplicate guard naming the open jobs |
+
+The picker sends `expectedOrderId` as the job's *actual* current link rather than
+a hardcoded `null`, so the server's stale check compares against what the reader
+was shown. "Impossible" is not the same as "deliberate".
+
+The pass-14 regression — saving a job's details detached it from its order — is
+now pinned by a test that exercises `parseJobDraft` directly: an absent link key
+resolves to `null`, which is *why* PATCH destructures all four out before
+writing.
+
+## Category
+
+The editor had a picker. **Creating** a product had a free-text box that wrote
+the legacy `category` string and left `category_id` null, so a new product could
+be filed under "Interor" and belong to no real category. Both surfaces now use
+the same picker, and the text column is derived from the chosen row.
+
+A second defect, found while wiring it: the picker was handed
+`visibleCategories(...)`, so a product filed under a category archived afterwards
+displayed "Uncategorized" **and** the derived-name lookup missed, meaning the
+next save of any unrelated field wrote `category: null`. The picker now receives
+every row, offers only usable ones, and shows an archived assignment as
+"(archived) — pick another".
+
+`CategorySelect` also stopped being a listbox trigger inside a `label`, which
+made clicking the caption open the menu and printed "Category" twice.
+
+## Appearance
+
+Pass 15 fixed the *labelling* problem. It did not fix the **counting** problem,
+which is what "harder to navigate" meant: 34 editable colours, and the two things
+the owner named returned four plausible results each.
+
+`src/theme/appearanceTasks.ts` groups them into things a person names — six
+sections, eleven everyday tasks, seven in Advanced — each with its own two or
+three colours labelled by the role they play in *that thing*: Background, Text,
+Border. Under a heading that says **Custom project button**, the field is called
+Background rather than "Secondary button background".
+
+| Property | How it is kept |
+|---|---|
+| Every colour has exactly one home | Partition asserted total and disjoint |
+| Nothing became uneditable | `ownedKeys().length === APPEARANCE_SETTINGS.length` |
+| Shared colours are not duplicated | Prices and the focus ring are `pointer` tasks explaining where the colour lives |
+| Search resolves a thing to one answer | Ranked: `2` the task *is* it, `1` merely related |
+| No token jargon | A regex over every label, description and keyword |
+| Inheritance in words | "Use brand accent", and the word "unset" must not reach the screen |
+
+The ranking exists because a strict search would have *hidden* something true:
+the badge follows the accent until it is given its own colour, so "customizable"
+legitimately matches Brand accent too. It ranks second rather than being
+suppressed.
+
+## Option values
+
+**No second pricing mechanism was created.** `price_adjustment_cents` has been
+the server-authoritative adjustment since `20260731060000`, summed by
+`priceLine`, carried through the cart, checkout, the Stripe amount and the
+`order_items` snapshot. Verified, then pinned by tests: positive, zero, negative,
+combined, inactive, and a floor at zero on the unit price.
+
+What was missing was the editor. `is_default`, `is_active` and `requires_request`
+were obeyed by the storefront and **editable nowhere** — the only way to change
+one was a hand-written SQL statement. All three are now on the value row,
+alongside the new image association.
+
+An option value may point at a `product_media` row, never a copied URL: replace
+the image and a URL would show the old one; delete it and the URL would 404.
+Selecting a value with an image switches the gallery; selecting one without leaves
+it exactly where it is, including on a photograph browsed to by hand. The switch
+is keyed on a token rather than a media id, so re-picking Blue after browsing away
+works — comparing ids would make the second press a no-op.
+
+Option groups can be drawn as image swatches, chosen explicitly by staff and
+**never inferred from the option's name**. Swatches need both the instruction and
+at least one resolvable image, because a swatch row with no thumbnails is worse
+than the buttons it replaced.
+
+## Catalog
+
+Three columns on desktop, with a 2/3/4 control beside sorting. The layout never
+reads React state: an inline script stamps `data-catalog-density` before first
+paint and CSS does the rest, so a stored preference of four does not render three
+and reflow. Four is clamped to three between 1024 and 1280 — where the rail
+leaves each card under 180px — and the *preference is kept*, so widening brings
+it back.
+
+Measured: 3 columns at 1280 by default, 4 after choosing it, persisted across
+reload with the attribute set pre-paint, clamped to 3 at 1100 with the stored
+value still `"4"`, 1 column and no control at 375. No horizontal overflow at any
+width.
+
+A duplicate-id defect was caught here too: the catalog mounts the browser inside
+a Suspense boundary and a second instance put duplicate `catalog-density-3` ids in
+the document. Ids come from `useId` now.
+
+## The 3D disclaimer
+
+`Textures may not be accurate.` — inside `ProductModelViewer`, which is the only
+thing in `src/` that constructs a `model-viewer`. A test walks the whole tree and
+fails if a second one appears, so a future quick-view or configurator inherits
+the notice by construction rather than by somebody remembering.
+
+In normal flow beneath the viewport, not an overlay: the model's whole surface is
+its drag target for camera control. Not dismissible, not a tooltip, not a toast,
+not conditional on anything. Verified in a browser at 1280 and 375 — exact text,
+`opacity: 1`, below the stage, not overlapping it — and absent on a product with
+no model.
+
+## Migrations — applied, with approval
+
+| Version | What |
+|---|---|
+| `20260809102004_option_value_media_and_display_style` | `product_option_values.media_id` (nullable, FK to `product_media` ON DELETE SET NULL, partial index, same-product trigger) and `product_option_groups.display_style` (NOT NULL DEFAULT `buttons`, CHECK buttons/swatches) |
+| `20260809102051_option_value_media_trigger_not_callable` | Revokes EXECUTE on the trigger function from `public`, `anon`, `authenticated` |
+
+Dry-run against production inside a transaction and rolled back, twice, with the
+rollback verified by re-querying `information_schema` both times. The exercise
+proved: same-product image accepted; cross-product refused `23514`; the price
+adjustment untouched; deleting a linked image nulls the link and leaves the value
+on sale and priced; `display_style` defaults to `buttons`, rejects `rainbow`,
+accepts `swatches`; clearing back to null always allowed.
+
+After applying: 4 option values, all 4 still priced, all 4 unlinked; 2 groups on
+`buttons`; 6 media rows; 3 products; 11 orders — all unchanged.
+
+The second migration exists because the first introduced a **new security advisor
+finding**: PostgREST publishes every `public` function as `/rest/v1/rpc/<name>`,
+so a SECURITY DEFINER trigger function was callable by `anon`. Calling it would
+fail anyway — `new` is unbound — but "it errors" is not an access control.
+Revoked from PUBLIC as well as the two roles, because role grants inherit from
+PUBLIC. Verified after: `has_function_privilege` false for both, and the trigger
+still fires and still refuses a cross-product image.
+
+Numbered `202608091020xx` rather than `20260808030000` so they sort *after* the
+applied-but-unfiled guest migration, which the runner is entitled to refuse
+otherwise. No grants issued and none needed — both are column additions and a
+column inherits the table ACL. RLS unchanged: every policy on both tables is
+row-scoped and none enumerates columns.
+
+## Validation
+
+- **1623 tests pass, 0 fail** (1620 at `e012e9f`). Seven new suites; five
+  existing suites re-pointed to the new mechanisms and made stricter.
+- Typecheck clean. Production build clean from a cleared `.next`, exit 0.
+- **Lint at the 332 baseline** (178 errors, 154 warnings), unchanged.
+
+Three tests failed on their first run and each was right to. `appearance-tasks`
+refused the claim that "customizable" returns exactly one result — it returns two,
+and the second is true. `catalog-grid-density` caught the React Compiler refusing
+a callback that depended on a render-scoped helper. `staff-sidebar-scroll` failed
+on its own documentation: the comment explaining that `opacity: 0` was removed
+contains the string the assertion forbade.
+
+### What could not be verified, and why
+
+- **A signed-in staff session.** Unchanged since pass 3. The sidebar was driven
+  through a temporary local harness mounting the real `StaffShell` with
+  `["meAccess"]` seeded, at a path middleware does not guard. Deleted before the
+  commit; no file in the diff references it.
+- **The Appearance page in a browser.** Its rules are covered by 16 new tests
+  over the task layer, but the rendered page was not driven. The preview's
+  click-to-jump was not built.
+- **Order option display (phase 11).** `order_items.selected_options` stores
+  `{option_key: value}` and no order in production has a non-empty one, so there
+  was nothing to render and no format to preserve. Showing "Colour: Blue (+$10)"
+  needs the label and the adjustment *snapshotted* at checkout — resolving them
+  live would let a later staff edit rewrite what a customer was told they paid.
+  That is an additive `order_items` column and its own approval; deliberately not
+  done here rather than done wrongly.
+- **The running Vercel preview**, as in every previous pass: SSO-gated, and the
+  Vercel CLI is not installed.
+
+## Deferred, honestly
+
+1. **Order option display**, above — the one phase of this pass not delivered.
+2. **The `guest_order_access_codes` drift.** Recorded, not repaired.
+3. **Multiple manufacturable items per order.** The staff order page is built on
+   the single-product shape (`order.product_name`, `order.quantity`); jobs can now
+   carry an `order_item_id` but nothing yet offers a per-line choice.
+4. **`ProductRequestForm`** still renders its own option list and does not use
+   swatches or the gallery link.
+
+## Owner checks worth five minutes
+
+1. **Open any staff page and collapse the sidebar.** Hover an icon — the label
+   should appear beside the rail, not be cut off at 72px.
+2. **Expand "More tools" on a short screen.** The menu should scroll inside the
+   sidebar while the page behind it stays put, and Audit log should be clickable.
+3. **Open an order, then Production.** "Create production job" should open a form
+   naming the order and carrying its quantity.
+4. **Press "Link existing job" and search.** Every result should say where it
+   currently lives; picking one already on another order should ask first.
+5. **Appearance, then search "customizable".** One obvious result with three fields.
+6. **A product with a 3D model.** The notice should be under the model, always.
+7. **`/catalog`.** Three columns; try the density control and reload.

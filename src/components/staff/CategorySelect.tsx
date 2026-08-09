@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { buildCategoryTree, UNCATEGORIZED_LABEL, type CategoryRow } from "@/lib/commerce/categories";
+import {
+  buildCategoryTree,
+  categoryTrail,
+  UNCATEGORIZED_LABEL,
+  visibleCategories,
+  type CategoryRow,
+} from "@/lib/commerce/categories";
 
 /**
  * Searchable, hierarchical category picker.
@@ -15,10 +21,36 @@ import { buildCategoryTree, UNCATEGORIZED_LABEL, type CategoryRow } from "@/lib/
  * native option cannot render.
  */
 
-export type CategoryOption = { id: string | null; label: string; parentLabel: string | null; depth: number };
+export type CategoryOption = {
+  id: string | null;
+  label: string;
+  parentLabel: string | null;
+  depth: number;
+  /**
+   * True for a category that is archived or switched off and is only in the
+   * list because this product is currently filed under it.
+   */
+  retired?: boolean;
+};
 
-export function categoryOptions(rows: readonly CategoryRow[], counts?: ReadonlyMap<string, number>): CategoryOption[] {
-  const tree = buildCategoryTree(rows, counts ?? new Map());
+/**
+ * The choosable categories, plus — when it would otherwise vanish — the one
+ * already stored on the record.
+ *
+ * `rows` is the **whole** table, not a pre-filtered list. That matters: only
+ * active, unarchived categories may be *picked*, but a product filed under a
+ * category that was archived afterwards still has to show what it is filed
+ * under. Filtering before this function ran meant the picker silently displayed
+ * "Uncategorized" for such a product, which is a different claim from the truth
+ * and one that a careless save would have made real.
+ */
+export function categoryOptions(
+  rows: readonly CategoryRow[],
+  counts?: ReadonlyMap<string, number>,
+  currentId?: string | null
+): CategoryOption[] {
+  const selectable = visibleCategories(rows);
+  const tree = buildCategoryTree(selectable, counts ?? new Map());
   const options: CategoryOption[] = [{ id: null, label: UNCATEGORIZED_LABEL, parentLabel: null, depth: 0 }];
 
   for (const parent of tree) {
@@ -27,6 +59,21 @@ export function categoryOptions(rows: readonly CategoryRow[], counts?: ReadonlyM
       options.push({ id: child.id, label: child.name, parentLabel: parent.name, depth: 1 });
     }
   }
+
+  if (currentId && !options.some((option) => option.id === currentId)) {
+    const trail = categoryTrail(currentId, rows);
+    const current = trail[trail.length - 1];
+    if (current) {
+      options.push({
+        id: current.id,
+        label: current.name,
+        parentLabel: trail.length > 1 ? trail[0].name : null,
+        depth: trail.length > 1 ? 1 : 0,
+        retired: true,
+      });
+    }
+  }
+
   return options;
 }
 
@@ -44,6 +91,8 @@ type CategorySelectProps = {
   productCounts?: ReadonlyMap<string, number>;
   disabled?: boolean;
   label?: string;
+  /** Sits under the control, in the place a `Field`'s help text would. */
+  help?: React.ReactNode;
 };
 
 export function CategorySelect({
@@ -53,6 +102,7 @@ export function CategorySelect({
   productCounts,
   disabled = false,
   label = "Category",
+  help,
 }: CategorySelectProps) {
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState("");
@@ -61,7 +111,10 @@ export function CategorySelect({
   const searchRef = useRef<HTMLInputElement | null>(null);
   const listId = useId();
 
-  const options = useMemo(() => categoryOptions(categories, productCounts), [categories, productCounts]);
+  const options = useMemo(
+    () => categoryOptions(categories, productCounts, value),
+    [categories, productCounts, value]
+  );
   const visible = useMemo(() => {
     const needle = term.trim().toLowerCase();
     return options.filter((option) => matches(option, needle));
@@ -112,13 +165,31 @@ export function CategorySelect({
     }
   };
 
-  const describe = (option: CategoryOption) =>
-    option.parentLabel ? `${option.parentLabel} › ${option.label}` : option.label;
+  const describe = (option: CategoryOption) => {
+    const trail = option.parentLabel ? `${option.parentLabel} › ${option.label}` : option.label;
+    // Said in words on the trigger, not shown as a colour or an icon: the fact
+    // that the stored category is no longer offered is the whole reason this
+    // row is in the list, and it is the thing somebody needs to act on.
+    return option.retired ? `${trail} (archived)` : trail;
+  };
 
   return (
-    <div className="text-sm" ref={containerRef}>
-      <span className="block">{label}</span>
-      <div className="relative mt-1">
+    /*
+     * A `div.ui-field`, not a `<label>`.
+     *
+     * This used to be dropped inside the shared `Field`, which *is* a `<label>`
+     * — so the trigger was a button inside a label (clicking the word
+     * "Category" opened the menu, which is not what a field label does) and the
+     * word appeared twice, once from `Field` and once from here. The control now
+     * owns its own label markup and names the button through `aria-labelledby`,
+     * so a screen reader announces "Category, Interior › Knobs" rather than
+     * reading the value with no idea what it is the value of.
+     */
+    <div className="ui-field" ref={containerRef}>
+      <span className="ui-label" id={`${listId}-label`}>
+        {label}
+      </span>
+      <div className="relative">
         <button
           type="button"
           disabled={disabled}
@@ -130,9 +201,12 @@ export function CategorySelect({
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-controls={open ? listId : undefined}
+          aria-labelledby={`${listId}-label ${listId}-value`}
           className="ui-select-trigger w-full justify-between text-left disabled:opacity-50"
         >
-          <span className={selected?.id ? "" : "text-brand-textMuted"}>{selected ? describe(selected) : UNCATEGORIZED_LABEL}</span>
+          <span id={`${listId}-value`} className={selected?.id ? "" : "text-brand-textMuted"}>
+            {selected ? describe(selected) : UNCATEGORIZED_LABEL}
+          </span>
           <span aria-hidden="true" className="ml-2 opacity-70">▾</span>
         </button>
 
@@ -178,6 +252,9 @@ export function CategorySelect({
                           {option.parentLabel ? (
                             <span className="ml-2 text-xs text-brand-textMuted">in {option.parentLabel}</span>
                           ) : null}
+                          {option.retired ? (
+                            <span className="ml-2 text-xs text-brand-textMuted">archived — pick another</span>
+                          ) : null}
                         </span>
                         {option.id && productCounts?.get(option.id) != null ? (
                           <span className="text-xs text-brand-textMuted">{productCounts.get(option.id)}</span>
@@ -193,6 +270,7 @@ export function CategorySelect({
           </div>
         ) : null}
       </div>
+      {help ? <span className="ui-help">{help}</span> : null}
     </div>
   );
 }

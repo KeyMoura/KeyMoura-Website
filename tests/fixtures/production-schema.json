@@ -82,8 +82,8 @@
     "permissions": ["category", "description", "key", "name"],
     "product_categories": ["archived_at", "created_at", "description", "display_order", "id", "image_url", "is_active", "name", "parent_id", "slug", "updated_at"],
     "product_media": ["alt_text", "id", "kind", "product_id", "sort_order", "url"],
-    "product_option_groups": ["description", "id", "input_type", "is_required", "name", "option_key", "placeholder", "product_id", "sort_order", "updated_at"],
-    "product_option_values": ["id", "is_active", "is_default", "label", "option_group_id", "price_adjustment_cents", "requires_request", "sort_order", "value"],
+    "product_option_groups": ["description", "display_style", "id", "input_type", "is_required", "name", "option_key", "placeholder", "product_id", "sort_order", "updated_at"],
+    "product_option_values": ["id", "is_active", "is_default", "label", "media_id", "option_group_id", "price_adjustment_cents", "requires_request", "sort_order", "value"],
     "product_review_reports": ["created_at", "id", "reason", "reporter_id", "resolved_at", "resolved_by", "review_id", "status"],
     "product_reviews": ["body", "created_at", "customer_id", "id", "is_verified_purchase", "moderated_at", "moderated_by", "moderation_reason", "order_id", "order_item_id", "product_id", "rating", "status", "title", "updated_at"],
     "production_job_events": ["actor_id", "created_at", "event_type", "from_status", "id", "job_id", "metadata", "note", "to_status"],
@@ -117,7 +117,24 @@
     "workshop_project_images": ["alt_text", "created_at", "id", "image_url", "owner_id", "project_id", "sort_order", "storage_path"]
   },
   "pending_migrations": {
-    "_comment": "Columns a migration in this repository adds but which are not yet applied to production. The contract test treats these as legal so a branch can be red on production and green on itself; the entry is removed when the migration is applied and the snapshot refreshed. Empty: both pass-14 migrations are applied, and their columns now appear in `tables` above because they genuinely exist."
+    "_comment": "Columns a migration in this repository adds but which are not yet applied to production. The contract test treats these as legal so a branch can be red on production and green on itself; the entry is removed when the migration is applied and the snapshot refreshed. Empty: 20260809102004 is applied, and product_option_values.media_id and product_option_groups.display_style now appear in `tables` above because they genuinely exist."
+  },
+  "migration_ledger_drift": {
+    "_comment": [
+      "Migrations applied to production that have no file in supabase/migrations.",
+      "This is not column drift — the schema is real and correct — it is *history* drift:",
+      "the repository can no longer reproduce the database from its own migrations.",
+      "Recorded rather than repaired, at the owner's direction. Only ever remove an entry",
+      "by restoring the file or by dropping the objects; never by deleting the line."
+    ],
+    "applied_without_a_repo_file": {
+      "20260809010000_guest_order_verification": {
+        "what": "Creates guest_order_access_codes plus replace_guest_order_access_code and record_guest_order_code_failure.",
+        "how": "Merged from codex/implement-guest-order-access-and-verification (aaba2b4), then the application code was reverted (13cfa05). The migration row stayed because a revert of application code does not un-apply a migration.",
+        "effect": "The table and its functions exist and are orphaned: no code in this repository reads or writes them. It is self-contained — it alters no existing table — so nothing else is affected.",
+        "why_not_fixed": "Out of scope for this pass and explicitly off-limits. Restoring the file or dropping the objects is an owner decision, not a side effect of unrelated work."
+      }
+    }
   },
   "known_drift": {
     "_comment": [

@@ -28,7 +28,20 @@ export type ProductOptionValue = {
    * onto the request path.
    */
   requires_request?: boolean | null;
+  /**
+   * The gallery image this choice switches the storefront to, or null.
+   *
+   * A `product_media` row id, never a URL. Copying the URL in here would be a
+   * second address for the same photograph: replace the image and the swatch
+   * keeps showing the old one, delete it and the swatch points at a 404. The
+   * relation is enforced both ways — a foreign key with ON DELETE SET NULL, and
+   * a trigger refusing media that belongs to a different product.
+   */
+  media_id?: string | null;
 };
+
+/** How a group's choices are drawn. Chosen by staff, never inferred from the name. */
+export type OptionDisplayStyle = "buttons" | "swatches";
 
 export type ProductOptionGroup = {
   id: string;
@@ -40,6 +53,14 @@ export type ProductOptionGroup = {
   placeholder: string | null;
   is_required: boolean;
   sort_order: number;
+  /**
+   * `buttons` defers to `input_type` (a dropdown for select, cards for radio);
+   * `swatches` draws each value's linked image. Separate from `input_type`
+   * because that says what kind of *answer* the option takes — the request
+   * wizard reads it to choose between a text box, a number and a file upload —
+   * and presentation is a different question asked only of choice-shaped types.
+   */
+  display_style?: OptionDisplayStyle | null;
   product_option_values?: ProductOptionValue[];
 };
 

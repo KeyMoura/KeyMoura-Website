@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import ProductCard, { type ProductCardProduct } from "@/components/ProductCard";
 import CatalogBrowseDrawer from "@/components/catalog/CatalogBrowseDrawer";
+import CatalogDensityControl from "@/components/catalog/CatalogDensityControl";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import type { CategoryRow } from "@/lib/commerce/categories";
 import {
@@ -302,6 +303,10 @@ export default function CatalogBrowser({
               onChange={(value) => setFilters({ sort: value as CatalogFilters["sort"] }, "push")}
               options={SORT_OPTIONS}
             />
+            {/* Beside sorting, because both are "how am I looking at this list"
+                — and deliberately not in the rail with the category tree, which
+                is "what list am I looking at". */}
+            <CatalogDensityControl />
           </div>
 
           <CatalogBrowseDrawer

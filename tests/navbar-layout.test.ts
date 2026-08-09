@@ -148,11 +148,29 @@ test("an operator wordmark is bounded so it cannot push the navigation", () => {
   assert.match(header, /wordmarkUrl[\s\S]{0,300}max-w-32/);
 });
 
-test("one definition of the header height", () => {
-  // The drawer offsets by it and the sticky purchase panel subtracts it.
-  assert.match(css, /--km-header-height:\s*3\.75rem/);
-  assert.match(css, /\[data-navigation-density="comfortable"\] \.site-header-inner \{ --km-header-height: 4\.25rem/);
+test("one definition of the header height, reachable from outside the header", () => {
+  /*
+   * The drawer offsets by it, the sticky purchase panel subtracts it, and the
+   * staff rail sizes itself against it. That last one is why it now lives on
+   * `:root` rather than on `.site-header-inner`: the header is `sticky top-0`,
+   * so anything else wanting to sit below it has to know how tall it is — and a
+   * variable scoped to a box *inside* the header is reachable from nowhere else
+   * on the page. Still one definition, just one that everybody can see.
+   */
+  assert.match(css, /:root \{ --km-header-height: 3\.75rem; \}/);
+  assert.match(css, /\[data-navigation-density="comfortable"\] \{ --km-header-height: 4\.25rem; \}/);
   assert.match(css, /\.site-header-desktop,\s*\.site-header-mobile \{ height: var\(--km-header-height\)/);
+
+  // Exactly one declaration per density, or "one definition" is not true.
+  const declarations = css.match(/--km-header-height:\s*[\d.]+rem/g) ?? [];
+  assert.equal(declarations.length, 2, `expected the default and the comfortable override, saw ${declarations.length}`);
+
+  // Equal specificity, so source order is what decides which wins.
+  assert.ok(
+    css.indexOf('[data-navigation-density="comfortable"] { --km-header-height')
+      > css.indexOf(":root { --km-header-height"),
+    "the comfortable override must come after the root default"
+  );
 });
 
 test("the overflow split is CSS, not measurement", () => {

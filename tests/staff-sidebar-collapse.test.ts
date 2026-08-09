@@ -75,13 +75,20 @@ test("group separators fit the narrow rail", () => {
 });
 
 test("the collapsed rail is labelled for the keyboard, not only the pointer", () => {
-  // No browser raises a `title` tooltip on focus, so the previous rail was
-  // unlabelled for anyone tabbing it.
+  /*
+   * No browser raises a `title` tooltip on focus, so the rail must supply its
+   * own. Re-pointed: the CSS `:hover`/`:focus-visible` descendant rules are gone
+   * because the tooltip is no longer a descendant of the link — it is one
+   * `position: fixed` element outside the scrolling group list, mounted by
+   * React from `onFocus`/`onMouseEnter`. Keyboard reachability is now a property
+   * of the handlers rather than of a selector, so that is what is asserted.
+   */
   assert.match(nav, /className="staff-nav-tip"/);
-  assert.match(css, /\.staff-nav-link:focus-visible \.staff-nav-tip/);
-  assert.match(css, /\.staff-nav-link:hover \.staff-nav-tip/);
+  assert.match(nav, /onFocus=\{isCompact \? showTip\(item\.label\) : undefined\}/, "focus must raise it");
+  assert.match(nav, /onBlur=\{isCompact \? \(\) => setTip\(null\) : undefined\}/, "blur must dismiss it");
+  assert.match(nav, /onMouseEnter=\{isCompact \? showTip\(item\.label\) : undefined\}/);
   // The tooltip duplicates the sr-only name, so it must not be announced twice.
-  assert.match(nav, /className="staff-nav-tip" aria-hidden="true"/);
+  assert.match(nav, /className="staff-nav-tip"\s*\n?\s*aria-hidden="true"/);
   assert.doesNotMatch(nav, /title=\{isCompact \? item\.label/, "title is not a keyboard-reachable tooltip");
 });
 
@@ -99,10 +106,20 @@ test("the collapse button remains reachable and states its state", () => {
 
 test("mobile stays a drawer and never inherits the desktop rail preference", () => {
   // The rail is display:none below lg and only becomes a grid column at lg, so
-  // a compact preference set on a desktop cannot reach a phone.
+  // a compact preference set on a desktop cannot reach a phone. It is `flex`
+  // rather than `block` since the rail became a viewport-height column with its
+  // own scrolling navigation; what matters here is only that it is shown at lg
+  // and gone below it.
   assert.match(css, /\.staff-shell-rail \{ display: none; \}/);
-  assert.match(css, /@media \(min-width: 1024px\) \{ \.staff-shell-rail \{ display: block/);
+  assert.match(css, /@media \(min-width: 1024px\) \{ \.staff-shell-rail \{ display: flex/);
   assert.match(shell, /lg:hidden[\s\S]{0,120}<StaffMobileNav \/>/);
+  // The drawer's copy of the nav must not pick up the rail's scroll container:
+  // a drawer that scrolls internally inside a page that also scrolls is two
+  // scrollbars for one list.
+  for (const rule of css.match(/\.staff-shell-rail [^{]*\{[^}]*\}/g) ?? []) {
+    assert.ok(rule.startsWith(".staff-shell-rail"), rule);
+  }
+  assert.doesNotMatch(css, /\.staff-nav-in-drawer[^}]*overflow-y: auto/);
   // Compact only applies to the sidebar variant, never the drawer's copy.
   assert.match(nav, /variant === "sidebar" && compact/);
 });
