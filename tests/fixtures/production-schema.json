@@ -45,6 +45,7 @@
     "forum_threads": ["accepted_post_id", "author_user_id", "category_id", "created_at", "created_by", "id", "is_deleted", "is_locked", "is_pinned", "last_post_at", "last_post_by", "locked_at", "locked_by", "locked_reason", "reply_count", "slug", "tags", "title", "updated_at", "view_count"],
     "garage_car_likes": ["car_id", "created_at", "user_id"],
     "garage_cars": ["chassis", "color", "cover_image_url", "created_at", "engine", "id", "is_primary", "make", "materials", "model", "mods", "name", "owner_id", "power_hp", "process_notes", "project_category", "summary", "tools_used", "torque_ftlb", "trim", "updated_at", "use_type", "visibility", "weight_lb", "year"],
+    "guest_order_access_codes": ["code_digest", "consumed_at", "created_at", "expires_at", "failed_attempts", "id", "last_attempt_at", "order_id"],
     "info_admin_todos": ["content_updated_at", "created_at", "created_by", "created_by_name", "description", "done_at", "done_by", "done_by_name", "id", "priority", "related_info_page_id", "related_info_page_slug", "resolution_notes", "status", "title", "updated_at"],
     "info_page_contributors": ["contributed_at", "info_page_id", "user_id"],
     "info_page_drafts": ["category", "chassis", "content_markdown", "created_at", "created_by", "id", "slug", "tags", "title", "updated_at"],
@@ -125,16 +126,20 @@
       "This is not column drift — the schema is real and correct — it is *history* drift:",
       "the repository can no longer reproduce the database from its own migrations.",
       "Recorded rather than repaired, at the owner's direction. Only ever remove an entry",
-      "by restoring the file or by dropping the objects; never by deleting the line."
+      "by restoring the file or by dropping the objects; never by deleting the line.",
+      "",
+      "Empty as of pass 18. The one entry it held — 20260809010000_guest_order_verification —",
+      "was resolved the permitted way: by restoring the file, not by deleting the line.",
+      "The historical migration was recovered byte-exact from aae7980 (sha256",
+      "b22b9faae539fbfdda21c9dd4a3bd10ac2649a93e5bda00e91432df49e812e05) after the live",
+      "objects were compared against it field by field — columns, indexes, constraints,",
+      "RLS, policy count, table and function ACLs, and the seeded email_templates row all",
+      "matched. The only ACL difference was service_role additionally holding Dxtm, which",
+      "is Supabase's own default privilege on any new public table and not something the",
+      "file could have granted. The migration was NOT re-executed: production already",
+      "records the version, and the file now represents that history rather than creating it."
     ],
-    "applied_without_a_repo_file": {
-      "20260809010000_guest_order_verification": {
-        "what": "Creates guest_order_access_codes plus replace_guest_order_access_code and record_guest_order_code_failure.",
-        "how": "Merged from codex/implement-guest-order-access-and-verification (aaba2b4), then the application code was reverted (13cfa05). The migration row stayed because a revert of application code does not un-apply a migration.",
-        "effect": "The table and its functions exist and are orphaned: no code in this repository reads or writes them. It is self-contained — it alters no existing table — so nothing else is affected.",
-        "why_not_fixed": "Out of scope for this pass and explicitly off-limits. Restoring the file or dropping the objects is an owner decision, not a side effect of unrelated work."
-      }
-    }
+    "applied_without_a_repo_file": {}
   },
   "known_drift": {
     "_comment": [

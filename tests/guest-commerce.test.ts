@@ -27,6 +27,8 @@ const guestPage = read("src/app/orders/guest/[id]/page.tsx");
 const guestMessages = read("src/app/api/orders/guest/[id]/messages/route.ts");
 const guestPay = read("src/app/api/orders/guest/[id]/checkout/route.ts");
 const customRequest = read("src/app/api/orders/custom/route.ts");
+const guestOrders = read("src/lib/commerce/guestOrders.ts");
+const verificationRoute = read("src/app/api/orders/guest/[id]/verification/route.ts");
 const migration = read("supabase/migrations/20260806050000_guest_commerce.sql");
 const turnstile = read("src/lib/security/turnstile.ts");
 // `rateLimit.ts` is server-only, so its buckets are read as source rather than
@@ -101,9 +103,12 @@ test("access expires on its own", () => {
     evaluateGuestAccess(token, { guest_token_hash: hashGuestOrderToken(token), guest_access_expires_at: past }),
     "expired"
   );
-  assert.equal(GUEST_ACCESS_WINDOW_DAYS, 90);
+  // 24 hours, not 90 days. The long window existed because losing the cookie
+  // lost the order permanently; six-digit email verification makes recovery
+  // cheap, so the session is now short and renewable.
+  assert.equal(GUEST_ACCESS_WINDOW_DAYS, 1);
   const expiry = Date.parse(guestAccessExpiry(new Date("2026-01-01T00:00:00Z")));
-  assert.equal(new Date(expiry).toISOString(), "2026-04-01T00:00:00.000Z");
+  assert.equal(new Date(expiry).toISOString(), "2026-01-02T00:00:00.000Z");
 });
 
 test("a missing expiry fails closed rather than meaning 'forever'", () => {
@@ -207,9 +212,31 @@ test("a guest order is written with an identity, a digest and an expiry", () => 
 
 test("the credential is set httpOnly and never appears in a URL", () => {
   assert.match(checkout, new RegExp(`cookies\\.set\\(${GUEST_ORDER_COOKIE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|GUEST_ORDER_COOKIE`));
-  assert.match(checkout, /httpOnly: true/);
-  assert.match(checkout, /sameSite: "lax"/);
-  assert.match(checkout, /secure: process\.env\.NODE_ENV === "production"/);
+
+  /*
+   * The flags moved into `guestOrderCookieOptions` rather than being repeated.
+   *
+   * Three routes now mint this session — cart checkout, custom request and code
+   * verification — and asserting the literals per route would have checked two
+   * of them and quietly missed whichever was added last. So the assertion is
+   * made once against the definition, and every minting route is required to
+   * use it. That is strictly stronger than what this test checked before: a
+   * fourth route cannot get the flags wrong without failing here.
+   */
+  assert.match(checkout, /guestOrderCookieOptions\(\)/);
+  assert.match(guestOrders, /httpOnly: true/);
+  assert.match(guestOrders, /sameSite: "lax"/);
+  assert.match(guestOrders, /secure: process\.env\.NODE_ENV === "production"/);
+  assert.match(guestOrders, /path: "\/"/);
+  for (const [name, source] of [
+    ["cart checkout", checkout],
+    ["custom request", customRequest],
+    ["code verification", verificationRoute],
+  ] as const) {
+    assert.match(source, /cookies\.set\(GUEST_ORDER_COOKIE, [^,]+, guestOrderCookieOptions\(\)\)/,
+      `${name} must mint the session through the shared cookie options`);
+  }
+
   const source = code(checkout);
   assert.ok(!/success_url[\s\S]{0,200}guestOrderToken/.test(source), "no token in the success URL");
   assert.ok(!/console\.(log|error|warn)[\s\S]{0,120}guestOrderToken/.test(source), "no token in a log line");
@@ -325,11 +352,24 @@ test("the guest order page is never indexed and never followed", () => {
   assert.match(guestPage, /robots: \{ index: false, follow: false, nocache: true \}/);
 });
 
-test("every denial reads the same, except an expiry that already matched", () => {
-  assert.match(guestPage, /const expired = result\.reason === "expired"/);
-  // A refused query is its own state and is not rendered as "not found".
-  assert.match(guestPage, /const unavailable = result\.reason === "unavailable"/);
+test("every routine denial becomes the same email challenge", () => {
+  /*
+   * This used to assert that the page branched on "expired" to word a denial
+   * differently. It no longer branches at all: every reason that is not an
+   * infrastructure failure renders the verification form, which is a stronger
+   * version of the same property. Distinguishing denials is what turns a page
+   * into an oracle for which order ids are real, and one branch fewer is one
+   * fewer place for the distinction to creep back in.
+   */
+  assert.match(guestPage, /if \(result\.reason !== "unavailable"\) return <GuestOrderVerification orderId=\{id\} \/>/);
+  assert.doesNotMatch(guestPage, /result\.reason === "expired"/, "no denial may be worded differently from another");
+  assert.doesNotMatch(guestPage, /result\.reason === "no_token"/);
+  assert.doesNotMatch(guestPage, /result\.reason === "mismatch"/);
+
+  // A refused query is its own state, is not rendered as "not found", and does
+  // not offer a code form that could only fail too.
   assert.match(access, /if \(error\) return \{ ok: false, reason: "unavailable" \}/);
+  assert.match(guestPage, /That order could not be loaded/);
 });
 
 // ---------------------------------------------------------------------------

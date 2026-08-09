@@ -10,7 +10,7 @@ import {
   guestAccessExpiry,
   guestDisplayName,
   GUEST_ORDER_COOKIE,
-  GUEST_ORDER_COOKIE_MAX_AGE,
+  guestOrderCookieOptions,
   hashGuestOrderToken,
   parseGuestContact,
   type GuestContact,
@@ -272,13 +272,7 @@ export async function POST(req: NextRequest) {
   );
 
   if (guestToken) {
-    response.cookies.set(GUEST_ORDER_COOKIE, guestToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: GUEST_ORDER_COOKIE_MAX_AGE,
-    });
+    response.cookies.set(GUEST_ORDER_COOKIE, guestToken, guestOrderCookieOptions());
   }
 
   return response;

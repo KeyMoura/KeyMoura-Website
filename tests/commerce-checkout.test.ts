@@ -113,8 +113,10 @@ test("a guest order carries an access credential that is never stored raw", () =
   assert.match(checkout, /createGuestOrderToken\(\)/);
   assert.match(checkout, /guest_token_hash: guestOrderToken \? hashGuestOrderToken\(guestOrderToken\) : null/);
   assert.match(checkout, /guest_access_expires_at: guestOrderToken \? guestAccessExpiry\(\) : null/);
-  // httpOnly, and never in a URL.
-  assert.match(checkout, /httpOnly: true/);
+  // httpOnly, and never in a URL. The flags themselves live in
+  // `guestOrderCookieOptions` so all three minting routes share one definition;
+  // `guest-commerce.test.ts` asserts their values there.
+  assert.match(checkout, /cookies\.set\(GUEST_ORDER_COOKIE, [^,]+, guestOrderCookieOptions\(\)\)/);
   assert.ok(
     !/success_url:[^;]*guestOrderToken/.test(checkout),
     "the token must never be placed in a redirect URL"

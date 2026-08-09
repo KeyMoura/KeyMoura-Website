@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import GuestOrderActions from "@/components/commerce/GuestOrderActions";
+import { GuestOrderVerification } from "@/components/commerce/GuestOrderVerification";
 import { OrderFulfillmentStatus } from "@/components/commerce/OrderFulfillmentStatus";
 import { resolveGuestOrder } from "@/lib/commerce/guestOrderAccess";
+import { GUEST_ACCESS_WINDOW_LABEL } from "@/lib/commerce/guestAccessWindow";
 import { lifecycleLabel, PAYMENT_LABELS, paymentWasTaken } from "@/lib/commerce/orderLifecycle";
 
 /**
@@ -49,27 +51,27 @@ export default async function GuestOrderPage({
 
   if (!result.ok) {
     /**
-     * Every denial renders the same page, with one exception.
+     * Every routine denial becomes the same email challenge.
      *
-     * "Expired" is only reachable by a token that *matched*, so saying so
-     * tells the holder nothing they did not already have. Every other reason —
-     * no cookie, wrong cookie, revoked, or an order id that does not exist —
-     * gets identical wording, because distinguishing them would turn this page
-     * into an oracle for whether an order id is real.
+     * No cookie, the wrong cookie, an expired session, a revoked one, or an
+     * order id that does not exist: all of them render `GuestOrderVerification`
+     * identically. That sameness is the point — a page that distinguished them
+     * would answer, for anyone willing to try ids, which ones are real. The
+     * guest proves the mailbox instead, and a guest who genuinely owns the
+     * order is a minute away rather than told to email support.
      */
-    const expired = result.reason === "expired";
-    const unavailable = result.reason === "unavailable";
+    if (result.reason !== "unavailable") return <GuestOrderVerification orderId={id} />;
+
+    /**
+     * Reserved for an infrastructure failure — a refused query, not a refused
+     * guest. It says nothing about whether the requested order exists, and it
+     * deliberately does not offer the code form, which could only fail too.
+     */
     return (
       <main className="page-container">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          {unavailable ? "That order could not be loaded" : expired ? "That link has expired" : "Order not available"}
-        </h1>
+        <h1 className="text-3xl font-semibold tracking-tight">That order could not be loaded</h1>
         <p className="mt-4 max-w-prose leading-7 text-brand-textMuted">
-          {unavailable
-            ? "Something went wrong reading this order. Nothing has changed — please try again in a moment."
-            : expired
-              ? "Guest order links stop working after 90 days. Your confirmation email still has the details, and support can help if you need anything else."
-              : "We could not confirm this order belongs to you on this device. If you checked out as a guest, open the link from the same browser you used, or reply to your confirmation email."}
+          Something went wrong reading this order. Nothing has changed — please try again in a moment.
         </p>
         <div className="ui-action-row mt-6">
           <Link href="/contact" className="ui-btn ui-btn-primary">
@@ -125,9 +127,11 @@ export default async function GuestOrderPage({
         <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{order.product_name}</h1>
         <p className="mt-3 leading-7 text-brand-textMuted">
           Placed {new Date(order.created_at).toLocaleDateString()} as a guest.{" "}
-          {/* Said plainly rather than discovered: the credential is this
-              browser, so the customer knows what they are relying on. */}
-          This page opens from the browser you checked out with, for 90 days.
+          {/* Said plainly rather than discovered, and taken from the same
+              constant the cookie and the order row use, so the promise on the
+              page cannot outlive the session it describes. */}
+          This browser stays signed in to your order for {GUEST_ACCESS_WINDOW_LABEL}. After that, or on another
+          device, we email you a 6-digit code to open it again.
         </p>
       </header>
 
