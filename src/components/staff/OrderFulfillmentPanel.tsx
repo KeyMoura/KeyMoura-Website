@@ -9,7 +9,7 @@ import {
   resultFromResponse,
   type ActionResult,
 } from "@/components/staff/ConsequentialAction";
-import { formatAddressLines, type Address } from "@/lib/commerce/commerceSettings";
+import { coercePickupSnapshot, formatStoredAddressLines } from "@/lib/commerce/commerceSettings";
 import { documentsForMethod } from "@/lib/staff/orderDocuments";
 
 /**
@@ -186,8 +186,8 @@ export function OrderFulfillmentPanel({
   const order = data.order;
   const isPickup = order.fulfillmentMethod === "pickup";
   const hasShipped = Boolean(order.shippedAt);
-  const address = order.shippingAddress as Address | null;
-  const addressLines = address ? formatAddressLines(address) : [];
+  const addressLines = formatStoredAddressLines(order.shippingAddress);
+  const pickup = coercePickupSnapshot(order.pickupLocationSnapshot);
 
   async function post(body: Record<string, unknown>): Promise<ActionResult> {
     setError("");
@@ -268,8 +268,11 @@ export function OrderFulfillmentPanel({
             <div className="mt-2 text-sm">
               {order.pickupLocationSnapshot ? (
                 <>
-                  <p className="font-medium">{String(order.pickupLocationSnapshot.name ?? "Pickup location")}</p>
-                  {formatAddressLines(order.pickupLocationSnapshot as unknown as Address).map((line) => (
+                  {/* `locationName`, which is the key the snapshot is actually
+                      written with. Reading `name` here meant every pickup order
+                      ever placed showed the literal words "Pickup location". */}
+                  <p className="font-medium">{pickup?.locationName || "Pickup location"}</p>
+                  {(pickup?.addressLines ?? formatStoredAddressLines(order.pickupLocationSnapshot)).map((line) => (
                     <p key={line} className="text-brand-textMuted">
                       {line}
                     </p>

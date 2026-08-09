@@ -3,6 +3,7 @@ import Link from "next/link";
 import GuestOrderActions from "@/components/commerce/GuestOrderActions";
 import { OrderFulfillmentStatus } from "@/components/commerce/OrderFulfillmentStatus";
 import { resolveGuestOrder } from "@/lib/commerce/guestOrderAccess";
+import { lifecycleLabel, PAYMENT_LABELS, paymentWasTaken } from "@/lib/commerce/orderLifecycle";
 
 /**
  * A guest's own order, read-only.
@@ -86,11 +87,36 @@ export default async function GuestOrderPage({
   const justPaid = query.payment === "success";
   const isRequest = order.order_kind !== "direct_purchase";
 
+  /**
+   * Whether the money has actually landed on the order yet.
+   *
+   * `?payment=success` only means Stripe accepted the card and redirected; the
+   * order is settled by `checkout.session.completed`, which is a *separate*
+   * request that can arrive after the customer is already looking at this page.
+   * Announcing a receipt on the strength of a query parameter would be telling
+   * the customer something this application does not yet know. `paymentWasTaken`
+   * is the same predicate the lifecycle rules use, so the page and the rules
+   * cannot disagree about whether an order is paid.
+   */
+  const settled = paymentWasTaken(order);
+
   return (
     <main className="page-container">
-      {justPaid ? (
+      {justPaid && settled ? (
         <p role="status" className="ui-notice ui-notice-success">
           Payment received. A receipt is on its way to {order.guest_email}.
+        </p>
+      ) : null}
+      {justPaid && !settled ? (
+        <p role="status" className="ui-notice">
+          Payment processing. Your payment went through and we are confirming it — this usually takes a few
+          seconds.{" "}
+          {/* The page is `force-dynamic`, so re-requesting it is the whole
+              refresh mechanism. A plain link keeps this a server component. */}
+          <Link href={`/orders/guest/${order.id}`} className="underline">
+            Check again
+          </Link>
+          .
         </p>
       ) : null}
 
@@ -116,7 +142,10 @@ export default async function GuestOrderPage({
           </div>
           <div>
             <dt className="text-xs text-brand-textMuted">Payment</dt>
-            <dd className="mt-1 text-sm">{order.payment_status.replace(/_/g, " ")}</dd>
+            {/* The customer wording table, which also title-cases anything it
+                does not recognise — a legacy payment state renders as a neutral
+                phrase rather than as a blank or a crash. */}
+            <dd className="mt-1 text-sm">{lifecycleLabel(PAYMENT_LABELS, order.payment_status)}</dd>
           </div>
           <div>
             <dt className="text-xs text-brand-textMuted">Paid</dt>

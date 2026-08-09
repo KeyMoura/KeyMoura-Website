@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatCents } from "@/lib/hooks/useCart";
+import { formatCents, useCart } from "@/lib/hooks/useCart";
 
 /**
  * Choosing how an order arrives, and seeing what that costs.
@@ -160,12 +160,23 @@ export default function CheckoutFulfillmentPanel({
     }
   }, [onTotals]);
 
+  /**
+   * The cart state a quote is priced *against*.
+   *
+   * Read here rather than passed down, because a quote depends on the cart's
+   * subtotal and discount just as much as on the delivery method — and until
+   * this dependency existed, applying a discount code left the previous quote,
+   * and therefore the summary's Total, describing the pre-discount cart.
+   */
+  const { data: cart } = useCart();
+  const pricingBasis = `${cart?.subtotalCents ?? 0}:${cart?.discountCents ?? 0}:${cart?.itemCount ?? 0}`;
+
   useEffect(() => {
     onChange(selection);
     // Debounced so typing an address does not fire a request per keystroke.
     const timer = setTimeout(() => void requestQuote(selection), 400);
     return () => clearTimeout(timer);
-  }, [selection, onChange, requestQuote]);
+  }, [selection, onChange, requestQuote, pricingBasis]);
 
   if (loading) {
     return (
