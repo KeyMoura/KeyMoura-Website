@@ -385,9 +385,11 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["security.verified_perks.manage"],
       },
       {
-        href: "/staff/security/audit",
+        // `/staff/security/audit` redirects here. The nav points at the real
+        // page so the browser does not take a redirect on every visit.
+        href: "/staff/audit",
         label: "Audit log",
-        description: "Sensitive staff and system actions, newest first.",
+        description: "Who changed what, and what it was before.",
         icon: "audit",
         settingsSection: "system",
         anyOf: ["audit.view", "audit.read"],

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { readJson, asRecord } from "@/lib/json";
 import { isArray, isBoolean, isNumber, isString } from "@/lib/typeGuards";
 import { requireAnyPermission, routeServiceClient } from "@/lib/api/routeAuth";
+import { recordAuditEventStrict, resolveActorLabel } from "@/lib/audit/events";
+import { requestIp } from "@/lib/audit/security";
 import {
   DEFAULT_BADGE_BG,
   DEFAULT_BADGE_BORDER,
@@ -149,6 +151,27 @@ export async function POST(req: NextRequest) {
     const { message, status } = roleWriteErrorMessage(error, "create");
     return NextResponse.json({ error: message }, { status });
   }
+
+  await recordAuditEventStrict({
+    action: "role.created",
+    actor: {
+      kind: "staff",
+      userId: actor.userId,
+      role: actor.role,
+      label: await resolveActorLabel(actor.userId),
+    },
+    // `row` has already been through `toRoleDbColumns`, so the display name is
+    // under the column name `name`, not the editor's `label`.
+    entity: { type: "role", id: key, label: String((row as { name?: string }).name ?? key) },
+    changes: {
+      name: { before: null, after: key },
+      // A role created as staff starts with staff reach, which is the fact
+      // worth seeing on the row rather than buried in a later edit.
+      is_staff: { before: null, after: Boolean((row as { is_staff?: boolean }).is_staff) },
+    },
+    source: "staff_ui",
+    actorIp: requestIp(req.headers),
+  });
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

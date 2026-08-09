@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { isRetainedAuditEvent } from "../src/lib/audit/retention.ts";
 import {
   allowsDirectPurchase,
   allowsRequest,
@@ -700,8 +701,25 @@ test("the guest cart merge keys on product and options, not product alone", () =
 });
 
 test("staff commerce actions are actually written to the audit log", () => {
-  const source = read("src/lib/audit.ts");
   // Category, catalog, and pricing events are logged under a `staff.` prefix.
   // Without it they were dropped for every staff role except admin.
-  assert.match(source, /type\.startsWith\("staff\."\)/);
+  //
+  // Asserted against the rule itself rather than against the text of
+  // `src/lib/audit.ts`. The previous version matched a source regex, which meant
+  // the check passed or failed on how the condition happened to be written
+  // rather than on what it does — and it broke the moment the rule moved into a
+  // module without changing behaviour at all.
+  assert.equal(isRetainedAuditEvent("staff.catalog.category.create", "support"), true);
+  assert.equal(isRetainedAuditEvent("staff.catalog.discount.update", "moderator"), true);
+  assert.equal(isRetainedAuditEvent("staff.order.refund_requested", null), true);
+
+  // The canonical taxonomy has to survive the same filter. A correctly-named
+  // event that matches no prefix is dropped without a word.
+  assert.equal(isRetainedAuditEvent("order.status_changed", null), true);
+  assert.equal(isRetainedAuditEvent("product.price_changed", null), true);
+  assert.equal(isRetainedAuditEvent("role.assigned", null), true);
+
+  // High-volume member activity is still excluded, which is what the filter is
+  // for.
+  assert.equal(isRetainedAuditEvent("forum.post_vote", "member"), false);
 });

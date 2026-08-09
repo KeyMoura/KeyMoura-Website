@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
+import { recordPermissionSetChange, requestIp } from "@/lib/audit/security";
 import { readJson, asRecord } from "@/lib/json";
 import { isArray, isString } from "@/lib/typeGuards";
 
@@ -28,6 +29,24 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ key: string
   const permissions = parsePermissionsPayload(payload);
   if (!permissions) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
 
+  /*
+   * Read before the delete, so the audit event can say what was *granted* and
+   * what was *revoked* rather than restating the resulting list.
+   *
+   * A permission set stored as "the role now has these 41 keys" is unreadable
+   * six months later. "Granted refunds.issue" is the line that matters, and it
+   * is only computable against the previous state — which this write destroys.
+   */
+  const { data: existingRows } = await routeServiceClient
+    .from("role_permissions")
+    .select("permission_key")
+    .eq("role_key", roleKey);
+
+  const previous = new Set((existingRows ?? []).map((row) => String((row as { permission_key: string }).permission_key)));
+  const next = new Set(permissions);
+  const granted = [...next].filter((key) => !previous.has(key)).sort();
+  const revoked = [...previous].filter((key) => !next.has(key)).sort();
+
   const { error: delErr } = await routeServiceClient.from("role_permissions").delete().eq("role_key", roleKey);
   if (delErr) return NextResponse.json({ error: delErr.message }, { status: 400 });
 
@@ -36,6 +55,18 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ key: string
     const { error: insErr } = await routeServiceClient.from("role_permissions").insert(rows);
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 400 });
   }
+
+  // A save that granted and revoked nothing is not an event, even though the
+  // rows were rewritten.
+  await recordPermissionSetChange({
+    actor,
+    action: "permission.changed",
+    entityType: "role",
+    entityId: roleKey,
+    entityLabel: roleKey,
+    change: { granted, revoked, beforeCount: previous.size, afterCount: next.size },
+    actorIp: requestIp(req.headers),
+  });
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

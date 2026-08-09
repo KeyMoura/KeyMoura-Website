@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
+import { buildChangeSet } from "@/lib/audit/diff";
+import { recordAuditEventStrict, resolveActorLabel } from "@/lib/audit/events";
+import { requestIp } from "@/lib/audit/security";
 import { readJson, asRecord } from "@/lib/json";
 import { isBoolean, isNumber, isString } from "@/lib/typeGuards";
 import {
@@ -67,19 +70,70 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ key: stri
   const parsed = parseUpdatePayload(payload);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
+  /*
+   * The previous values, so the event can say what a badge colour or rank moved
+   * *from*. Read before the write for the same reason as everywhere else.
+   *
+   * These are the **column** names, not the wire names. The editor speaks
+   * `label` and `priority`; the table has `name` and `rank`, and
+   * `toRoleDbColumns` is the one place that translates. Selecting the wire
+   * names here would have failed with 42703 on every role edit.
+   */
+  const { data: previous } = await routeServiceClient
+    .from("roles")
+    .select("key,name,description,rank,is_staff,badge_bg,badge_border,badge_text,badge_icon")
+    .eq("key", roleKey)
+    .maybeSingle();
+
   const { data, error } = await routeServiceClient
     .from("roles")
     .update(parsed.value)
     .eq("key", roleKey)
-    .select("key");
+    .select("key,name,description,rank,is_staff,badge_bg,badge_border,badge_text,badge_icon");
   if (error) {
     const { message, status } = roleWriteErrorMessage(error, "update");
     return NextResponse.json({ error: message }, { status });
   }
   if (!data?.length) return NextResponse.json({ error: "That role no longer exists." }, { status: 404 });
 
+  await recordAuditEventStrict({
+    action: "role.updated",
+    actor: {
+      kind: "staff",
+      userId: actor.userId,
+      role: actor.role,
+      label: await resolveActorLabel(actor.userId),
+    },
+    entity: {
+      type: "role",
+      id: roleKey,
+      label: String((data[0] as { name?: string }).name ?? roleKey),
+    },
+    changes: buildChangeSet(previous ?? {}, data[0], ROLE_AUDIT_FIELDS),
+    source: "staff_ui",
+    actorIp: requestIp(req.headers),
+  });
+
   return NextResponse.json({ ok: true }, { status: 200 });
 }
+
+/**
+ * Column names, matching the table rather than the editor's vocabulary.
+ *
+ * `is_staff` is in this list for a reason: it is the flag that decides whether
+ * a role's holders are staff at all, which makes it a privilege change wearing
+ * the clothes of a display setting.
+ */
+const ROLE_AUDIT_FIELDS = [
+  "name",
+  "description",
+  "rank",
+  "is_staff",
+  "badge_bg",
+  "badge_border",
+  "badge_text",
+  "badge_icon",
+] as const;
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ key: string }> }) {
   const actor = await requirePermission(req, "roles.manage");
@@ -123,6 +177,20 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ key: str
     const { message, status } = roleWriteErrorMessage(error, "delete");
     return NextResponse.json({ error: message }, { status });
   }
+
+  await recordAuditEventStrict({
+    action: "role.deleted",
+    actor: {
+      kind: "staff",
+      userId: actor.userId,
+      role: actor.role,
+      label: await resolveActorLabel(actor.userId),
+    },
+    entity: { type: "role", id: roleKey, label: roleKey },
+    changes: { name: { before: roleKey, after: null } },
+    source: "staff_ui",
+    actorIp: requestIp(req.headers),
+  });
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

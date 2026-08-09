@@ -7,7 +7,8 @@ import { captureCommerceException } from "@/lib/monitoring";
 import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 import { filterCustomerVariables } from "@/lib/comms/emailEvents";
 import { notifyOrderStaff, notifyOrderUser } from "@/lib/orderNotifications";
-import { logAuditEvent } from "@/lib/audit";
+import type { ChangeSet } from "@/lib/audit/diff";
+import { recordAuditEvent, resolveActorLabel } from "@/lib/audit/events";
 import {
   DEFAULT_COMMERCE_POLICY,
   parseCommercePolicy,
@@ -671,15 +672,40 @@ export async function logLifecycleAudit(input: {
   actorUserId: string | null;
   actorRole?: string | null;
   orderId: string;
+  /**
+   * KM-0012. Supplied by callers that already hold the order, so the log reads
+   * without a second query per row.
+   */
+  orderNumber?: string | null;
+  /**
+   * The before/after pair for this transition, when there is one. A refund or a
+   * fulfillment move has a genuine two-state change; a "return received" does
+   * not, and passing nothing is correct there.
+   */
+  changes?: ChangeSet;
   metadata?: Record<string, string | number | boolean | null>;
 }) {
-  await logAuditEvent({
-    actorUserId: input.actorUserId,
-    actorRole: input.actorRole ?? "staff",
-    eventType: input.eventType,
-    targetTable: "orders",
-    targetId: input.orderId,
+  await recordAuditEvent({
+    action: input.eventType,
+    actor: input.actorUserId
+      ? {
+          kind: "staff",
+          userId: input.actorUserId,
+          role: input.actorRole ?? "staff",
+          label: await resolveActorLabel(input.actorUserId),
+        }
+      : // A lifecycle step with no actor is the system reconciling itself —
+        // usually a Stripe webhook landing. It is not attributed to a person.
+        { kind: "system" },
+    entity: {
+      type: "order",
+      id: input.orderId,
+      label: input.orderNumber?.trim() || `Order ${input.orderId.slice(0, 8)}`,
+    },
+    related: { orderId: input.orderId },
+    changes: input.changes ?? {},
     metadata: input.metadata ?? {},
+    source: "staff_ui",
   });
 }
 

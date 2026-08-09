@@ -193,6 +193,13 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       jobNumber: job.job_number,
       eventType: "job.updated",
       auditType: "staff.production.job.update",
+      // `before` and `job` are the whole rows; the helper's allowlist decides
+      // which of their fields become a diff, so the free-text notes counted in
+      // `changed` are named there and nowhere else.
+      before,
+      after: job,
+      orderId: job.order_id,
+      productId: job.product_id,
       metadata: { fields: changed },
     });
   }
