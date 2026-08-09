@@ -9,6 +9,7 @@ import CheckoutFulfillmentPanel, {
   type FulfillmentSelection,
   type QuotedTotals,
 } from "@/components/commerce/CheckoutFulfillmentPanel";
+import { quoteMatchesCart } from "@/lib/commerce/commerceSettings";
 import { formatCents, useCart, useCartMutations, useCheckoutContext } from "@/lib/hooks/useCart";
 
 /**
@@ -49,6 +50,20 @@ export default function CartPage() {
   // this page.
   const handleFulfillmentChange = useCallback((next: FulfillmentSelection | null) => setFulfillment(next), []);
   const handleTotals = useCallback((next: QuotedTotals | null) => setQuoted(next), []);
+
+  /**
+   * The quote, but only while it still describes this cart.
+   *
+   * `quoted` is delivery pricing the server computed for a particular subtotal
+   * and discount. Applying a code changes the cart without touching the
+   * delivery selection, so the previous quote survives — and reading a Total
+   * from it while reading the Discount line from `cart` is exactly how the
+   * summary came to show $50.00 on an order Stripe charged $45.00 for. When the
+   * basis no longer matches, the page falls back to the cart's own total and
+   * says the delivery price is still to come, rather than showing a number it
+   * knows is stale.
+   */
+  const liveQuote = quoteMatchesCart(quoted, cart) ? quoted : null;
 
   const items = cart?.items ?? [];
   const unavailable = cart?.unavailable ?? [];
@@ -309,25 +324,25 @@ export default function CartPage() {
               {/* Shipping appears as its own line as soon as the server has
                   priced it, so the customer never has to work out which part of
                   the total was delivery. */}
-              {quoted ? (
+              {liveQuote ? (
                 <div className="flex items-center justify-between">
                   <span className="text-brand-textMuted">Delivery</span>
                   <span className="font-medium">
-                    {quoted.shippingCents === 0 ? "Free" : formatCents(quoted.shippingCents)}
+                    {liveQuote.shippingCents === 0 ? "Free" : formatCents(liveQuote.shippingCents)}
                   </span>
                 </div>
               ) : null}
-              {quoted && quoted.taxCents > 0 ? (
+              {liveQuote && liveQuote.taxCents > 0 ? (
                 <div className="flex items-center justify-between">
                   <span className="text-brand-textMuted">Tax</span>
-                  <span className="font-medium">{formatCents(quoted.taxCents)}</span>
+                  <span className="font-medium">{formatCents(liveQuote.taxCents)}</span>
                 </div>
               ) : null}
               <div className="flex items-center justify-between border-t border-[var(--border)] pt-2 text-base">
                 <span className="font-semibold">Total</span>
-                <span className="font-semibold">{formatCents(quoted?.totalCents ?? cart?.totalCents ?? 0)}</span>
+                <span className="font-semibold">{formatCents(liveQuote?.totalCents ?? cart?.totalCents ?? 0)}</span>
               </div>
-              {!quoted ? (
+              {!liveQuote ? (
                 <p className="text-xs text-brand-textMuted">Choose a delivery option to see the final total.</p>
               ) : null}
             </div>

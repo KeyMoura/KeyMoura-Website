@@ -1,6 +1,10 @@
 "use client";
 
-import { formatAddressLines, type Address } from "@/lib/commerce/commerceSettings";
+import {
+  coercePickupSnapshot,
+  formatPickupLocationLines,
+  formatStoredAddressLines,
+} from "@/lib/commerce/commerceSettings";
 import { FULFILLMENT_LABELS, lifecycleLabel, type FulfillmentState } from "@/lib/commerce/orderLifecycle";
 import { cx } from "@/components/ui/DesignSystem";
 
@@ -90,8 +94,13 @@ export function OrderFulfillmentStatus({ order }: { order: FulfillmentOrder }) {
   const heading = lifecycleLabel(FULFILLMENT_LABELS, state);
   const detail = explain(state, isPickup);
   const events = TIMELINE.filter((entry) => Boolean(order[entry.field]));
-  const address = isPickup ? order.pickup_location_snapshot : order.shipping_address;
-  const addressLines = address ? formatAddressLines(address as unknown as Address) : [];
+  // Two different stored shapes, read by two different readers. A pickup
+  // snapshot is a location name plus formatted lines; a shipping address is an
+  // address, in whichever key naming the order was written with.
+  const pickup = coercePickupSnapshot(order.pickup_location_snapshot);
+  const addressLines = isPickup
+    ? formatPickupLocationLines(order.pickup_location_snapshot)
+    : formatStoredAddressLines(order.shipping_address);
   const trackingUrl = order.tracking_url;
 
   return (
@@ -137,13 +146,11 @@ export function OrderFulfillmentStatus({ order }: { order: FulfillmentOrder }) {
                 : "We will confirm the delivery address with you."}
             </p>
           )}
-          {isPickup && order.pickup_location_snapshot?.instructions ? (
-            <p className="mt-2 text-sm text-brand-textMuted">{String(order.pickup_location_snapshot.instructions)}</p>
+          {isPickup && pickup?.instructions ? (
+            <p className="mt-2 text-sm text-brand-textMuted">{pickup.instructions}</p>
           ) : null}
-          {isPickup && order.pickup_location_snapshot?.hoursText ? (
-            <p className="mt-1 text-sm text-brand-textMuted">
-              Hours: {String(order.pickup_location_snapshot.hoursText)}
-            </p>
+          {isPickup && pickup?.hoursText ? (
+            <p className="mt-1 text-sm text-brand-textMuted">Hours: {pickup.hoursText}</p>
           ) : null}
         </div>
 
@@ -179,7 +186,10 @@ export function OrderFulfillmentStatus({ order }: { order: FulfillmentOrder }) {
 
           {order.shipping_method_snapshot ? (
             <p className={cx("mt-3 text-xs text-brand-textMuted")}>
-              {String(order.shipping_method_snapshot.label ?? "Delivery")}
+              {/* `name` is the key `planFulfillment` actually writes. Reading
+                  only `label` meant every shipped order described its delivery
+                  method as the literal word "Delivery". */}
+              {String(order.shipping_method_snapshot.label ?? order.shipping_method_snapshot.name ?? "Delivery")}
               {Number(order.shipping_cents ?? 0) > 0
                 ? ` · $${(Number(order.shipping_cents) / 100).toFixed(2)}`
                 : " · free"}

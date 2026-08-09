@@ -87,6 +87,8 @@ export default function OrderDetailPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [quoteExpired, setQuoteExpired] = useState(false);
+  /** Whether the first read has come back, so "empty" can be told from "not yet". */
+  const [loaded, setLoaded] = useState(false);
   const [revisionNote, setRevisionNote] = useState("");
   const [proposalDeclineReason, setProposalDeclineReason] = useState("");
   const load = useCallback(async () => {
@@ -111,6 +113,7 @@ export default function OrderDetailPage() {
     setPayments((p.data ?? []) as Payment[]);
     setRefunds((r.data ?? []) as Refund[]);
     setError(o.error?.message ?? m.error?.message ?? h.error?.message ?? p.error?.message ?? r.error?.message ?? "");
+    setLoaded(true);
   }, [id, supabase]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -216,8 +219,35 @@ export default function OrderDetailPage() {
   }
   if (!order)
     return (
-      <main className="mx-auto max-w-4xl px-4 py-10 text-brand-textMuted">
-        {error || "Loading order…"}
+      <main className="page-container page-stack">
+        {!loaded && !error ? (
+          <p className="text-brand-textMuted">Loading order…</p>
+        ) : (
+          /**
+           * One wording for every reason this page has no order: it does not
+           * exist, it belongs to somebody else, or it was placed as a guest and
+           * is reachable only from `/orders/guest/[id]`. This page reads through
+           * RLS as the signed-in customer, so all three arrive here identically
+           * and must *stay* identical — answering differently would turn the
+           * route into a test for whether an order id is real.
+           *
+           * Previously all three rendered "Loading order…" forever, which told
+           * the customer the page was still working when it had already
+           * finished.
+           */
+          <div className="ui-card max-w-xl">
+            <h1 className="text-2xl font-semibold">This order is not available</h1>
+            <p className="mt-3 text-sm leading-6 text-brand-textMuted">
+              We could not open this order on your account. If you placed it as a guest, use the link in your
+              confirmation email — guest orders open from the browser you checked out with.
+            </p>
+            {error ? <Notice tone="danger" role="alert" className="mt-4">{error}</Notice> : null}
+            <div className="ui-action-row mt-5">
+              <Link href="/orders" className="ui-btn ui-btn-primary">Your orders</Link>
+              <Link href="/contact" className="ui-btn ui-btn-ghost">Contact support</Link>
+            </div>
+          </div>
+        )}
       </main>
     );
   const isPendingProposal = order.initiated_by_staff && order.status === "requested";

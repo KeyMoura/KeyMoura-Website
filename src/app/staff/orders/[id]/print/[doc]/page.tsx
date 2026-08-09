@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { AccessDenied } from "@/components/AccessDenied";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getServerActorAccess } from "@/lib/staff/serverAccess";
-import { formatAddressLines, type Address } from "@/lib/commerce/commerceSettings";
+import { formatPickupLocationLines, formatStoredAddressLines } from "@/lib/commerce/commerceSettings";
 import { FULFILLMENT_STAFF_LABELS, lifecycleLabel } from "@/lib/commerce/orderLifecycle";
 import {
   ORDER_DOCUMENT_META,
@@ -118,8 +118,22 @@ function WriteIn({ label }: { label: string }) {
   );
 }
 
-function AddressBlock({ heading, address }: { heading: string; address: Record<string, unknown> | null }) {
-  const lines = address ? formatAddressLines(address as unknown as Address) : [];
+/**
+ * `kind` because these documents render two genuinely different stored shapes.
+ * A pickup snapshot is a location name plus pre-formatted lines and shares no
+ * field names with an address; reading one as the other produced nothing at
+ * best and threw at worst.
+ */
+function AddressBlock({
+  heading,
+  address,
+  kind = "address",
+}: {
+  heading: string;
+  address: Record<string, unknown> | null;
+  kind?: "address" | "pickup";
+}) {
+  const lines = kind === "pickup" ? formatPickupLocationLines(address) : formatStoredAddressLines(address);
   return (
     <div>
       <div className="text-[9pt] uppercase tracking-wide opacity-70">{heading}</div>
@@ -322,7 +336,7 @@ export default async function PrintableOrderDocument({ params }: Params) {
         {doc === "pickup-slip" ? (
           <>
             <div className="grid gap-4 border-t border-black pt-3 sm:grid-cols-2">
-              <AddressBlock heading="Collect from" address={order.pickup_location_snapshot} />
+              <AddressBlock heading="Collect from" address={order.pickup_location_snapshot} kind="pickup" />
               <div>
                 <div className="text-[9pt] uppercase tracking-wide opacity-70">Collected by</div>
                 <div className="text-[11pt] font-semibold">{customerName}</div>
@@ -351,7 +365,11 @@ export default async function PrintableOrderDocument({ params }: Params) {
         {doc === "invoice" ? (
           <>
             <div className="grid gap-4 border-t border-black pt-3 sm:grid-cols-2">
-              <AddressBlock heading={isPickup ? "Collect from" : "Ship to"} address={isPickup ? order.pickup_location_snapshot : order.shipping_address} />
+              <AddressBlock
+                heading={isPickup ? "Collect from" : "Ship to"}
+                address={isPickup ? order.pickup_location_snapshot : order.shipping_address}
+                kind={isPickup ? "pickup" : "address"}
+              />
               <div>
                 <div className="text-[9pt] uppercase tracking-wide opacity-70">Billed to</div>
                 <div className="text-[11pt] font-semibold">{customerName}</div>

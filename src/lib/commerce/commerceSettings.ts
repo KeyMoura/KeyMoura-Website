@@ -44,31 +44,159 @@ export const EMPTY_ADDRESS: Address = {
   phone: "",
 };
 
+/**
+ * The keys an address has actually been *stored* under, which is not the same
+ * set as the ones `Address` declares.
+ *
+ * `orders.shipping_address` is `jsonb` with no shape constraint, and it has
+ * been written by more than one generation of this code. Orders placed before
+ * the current checkout carry Stripe's own naming — `state` and `postal_code`
+ * — and carry no `region`, `postalCode` or `phone` at all. `Address` says every
+ * field is a `string`; for those rows several of them are `undefined`, and a
+ * formatter that believed the type crashed on the first `.trim()`.
+ *
+ * Aliases rather than a migration: the rows are correct, they are simply older
+ * than the names. Rewriting historical order snapshots to satisfy a formatter
+ * would edit what a customer was actually told at purchase time.
+ */
+const ADDRESS_KEY_ALIASES: Readonly<Record<keyof Address, readonly string[]>> = {
+  // `originName` is how `shipping_origin_snapshot` names the shop itself, and
+  // the packing slip renders that snapshot through this same formatter.
+  name: ["name", "fullName", "full_name", "recipient", "originName", "locationName"],
+  line1: ["line1", "line_1", "address1", "address_line1"],
+  line2: ["line2", "line_2", "address2", "address_line2"],
+  city: ["city", "locality"],
+  region: ["region", "state", "province"],
+  postalCode: ["postalCode", "postal_code", "zip", "zipcode", "postcode"],
+  country: ["country", "country_code"],
+  phone: ["phone", "telephone"],
+};
+
+const asAddressRecord = (raw: unknown): Record<string, unknown> =>
+  raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+
+/**
+ * Any stored address-shaped JSON, read as an `Address`.
+ *
+ * Total: every field is a trimmed string afterwards, whatever went in. This is
+ * the boundary where "a column with no shape" becomes "a type", and it is the
+ * only place allowed to assume anything about what a historical row contains.
+ */
+export function coerceStoredAddress(raw: unknown): Address {
+  const record = asAddressRecord(raw);
+  const pick = (field: keyof Address): string => {
+    for (const key of ADDRESS_KEY_ALIASES[field]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    }
+    return "";
+  };
+  return {
+    name: pick("name"),
+    line1: pick("line1"),
+    line2: pick("line2"),
+    city: pick("city"),
+    region: pick("region"),
+    postalCode: pick("postalCode"),
+    country: pick("country"),
+    phone: pick("phone"),
+  };
+}
+
 /** Enough of an address to actually post a parcel to. */
 export function isDeliverableAddress(address: Address | null | undefined): boolean {
   if (!address) return false;
-  return Boolean(
-    address.name.trim() &&
-      address.line1.trim() &&
-      address.city.trim() &&
-      address.postalCode.trim() &&
-      address.country.trim()
-  );
+  const parts = coerceStoredAddress(address);
+  return Boolean(parts.name && parts.line1 && parts.city && parts.postalCode && parts.country);
 }
 
-/** One-line rendering for confirmations and printed documents. */
+/**
+ * One-line rendering for confirmations and printed documents.
+ *
+ * Reads through `coerceStoredAddress`, so a legacy `state`/`postal_code` row
+ * renders its state and postcode rather than merely failing to crash — the
+ * point is that the customer still sees the address they gave.
+ */
 export function formatAddressLines(address: Address | null | undefined): string[] {
-  if (!address) return [];
-  const region = [address.city, address.region].filter((part) => part.trim()).join(", ");
+  return formatStoredAddressLines(address);
+}
+
+/**
+ * The same rendering, for a value straight out of a `jsonb` column.
+ *
+ * Separate entry point so call sites reading the database say so, instead of
+ * casting through `as unknown as Address` — a cast that asserted exactly the
+ * thing that was not true and hid this defect from the type checker.
+ */
+export function formatStoredAddressLines(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object") return [];
+  const address = coerceStoredAddress(raw);
+  const region = [address.city, address.region].filter(Boolean).join(", ");
   return [
     address.name,
     address.line1,
     address.line2,
-    [region, address.postalCode].filter((part) => part.trim()).join(" ").trim(),
+    [region, address.postalCode].filter(Boolean).join(" "),
     address.country,
-  ]
-    .map((line) => line.trim())
-    .filter(Boolean);
+  ].filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Pickup location snapshots
+// ---------------------------------------------------------------------------
+
+/**
+ * What `orders.pickup_location_snapshot` actually holds.
+ *
+ * Deliberately **not** an `Address`: it is written by `planFulfillment` as a
+ * location name plus *already formatted* address lines, because the shop's
+ * pickup address is rendered once at purchase time and then frozen. Feeding it
+ * to the address formatter was the defect — the two types share no field
+ * names, so every lookup missed and the first `.trim()` threw.
+ */
+export type PickupLocationSnapshot = {
+  locationName: string;
+  addressLines: string[];
+  instructions: string;
+  hoursText: string;
+  requireConfirmation: boolean;
+};
+
+/** A stored pickup snapshot, or null when the order predates local pickup. */
+export function coercePickupSnapshot(raw: unknown): PickupLocationSnapshot | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+  const lines = Array.isArray(record.addressLines)
+    ? record.addressLines.map(text).filter(Boolean)
+    : [];
+  const locationName = text(record.locationName);
+  // `locationName` and `addressLines` are the two keys only a pickup snapshot
+  // has; neither present means this is some other shape, and saying so lets
+  // the caller fall back instead of rendering an empty location. Deliberately
+  // not falling back to `name` — an ordinary address has one, and reading it
+  // would turn a delivery recipient into a collection point.
+  if (!locationName && !lines.length) return null;
+  return {
+    locationName,
+    addressLines: lines,
+    instructions: text(record.instructions),
+    hoursText: text(record.hoursText),
+    requireConfirmation: record.requireConfirmation === true,
+  };
+}
+
+/**
+ * Where a customer is being asked to stand, as display lines.
+ *
+ * Falls back to reading the value as an address, so a snapshot written in some
+ * other shape still renders something truthful instead of nothing.
+ */
+export function formatPickupLocationLines(raw: unknown): string[] {
+  const snapshot = coercePickupSnapshot(raw);
+  if (!snapshot) return formatStoredAddressLines(raw);
+  return [snapshot.locationName, ...snapshot.addressLines].filter(Boolean);
 }
 
 // ---------------------------------------------------------------------------
@@ -761,6 +889,30 @@ export function computeOrderTotals(input: {
     taxCents,
     totalCents: subtotalCents - discountCents + shippingCents + taxCents,
   };
+}
+
+/**
+ * Whether a delivery quote still describes the cart in front of the customer.
+ *
+ * A quote is computed server-side from a *specific* subtotal and discount, and
+ * it carries both back. Applying a discount code changes the cart without
+ * changing the delivery selection, so a quote taken before the code was
+ * entered stays on screen — and because the summary reads its Total from the
+ * quote and its Discount line from the cart, the two disagreed: subtotal
+ * $50.00, discount −$5.00, total $50.00, while Stripe correctly charged
+ * $45.00.
+ *
+ * Checked rather than merely re-fetched. Re-quoting on a cart change fixes the
+ * common case, but a number in flight is still a number on screen; comparing
+ * the basis means a total that was computed for a different cart can never be
+ * displayed at all, whatever the ordering of requests.
+ */
+export function quoteMatchesCart(
+  quote: { subtotalCents: number; discountCents: number } | null | undefined,
+  cart: { subtotalCents: number; discountCents: number } | null | undefined
+): boolean {
+  if (!quote || !cart) return false;
+  return quote.subtotalCents === cart.subtotalCents && quote.discountCents === cart.discountCents;
 }
 
 // ---------------------------------------------------------------------------
