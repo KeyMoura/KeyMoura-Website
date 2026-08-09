@@ -90,9 +90,15 @@ export default function NewCustomRequestPage() {
     const batch=crypto.randomUUID(); const uploaded:{path:string;name:string;size:number}[]=[];
     for(const file of files){ const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=`${user.id}/${batch}/${crypto.randomUUID()}-${safe}`; const result=await supabase.storage.from("order-assets").upload(path,file,{contentType:file.type||undefined}); if(result.error){ if(uploaded.length) await supabase.storage.from("order-assets").remove(uploaded.map(item=>item.path)); setBusy(false); return setError(`Could not upload ${file.name}: ${result.error.message}`); } uploaded.push({path,name:file.name,size:file.size}); }
     const response=await fetch("/api/orders/custom",{method:"POST",headers:await headers(),body:JSON.stringify({...form,files:uploaded,draft_id:draftId})});
-    const result=await response.json() as {id?:string;error?:string};
+    const result=await response.json() as {id?:string;href?:string;error?:string};
     if(!response.ok||!result.id){ if(uploaded.length) await supabase.storage.from("order-assets").remove(uploaded.map(item=>item.path)); setError(result.error||"Could not submit request."); setBusy(false); return; }
-    router.push(`/orders/${result.id}/confirmed`);
+    // `/api/orders/custom` already decides where this request is readable from —
+    // it is the side that knows whether the order got a customer or a guest
+    // token. Reconstructing the path here meant the answer was computed twice,
+    // and the copy that ignored the server was the one the customer followed.
+    // This page is signed-in only, so the two agree today; honouring the server
+    // is what keeps them agreeing if that ever changes.
+    router.push(result.href ?? `/orders/${result.id}/confirmed`);
   }
   const set=<K extends keyof FormData>(key:K,value:FormData[K])=>setForm(current=>({...current,[key]:value}));
   const labels=["Project","Specs & files","Delivery","Review"];
