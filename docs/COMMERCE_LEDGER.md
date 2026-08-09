@@ -5695,7 +5695,7 @@ contains the string the assertion forbade.
 |---|---|
 | Started from | **`e4f8bfb`** — `main == origin/main`, clean tree, 1623 tests green |
 | Preserved implementation | **`aae7980`** — merged as `aaba2b4`, reverted as `13cfa05` |
-| Migration ledger | **48 repo files, 48 production rows — reconciled** |
+| Migration ledger | **50 repo files, 50 production rows — identical sets, reconciled** |
 | Scope | Only the guest six-digit verification feature. No Appearance, Production, catalog or option work. |
 
 ## What this pass is
