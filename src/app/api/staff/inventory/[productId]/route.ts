@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
-import { logLifecycleAudit, logLifecycleFailure } from "@/lib/commerce/orderLifecycleServer";
+import { recordAuditEvent, resolveActorLabel } from "@/lib/audit/events";
+import { logLifecycleFailure } from "@/lib/commerce/orderLifecycleServer";
 import { evaluateAndAnnounceStock } from "@/lib/commerce/commerceSettingsServer";
 
 /**
@@ -224,13 +225,33 @@ export async function POST(req: NextRequest, context: { params: Promise<{ produc
   const result = adjusted as { quantity_before?: number; quantity_after?: number } | null;
   const after = Number(result?.quantity_after ?? before + delta);
 
-  await logLifecycleAudit({
-    eventType: "staff.inventory.adjusted",
-    actorUserId: actor.userId,
-    orderId: productId,
-    // The free-text note is deliberately not copied in: the audit log is read
-    // more widely than the inventory page.
-    metadata: { product_id: productId, mode, delta, quantity_before: before, quantity_after: after, reason },
+  /*
+   * Filed against the **product**, which is what actually changed.
+   *
+   * This previously went through `logLifecycleAudit`, whose signature takes an
+   * `orderId` and hardcodes `targetTable: "orders"` — so every stock adjustment
+   * was recorded as an order event carrying a product's id in the order column.
+   * It made inventory history unfindable from the product and put rows in the
+   * order filter that were never orders.
+   *
+   * The quantity moves into `changes` so it renders as "12 → 9" like every
+   * other before/after, with the delta alongside it. The free-text note is
+   * still not copied in: the audit log is read more widely than the inventory
+   * page.
+   */
+  const auditRecorded = await recordAuditEvent({
+    action: "inventory.adjusted",
+    actor: {
+      kind: "staff",
+      userId: actor.userId,
+      role: actor.role,
+      label: await resolveActorLabel(actor.userId),
+    },
+    entity: { type: "product", id: productId, label: product.name },
+    related: { productId },
+    changes: { inventory_quantity: { before, after } },
+    metadata: { mode, delta, reason },
+    source: "staff_ui",
   });
 
   // Stock moved, so the alert is re-evaluated. Deduplication is a partial
@@ -238,5 +259,12 @@ export async function POST(req: NextRequest, context: { params: Promise<{ produc
   // and crossing back above the threshold resolves the open one.
   const alert = await evaluateAndAnnounceStock(productId);
 
-  return NextResponse.json({ ok: true, quantityBefore: before, quantityAfter: after, delta, alert: alert.action });
+  return NextResponse.json({
+    ok: true,
+    quantityBefore: before,
+    quantityAfter: after,
+    delta,
+    alert: alert.action,
+    ...(auditRecorded.ok ? {} : { auditFailed: true }),
+  });
 }

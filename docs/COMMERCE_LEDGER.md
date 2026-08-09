@@ -5996,3 +5996,169 @@ check of both confirmation branches.
 | Tests | 1651 → **1662**, all green |
 | Lint | **332**, unchanged |
 | Migrations | none — 50 repo files == 50 production rows, untouched |
+
+---
+
+# Pass 20 — the audit log, made real
+
+## Verified starting state — 2026-08-09
+
+`main` clean and equal to `origin/main` at `00a6fe7`. Migration ledger
+reconciled: 50 repo files == 50 production rows. Tests 1662, lint 332.
+
+## There was already an audit system, and it had never shown anybody anything
+
+KeyMoura had `audit_logs`, `logAuditEvent()` with 115 call sites across 46
+files, a `staff.` / `admin.` / `moderation.` taxonomy, and a page at
+`/staff/security/audit`. Forty-six real events had accumulated in the table
+since July.
+
+Not one of them had ever been visible.
+
+`authenticated` held no `SELECT` grant on `audit_logs`. Postgres checks grants
+before RLS, so the policy allowing staff to read was never reached. Proven
+against production:
+
+```
+BLOCKED 42501 :: permission denied for table audit_logs
+```
+
+The page read the table from the browser with the anon key. `fetchPage` threw,
+and the `load()` that called it had a `finally` but **no `catch`** — so the
+rejection went nowhere and the UI rendered "No audit events found." over a table
+that had forty-six of them. This is the same class of defect as the pass-7
+production grants and the pass-17 roles columns: the failure was loud in
+Postgres and silent in the application.
+
+Two more found in the same inspection:
+
+* **History was editable.** The `staff manage` policy was `FOR ALL`. Any staff
+  session could `UPDATE` or `DELETE` past entries. An audit log a suspect can
+  rewrite is not an audit log.
+* **Inventory was filed against the wrong table.** The stock route called
+  `logLifecycleAudit({ orderId: productId })`, and that helper hardcodes
+  `targetTable: "orders"` — so every adjustment was recorded as an *order* event
+  carrying a product's id.
+
+So this pass finished the system that existed rather than building a second one.
+Nothing was renamed: the 46 rows and the 115 call sites keep their event types,
+and the legacy names are registered in the taxonomy alongside the new ones.
+
+## The one architectural decision: catalog has no server route
+
+Products are written **straight from the browser** — `src/app/staff/catalog/page.tsx`
+calls `supabase.from("products").update(...)` in ten places. There is no server
+seam where a price change could be logged, so `product.price_changed` could not
+be implemented the way orders and production were.
+
+A trigger is not a shortcut here; it is the only correct answer. It runs inside
+the same transaction as the write, catches every path including ones added
+later, and cannot be forgotten by a new caller. It is also the only part of this
+pass with *strict* transactional integrity, which is worth being plain about.
+
+The column allowlist is the substance of it. A product row carries marketing
+copy and a `detail_content` document; the trigger compares twenty-nine named
+columns and records prose as a **length**, never a body. `inventory_quantity` is
+deliberately excluded — stock has its own ledger and its own event, and
+including it would have double-logged every adjustment.
+
+## Transactional integrity, stated honestly
+
+| Path | Guarantee |
+|---|---|
+| Catalog | Same transaction as the write. Cannot diverge. |
+| Everything else | Written only after the mutation is confirmed; failure is surfaced, never swallowed. |
+| Roles and permissions | As above, and strict — the caller fails rather than reporting a clean success. |
+
+The order route is the shape of it. The audit event is written immediately after
+the guarded update reports an affected row and before the emails that follow.
+Earlier would record a change the `.eq(status)` guard may have refused — the
+false success that guard exists to prevent. Later would leave a window where the
+customer has been told and nobody knows who decided it. A failed audit write
+returns `auditFailed: true` in the response rather than a clean 200.
+
+The residual gap is real and is not papered over: mutation committed, process
+dies before the audit insert. Supabase's REST client has no cross-statement
+transaction, so closing it would mean moving each mutation into an RPC. That is
+a larger change than this pass, and it is recorded here rather than hidden.
+
+## What the page shows
+
+```
+Ethan   Changed order status   KM-0012
+        In production → Ready for pickup            Aug 9, 2:42 PM
+```
+
+Filters, search and paging all run in Postgres. Paging is a keyset cursor on
+`occurred_at` with `id` breaking ties — offset paging over a table that grows at
+the head shows duplicates, and a page boundary landing inside a burst of
+same-timestamp events silently drops rows. The browser never holds more than one
+page of 50.
+
+`/staff/security/audit` is now a redirect. Two audit pages would mean two
+definitions of what an event is.
+
+## Two defects the existing tests caught
+
+Worth recording, because both were mine and both were invisible to TypeScript:
+
+* `staff-schema-contract` refused `roles.label` and `roles.priority`. The role
+  editor speaks `label`/`priority`; the table has `name`/`rank`, and
+  `toRoleDbColumns` is the one place that translates. My `select()` used the
+  wire names and would have failed with 42703 on every role edit — exactly the
+  defect that suite was written for after pass 17.
+* My own new test refused `forum.` as a retained prefix. It would have admitted
+  post votes and views into a table meant for staff actions. Narrowed to the two
+  destructive moderation events.
+
+One test was rewritten rather than satisfied: `commerce-domain` asserted the
+retention rule by matching the *source text* of `src/lib/audit.ts`, so it broke
+when the rule moved into a module without any change in behaviour. It now
+imports `isRetainedAuditEvent` and asserts what it does.
+
+## Verified in a browser, and what was not
+
+The local service-role key is a placeholder and `/staff/*` is gated by
+middleware, so the real page cannot be driven locally against real data. A
+temporary harness mounted the same component outside the gate against fixtures
+and was deleted before commit.
+
+Driven and confirmed: newest-first ordering; the four specified example rows
+rendering exactly as specified; row expansion showing actor, full timestamp,
+affected entity, the before/after table and `Open order`
+-> `/staff/orders/<uuid>`; the area filter narrowing to one row and putting
+`?area=catalog` in the URL; the dependent action dropdown appearing only once an
+area is chosen; search for `KM-0012` returning both its events and nothing else;
+the empty state; cursor paging to page two with `Newest` correctly disabled on
+page one and `Older` on the last; 375px and 768px with no horizontal overflow.
+
+**Not verified:** the page against real production rows. Reaching it needs a
+real staff session, and the audit permission gate and RLS were checked against
+the database directly instead — including that `authenticated` can now read,
+that `anon` cannot, and that `UPDATE`, `DELETE` and `TRUNCATE` are all refused.
+
+## Migration — applied, with approval
+
+`20260809200000_audit_event_model.sql`. Dry-run in a transaction against
+production and rolled back, twice, before approval was requested; the rollback
+was verified by re-reading the column count, row count and grants.
+
+| Check | Result |
+|---|---|
+| 46 existing rows preserved | 46 |
+| `anon` can read | no |
+| `authenticated` read / update | yes / no |
+| `service_role` insert / delete | yes / no |
+| `UPDATE` a historical row | refused by trigger |
+| `DELETE` a historical row | refused by trigger |
+| Account deletion still possible | yes — narrow FK exception |
+| Product 4000 -> 4500 | `product.price_changed` |
+| `updated_at`-only write | no event |
+
+## Numbers
+
+| | |
+|---|---|
+| Tests | 1662 -> **1705**, all green |
+| Lint | 332 -> **331** — the dead page's `any` usages went with it |
+| Migrations | 50 -> **51** repo files == 51 production rows |

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readJson, asRecord } from "@/lib/json";
 import { isString } from "@/lib/typeGuards";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
+import { recordAuditEventStrict, resolveActorLabel } from "@/lib/audit/events";
 import { createAdminActionRequest } from "@/lib/adminApprovals";
 
 function parseRolePayload(v: unknown): { role: string } | null {
@@ -74,6 +75,32 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   );
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  /*
+   * Strict, unlike every other audit write in this codebase.
+   *
+   * "Somebody's role changed and there is no record of who did it" is the
+   * precise question an audit log exists to answer, so this one is allowed to
+   * fail the request. The role change has already committed by this point and
+   * is not rolled back — what the 500 does is stop the operator being told the
+   * change succeeded cleanly when the trail has a hole in it, so they can look.
+   *
+   * `recordAuditEventStrict` throws; the surrounding try/catch is deliberately
+   * absent so the failure is not swallowed by a generic handler.
+   */
+  await recordAuditEventStrict({
+    action: nextRole === "member" && currentRole !== "member" ? "role.removed" : "role.assigned",
+    actor: {
+      kind: "staff",
+      userId: actor.userId,
+      role: actor.role,
+      label: await resolveActorLabel(actor.userId),
+    },
+    entity: { type: "user", id, label: await resolveActorLabel(id) },
+    changes: { role: { before: currentRole, after: nextRole } },
+    source: "staff_ui",
+    actorIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+  });
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

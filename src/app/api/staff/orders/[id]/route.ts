@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
+import { recordOrderAudit } from "@/lib/audit/orders";
 import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 import { notifyOrderUser } from "@/lib/orderNotifications";
 import { netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
@@ -196,6 +197,33 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       { status: 409 }
     );
   }
+  /*
+   * The audit event, written at the earliest point the mutation is known to
+   * have committed — immediately after the guarded update reported an affected
+   * row, and before the emails and notifications that follow.
+   *
+   * Ordering matters in both directions. Writing it earlier would record a
+   * change that the `.eq(status)` guard may have refused, which is the false
+   * success this whole route is built to avoid. Writing it after the email
+   * would leave a window where the customer has been told and nobody knows who
+   * decided it.
+   *
+   * `auditRecorded` is carried into the response rather than dropped: the order
+   * has already changed by now, so a failed audit write cannot roll anything
+   * back — but reporting a clean success for an unrecorded change is exactly
+   * how a log quietly stops being trustworthy.
+   */
+  const auditRecorded = await recordOrderAudit({
+    orderId: id,
+    before: existing,
+    after: update,
+    actorUserId: actor.userId,
+    actorRole: actor.role,
+    orderNumber: existing.order_number,
+    source: "staff_ui",
+    actorIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+  });
+
   if (typeof update.quote_revision === "number" && typeof update.agreed_price_cents === "number") {
     await routeServiceClient.from("order_quotes").insert({ order_id:id, revision:update.quote_revision, total_cents:update.agreed_price_cents, deposit_cents:update.deposit_amount_cents ?? existing.deposit_amount_cents, note:optionalText(body.quote_note,2000), created_by:actor.userId });
   }
@@ -247,5 +275,12 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
    * key is derived from the state rather than from a row id that changes on
    * every click.
    */
-  return NextResponse.json({ ok: true, status: update.status ?? existing.status, quote_revision: update.quote_revision ?? existing.quote_revision });
+  return NextResponse.json({
+    ok: true,
+    status: update.status ?? existing.status,
+    quote_revision: update.quote_revision ?? existing.quote_revision,
+    // `null` means there was nothing to record. `false` means there was and it
+    // could not be written — the change stands but the trail has a hole in it.
+    ...(auditRecorded === false ? { auditFailed: true } : {}),
+  });
 }

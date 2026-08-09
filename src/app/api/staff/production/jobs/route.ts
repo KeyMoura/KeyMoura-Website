@@ -152,7 +152,13 @@ export async function POST(req: NextRequest) {
     jobNumber: job.job_number,
     eventType: "job.created",
     auditType: "staff.production.job.create",
+    action: "production.created",
     toStatus: job.status,
+    orderId: job.order_id,
+    productId: job.product_id,
+    // A create has no "before", so the diff is the starting state of the fields
+    // that matter rather than every column the insert defaulted.
+    after: job,
     metadata: {
       priority: job.priority,
       linkedOrder: Boolean(job.order_id),

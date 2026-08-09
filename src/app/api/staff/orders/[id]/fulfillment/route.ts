@@ -326,9 +326,13 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     eventType: "staff.order.fulfillment_changed",
     actorUserId: actor.userId,
     orderId: order.id,
+    orderNumber: order.order_number,
+    // The transition itself, so the row reads "Unfulfilled → Ready for pickup"
+    // rather than making a reader open the detail to learn what moved.
+    changes: { fulfillment_status: { before: current, after: to } },
     // The note bodies are deliberately not copied in: the audit log is read
     // more widely than the order page.
-    metadata: { from: current, to, method, had_customer_note: Boolean(customerNote) },
+    metadata: { method, had_customer_note: Boolean(customerNote) },
   });
 
   return NextResponse.json({ ok: true, already: false, status: to });
@@ -437,7 +441,15 @@ async function updateTracking(input: {
     eventType: isCorrection ? "staff.order.tracking_corrected" : "staff.order.tracking_added",
     actorUserId: input.actorUserId,
     orderId: input.order.id,
-    metadata: { carrier, corrected: isCorrection },
+    orderNumber: input.order.order_number,
+    // A corrected tracking number is the case worth being able to reconstruct:
+    // both values are business facts about where a parcel was said to be, and
+    // neither is customer PII.
+    changes: {
+      shipping_carrier: { before: previousCarrier || null, after: carrier },
+      tracking_number: { before: previousNumber || null, after: number },
+    },
+    metadata: { corrected: isCorrection },
   });
 
   // Only a correction is worth an email. Adding tracking for the first time is

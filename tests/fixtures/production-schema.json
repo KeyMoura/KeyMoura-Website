@@ -24,7 +24,7 @@
     "account_admissions": ["admission_source", "admitted_at", "admitted_by", "user_id"],
     "account_registration_candidates": ["created_while_registration_closed", "observed_at", "user_id"],
     "admin_action_requests": ["action_type", "id", "note", "payload", "requested_at", "requested_by", "requested_ip", "reviewed_at", "reviewed_by", "status", "target_user_id", "updated_at"],
-    "audit_logs": ["actor_ip", "actor_role", "actor_user_id", "created_at", "event_type", "id", "metadata", "target_id", "target_table"],
+    "audit_logs": ["actor_ip", "actor_kind", "actor_label", "actor_role", "actor_user_id", "changes", "correlation_id", "created_at", "entity_id", "entity_label", "entity_type", "event_type", "id", "metadata", "occurred_at", "related_order_id", "related_product_id", "related_production_job_id", "source", "summary", "target_id", "target_table"],
     "auth_login_events": ["created_at", "email", "event_type", "id", "ip", "metadata", "profile_id", "provider", "success", "user_agent"],
     "cart_items": ["cart_id", "created_at", "id", "product_id", "quantity", "selected_options", "updated_at"],
     "carts": ["converted_order_id", "created_at", "customer_id", "discount_code", "guest_token", "id", "status", "updated_at"],

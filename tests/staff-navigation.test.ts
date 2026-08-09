@@ -108,7 +108,7 @@ test("every staff section is reachable from the menu", () => {
     "/staff/security",
     "/staff/security/users",
     "/staff/security/roles",
-    "/staff/security/audit",
+    "/staff/audit",
     "/staff/security/recycle-bin",
     "/staff/security/verified-perks",
     "/staff/info/todo",
@@ -191,7 +191,18 @@ test("a nested route lights the most specific entry, not its parent", () => {
   assert.equal(activeStaffNavItem("/staff/catalog/discounts")?.item.href, "/staff/catalog/discounts");
   assert.equal(activeStaffNavItem("/staff/settings/commerce")?.item.href, "/staff/settings/commerce");
   assert.equal(activeStaffNavItem("/staff/security/roles")?.item.href, "/staff/security/roles");
-  assert.equal(activeStaffNavItem("/staff/security/audit")?.item.href, "/staff/security/audit");
+  assert.equal(
+    activeStaffNavItem("/staff/security/verified-perks")?.item.href,
+    "/staff/security/verified-perks"
+  );
+});
+
+test("the audit log is a top-level destination, and its old path still resolves", () => {
+  // The audit log moved out of Security in the audit pass. It has its own
+  // entry, and `/staff/security/audit` is a redirect page kept for bookmarks —
+  // which has no menu entry of its own and so lights the Security section.
+  assert.equal(activeStaffNavItem("/staff/audit")?.item.href, "/staff/audit");
+  assert.equal(activeStaffNavItem("/staff/security/audit")?.item.href, "/staff/security");
 });
 
 test("a route with no entry of its own lights its section", () => {
@@ -359,7 +370,7 @@ test("every settings destination reaches the index wherever it sits in the sideb
     "/staff/security",
     "/staff/security/verified-perks",
     "/staff/security/recycle-bin",
-    "/staff/security/audit",
+    "/staff/audit",
     "/staff/security/users",
   ]) {
     assert.ok(listed.includes(href), `${href} is not reachable from the settings index`);
@@ -573,7 +584,7 @@ test("nothing was deleted when the menu shrank", () => {
   const all = new Set(visibleStaffHrefs(ALL));
   for (const href of [
     "/staff/info/analytics",
-    "/staff/security/audit",
+    "/staff/audit",
     "/staff/security/users",
     "/staff/moderation/reports",
     "/staff/security",

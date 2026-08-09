@@ -1,7 +1,8 @@
 import "server-only";
 
 import { routeServiceClient } from "@/lib/api/routeAuth";
-import { logAuditEvent } from "@/lib/audit";
+import { buildChangeSet, type ChangeSet } from "@/lib/audit/diff";
+import { recordAuditEvent, resolveActorLabel } from "@/lib/audit/events";
 import type { ActorAccess } from "@/lib/permissions";
 import type { ProductionStatus } from "./jobs";
 
@@ -89,23 +90,88 @@ export async function recordJobEvent(params: {
 }
 
 /**
+ * Fields compared when a production job is edited.
+ *
+ * `internal_notes`, `customer_visible_notes` and `description` are absent on
+ * purpose: they are free prose, and the audit log is read by a wider group than
+ * the job page. That they were edited is recorded through `metadata.fields`;
+ * what they say is not.
+ */
+export const PRODUCTION_AUDIT_FIELDS = [
+  "status",
+  "priority",
+  "due_date",
+  "promised_date",
+  "quantity",
+  "assigned_to",
+  "hold_reason",
+  "failure_reason",
+  "materials_acquired",
+  "estimated_minutes",
+  "actual_minutes",
+  "order_id",
+  "product_id",
+  "title",
+] as const;
+
+/**
+ * Names the canonical action for a job change.
+ *
+ * Linking is decided by the caller, which knows whether an existing link was
+ * replaced; everything else is read off the change set so a status edit and a
+ * priority edit do not both arrive as "job updated".
+ */
+export function resolveProductionAction(changes: ChangeSet): string {
+  if (changes.status && changes.status.after === "cancelled") return "production.cancelled";
+  if (changes.status) return "production.status_changed";
+  if (changes.priority) return "production.priority_changed";
+  if (changes.due_date || changes.promised_date) return "production.due_date_changed";
+  if (changes.hold_reason) return "production.blocker_changed";
+  if (changes.failure_reason) return "production.qc_changed";
+  if (changes.quantity) return "production.quantity_changed";
+  return "production.updated";
+}
+
+/**
  * Writes the job timeline and the staff audit log together.
  *
- * `metadata` must stay free of customer PII and of internal note bodies — the
- * audit log is read by a wider group than the job page. Callers pass counts and
- * identifiers, not content.
+ * Two records, deliberately: `production_job_events` is the timeline staff read
+ * on the job page, and `audit_logs` is the cross-cutting record. The timeline
+ * keeps its notes; the audit event keeps a field-level diff and the order the
+ * job belongs to, so "everything that happened to KM-0012" finds production
+ * changes made from the production side.
+ *
+ * `metadata` must stay free of customer PII and of internal note bodies.
  */
 export async function recordJobAction(params: {
   actor: ActorAccess;
   jobId: string;
   jobNumber: string;
   eventType: string;
+  /** Legacy audit type, retained so historical rows and new ones agree. */
   auditType: string;
+  /** Canonical action; derived from the change set when omitted. */
+  action?: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  /** The order this job belongs to *after* the change. */
+  orderId?: string | null;
+  productId?: string | null;
   fromStatus?: ProductionStatus | null;
   toStatus?: ProductionStatus | null;
   note?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
+  const changes = params.before || params.after
+    ? buildChangeSet(params.before ?? {}, params.after ?? {}, PRODUCTION_AUDIT_FIELDS)
+    : {};
+
+  // A status move passed explicitly still produces a before/after even when the
+  // caller supplied no rows — the status routes work that way.
+  if (!changes.status && params.fromStatus && params.toStatus && params.fromStatus !== params.toStatus) {
+    changes.status = { before: params.fromStatus, after: params.toStatus };
+  }
+
   await Promise.all([
     recordJobEvent({
       jobId: params.jobId,
@@ -116,18 +182,22 @@ export async function recordJobAction(params: {
       note: params.note,
       metadata: params.metadata,
     }),
-    logAuditEvent({
-      actorUserId: params.actor.userId,
-      actorRole: params.actor.role,
-      eventType: params.auditType,
-      targetTable: "production_jobs",
-      targetId: params.jobId,
+    recordAuditEvent({
+      action: params.action ?? resolveProductionAction(changes),
+      actor: {
+        kind: "staff",
+        userId: params.actor.userId,
+        role: params.actor.role,
+        label: await resolveActorLabel(params.actor.userId),
+      },
+      entity: { type: "production_job", id: params.jobId, label: params.jobNumber },
+      related: { productionJobId: params.jobId, orderId: params.orderId ?? null, productId: params.productId ?? null },
+      changes,
       metadata: {
-        jobNumber: params.jobNumber,
-        ...(params.fromStatus ? { from: params.fromStatus } : {}),
-        ...(params.toStatus ? { to: params.toStatus } : {}),
+        legacy_event_type: params.auditType,
         ...(params.metadata ?? {}),
       },
+      source: "staff_ui",
     }),
   ]);
 }

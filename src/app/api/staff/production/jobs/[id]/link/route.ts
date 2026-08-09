@@ -154,6 +154,24 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     jobNumber: updated.job_number,
     eventType: nextOrderId ? "job.linked" : "job.unlinked",
     auditType: "staff.production.job.link",
+    /*
+     * Three distinct actions, not one.
+     *
+     * "Linked to an order", "moved to a different order" and "unlinked" are
+     * different events to whoever is reading the log later — a relink is the
+     * one that silently changes which customer a job belongs to, and it is the
+     * case the linking route's own guard exists to make safe. Collapsing them
+     * into "link changed" would hide exactly the transition worth noticing.
+     */
+    action: !nextOrderId
+      ? "production.unlinked_from_order"
+      : job.order_id
+        ? "production.relinked_to_order"
+        : "production.linked_to_order",
+    before: job,
+    after: updated,
+    orderId: nextOrderId,
+    productId: updated.product_id,
     // Order numbers, never customer details: the audit log is read more widely
     // than the job page.
     metadata: {

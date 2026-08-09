@@ -139,8 +139,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     jobNumber: updated.job_number,
     eventType: reopen ? "job.reopened" : "job.status_changed",
     auditType: "staff.production.job.status",
+    action: "production.status_changed",
     fromStatus: from,
     toStatus: to,
+    orderId: updated.order_id,
+    productId: updated.product_id,
+    // The reason reaches the job timeline, which is where staff read it. It is
+    // not copied into the audit metadata: a scrap or rework reason is shop-floor
+    // detail and the audit log has a wider readership.
     note: reason || null,
     metadata: { reopened: reopen },
   });
