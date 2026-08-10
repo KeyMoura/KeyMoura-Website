@@ -6396,3 +6396,245 @@ which exist only in this commit.
   strictly stricter (reason required, rank enforced, self refused, stale-state
   checked); the older two were left alone rather than have their contract
   changed underneath the moderation UI.
+
+# Pass 22 — customer support, made a system
+
+## Verified starting state — 2026-08-10
+
+`main` clean and equal to `origin/main` at `a59b777`. Migration parity 52 == 52.
+Tests 1794, lint 277 (`npx eslint src`).
+
+## There was no support system. There was a form that sent an email.
+
+`/contact` posted to `/api/contact`, which built its own `new Resend(...)`, sent
+one message to a mailbox, and **stored nothing**. No row, no reference, no
+status, no owner, no history. Every question any customer had ever asked existed
+only in somebody's inbox, and the answer to "how many are outstanding?" was
+whatever that person remembered.
+
+It was also, by the standard pass 12 set, a **second email sender**: it bypassed
+`sendCommerceEmail`, `email_templates`, `email_deliveries` and the audit log
+entirely. So this pass consolidates rather than adds a third — `/contact` is now
+a redirect, for the reason `/staff/security/audit` and `/staff/security/users`
+became redirects in the two passes before it.
+
+Everything else was reused, not rebuilt:
+
+| Concern | What it already was |
+|---|---|
+| Email | `sendCommerceEmail`, claim-before-send on a unique `event_key` |
+| Staff notification | `raiseOperationalAlert`, permission fan-out, durable keys |
+| Audit | `audit_logs` + `recordAuditEvent`, immutable since pass 20 |
+| RBAC | `permissions` / `role_permissions`, DB-first |
+| Readable references | `keymoura_order_number_seq` + a `BEFORE INSERT` trigger |
+| Append-only notes | `user_staff_notes`: trigger **and** withheld grant |
+| Server-side lists | `staff_user_directory` + a pure filter module |
+| Guest authorization | `guest_token_hash` cookie, `authorizeGuestOrderWrite` |
+
+## The one architectural decision: `order_messages` was left alone
+
+It is the existing conversation system — it has `is_internal`, a client-token
+dedup and an email fan-out. It is also **order-scoped**: `order_id` is `NOT NULL`
+and every policy and route keys off the order. It cannot express a question that
+is not about an order, and has nowhere to put a subject, a category, a status, an
+owner or a priority.
+
+Widening it would have meant inventing a conversation entity anyway *and*
+rewriting the RLS of a live table with rows in it. So the order thread stays what
+it is, a support conversation **links** to an order, and both appear on the order
+workspace — because a staff member reading one needs to know the other exists.
+
+## A reply and a note are two endpoints, not one endpoint with a boolean
+
+This is the design the whole feature turns on. The boolean version has a single
+branch deciding whether to email a customer, and that is precisely the line that
+gets inverted, negated or moved during a refactor — with a staff-only note about
+a customer arriving in that customer's inbox as the failure mode.
+
+So: `POST .../reply` always sends. `POST .../notes` contains **no send call at
+all** — no `sendCommerceEmail`, no `notifyCustomerOfReply`, nothing that
+transitively reaches the mailer — and a test asserts its source contains none.
+`appendSupportMessage` sends nothing and notifies nobody; that is the caller's
+decision, because the two callers make opposite ones.
+
+The customer read path filters `visibility = 'customer'` **in the query**, not
+after it. A row filtered in the query is never loaded; a row filtered afterwards
+is one refactor away from being rendered.
+
+## Five statuses, and the first two are genuinely different
+
+`open` is "nobody has ever answered this person". `waiting_on_staff` is "this is
+the fourth round". Both are ours to answer, which is why `isUnresolvedStatus`
+exists and the inbox chips group them — but first response outstanding and
+follow-up outstanding are different failures and deserve different urgency.
+
+`closed` earns its place by being the one state a customer message does not move.
+Without it there is no way to end a thread somebody keeps replying to.
+
+The status and its timestamp are one fact, enforced:
+
+```sql
+check ((status = 'resolved') = (resolved_at is not null))
+check ((status = 'closed')   = (closed_at   is not null))
+```
+
+so a row cannot be `open` while carrying a `resolved_at`. That is what "no
+meaningless status combinations" means in a schema rather than in a paragraph.
+
+## Ownership is `customer_id` equality, and nothing else
+
+The rule pass 21 set for the user workspace, restated because this is the second
+place it could quietly break. A guest conversation whose `guest_email` matches an
+account is **not** that account's conversation — honouring that would let a
+stranger read a customer's support history by signing up with their address.
+
+Not-found and not-yours answer **identically** (404). A 403 confirms the
+conversation exists, which turns the endpoint into a way to enumerate
+conversations by trying ids.
+
+A customer may attach an order only when `orders.customer_id` equals their own.
+A guest may attach one only when their httpOnly guest-order cookie opens it —
+`authorizeGuestOrderWrite`, the same function the guest message route uses, so a
+guest who may reply to an order and a guest who may attach it are the same guest
+by construction.
+
+## Migration — applied, with approval
+
+`20260810100000_support_conversations.sql`. Dry-run against production **three
+times**, each rolled back and the rollback verified by re-reading the objects
+(all `null`) and the counts (permissions back to 92, templates to 44,
+role_permissions to 92).
+
+| Probe | Result |
+|---|---|
+| Reference generation | `SUP-0001` then `SUP-0002` |
+| Customer writing an internal note | refused `23514` |
+| `UPDATE` / `DELETE` a message | refused `42501` |
+| Rewrite a reference / swap the requester | refused `42501` |
+| Both account *and* guest, or neither | refused `23514` |
+| `resolved` with no `resolved_at` | refused `23514` |
+| Assignment with no time | refused `23514` |
+| Malformed guest email | refused `23514` |
+| Double-submitted form | collapsed, `23505` |
+| `anon` / `authenticated` — all seven probes | blocked `42501` |
+| `service_role` — message update, delete, conversation delete | blocked `42501` |
+
+## The defect that only re-reading the live grants found
+
+`service_role` held **`TRUNCATE`** on `support_messages`.
+
+`support_messages_no_rewrite` is a `BEFORE DELETE ... FOR EACH ROW` trigger, and
+**a row trigger does not fire on TRUNCATE**. Supabase's default privileges hand
+`service_role` everything on a new table in `public`, so revoking DELETE was not
+enough: the table advertised as append-only could have been emptied in one
+statement. The dry-run probes tested DELETE and UPDATE and both were correctly
+refused — the hole was invisible to them.
+
+`audit_logs` already closed this in pass 20.
+`20260810110000_support_truncate_lockdown.sql` is revoke-only and brings the
+support tables to the same standard; `support_messages` now reads
+`INSERT,REFERENCES,SELECT,TRIGGER`, identical to `audit_logs`. A test asserts the
+revoke, because the grant comes from a default nobody wrote and can come back the
+moment somebody adds a table without thinking about it.
+
+**`user_staff_notes` has the same hole** —
+`INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE`. Recorded rather than fixed
+here: it belongs to pass 21's table, and changing another pass's grants unasked is
+not this pass's business. It is one `revoke` when somebody wants it.
+
+## Permissions
+
+Four, split by what each actually does: reading a customer's correspondence,
+writing to that customer in KeyMoura's name, deciding a conversation's state, and
+deciding whose job it is. Granted to `admin` and to the role literally called
+**Support** — `is_staff`, ranked 40, **zero holders**, so this defines the role
+rather than widening anybody's access. Deliberately **not** to `moderator`:
+moderation is about community content, and a moderator reading a customer's refund
+correspondence by default is a wider grant than that role was made for.
+
+The staff sidebar ceiling moved from 16 primary destinations to 17, and that is
+the point of having the assertion — raising it is a decision somebody had to make
+in a diff. Support passes the same test Orders, Production and Fulfillment pass:
+it is a queue with people waiting in it, worked every day. Nothing was demoted,
+because nothing else stopped being daily.
+
+## Verified in a browser, and what was not
+
+The local service-role key is a placeholder, so a temporary harness served
+fixtures to the **real** components at their real URLs and was deleted before
+commit.
+
+Driven and confirmed: the guest form with all eight categories and its help text
+following the selection; `/contact` redirecting; the inbox with six
+server-computed chip counts, `Needs attention` default and active; the
+`unassigned` chip narrowing to one row and putting `?view=unassigned` in the URL;
+free-text search, and `sup2` and `km12` normalising to `SUP-0002` and `KM-0012`
+with the search note explaining what it did; the workspace header, the
+chronological thread with the internal note in amber and labelled "the customer
+cannot see this", and seven sections; a staff reply appearing, clearing the
+composer and moving the status to `waiting_on_customer`; an internal note
+appearing and **leaving the status where it was**; status, priority, category and
+assignment, each sending its expected-value guard; a stale-state change refused
+with "Somebody else changed this conversation while you were looking at it"; order
+unlink swapping the panel to the link-by-number form; the user workspace's Support
+tab at `#support` listing both of that customer's conversations with no bodies;
+375px and 768px on every surface with no horizontal overflow.
+
+**The load-bearing one.** The same conversation, read as the customer: three
+messages instead of five. Neither internal note present — not the text, not the
+label. The staff member rendered as **"KeyMoura"**, never by name. Status shown in
+the customer vocabulary ("Received"), the order linking to `/orders/<id>` rather
+than the staff path. A customer reply containing `<img src=x onerror=alert(1)>`
+and `**bold**` rendered as `&lt;img src=x onerror=alert(1)&gt;` inside a
+`whitespace-pre-wrap` paragraph — no element created, no markdown interpreted.
+
+**Not verified:** the order workspace's support panel in a browser. It lives
+inside `/staff/orders/[id]`, which reads `orders` through RLS from the client and
+cannot load locally against a placeholder key. Its behaviour is asserted by tests
+instead. Nor were any of these pages driven against real production data — that
+needs a real staff session, and the grants, RLS and constraints were checked
+against the database directly.
+
+One thing worth recording about the harness itself: a controlled input in this
+browser pane does **not** accept a synthetic `input` event, even with the native
+value-setter trick. The typed value lands in the DOM and React never sees it, so
+the page looked broken when it was not. Real keystrokes work. The earlier
+"search does nothing" reading was the harness, not the page.
+
+## Attachments — deferred, deliberately
+
+The only private bucket is `order-assets`, whose policy is
+`storage.foldername(name)[1] = auth.uid()`. That works for a signed-in customer
+and not at all for a guest, and there is no signed-URL path for
+conversation-scoped access. Building one is a storage-policy pass, not a support
+pass. Deferred rather than shipped insecurely, which is what the brief asked for.
+
+## Numbers
+
+| | |
+|---|---|
+| Tests | 1794 -> **1879**, all green |
+| Lint | 277 -> **277**, unchanged |
+| Migrations | 52 -> **54** repo files == 54 production rows |
+| Support rows created in production | **0** |
+
+### The same ledger-drift note as pass 21
+
+Parity holds, but the two new rows carry the timestamps the apply tool assigned —
+`20260810205348` and the lockdown's — while their names are
+`20260810100000_support_conversations` and
+`20260810110000_support_truncate_lockdown`. Identified by name, not by a version
+matching the filename prefix.
+
+## Known gaps
+
+* **A guest cannot read their conversation.** They get a reference and an emailed
+  reply, and that email carries the full text because it is their only channel.
+  The guest-order cookie authorises *an order*, and most support conversations
+  have none — so there is nothing to check. Inbound email threading would be a
+  second system.
+* **No attachments.** See above.
+* **The order workspace panel is test-verified only.** See above.
+* **`user_staff_notes` can still be truncated.** See above.
+* **Reading the inbox is not audited**, by design — a log that records its own
+  inspection grows faster from being looked at than from anything happening.
