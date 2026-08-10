@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAnyPermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { actionsForArea, describeAction } from "@/lib/audit/actions";
-import { renderChanges, type ChangeSet } from "@/lib/audit/diff";
+import { renderChanges, summarizeChanges, type ChangeSet } from "@/lib/audit/diff";
 import { parseAuditFilters } from "@/lib/audit/query";
 
 /**
@@ -167,7 +167,18 @@ function toView(row: AuditRow) {
     relatedProductionJobId: row.related_production_job_id,
     relatedProductId: row.related_product_id,
 
-    summary: row.summary,
+    /*
+     * Derived when the row does not carry one.
+     *
+     * `recordAuditEvent` computes a summary at write time, but the catalog
+     * trigger writes in SQL and cannot — so every product event arrived with a
+     * null summary and rendered as "Changed product price / Shift Knob" with
+     * the `$40.00 → $45.00` nowhere on the row, only behind an expand. Deriving
+     * it here also means the formatting rules live in one place: a summary
+     * frozen at write time would keep whatever wording was current the day it
+     * was written.
+     */
+    summary: row.summary ?? summarizeChanges(row.changes, entityType),
     changes: renderChanges(row.changes, entityType),
     metadata: row.metadata ?? {},
     source: row.source,

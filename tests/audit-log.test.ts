@@ -491,10 +491,18 @@ test("the audit API refuses anyone without an audit permission", () => {
 test("reading the audit log does not write to the audit log", () => {
   // Otherwise the table grows faster from being looked at than from anything
   // happening, and every page view buries the events worth seeing.
+  //
+  // Matched as a *call*, with comments stripped first. A substring test failed
+  // the moment a comment explained what `recordAuditEvent` does elsewhere,
+  // which is a test measuring prose rather than behaviour.
+  const stripComments = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
   for (const path of ["src/app/api/staff/audit/route.ts", "src/app/api/staff/audit/actors/route.ts"]) {
-    const route = read(path);
-    assert.ok(!route.includes("recordAuditEvent"), `${path} records an event for a read`);
-    assert.ok(!route.includes("logAuditEvent"), `${path} records an event for a read`);
+    const code = stripComments(read(path));
+    assert.ok(!/\brecordAuditEvent\s*\(/.test(code), `${path} records an event for a read`);
+    assert.ok(!/\blogAuditEvent\s*\(/.test(code), `${path} records an event for a read`);
+    assert.ok(!/\brecordAuditEventStrict\s*\(/.test(code), `${path} records an event for a read`);
   }
 });
 
@@ -605,6 +613,21 @@ test("no fabricated history: nothing backfills events from existing tables", () 
   assert.equal(inserts.length, 1, "the migration must not seed historical events");
   assert.ok(!migration.includes("from public.order_status_history"));
   assert.ok(!migration.includes("from public.production_job_events"));
+});
+
+test("a row without a stored summary still shows its before and after", () => {
+  /*
+   * The catalog trigger writes in SQL and cannot compute a summary, so every
+   * product event lands with `summary` null. Left as-is, a price change rendered
+   * as "Changed product price / Shift Knob" with the money nowhere on the row —
+   * visible only after expanding it. The list route derives one from `changes`.
+   */
+  const route = read("src/app/api/staff/audit/route.ts");
+  assert.match(route, /summary: row\.summary \?\? summarizeChanges\(row\.changes, entityType\)/);
+
+  // And the derivation itself produces the specified line.
+  const changes = { starting_price_cents: { before: 4000, after: 4500 } };
+  assert.equal(summarizeChanges(changes, "product"), "$40.00 → $45.00");
 });
 
 test("known action names are stable and unique", () => {
