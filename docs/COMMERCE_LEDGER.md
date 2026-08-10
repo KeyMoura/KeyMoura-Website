@@ -6187,3 +6187,212 @@ of having an actor model at all.
 | Lint | 332 -> **331** — the dead page's `any` usages went with it |
 | Migrations | 50 -> **51** repo files == 51 production rows |
 | Final SHA | `c0b8633` |
+
+# Pass 21 — user management, made a workspace
+
+## Verified starting state — 2026-08-10
+
+`main` clean and equal to `origin/main` at `4245515`. Migration parity 51 == 51.
+Tests 1708, lint 331 (`npx eslint src`).
+
+## There was already an identity system; nothing it had was rebuilt
+
+KeyMoura's user model was complete and none of it was duplicated:
+
+| Concern | Where it already lived |
+|---|---|
+| The user | `profiles` — its `id` **is** `auth.users.id` |
+| Roles | `user_roles` (PK `user_id`, so exactly one role) → `roles.rank` |
+| Permissions | `permissions` / `role_permissions` / `user_permissions`, DB-first |
+| Standing | `user_bans` + `user_restrictions` (site / community / dm) |
+| Providers | `auth.identities` — email, google, facebook |
+| Ownership | `orders.customer_id`, with `guest_email` for guest orders |
+| Audit | the pass-20 model, already writing `role.assigned` strictly |
+
+So no second user table, no parallel RBAC, and no new status column. What was
+missing was a **place where those facts met a customer's commerce**: the old
+`/staff/security/users` was 1,581 lines that selected every profile into the
+browser and offered a permissions matrix where an order history should have been.
+
+`/staff/users` and `/staff/users/[id]` replace it. `/staff/security/users` and
+`/staff/info/users` are now redirects, for the reason `/staff/security/audit`
+became one in pass 20: two user pages would mean two definitions of a user.
+
+**Nothing was dropped in the move.** The workspace calls the same routes the old
+page did — role, permission overrides, verification, donation rank, profile
+edit — and a test asserts each one is still reached, so the redirect cannot
+quietly delete a feature.
+
+## The decision that shaped the migration
+
+`service_role` holds **no grant on `auth.users` or `auth.identities`** — checked
+against production; only `postgres` does. Searching the directory by email needs
+that table, so `staff_user_directory` is **security definer** (unlike
+`staff_order_queue`, which is `security_invoker`) and granted to `service_role`
+alone. Proven, role-switched, against production:
+
+```
+svc.auth_users_direct = blocked(42501)
+svc.directory         = ok
+```
+
+The `auth` columns are named one at a time — email, `email_confirmed_at`,
+`last_sign_in_at`, `banned_until`, `deleted_at`. A `u.*` here would have put
+password hashes one JSON response away from a browser, and a test refuses it.
+
+## Guest orders are not claimed, and cannot become so by accident
+
+Ownership is `customer_id` equality and nothing else. A guest order whose
+`guest_email` matches is shown in its own array, flagged `owned: false`, labelled
+"Unclaimed guest order", and counted in **no** metric. Email equality is a claim
+anybody who can type can make.
+
+Searching an order number resolves to its owner; a *guest* order number returns
+no users and says why, rather than quietly offering the account whose address
+matches.
+
+## What spend means
+
+`amount_paid_cents` — money actually received — less refunds, floored at zero.
+An unpaid quote, an abandoned checkout and an order cancelled before payment all
+carry zero there, so none needs excluding by name. Verified against production:
+every figure matches an independent hand computation for all three accounts.
+
+One nuance worth stating: an `awaiting_payment` / `unpaid` order contributed
+**$25.00**. That is a real deposit received. `payment_status` means "not fully
+paid", not "no money arrived", and counting it is correct.
+
+## Two rank rules, not one
+
+* You cannot act on somebody **at or above** your own rank.
+* You cannot **grant** a role at or above your own rank.
+
+Dropping either leaves the escalation open: without the first a moderator
+demotes an admin, without the second they promote a sock puppet and reach
+everything indirectly. Both are pure functions in `userAccess.ts`, so the route
+and the tests evaluate the same rule rather than two readings of a paragraph.
+Role changes are stale-state guarded (`expectedRole`), and the last admin cannot
+be demoted by anyone, owner included.
+
+## Three routes were writing silently
+
+`verify` and `donation-rank` had **no audit event at all**, and `profile` had
+none and no before/after. All three now record `user.profile_changed` with a
+real diff. Verification matters most: `loadPermissionsForUser` grants everything
+in `site_verified_perks` to a verified account, so that flag can hand somebody
+capabilities.
+
+## Notes are append-only, and the audit row does not copy them
+
+A note cannot be edited or deleted — refused twice over, by withheld grant and
+by trigger. Archiving is the only permitted mutation and is guarded with
+`.is("archived_at", null)` so two staff pressing Archive produce one archive and
+one 409.
+
+The audit event carries the note **id, category and length** — never the body.
+Copying a customer's circumstances into `audit_logs` would double the places it
+has to be protected and redacted, for no gain: the note is the record.
+
+## Migration — applied, with approval
+
+`20260809210000_user_management.sql`. Dry-run in a transaction against
+production and rolled back **twice** before approval was requested, the rollback
+verified by re-reading the objects (all `null`) and the row counts.
+
+| Probe | Result |
+|---|---|
+| Edit a note's body | refused `42501` |
+| Delete a note | refused `42501` (trigger **and** no grant) |
+| Archive / un-archive | ok / refused `42501` |
+| Blank body / unknown category | refused `23514` |
+| `anon` → directory, notes | blocked / blocked |
+| `authenticated` → directory, notes, insert | blocked / blocked / blocked |
+| `service_role` → directory, notes / delete | ok, ok / blocked |
+
+### A ledger-drift note, recorded rather than hidden
+
+Parity holds at **52 repo files == 52 production rows**, but the new row's
+`version` is `20260810021827` — the timestamp the apply tool assigned — while
+its `name` is `20260809210000_user_management`. The file is identified by name,
+not by a version matching its filename prefix, unlike the 51 rows before it.
+
+### Two advisor findings, one investigated and dismissed
+
+`user_staff_notes` shows `rls_enabled_no_policy` (INFO). That is the intent: RLS
+on with no policies and no grants means unreachable, and `service_role` bypasses
+RLS with explicit grants. Fifteen existing tables share the pattern.
+
+`user_staff_notes_append_only` shows `anon_security_definer_function_executable`
+(WARN). Checked rather than assumed, and it is a static false positive — the
+function returns `trigger`, which PostgREST never exposes over RPC, and Postgres
+itself refuses the call for both roles:
+
+```
+0A000: trigger functions can only be called as triggers
+```
+
+Its search_path is pinned to the empty string. Five pre-existing trigger
+functions carry the identical warning. No migration was raised for it.
+
+## Verified in a browser, and what was not
+
+The local service-role key is a 38-character placeholder, so every server route
+fails with "Invalid API key" locally, and `/staff/*` is gated by middleware. A
+temporary harness mounted the **real** components outside the gate against
+fixtures and was deleted before commit.
+
+Driven and confirmed: the directory rendering role, staff standing, status,
+spend and order counts per row; search; the role, account-type, status and
+orders filters; sorting by name, orders and spend; paging with exactly one nav
+button disabled at each end; the empty state; all six workspace tabs and their
+`#hash`; the guest-order section labelled unclaimed; the dangerous role change
+demanding "Yes, make them Member" with "This removes their staff access
+immediately", and Cancel restoring; the status reason gate refusing 5 characters
+and accepting 38; note create, archive, and archived-hidden-by-default; masked
+recipients with no provider ids; sign-in methods read-only; 375px and 768px with
+no horizontal overflow.
+
+**Two real defects the walkthrough found**, both fixed:
+
+* `formatRelative` rendered **"1 months ago"**.
+* The role dropdown read an empty **"Select"** whenever the current role was not
+  in `assignableRoles` — which is *always*, since a no-op assignment is refused
+  and rank excludes anything at or above the actor. It now lists
+  "Admin (current)" first.
+
+**Not verified:** the pages against real production data. That needs a real
+staff session; the grants, RLS and metrics were checked against the database
+directly instead.
+
+### How the deployment was confirmed to contain this work
+
+Vercel exposes no git SHA on a deployment, and every new surface is behind the
+staff gate, so no public page could prove it. The production build log names the
+artifacts instead — all eight new API routes plus both pages, including
+`app/api/staff/users/[id]/activity/route.js` and `.../communications/route.js`,
+which exist only in this commit.
+
+## Numbers
+
+| | |
+|---|---|
+| Tests | 1708 -> **1794**, all green |
+| Lint | 331 -> **277** — the old page's `any` usages went with it |
+| Migrations | 51 -> **52** repo files == 52 production rows |
+| Final SHA | `aaf5b29` |
+
+## Known gaps
+
+* **Avatar upload is display-only here.** The existing upload route was left
+  untouched; the workspace shows the avatar and falls back to an initial when a
+  stored URL goes stale.
+* **Email is read-only**, because there is no verified change flow. Adding one
+  is an auth change, not a user-management one.
+* **Guest-order claiming is not built.** It needs a real ownership proof.
+* **Provider unlinking is not offered**, deliberately — read-only was the brief
+  and no safe server flow exists.
+* `/api/staff/ban-user` and `/api/staff/restrictions/set` still serve the
+  moderation surfaces and write the same tables. The new status route is
+  strictly stricter (reason required, rank enforced, self refused, stale-state
+  checked); the older two were left alone rather than have their contract
+  changed underneath the moderation UI.
