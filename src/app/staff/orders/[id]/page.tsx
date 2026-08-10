@@ -16,6 +16,7 @@ import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 import { Field } from "@/components/ui/DesignSystem";
 import { OrderLifecyclePanel } from "@/components/staff/OrderLifecyclePanel";
 import { OrderFulfillmentPanel } from "@/components/staff/OrderFulfillmentPanel";
+import { OrderSupportConversations } from "@/components/staff/OrderSupportConversations";
 import {
   Card,
   CheckField,
@@ -1153,6 +1154,14 @@ export default function StaffOrderDetail() {
             </Card>
           ) : null}
         </Section>
+
+        {/*
+          The order's own thread is above; this is the other conversation that
+          can exist about the same order. Both are here because a staff member
+          reading one needs to know the other exists — answering half a
+          conversation is how a customer gets told two different things.
+        */}
+        <OrderSupportConversations orderId={id} />
       </TabPanel>
 
       {/* ================= Returns & cancellations ================= */}

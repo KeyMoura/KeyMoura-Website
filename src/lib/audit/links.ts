@@ -47,6 +47,9 @@ export function auditLinks(event: AuditLinkSource): AuditLink[] {
       case "order":
         add("Open order", `/staff/orders/${event.entityId}`);
         break;
+      case "support_conversation":
+        add("Open conversation", `/staff/support/${event.entityId}`);
+        break;
       case "production_job":
         add("Open production job", `/staff/production/${event.entityId}`);
         break;

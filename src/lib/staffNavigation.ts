@@ -156,6 +156,28 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       },
     ],
   },
+  /**
+   * **Support** — primary, and beside Orders rather than under "More tools".
+   *
+   * It earns that place on the same test every other primary row passes: it is
+   * opened every day, and something in it is waiting on a person. The surface it
+   * replaces (`/contact`, which emailed a mailbox and stored nothing) had no
+   * staff entry at all, which is precisely why nobody could say how many
+   * questions were outstanding.
+   */
+  {
+    id: "support",
+    label: "Support",
+    items: [
+      {
+        href: "/staff/support",
+        label: "Support",
+        description: "Customer conversations: what they asked, who owns it, and what is still open.",
+        icon: "users",
+        anyOf: ["support.view"],
+      },
+    ],
+  },
   {
     id: "production",
     label: "Production",
@@ -584,6 +606,7 @@ const LEAF_LABELS: Readonly<Record<string, string>> = {
 };
 
 const LEAF_PATTERNS: readonly { test: RegExp; label: string }[] = [
+  { test: /^\/staff\/support\/[^/]+$/, label: "Conversation" },
   { test: /^\/staff\/orders\/[^/]+\/print\/[^/]+$/, label: "Printable document" },
   { test: /^\/staff\/orders\/[^/]+$/, label: "Order" },
   { test: /^\/staff\/production\/[^/]+\/print$/, label: "Printable documents" },

@@ -515,6 +515,104 @@ export function NotesPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Support
+// ---------------------------------------------------------------------------
+
+type SupportConversationItem = {
+  id: string;
+  reference: string;
+  subject: string;
+  category: string;
+  status: string;
+  priority: string;
+  assignedToLabel: string | null;
+  relatedOrderNumber: string | null;
+  lastMessageAt: string;
+  messageCount: number;
+  noteCount: number;
+};
+
+/**
+ * This customer's support conversations.
+ *
+ * **A list, not a second copy of the thread.** The conversation lives at
+ * `/staff/support/[id]` and that is the only place it is read or replied to;
+ * rendering the messages here as well would mean two surfaces to keep right, two
+ * places an internal note could be shown by mistake, and a customer's whole
+ * correspondence loading on a tab somebody opened to check a role.
+ *
+ * The data comes from `/api/staff/support?customer=<id>` — the inbox's own
+ * endpoint with a filter — rather than a new route. One definition of what a
+ * support row is.
+ */
+export function SupportPanel({ userId, auth }: { userId: string; auth: Auth }) {
+  const { state, reload } = usePanel<{ conversations: SupportConversationItem[]; total: number }>(
+    `/api/staff/support?customer=${userId}&view=all&sort=recent_activity`,
+    auth.token,
+    "You do not have permission to view support conversations."
+  );
+
+  if (state.kind === "loading") return <LoadingState />;
+  if (state.kind === "error") return <ErrorState onRetry={() => void reload()}>{state.message}</ErrorState>;
+
+  const { conversations, total } = state.data;
+  const open = conversations.filter((row) =>
+    ["open", "waiting_on_staff", "waiting_on_customer"].includes(row.status)
+  ).length;
+
+  return (
+    <Section
+      headingLevel={3}
+      title={`Support (${total})`}
+      description={
+        open
+          ? `${open} still open. Open a conversation to read it or reply.`
+          : "Nothing open. Open a conversation to read the thread."
+      }
+      actions={
+        <Link href={`/staff/support?customer=${userId}&view=all`} className="ui-btn ui-btn-secondary">
+          Open in support →
+        </Link>
+      }
+    >
+      {conversations.length === 0 ? (
+        <EmptyState>This account has not contacted support.</EmptyState>
+      ) : (
+        <Rows>
+          {conversations.map((row) => (
+            <Row
+              key={row.id}
+              href={`/staff/support/${row.id}`}
+              title={
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs">{row.reference}</span>
+                  <span>{row.subject}</span>
+                </span>
+              }
+              detail={
+                <>
+                  {formatDateTime(row.lastMessageAt)}
+                  {row.relatedOrderNumber ? ` · ${row.relatedOrderNumber}` : ""}
+                  {` · ${row.assignedToLabel ?? "unassigned"}`}
+                </>
+              }
+              aside={
+                <>
+                  {row.priority === "urgent" || row.priority === "high" ? (
+                    <Badge tone={row.priority === "urgent" ? "danger" : "warning"}>{row.priority}</Badge>
+                  ) : null}
+                  <StatusChip value={row.status} />
+                </>
+              }
+            />
+          ))}
+        </Rows>
+      )}
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Communications
 // ---------------------------------------------------------------------------
 

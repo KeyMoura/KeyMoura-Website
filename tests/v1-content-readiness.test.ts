@@ -11,7 +11,9 @@ test("customer navigation exposes the shop destinations without workshop", async
   // asserts both halves of that. The remaining five must still be reachable.
   const { primaryNav, secondaryNav, allCustomerNavHrefs } = await import("../src/lib/navigation.ts");
   const hrefs = allCustomerNavHrefs();
-  for (const route of ["/about", "/capabilities", "/projects", "/catalog", "/contact"]) {
+  // `/contact` became `/support` in the support pass — the same destination,
+  // now backed by a real conversation with a reference, a status and an owner.
+  for (const route of ["/about", "/capabilities", "/projects", "/catalog", "/support"]) {
     assert.ok(hrefs.includes(route), `${route} must stay in the customer navigation`);
   }
   assert.ok(!hrefs.includes("/community"), "Community is dormant and must not be linked");
@@ -43,4 +45,41 @@ test("product page explains purchase expectations", async () => {
   assert.deepEqual(withLead, [{ label: "Lead time", value: "3 days" }]);
   assert.deepEqual(quickFacts(parseProductFacts({}), { readyToShip: false }), []);
 });
-test("contact endpoint validates, rate limits, traps bots, and delivers mail", () => { const route = read("src/app/api/contact/route.ts"); for (const token of ["attempts", "429", "body.website", "RESEND_API_KEY", "replyTo"]) assert.match(route, new RegExp(token)); });
+/**
+ * The public "ask us a question" endpoint keeps every property it had, on the
+ * route that now does the job.
+ *
+ * `/api/contact` is gone. It built its own `new Resend(...)`, sent one email and
+ * **stored nothing** — no record, no status, no owner — so it was a second mail
+ * sender with none of the delivery, idempotency or audit machinery the rest of
+ * the application uses. `/api/support` replaces it, and this test is re-pointed
+ * rather than deleted: the four things worth asserting about a public form are
+ * still asserted, and two more are now assertable because the request is
+ * recorded.
+ */
+test("the public support endpoint validates, rate limits, traps bots, and records the request", () => {
+  const route = read("src/app/api/support/route.ts");
+
+  // Validation, with the rules in one shared module rather than inline.
+  assert.match(route, /checkSubject\(body\.subject\)/);
+  assert.match(route, /checkMessage\(body\.message\)/);
+  assert.match(route, /checkEmail\(body\.email\)/);
+
+  // Rate limiting, in Postgres rather than in a module-scope Map — the old
+  // route's counter was per-instance, so on serverless the effective limit was
+  // whatever was configured times however many instances were warm.
+  assert.match(route, /consumeRateLimit\(RATE_LIMITS\.supportRequest/);
+  assert.match(route, /status: 429/);
+
+  // The honeypot, and the answer that does not teach a bot to drop the field.
+  assert.match(route, /body\.website/);
+
+  // What the old route could not do: the request becomes a row with a reference,
+  // and the acknowledgement goes through the one sender.
+  assert.match(route, /from\("support_conversations"\)/);
+  assert.match(route, /notifyNewConversation/);
+  assert.ok(!route.includes("RESEND_API_KEY"), "the support route reaches for the provider key directly");
+
+  // And the page a customer lands on is the new one.
+  assert.match(read("src/app/contact/page.tsx"), /redirect\("\/support"\)/);
+});

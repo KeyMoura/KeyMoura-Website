@@ -254,6 +254,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       canViewOrders: actor.permissions.has("orders.view"),
       canViewProduction: actor.permissions.has("production.view"),
       canViewCommunications: actor.permissions.has("emails.view"),
+      canViewSupport: actor.permissions.has("support.view"),
       canResendEmail: actor.permissions.has("emails.resend"),
       canViewActivity: actor.permissions.has("audit.view") || actor.permissions.has("audit.read"),
       canViewIpLogs: actor.permissions.has("security.ip_logs.view"),

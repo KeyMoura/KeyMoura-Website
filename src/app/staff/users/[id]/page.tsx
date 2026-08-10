@@ -25,6 +25,7 @@ import {
   CommunicationsPanel,
   NotesPanel,
   OrdersPanel,
+  SupportPanel,
 } from "@/components/staff/UserWorkspaceTabs";
 import { Badge } from "@/components/ui/DesignSystem";
 import { MenuSelect } from "@/components/ui/MenuSelect";
@@ -103,6 +104,7 @@ type Workspace = {
     canWriteNotes: boolean;
     canViewOrders: boolean;
     canViewCommunications: boolean;
+    canViewSupport: boolean;
     canViewActivity: boolean;
   };
 };
@@ -187,6 +189,9 @@ export default function StaffUserWorkspacePage({ params }: { params: Promise<{ i
     () => [
       { id: "overview", label: "Overview" },
       { id: "orders", label: "Orders", available: viewer?.canViewOrders !== false, count: workspace?.metrics.orderCount ?? null },
+      // Beside Orders, because "what have they bought" and "what have they asked
+      // us" are the two questions a staff member on the phone actually has.
+      { id: "support", label: "Support", available: viewer?.canViewSupport === true },
       { id: "activity", label: "Activity", available: viewer?.canViewActivity === true },
       { id: "access", label: "Roles & access" },
       { id: "notes", label: "Notes", available: viewer?.canViewNotes === true },
@@ -401,6 +406,11 @@ export default function StaffUserWorkspacePage({ params }: { params: Promise<{ i
       {/* --- Orders ---------------------------------------------------------- */}
       <TabPanel id="orders" value={activeTab}>
         {auth ? <OrdersPanel userId={id} auth={auth} /> : <LoadingState />}
+      </TabPanel>
+
+      {/* --- Support --------------------------------------------------------- */}
+      <TabPanel id="support" value={activeTab}>
+        {auth ? <SupportPanel userId={id} auth={auth} /> : <LoadingState />}
       </TabPanel>
 
       {/* --- Activity -------------------------------------------------------- */}

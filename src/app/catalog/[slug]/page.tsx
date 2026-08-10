@@ -412,7 +412,7 @@ export default async function CatalogSlugPage({ params }: { params: Promise<{ sl
             <li>Every custom request is reviewed by a person before any payment.</li>
             <li>
               Questions about material or tolerance? Read the{" "}
-              <Link href="/design-guide">design guide</Link> or <Link href="/contact">ask first</Link>.
+              <Link href="/design-guide">design guide</Link> or <Link href="/support">ask first</Link>.
             </li>
           </ul>
         </div>

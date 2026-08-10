@@ -49,6 +49,10 @@ export type NotificationAlertKind =
   | "order.ready_for_production"
   | "order.ready_to_fulfill"
   | "order.ready_for_pickup"
+  // Support
+  | "support.new_conversation"
+  | "support.customer_replied"
+  | "support.assigned"
   // Production
   | "production.overdue"
   // Customer decisions
@@ -141,6 +145,36 @@ export const NOTIFICATION_ALERTS: readonly NotificationAlertSpec[] = [
     permissionKey: "fulfillment.view",
     priority: "normal",
     title: "Order ready for pickup",
+    resolvable: false,
+  },
+  /*
+   * Support alerts go to `support.view`, not `orders.view`.
+   *
+   * A conversation about a return is not an order event, and telling the whole
+   * orders desk that somebody asked a question is how a bell becomes a thing
+   * people scroll past. The one exception in shape is `support.assigned`, which
+   * is directed at a single person and so is raised through `notifyStaffUser`
+   * rather than fanned out by permission at all.
+   */
+  {
+    kind: "support.new_conversation",
+    permissionKey: "support.view",
+    priority: "high",
+    title: "New support request",
+    resolvable: false,
+  },
+  {
+    kind: "support.customer_replied",
+    permissionKey: "support.view",
+    priority: "normal",
+    title: "Customer replied",
+    resolvable: false,
+  },
+  {
+    kind: "support.assigned",
+    permissionKey: "support.view",
+    priority: "high",
+    title: "Support conversation assigned to you",
     resolvable: false,
   },
   {
@@ -281,6 +315,10 @@ export function alertHref(kind: NotificationAlertKind, subjectId: string): strin
     case "order.ready_to_fulfill":
     case "order.ready_for_pickup":
       return `/staff/orders/${subjectId}`;
+    case "support.new_conversation":
+    case "support.customer_replied":
+    case "support.assigned":
+      return `/staff/support/${subjectId}`;
     case "inventory.low_stock":
     case "inventory.out_of_stock":
     case "inventory.reservation_inconsistency":

@@ -142,6 +142,15 @@ export const PERMISSIONS = [
   // goes on the permanent record and cannot be edited afterwards.
   "users.notes.view",
   "users.notes.manage",
+  // Customer support, added in this pass. Four powers, split by what each
+  // actually does: reading a customer's correspondence, writing to that customer
+  // in KeyMoura's name, deciding a conversation's state, and deciding whose job
+  // it is. Only the second one puts words in front of a customer, which is why
+  // it is not folded into `support.view`.
+  "support.view",
+  "support.reply",
+  "support.manage",
+  "support.assign",
 ] as const;
 
 /**
@@ -332,6 +341,30 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       label: "Write staff notes on users",
       description:
         "Allows adding and archiving internal notes about a customer. Notes cannot be edited or deleted once written, so this grants a permanent record.",
+    },
+    "support.view": {
+      category: "Support",
+      label: "View support",
+      description:
+        "Allows reading the support inbox, conversations and internal notes. Does not allow replying to a customer.",
+    },
+    "support.reply": {
+      category: "Support",
+      label: "Reply to customers",
+      description:
+        "Allows sending a customer-visible reply and adding internal notes. Grant this deliberately: a reply is a real email sent to a customer in KeyMoura's name and cannot be edited afterwards.",
+    },
+    "support.manage": {
+      category: "Support",
+      label: "Manage support",
+      description:
+        "Allows changing a conversation's status, priority and category, linking or unlinking a related order, and resolving or reopening it.",
+    },
+    "support.assign": {
+      category: "Support",
+      label: "Assign support",
+      description:
+        "Allows assigning a conversation to a staff member, taking it, or leaving it unassigned. Only staff who can already view support may be assigned.",
     },
     "audit.view": {
       category: "Audit",
@@ -800,6 +833,22 @@ export const ROLE_PERMISSIONS: Readonly<Record<string, readonly PermissionKey[]>
     "community.thread.mark_answer.own",
     "community.flags.set.3",
     "community.thread.delete.own",
+    /*
+     * The four support permissions, on the role that is literally called
+     * Support — `is_staff`, ranked 40, and holding **zero accounts** today, so
+     * this defines the role rather than widening anybody's access.
+     *
+     * Deliberately not given to `moderator`: moderation is about community
+     * content, and a moderator reading a customer's correspondence about a
+     * refund by default is a wider grant than that role was created for. The
+     * migration seeds the same four rows into `role_permissions`, which is the
+     * real source of truth — this list is only the fallback for an install whose
+     * permission table has not been seeded yet, and the two must agree.
+     */
+    "support.view",
+    "support.reply",
+    "support.manage",
+    "support.assign",
   ],
   staff: [
     "community.create_thread",
