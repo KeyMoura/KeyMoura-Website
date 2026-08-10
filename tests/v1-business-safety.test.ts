@@ -60,9 +60,15 @@ test("customer policy pages are discoverable", () => {
   // policy links are asserted where they are defined rather than as literals
   // in the component that maps over them.
   const nav = readFileSync("src/lib/navigation.ts", "utf8");
-  for (const href of ["/shipping", "/refunds", "/terms", "/privacy", "/contact"]) {
+  // `/contact` became `/support` in the support pass: the destination is the
+  // same one ("ask us a question"), and it now opens a recorded conversation
+  // rather than sending one email into a mailbox. The route still exists and
+  // redirects, but the menu points at the real page so a browser does not take a
+  // redirect on every visit — the rule the staff sidebar already follows.
+  for (const href of ["/shipping", "/refunds", "/terms", "/privacy", "/support"]) {
     assert.match(nav, new RegExp(`href: "${href}"`), `${href} must stay in the footer navigation`);
   }
+  assert.match(readFileSync("src/app/contact/page.tsx", "utf8"), /redirect\("\/support"\)/, "the old link must keep working");
   assert.match(footer, /footerNav\.map/);
   for (const file of ["src/app/privacy/page.tsx", "src/app/terms/page.tsx", "src/app/shipping/page.tsx", "src/app/refunds/page.tsx"]) {
     assert.match(readFileSync(file, "utf8"), /support@keymoura\.com|PolicyPage/);

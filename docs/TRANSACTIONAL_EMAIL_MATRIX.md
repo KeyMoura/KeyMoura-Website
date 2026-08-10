@@ -70,6 +70,21 @@ strings as the HTML, so the two cannot drift.
 | `quote_expired` | `status_update` | customer | order | A quote passes quote_expires_at. | `order-quote-expired-{orderId}-rev{quoteRevision}` | suppressed | order_status_history | **no** |
 | `payment_reminder` | `status_update` | customer | order | An accepted quote stays unpaid past a configured window. | `order-payment-reminder-{orderId}-{windowDays}` | suppressed | order_status_history | **no** |
 
+### Support
+
+Note what is **absent**: there is no event for an internal note. That is not an
+omission — the internal-note route makes no call to the sender at all, so there
+is no send to suppress and no flag that could be set wrongly. An internal note
+reaches a customer only if somebody writes a new code path, and an uncatalogued
+send fails the suite.
+
+| Event | Template | To | Record | Trigger | Event key | Repeat | Activity / audit | Wired |
+|---|---|---|---|---|---|---|---|---|
+| `support_received` | `support_received` | customer | support | A support conversation is opened at POST /api/support, by an account holder or a guest. | `support-received-{conversationId}` | suppressed | support_conversations + support.created | yes |
+| `support_staff_new` | `support_staff_new` | staff | support | The same submission, to the configured staff alert address. | `support-received-staff-{conversationId}` | suppressed | support_conversations + support.created | yes |
+| `support_staff_reply` | `support_staff_reply` | customer | support | Staff post a customer-visible reply on a support conversation. | `support-reply-{messageId}` | new each message | support_messages + support.staff_replied | yes |
+| `support_resolved` | `support_resolved` | customer | support | Staff move a support conversation to resolved. | `support-resolved-{conversationId}-{resolvedAt}` | suppressed | support.resolved | yes |
+
 ### Orders and payments
 
 | Event | Template | To | Record | Trigger | Event key | Repeat | Activity / audit | Wired |

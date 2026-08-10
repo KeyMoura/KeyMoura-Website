@@ -13,6 +13,6 @@ export default function DesignGuidePage() {
       ["Finish and appearance", "Describe which faces are visible and whether tool marks are acceptable. Sanding, edge finishing, coating, engraving, and cosmetic expectations should be included in the request."],
     ].map(([title, body]) => <section key={title} className="rounded-2xl border border-zinc-800 bg-black/30 p-6"><h2 className="text-xl font-semibold">{title}</h2><p className="mt-3 leading-7 text-brand-textMuted">{body}</p></section>)}</div>
     <section className="mt-8 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-6"><h2 className="text-lg font-semibold text-amber-200">Important</h2><p className="mt-2 text-sm leading-6 text-brand-textMuted">KeyMoura does not infer suitability for medical, life-safety, structural, pressure-containing, or regulated use. Tell us about any safety-critical application before requesting work.</p></section>
-    <div className="mt-8 flex flex-wrap gap-3"><Link href="/orders/new" className="catalog-action-primary rounded-full px-5 py-2.5 font-semibold">Start a request</Link><Link href="/contact" className="catalog-action-secondary rounded-full px-5 py-2.5 font-medium">Ask a question</Link></div>
+    <div className="mt-8 flex flex-wrap gap-3"><Link href="/orders/new" className="catalog-action-primary rounded-full px-5 py-2.5 font-semibold">Start a request</Link><Link href="/support" className="catalog-action-secondary rounded-full px-5 py-2.5 font-medium">Ask a question</Link></div>
   </main>;
 }

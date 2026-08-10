@@ -221,7 +221,14 @@ export async function recordAuditEvent(input: RecordAuditEventInput): Promise<Re
       // `target_table`/`target_id` are the legacy columns. They are still
       // written so the 46 historical rows and the new ones can be read by the
       // same query, and so nothing that already reads them breaks.
-      target_table: input.entity?.type === "order" ? "orders" : input.entity?.type === "product" ? "products" : input.entity?.type ?? null,
+      target_table:
+        input.entity?.type === "order"
+          ? "orders"
+          : input.entity?.type === "product"
+            ? "products"
+            : input.entity?.type === "support_conversation"
+              ? "support_conversations"
+              : input.entity?.type ?? null,
       target_id: input.entity?.id ?? null,
 
       entity_type: input.entity?.type ?? definition.entityType,

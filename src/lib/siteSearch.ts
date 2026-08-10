@@ -99,7 +99,11 @@ export const DESTINATIONS: DestinationItem[] = [
   // anyone holding a link, and no content was removed.
   { kind: "destination", id: "capabilities", title: "Capabilities & materials", href: "/capabilities", description: "What this shop can make", keywords: ["materials", "aluminum", "wood", "plastic", "limits"] },
   { kind: "destination", id: "design-guide", title: "Design & tolerance guide", href: "/design-guide", description: "How to prepare a part for production", keywords: ["tolerance", "cad", "drawing", "design"] },
-  { kind: "destination", id: "contact", title: "Contact", href: "/contact", description: "Ask a question before ordering", keywords: ["support", "email", "help", "question"] },
+  // `id` stays `contact` — it is a stable identifier, and renaming it would
+  // change nothing a person sees while breaking anything that stored it. The
+  // href points at the real page rather than at the redirect.
+  { kind: "destination", id: "contact", title: "Support", href: "/support", description: "Ask a question, or follow up on an order", keywords: ["support", "contact", "email", "help", "question", "refund", "return"] },
+  { kind: "destination", id: "my-support", title: "My support requests", href: "/account/support", description: "Your questions and our replies", keywords: ["support", "ticket", "request", "conversation", "reply"], requiresAuth: true },
   { kind: "destination", id: "shipping", title: "Shipping", href: "/shipping", description: "Delivery and pickup information", keywords: ["delivery", "pickup", "post"] },
   { kind: "destination", id: "refunds", title: "Cancellations & refunds", href: "/refunds", description: "Order cancellation and refund policy", keywords: ["refund", "cancel", "return"] },
   { kind: "destination", id: "orders", title: "My orders", href: "/orders", description: "Your requests, quotes, and order status", keywords: ["orders", "quotes", "purchases", "status", "invoice"], requiresAuth: true },

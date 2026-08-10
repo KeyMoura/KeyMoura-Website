@@ -567,19 +567,27 @@ test("the new breadcrumb leaves are labelled rather than guessed", () => {
 // The size of the menu
 // ---------------------------------------------------------------------------
 
-test("the always-visible menu is at most 16 destinations", () => {
+test("the always-visible menu is at most 17 destinations", () => {
   /*
-   * The number this pass exists to change: 27 rows, in 8 expanded groups, every
-   * one of them weighted the same. The ceiling is here rather than in a
-   * document because the failure mode is not a redesign — it is the next pass
-   * adding "just one more" row, five times.
+   * Pass 15 set this at 16, down from 27 rows in 8 expanded groups all weighted
+   * the same. The ceiling is here rather than in a document because the failure
+   * mode is not a redesign — it is the next pass adding "just one more" row,
+   * five times.
    *
-   * Adding a destination is still fine. Adding a *primary* destination means
-   * deciding what stops being primary.
+   * **It moved to 17 in the support pass, and that is the whole point of the
+   * assertion: raising it is a decision somebody had to make in a diff.** The
+   * reasoning, so the next pass has to beat it rather than repeat it: Support is
+   * a queue with people waiting in it, worked every day, and it is the only
+   * surface where a customer is waiting on a *reply* rather than on work. That
+   * is the same test Orders, Production and Fulfillment pass. Nothing else was
+   * demoted because nothing else stopped being daily.
+   *
+   * Adding a destination is still fine. Adding a *primary* destination still
+   * means arguing for it here.
    */
   assert.ok(
-    PRIMARY_STAFF_NAV_ITEMS.length <= 16,
-    `${PRIMARY_STAFF_NAV_ITEMS.length} primary destinations; the ceiling is 16`
+    PRIMARY_STAFF_NAV_ITEMS.length <= 17,
+    `${PRIMARY_STAFF_NAV_ITEMS.length} primary destinations; the ceiling is 17`
   );
 });
 
@@ -612,7 +620,10 @@ test("exactly one group is secondary, and the primary groups are the task list",
   assert.equal(secondary[0].id, "more");
   assert.deepEqual(
     STAFF_NAV.filter((group) => !group.secondary).map((group) => group.id),
-    ["dashboard", "orders", "production", "fulfillment", "store", "business", "settings"]
+    // `support` sits directly after `orders`: the order of this list is the
+    // order work travels, and a customer's question arrives before, during and
+    // after everything else the shop does.
+    ["dashboard", "orders", "support", "production", "fulfillment", "store", "business", "settings"]
   );
 });
 

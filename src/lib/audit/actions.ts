@@ -26,6 +26,7 @@ export const AUDIT_AREAS = [
   "fulfillment",
   "inventory",
   "catalog",
+  "support",
   "security",
   "settings",
   "communications",
@@ -41,6 +42,7 @@ export const AUDIT_AREA_LABELS: Readonly<Record<AuditArea, string>> = {
   fulfillment: "Fulfillment",
   inventory: "Inventory",
   catalog: "Catalog",
+  support: "Support",
   security: "Security",
   settings: "Settings",
   communications: "Communications",
@@ -54,6 +56,7 @@ export const AUDIT_AREA_LABELS: Readonly<Record<AuditArea, string>> = {
  */
 export type AuditEntityType =
   | "order"
+  | "support_conversation"
   | "production_job"
   | "product"
   | "category"
@@ -184,6 +187,58 @@ export const AUDIT_ACTIONS = {
   "discount.created": { label: "Created discount code", area: "catalog", entityType: "discount" },
   "discount.updated": { label: "Updated discount code", area: "catalog", entityType: "discount" },
   "discount.deleted": { label: "Deleted discount code", area: "catalog", entityType: "discount" },
+
+  // --- Support ------------------------------------------------------------
+  //
+  // What is audited here is every change a *staff member* made to a
+  // conversation's state, plus the fact that a reply or a note was written.
+  //
+  // What is deliberately **not** audited is the content. `support_messages` is
+  // append-only and is the authoritative history; copying a body into
+  // `audit_logs` would double the number of places a customer's words have to be
+  // protected and redacted, for no gain — and would put internal notes into a
+  // table read by a different permission. The event references the message id
+  // and its length; the message is the record.
+  "support.created": { label: "Opened a support conversation", area: "support", entityType: "support_conversation" },
+  "support.assigned": { label: "Assigned a support conversation", area: "support", entityType: "support_conversation" },
+  "support.unassigned": {
+    label: "Unassigned a support conversation",
+    area: "support",
+    entityType: "support_conversation",
+  },
+  "support.status_changed": {
+    label: "Changed support status",
+    area: "support",
+    entityType: "support_conversation",
+  },
+  "support.priority_changed": {
+    label: "Changed support priority",
+    area: "support",
+    entityType: "support_conversation",
+  },
+  "support.category_changed": {
+    label: "Changed support category",
+    area: "support",
+    entityType: "support_conversation",
+  },
+  "support.order_linked": {
+    label: "Linked a support conversation to an order",
+    area: "support",
+    entityType: "support_conversation",
+  },
+  "support.order_unlinked": {
+    label: "Unlinked a support conversation from an order",
+    area: "support",
+    entityType: "support_conversation",
+  },
+  "support.staff_replied": { label: "Replied to a customer", area: "support", entityType: "support_conversation" },
+  "support.internal_note_added": {
+    label: "Added an internal support note",
+    area: "support",
+    entityType: "support_conversation",
+  },
+  "support.resolved": { label: "Resolved a support conversation", area: "support", entityType: "support_conversation" },
+  "support.reopened": { label: "Reopened a support conversation", area: "support", entityType: "support_conversation" },
 
   // --- Security -----------------------------------------------------------
   "role.created": { label: "Created role", area: "security", entityType: "role", sensitive: true },
@@ -363,6 +418,7 @@ const PREFIX_AREAS: ReadonlyArray<readonly [string, AuditArea, AuditEntityType]>
   ["fulfillment.", "fulfillment", "order"],
   ["inventory.", "inventory", "product"],
   ["staff.inventory.", "inventory", "product"],
+  ["support.", "support", "support_conversation"],
   ["product.", "catalog", "product"],
   ["category.", "catalog", "category"],
   ["discount.", "catalog", "discount"],

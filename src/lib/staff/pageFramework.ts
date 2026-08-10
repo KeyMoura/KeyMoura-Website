@@ -143,6 +143,14 @@ const TONE_BY_STATE: Readonly<Record<string, ChipTone>> = {
   returned: "danger",
   partially_returned: "warning",
   not_required: "neutral",
+  // Support. `open` and `waiting_on_staff` are both "ours to answer" and share a
+  // tone; `waiting_on_customer` is in flight and healthy, which is what accent
+  // means everywhere else on this table.
+  open: "warning",
+  waiting_on_staff: "warning",
+  waiting_on_customer: "accent",
+  resolved: "success",
+  closed: "neutral",
   // Production
   queued: "warning",
   blocked: "danger",
@@ -182,6 +190,8 @@ const STATE_OVERRIDES: Readonly<Record<string, string>> = {
   ready_to_fulfill: "Ready to ship",
   ready_for_pickup: "Ready for pickup",
   needs_information: "Needs information",
+  waiting_on_staff: "Waiting on staff",
+  waiting_on_customer: "Waiting on customer",
 };
 
 /** The label a chip shows for a state value. */

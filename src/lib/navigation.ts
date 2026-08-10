@@ -64,7 +64,10 @@ export const primaryNav: readonly NavItem[] = [
 export const secondaryNav: readonly NavItem[] = [
   { href: "/capabilities", label: "Capabilities", description: "Materials, sizes, and limits" },
   { href: "/design-guide", label: "Design guide", description: "Tolerances and drawing tips" },
-  { href: "/contact", label: "Contact", description: "Ask a question first" },
+  // `/contact` still redirects here, but the menu points at the real page so a
+  // browser does not take a redirect on every visit — the same rule the staff
+  // sidebar follows for `/staff/users` and `/staff/audit`.
+  { href: "/support", label: "Support", description: "Ask a question, or follow up on an order" },
 ] as const;
 
 /**
@@ -120,7 +123,7 @@ export const footerNav: readonly { heading: string; items: readonly NavItem[] }[
   {
     heading: "Support",
     items: [
-      { href: "/contact", label: "Contact" },
+      { href: "/support", label: "Contact support" },
       { href: "/shipping", label: "Shipping" },
       { href: "/refunds", label: "Returns & cancellations" },
       { href: "/terms", label: "Terms" },

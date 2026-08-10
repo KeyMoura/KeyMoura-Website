@@ -171,7 +171,7 @@ export default async function Home() {
             <p className="home-hero-note">
               Not sure it is possible?{" "}
               <Link href="/capabilities">Check what we can make</Link> or{" "}
-              <Link href="/contact">ask a question first</Link>.
+              <Link href="/support">ask a question first</Link>.
             </p>
           </Reveal>
 
@@ -305,7 +305,7 @@ export default async function Home() {
                 <Link href="/orders/new" className="ui-btn ui-btn-primary !px-5 !py-2.5">
                   Start a custom request
                 </Link>
-                <Link href="/contact" className="ui-btn ui-btn-ghost !px-5 !py-2.5">
+                <Link href="/support" className="ui-btn ui-btn-ghost !px-5 !py-2.5">
                   Ask a question
                 </Link>
               </div>

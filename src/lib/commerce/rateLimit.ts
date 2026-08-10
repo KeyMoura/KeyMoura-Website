@@ -46,6 +46,20 @@ export const RATE_LIMITS = {
   guestRequest: { bucket: "guest.request", limit: 5, windowSeconds: 3600 },
   guestCheckout: { bucket: "guest.checkout", limit: 20, windowSeconds: 900 },
   guestMessage: { bucket: "guest.message", limit: 20, windowSeconds: 600 },
+  /**
+   * Support, which is the one surface a complete stranger can write into.
+   *
+   * Opening a conversation is tighter than replying to one: a new conversation
+   * creates a row a staff member has to read, an acknowledgement email that
+   * leaves the building, and a staff alert. A reply lands in a thread that
+   * already exists and somebody already owns.
+   *
+   * Both are generous enough that a customer who mistypes and resubmits is never
+   * blocked — and a double-click is collapsed by the client token before it ever
+   * reaches the limiter.
+   */
+  supportRequest: { bucket: "support.request", limit: 5, windowSeconds: 3600 },
+  supportReply: { bucket: "support.reply", limit: 30, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**

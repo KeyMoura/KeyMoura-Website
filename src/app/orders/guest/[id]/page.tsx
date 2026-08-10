@@ -74,7 +74,7 @@ export default async function GuestOrderPage({
           Something went wrong reading this order. Nothing has changed — please try again in a moment.
         </p>
         <div className="ui-action-row mt-6">
-          <Link href="/contact" className="ui-btn ui-btn-primary">
+          <Link href="/support" className="ui-btn ui-btn-primary">
             Contact support
           </Link>
           <Link href="/catalog" className="ui-btn ui-btn-ghost">
@@ -238,8 +238,14 @@ export default async function GuestOrderPage({
             : "Cancellations and returns are handled by our team for guest orders — send a message above, or create an account to manage them yourself."}
         </p>
         <div className="ui-action-row mt-4">
-          <Link href="/contact" className="ui-btn ui-btn-secondary">
-            Contact us
+          {/*
+            The order id travels in the URL, and only that. It is a suggestion:
+            the support route re-checks it against this browser's guest session
+            cookie before attaching it, so following this link from somebody
+            else's copy attaches nothing.
+          */}
+          <Link href={`/support?order=${order.id}&category=order`} className="ui-btn ui-btn-secondary">
+            Contact support about this order
           </Link>
           <Link href="/auth/register" className="ui-btn ui-btn-ghost">
             Create an account for next time

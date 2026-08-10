@@ -248,7 +248,7 @@ export default function OrderDetailPage() {
                 again. The sentence above is the whole answer. */}
             <div className="ui-action-row mt-5">
               <Link href="/orders" className="ui-btn ui-btn-primary">Your orders</Link>
-              <Link href="/contact" className="ui-btn ui-btn-ghost">Contact support</Link>
+              <Link href="/support" className="ui-btn ui-btn-ghost">Contact support</Link>
             </div>
           </div>
         )}

@@ -51,7 +51,7 @@ export default function OrdersError({
           <Link href="/orders" className="ui-btn ui-btn-secondary">
             Back to your orders
           </Link>
-          <Link href="/contact" className="ui-btn ui-btn-ghost">
+          <Link href="/support" className="ui-btn ui-btn-ghost">
             Contact support
           </Link>
         </div>

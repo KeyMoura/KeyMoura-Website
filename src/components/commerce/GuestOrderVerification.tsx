@@ -152,7 +152,7 @@ export function GuestOrderVerification({ orderId }: { orderId: string }) {
             {error}
           </p>
           <div className="ui-action-row mt-6">
-            <a href="/contact" className="ui-btn ui-btn-primary">
+            <a href="/support" className="ui-btn ui-btn-primary">
               Contact support
             </a>
           </div>
@@ -231,7 +231,7 @@ export function GuestOrderVerification({ orderId }: { orderId: string }) {
 
         <p className="mt-4 text-xs leading-6 text-brand-textMuted">
           Codes expire after {GUEST_CODE_TTL_LABEL}. If you cannot find the email, check your spam folder or{" "}
-          <a href="/contact" className="underline hover:text-brand-primary">
+          <a href="/support" className="underline hover:text-brand-primary">
             contact support
           </a>
           .

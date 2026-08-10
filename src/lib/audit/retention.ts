@@ -40,6 +40,10 @@ export const RETAINED_AUDIT_PREFIXES = [
   "users.create",
   // Canonical taxonomy.
   "order.",
+  // Support conversations. Named here for the reason the file's header warns
+  // about: an event whose type matches no prefix is dropped **silently**, so a
+  // correctly-named `support.staff_replied` would have vanished without a word.
+  "support.",
   "production.",
   "fulfillment.",
   "inventory.",
