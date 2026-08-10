@@ -6638,3 +6638,61 @@ matching the filename prefix.
 * **`user_staff_notes` can still be truncated.** See above.
 * **Reading the inbox is not audited**, by design — a log that records its own
   inspection grows faster from being looked at than from anything happening.
+
+## Merged and in production — 2026-08-10
+
+`a59b777..6b736e2`. Confirmed to contain this work the way pass 21 established:
+Vercel exposes no git SHA, so the build log names the artifacts instead — all
+fourteen, including `app/api/staff/support/[id]/notes/route.js` and
+`app/api/support/conversations/[id]/messages/route.js`, which exist only in this
+commit.
+
+### Smoke test, no production mutation
+
+| Probe | Result |
+|---|---|
+| `GET /support` | 200, renders the form |
+| `GET /contact` | 307 -> `https://keymoura.com/support` |
+| `GET /api/support/conversations` (no session) | 401 |
+| `GET /api/support/conversations/<uuid>` (no session) | 401 |
+| `GET /api/staff/support` (no session) | 307 at the middleware |
+| `GET /api/staff/support/assignees` (no session) | 307 |
+| `GET /staff/support` (no session) | 307 |
+| `POST /api/support` no message / short message | 400, the real wording |
+| `POST /api/support` guest with no or malformed email | 400 |
+| `POST /api/support` honeypot filled | 200 `{ok:true, reference:null}`, **nothing written** |
+| `POST /api/support` seventh call within the hour | 429, "try again in about 60 minutes" |
+
+Six write probes, zero rows. The rate limiter is live and stopped the seventh —
+worth noting because a module-scope counter would have been per-instance and
+would not have.
+
+### The first real conversation was not ours
+
+`SUP-0001` was submitted through the live form by a person a few minutes after
+the deploy — subject "test", a disposable address, a twenty-character message.
+It is left alone: it is somebody's genuine submission, and the table has no
+`DELETE` grant to anyone by design, which is the append-only guarantee doing its
+job rather than an obstacle.
+
+It is also the end-to-end proof no fixture could give:
+
+* the trigger assigned `SUP-0001` and the sequence advanced to 1
+* the opening message stored as a `support_messages` row, `message_count` 1,
+  `note_count` 0
+* `staff_support_queue` computing `status_rank` 0, `priority_rank` 2,
+  `is_unresolved` true, `is_guest` true
+* both emails `sent` through the one sender — the acknowledgement to the
+  requester and the staff alert to the configured address
+* one audit row, `support.created`, `actor_kind` **customer** rather than
+  "System", `entity_label` `SUP-0001`, metadata
+  `{category, guest, order_linked, message_length: 20}` — a **length**, and the
+  body nowhere in it. The message is twenty characters long.
+
+### Migration parity after deploy
+
+54 repo files == 54 production rows.
+
+### Final SHA
+
+`6b736e2`
