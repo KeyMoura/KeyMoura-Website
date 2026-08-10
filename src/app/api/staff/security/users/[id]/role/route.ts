@@ -4,13 +4,40 @@ import { isString } from "@/lib/typeGuards";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { recordAuditEventStrict, resolveActorLabel } from "@/lib/audit/events";
 import { createAdminActionRequest } from "@/lib/adminApprovals";
+import { canAssignRole, wouldRemoveLastAdmin } from "@/lib/staff/userAccess";
 
-function parseRolePayload(v: unknown): { role: string } | null {
+/**
+ * Assigns a user's role.
+ *
+ * `user_roles` has `user_id` as its primary key, so a user holds exactly one
+ * role. "Assign" and "remove" are therefore the same write with a different
+ * destination, which is why one route serves both and the audit action is
+ * chosen from the direction of travel.
+ *
+ * ## The four guards, and why each is separate
+ *
+ * 1. **Permission** — `roles.assign`.
+ * 2. **Reach** — you cannot act on somebody at or above your own rank.
+ * 3. **Grant** — you cannot hand out a role at or above your own rank.
+ * 4. **Last admin** — the final admin cannot be demoted by anyone, owner
+ *    included, because an installation with no admin has nobody who can appoint
+ *    one and the recovery is a database edit.
+ *
+ * Guards 2 and 3 look like one rule and are not. Without 2, a moderator demotes
+ * an admin. Without 3, a moderator promotes a sock puppet to admin and reaches
+ * everything indirectly. Dropping either leaves the escalation open.
+ *
+ * Admin changes additionally require a second admin's approval, which predates
+ * this pass and is unchanged.
+ */
+
+function parseRolePayload(v: unknown): { role: string; expectedRole: string | null } | null {
   const r = asRecord(v);
   if (!r) return null;
   const role = isString(r.role) ? r.role.trim().toLowerCase() : "";
   if (!role) return null;
-  return { role };
+  const expectedRole = isString(r.expectedRole) ? r.expectedRole.trim().toLowerCase() : null;
+  return { role, expectedRole };
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -33,6 +60,55 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const currentRole = (currentRow?.role ?? "member").toLowerCase();
   const nextRole = parsed.role.toLowerCase();
 
+  /*
+   * Stale-state protection.
+   *
+   * The caller states the role it believes the user currently holds. If somebody
+   * else changed it since the page loaded, this refuses — otherwise a promotion
+   * decided against a stale screen silently overwrites a demotion made thirty
+   * seconds ago, and the audit log shows two changes with no sign that the
+   * second person never saw the first.
+   */
+  if (parsed.expectedRole && parsed.expectedRole !== currentRole) {
+    return NextResponse.json(
+      { error: `This user is now "${currentRole}", not "${parsed.expectedRole}". Reload and look again.`, currentRole },
+      { status: 409 }
+    );
+  }
+
+  // Ranks for the actor, the target and the proposed role. A role the `roles`
+  // table does not have is refused outright rather than defaulted to rank 0,
+  // which would make an unknown string the weakest possible role and therefore
+  // always assignable.
+  const { data: roleRows } = await routeServiceClient
+    .from("roles")
+    .select("key,rank,is_staff")
+    .in("key", [...new Set([actor.role, currentRole, nextRole])]);
+
+  const rankByKey = new Map<string, number>();
+  for (const row of (roleRows ?? []) as { key: string; rank: number }[]) rankByKey.set(row.key, row.rank);
+
+  if (!rankByKey.has(nextRole)) {
+    return NextResponse.json({ error: `There is no role called "${nextRole}".` }, { status: 400 });
+  }
+
+  const decision = canAssignRole({
+    actor: {
+      userId: actor.userId,
+      roleKey: actor.role,
+      roleRank: actor.isOp ? Number.MAX_SAFE_INTEGER : rankByKey.get(actor.role) ?? 0,
+      isOp: actor.isOp === true,
+      permissions: actor.permissions,
+    },
+    target: { userId: id, roleKey: currentRole, roleRank: rankByKey.get(currentRole) ?? 0 },
+    nextRoleKey: nextRole,
+    nextRoleRank: rankByKey.get(nextRole) ?? 0,
+  });
+
+  if (!decision.allowed) {
+    return NextResponse.json({ error: decision.reason }, { status: decision.status });
+  }
+
   const adminTouched = currentRole === "admin" || nextRole === "admin";
 
   if (adminTouched) {
@@ -46,7 +122,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         .select("user_id", { count: "exact", head: true })
         .eq("role", "admin");
 
-      if (typeof count === "number" && count <= 1) {
+      if (wouldRemoveLastAdmin({ currentRoleKey: currentRole, nextRoleKey: nextRole, adminCount: count ?? 0 })) {
         return NextResponse.json({ error: "Cannot remove the last remaining admin." }, { status: 409 });
       }
     }
@@ -102,5 +178,5 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     actorIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
   });
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return NextResponse.json({ ok: true, role: nextRole }, { status: 200 });
 }
