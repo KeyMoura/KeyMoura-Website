@@ -6155,10 +6155,35 @@ was verified by re-reading the column count, row count and grants.
 | Product 4000 -> 4500 | `product.price_changed` |
 | `updated_at`-only write | no event |
 
+## Two things the first deploy found
+
+Both were caught smoke-testing production after the merge, and both are now
+fixed and deployed. Recording them because "verified after deploying" is the
+only reason either was found.
+
+**Catalog rows had no summary line.** The trigger writes in SQL and cannot call
+the TypeScript formatter, so every product event arrived with `summary` null and
+rendered as `Changed product price / Shift Knob` with the `$40.00 → $45.00`
+nowhere on the row — visible only behind an expand, which is the one line the
+row exists to show. The list route now derives it from `changes` when the stored
+summary is null. Deriving rather than backfilling keeps the formatting in one
+place: a summary frozen at write time would keep whatever wording was current
+the day it was written.
+
+**A confirmed payment recorded nothing.** `stripe_webhook_events` held the
+provider record, but the business transition — unpaid to paid, the one a person
+looks for — was absent from the audit log. It now writes exactly one event,
+after the applied/duplicate guard so a replay records nothing, carrying the
+Stripe event id. One event per *transition*, not per webhook: copying every
+delivery in would bury the handful of events somebody decided. The refund events
+already existed but said "System"; they now say **Stripe**, which is the point
+of having an actor model at all.
+
 ## Numbers
 
 | | |
 |---|---|
-| Tests | 1662 -> **1705**, all green |
+| Tests | 1662 -> **1708**, all green |
 | Lint | 332 -> **331** — the dead page's `any` usages went with it |
 | Migrations | 50 -> **51** repo files == 51 production rows |
+| Final SHA | `c0b8633` |
