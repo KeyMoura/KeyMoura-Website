@@ -125,8 +125,12 @@ async function settleRefundSideEffects(stripeRefundId: string, status: "succeede
   await logLifecycleAudit({
     eventType: succeeded ? "staff.order.refund_confirmed" : "staff.order.refund_failed",
     actorUserId: null,
-    actorRole: "system",
+    // Stripe settled this, not "the system". Naming the provider is the point
+    // of the actor model: it is the difference between "a refund completed" and
+    // "the card network told us a refund completed".
+    provider: "Stripe",
     orderId: refund.order_id,
+    orderNumber: order.order_number,
     metadata: { refund_id: refund.id, amount_cents: amount, stripe_event_id: eventId },
   });
 }
@@ -447,6 +451,33 @@ export async function POST(req: NextRequest) {
   }
   const fullyPaid = Boolean(result.fully_paid);
   const newNetCollected = Number(result.amount_paid_cents || 0);
+
+  /*
+   * One audit event for the business transition, not one per webhook.
+   *
+   * `stripe_webhook_events` already keeps the full provider record, and
+   * duplicating every delivery into the audit log would bury the handful of
+   * events a person actually decided. This fires only once the payment was
+   * genuinely applied — `result.applied` is false for a replay, and the branch
+   * above has already returned — and it carries the Stripe event id so the
+   * provider record is one lookup away.
+   */
+  await logLifecycleAudit({
+    eventType: "order.payment_status_changed",
+    actorUserId: null,
+    provider: "Stripe",
+    orderId,
+    orderNumber: order.order_number,
+    changes: {
+      payment_status: { before: "unpaid", after: fullyPaid ? "paid" : "partial" },
+    },
+    metadata: {
+      stripe_event_id: event.id,
+      amount_cents: session.amount_total,
+      amount_paid_cents: newNetCollected,
+      fully_paid: fullyPaid,
+    },
+  });
 
   // A direct purchase empties its cart only now, once payment is confirmed.
   // Clearing it at session creation would lose the customer's items if they

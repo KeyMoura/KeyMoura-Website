@@ -594,6 +594,34 @@ test("automated changes are never attributed to a person", () => {
   assert.ok(!providerBranch.includes("actor.userId"), "a provider event must not carry a user id");
 });
 
+test("a Stripe-driven change is attributed to Stripe, not to a person or to System", () => {
+  const webhook = read("src/app/api/webhooks/stripe/route.ts");
+  // Every audit write in the webhook names the provider.
+  const auditCalls = webhook.match(/logLifecycleAudit\(\{[\s\S]{0,600}?\}\);/g) ?? [];
+  assert.ok(auditCalls.length >= 2, "expected the webhook to audit payment and refund transitions");
+  for (const call of auditCalls) {
+    assert.ok(call.includes('provider: "Stripe"'), `a webhook audit call does not name the provider:\n${call}`);
+    assert.ok(call.includes("actorUserId: null"), "a webhook audit call must not carry a user id");
+  }
+});
+
+test("a confirmed payment produces one business event, not one per webhook", () => {
+  /*
+   * `stripe_webhook_events` already holds the full provider record. Copying
+   * every delivery into the audit log would bury the handful of events a person
+   * actually decided.
+   */
+  const webhook = read("src/app/api/webhooks/stripe/route.ts");
+  assert.match(webhook, /eventType: "order\.payment_status_changed"/);
+  assert.match(webhook, /stripe_event_id: event\.id/);
+
+  // It sits after the applied/duplicate guard, so a replayed webhook records
+  // nothing.
+  const guard = webhook.indexOf("if (!result?.applied)");
+  const audit = webhook.indexOf('eventType: "order.payment_status_changed"');
+  assert.ok(guard > 0 && audit > guard, "the payment audit event must come after the replay guard");
+});
+
 test("metadata is filtered, capped, and never a whole request body", () => {
   const events = read("src/lib/audit/events.ts");
   assert.match(events, /MAX_METADATA_KEYS/);

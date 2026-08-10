@@ -668,9 +668,17 @@ export const LIFECYCLE_AUDIT_EVENTS = [
 export type LifecycleAuditEvent = (typeof LIFECYCLE_AUDIT_EVENTS)[number];
 
 export async function logLifecycleAudit(input: {
-  eventType: LifecycleAuditEvent;
+  eventType: LifecycleAuditEvent | "order.payment_status_changed";
   actorUserId: string | null;
   actorRole?: string | null;
+  /**
+   * Names the provider when the change came from one — "Stripe", "Resend".
+   *
+   * Without it a webhook-driven change reads as "System", which is true but
+   * loses the one fact worth knowing about it: which outside system moved the
+   * order. A provider is never given a user id; see `actorColumns`.
+   */
+  provider?: string;
   orderId: string;
   /**
    * KM-0012. Supplied by callers that already hold the order, so the log reads
@@ -694,9 +702,11 @@ export async function logLifecycleAudit(input: {
           role: input.actorRole ?? "staff",
           label: await resolveActorLabel(input.actorUserId),
         }
-      : // A lifecycle step with no actor is the system reconciling itself —
-        // usually a Stripe webhook landing. It is not attributed to a person.
-        { kind: "system" },
+      : input.provider
+        ? { kind: "provider", provider: input.provider }
+        : // A lifecycle step with no actor and no named provider is the system
+          // reconciling itself. It is not attributed to a person either way.
+          { kind: "system" },
     entity: {
       type: "order",
       id: input.orderId,
@@ -705,7 +715,7 @@ export async function logLifecycleAudit(input: {
     related: { orderId: input.orderId },
     changes: input.changes ?? {},
     metadata: input.metadata ?? {},
-    source: "staff_ui",
+    source: input.provider ? "webhook" : "staff_ui",
   });
 }
 
