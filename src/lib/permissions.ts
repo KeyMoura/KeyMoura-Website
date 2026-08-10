@@ -136,6 +136,12 @@ export const PERMISSIONS = [
   "security.settings.manage",
   "security.broadcast",
   "security.ip_logs.view",
+  // Internal staff notes on a user, added in this pass. Reading and writing are
+  // separate powers: a note can record why a customer was refused a refund, so
+  // seeing them is useful to anyone on the desk while adding one is a claim that
+  // goes on the permanent record and cannot be edited afterwards.
+  "users.notes.view",
+  "users.notes.manage",
 ] as const;
 
 /**
@@ -314,6 +320,18 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       category: "Security",
       label: "View IP logs",
       description: "Allows viewing login/IP history and last-known IP information in staff tools.",
+    },
+    "users.notes.view": {
+      category: "Security",
+      label: "View staff notes on users",
+      description:
+        "Allows reading internal notes staff have recorded about a customer. Notes are never shown to the customer.",
+    },
+    "users.notes.manage": {
+      category: "Security",
+      label: "Write staff notes on users",
+      description:
+        "Allows adding and archiving internal notes about a customer. Notes cannot be edited or deleted once written, so this grants a permanent record.",
     },
     "audit.view": {
       category: "Audit",

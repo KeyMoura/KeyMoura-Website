@@ -350,13 +350,16 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["analytics.view"],
       },
       {
-        href: "/staff/security/users",
+        // `/staff/security/users` redirects here. The nav points at the real
+        // page so the browser does not take a redirect on every visit.
+        href: "/staff/users",
         label: "People & accounts",
-        // Named for what it is. It was called "Customers", which promised a
-        // customer's orders and history and delivers account administration.
-        description: "Staff and member accounts, roles, verification and account status.",
+        // The name promised orders and history and now delivers them: the
+        // workspace behind this link carries a customer's orders, spend,
+        // production, email and audit trail beside their roles and status.
+        description: "Accounts, orders and spend, roles, notes and account status.",
         icon: "users",
-        alsoOwns: ["/staff/info/users"],
+        alsoOwns: ["/staff/info/users", "/staff/security/users"],
         settingsSection: "access",
         anyOf: ["users.view"],
       },

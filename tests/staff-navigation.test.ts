@@ -106,7 +106,7 @@ test("every staff section is reachable from the menu", () => {
     "/staff/shops",
     "/staff/moderation/reports",
     "/staff/security",
-    "/staff/security/users",
+    "/staff/users",
     "/staff/security/roles",
     "/staff/audit",
     "/staff/security/recycle-bin",
@@ -237,7 +237,12 @@ test("exactly one entry is ever active", () => {
 });
 
 test("the legacy redirect routes light their destination", () => {
-  assert.equal(activeStaffNavItem("/staff/info/users")?.item.href, "/staff/security/users");
+  // Both former user routes now forward to /staff/users, so both must light the
+  // one entry that owns it. `/staff/security/users` joined this list when user
+  // management moved; a redirect whose menu entry stays dark tells a staff
+  // member they have navigated out of the section they are still in.
+  assert.equal(activeStaffNavItem("/staff/info/users")?.item.href, "/staff/users");
+  assert.equal(activeStaffNavItem("/staff/security/users")?.item.href, "/staff/users");
   assert.equal(activeStaffNavItem("/staff/moderation")?.item.href, "/staff/moderation/reports");
 });
 
@@ -371,7 +376,7 @@ test("every settings destination reaches the index wherever it sits in the sideb
     "/staff/security/verified-perks",
     "/staff/security/recycle-bin",
     "/staff/audit",
-    "/staff/security/users",
+    "/staff/users",
   ]) {
     assert.ok(listed.includes(href), `${href} is not reachable from the settings index`);
   }
@@ -585,7 +590,9 @@ test("nothing was deleted when the menu shrank", () => {
   for (const href of [
     "/staff/info/analytics",
     "/staff/audit",
-    "/staff/security/users",
+    // Renamed, not removed: user management moved from /staff/security/users to
+    // /staff/users, and the old route still opens as a redirect.
+    "/staff/users",
     "/staff/moderation/reports",
     "/staff/security",
     "/staff/security/verified-perks",

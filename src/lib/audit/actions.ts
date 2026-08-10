@@ -193,6 +193,24 @@ export const AUDIT_ACTIONS = {
   "role.removed": { label: "Removed role", area: "security", entityType: "user", sensitive: true },
   "permission.changed": { label: "Changed permissions", area: "security", entityType: "role", sensitive: true },
 
+  // --- User management ----------------------------------------------------
+  //
+  // `user.` (singular) is the subject of the change; `users.` (plural) is the
+  // legacy prefix for actions *about the collection*, like `users.create`. Both
+  // resolve to the same area, so the distinction costs a reader nothing.
+  "user.profile_changed": { label: "Changed profile details", area: "security", entityType: "user" },
+  "user.note_created": { label: "Added a staff note", area: "security", entityType: "user" },
+  "user.note_archived": { label: "Archived a staff note", area: "security", entityType: "user" },
+  // Filed under moderation rather than security so it sits with the ban and
+  // restriction events that actually carry it out — a suspension is one thing
+  // whichever screen it was pressed from.
+  "user.status_changed": {
+    label: "Changed account status",
+    area: "moderation",
+    entityType: "user",
+    sensitive: true,
+  },
+
   // --- Settings -----------------------------------------------------------
   "settings.commerce_changed": { label: "Changed commerce settings", area: "settings", entityType: "setting" },
   "settings.fulfillment_changed": {
@@ -368,6 +386,7 @@ const PREFIX_AREAS: ReadonlyArray<readonly [string, AuditArea, AuditEntityType]>
   ["staff.reports.", "moderation", "report"],
   ["community.", "moderation", "thread"],
   ["forum.", "moderation", "thread"],
+  ["user.", "security", "user"],
   ["users.", "security", "user"],
   ["staff.launch.", "system", "other"],
   ["admin.", "security", "other"],
