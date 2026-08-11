@@ -3,7 +3,15 @@
 import { useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 
-type SavedOption = { label?: string; value?: unknown; display_value?: unknown; kind?: string; price_adjustment_cents?: number };
+type SavedOption = {
+  label?: string;
+  option_name?: string;
+  value?: unknown;
+  value_name?: string;
+  display_value?: unknown;
+  kind?: string;
+  price_adjustment_cents?: number;
+};
 
 export function RequestSpecifications({ specifications }: { specifications: Record<string, unknown> }) {
   const supabase = useMemo(() => supabaseBrowser(), []);
@@ -17,8 +25,8 @@ export function RequestSpecifications({ specifications }: { specifications: Reco
   return <>
     {Object.entries(specifications).filter(([key, value]) => value != null && key !== "estimated_total_cents").map(([key, raw]) => {
       const option = typeof raw === "object" && raw !== null ? raw as SavedOption : null;
-      const label = option?.label || key.replaceAll("_", " ");
-      const display = option?.display_value ?? option?.value ?? raw;
+      const label = option?.option_name || option?.label || key.replaceAll("_", " ");
+      const display = option?.value_name ?? option?.display_value ?? option?.value ?? raw;
       return <div key={key}><dt className="capitalize text-brand-textMuted">{label}</dt><dd className="mt-0.5">
         {option?.kind === "file" && typeof option.value === "string" ? <button type="button" onClick={() => void download(option.value as string)} className="text-brand-primary underline decoration-brand-primary/40 underline-offset-4">{String(display)}</button> : String(display === true ? "Yes" : display === false ? "No" : display ?? "—")}
         {option?.price_adjustment_cents ? <span className="ml-2 text-xs text-brand-primary">({option.price_adjustment_cents > 0 ? "+" : "−"}${(Math.abs(option.price_adjustment_cents) / 100).toFixed(2)})</span> : null}

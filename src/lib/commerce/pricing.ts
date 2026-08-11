@@ -69,7 +69,15 @@ export type PricedLine = {
   quantity: number;
   /** Only the options that resolved to a real, active value. */
   selectedOptions: Record<string, string>;
-  optionLabels: Array<{ group: string; label: string; adjustmentCents: number }>;
+  optionLabels: Array<{
+    groupId: string;
+    groupKey: string;
+    group: string;
+    valueId: string;
+    value: string;
+    label: string;
+    adjustmentCents: number;
+  }>;
   unitPriceCents: number;
   lineSubtotalCents: number;
 };
@@ -209,7 +217,15 @@ export function priceLine(product: PricedProduct, line: RequestedLine): PricedLi
 
     resolved[group.option_key] = chosen.value;
     optionAdjustmentCents += chosen.price_adjustment_cents;
-    optionLabels.push({ group: group.name, label: chosen.label, adjustmentCents: chosen.price_adjustment_cents });
+    optionLabels.push({
+      groupId: group.id,
+      groupKey: group.option_key,
+      group: group.name,
+      valueId: chosen.id,
+      value: chosen.value,
+      label: chosen.label,
+      adjustmentCents: chosen.price_adjustment_cents,
+    });
   }
 
   const quantity = Math.min(clampQuantity(line.quantity), available);

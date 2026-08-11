@@ -192,7 +192,15 @@ test("a positive adjustment is added to the unit price", () => {
   const line = priceLine(priced([colour]), { productId: "p1", quantity: 1, selectedOptions: { colour: "blue" } });
   assert.ok(!("blocker" in line));
   assert.equal(line.unitPriceCents, 6000);
-  assert.deepEqual(line.optionLabels, [{ group: "Colour", label: "Blue", adjustmentCents: 1000 }]);
+  assert.deepEqual(line.optionLabels, [{
+    groupId: "g1",
+    groupKey: "colour",
+    group: "Colour",
+    valueId: "v-blue",
+    value: "blue",
+    label: "Blue",
+    adjustmentCents: 1000,
+  }]);
 });
 
 test("a zero adjustment changes nothing", () => {

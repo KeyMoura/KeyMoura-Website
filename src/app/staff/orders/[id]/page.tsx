@@ -149,6 +149,7 @@ type Order = {
   paid_at: string | null;
   final_review_note: string | null;
   final_review_asset_paths: string[];
+  order_items?: Array<{ id: string; product_name: string; selected_options: Record<string, unknown> | null }>;
 };
 type Message = {
   id: number;
@@ -280,7 +281,7 @@ export default function StaffOrderDetail() {
 
   const load = useCallback(async () => {
     const [o, m, e, h, p, r] = await Promise.all([
-      supabase.from("orders").select("*").eq("id", id).maybeSingle(),
+      supabase.from("orders").select("*,order_items(id,product_name,selected_options)").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
         .select("*")
@@ -812,6 +813,14 @@ export default function StaffOrderDetail() {
           <Card>
             <dl className="staff-facts">
               <RequestSpecifications specifications={order.specifications || {}} />
+              {(order.order_items ?? []).map((item) =>
+                item.selected_options && Object.keys(item.selected_options).length ? (
+                  <div key={item.id}>
+                    <dt className="font-semibold">{item.product_name} customization</dt>
+                    <dd><dl className="mt-2 staff-facts"><RequestSpecifications specifications={item.selected_options} /></dl></dd>
+                  </div>
+                ) : null
+              )}
             </dl>
           </Card>
         </Section>
