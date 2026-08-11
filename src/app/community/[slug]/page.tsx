@@ -465,7 +465,7 @@ export default function CommunityCategoryPage() {
 
           if (userIds.size > 0) {
             const { data: profilesData, error: profilesError } = await supabase
-              .from("profiles")
+              .from("public_profiles")
               .select("id, username, display_name, is_verified, donation_rank")
               .in("id", Array.from(userIds));
 

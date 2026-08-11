@@ -263,7 +263,7 @@ async function resolveMentionUsers(usernames: string[]) {
   if (list.length === 0) return [];
 
   const supabase = supabaseBrowser();
-  const { data, error } = await supabase.from("profiles").select("id, username").in("username", list);
+  const { data, error } = await supabase.from("public_profiles").select("id, username").in("username", list);
 
   if (error) {
     console.error("resolveMentionUsers failed", error);
@@ -352,7 +352,7 @@ function useMentionAutocomplete(args: { currentUserId: string | null; blockedUse
     try {
       const supabase = supabaseBrowser();
       const { data, error } = await supabase
-        .from("profiles")
+        .from("public_profiles")
         .select("id, username, display_name, avatar_url, is_verified, donation_rank")
         .ilike("username", `${trimmed}%`)
         .order("username", { ascending: true })
@@ -858,7 +858,7 @@ type RecycleBinLookupRow = {
 
         // username is used for @mention UI (e.g. "mentioned you")
         const { data: meProfile } = await supabase
-          .from("profiles")
+          .from("public_profiles")
           .select("username")
           .eq("id", user.id)
           .maybeSingle<{ username: string | null }>();
@@ -995,8 +995,8 @@ type RecycleBinLookupRow = {
             const ids = Array.from(userIds);
 
             const { data: profileData, error: profileErr } = await supabase
-              .from("profiles")
-              .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank, bio, last_seen_at")
+              .from("public_profiles")
+              .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank")
               .in("id", ids);
 
             if (profileErr) {
@@ -1116,8 +1116,8 @@ type RecycleBinLookupRow = {
           const ids = Array.from(userIds);
 
           const { data: profileData, error: profileErr } = await supabase
-            .from("profiles")
-            .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank, bio, last_seen_at")
+            .from("public_profiles")
+            .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank")
             .in("id", ids);
 
           if (profileErr) {
@@ -1749,8 +1749,8 @@ const applyVote = async (postId: number, requested: VoteValue) => {
 
     const supabase = supabaseBrowser();
     const { data: prof, error: profErr } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank, bio, last_seen_at")
+      .from("public_profiles")
+      .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank")
       .ilike("username", username)
       .maybeSingle<{
         id: string;
