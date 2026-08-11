@@ -3,6 +3,8 @@ import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { recordPermissionSetChange, requestIp } from "@/lib/audit/security";
 import { readJson, asRecord } from "@/lib/json";
 import { isArray, isString } from "@/lib/typeGuards";
+import { PERMISSIONS } from "@/lib/permissions";
+import { canManagePermissionSet } from "@/lib/staff/userAccess";
 
 function parsePermissionsPayload(v: unknown): string[] | null {
   const r = asRecord(v);
@@ -14,7 +16,7 @@ function parsePermissionsPayload(v: unknown): string[] | null {
       if (key) list.push(key);
     }
   }
-  return list;
+  return [...new Set(list)];
 }
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ key: string }> }) {
@@ -28,6 +30,17 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ key: string
   const payload = await readJson(req);
   const permissions = parsePermissionsPayload(payload);
   if (!permissions) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+
+  const { data: roles } = await routeServiceClient.from("roles").select("key,rank").in("key", [actor.role, roleKey]);
+  const rankByKey = new Map((roles ?? []).map((row) => [String(row.key), Number(row.rank)]));
+  if (!rankByKey.has(roleKey)) return NextResponse.json({ error: "That role does not exist." }, { status: 404 });
+  const decision = canManagePermissionSet({
+    actor: { userId: actor.userId, roleKey: actor.role, roleRank: actor.isOp ? Number.MAX_SAFE_INTEGER : rankByKey.get(actor.role) ?? 0, isOp: actor.isOp === true, permissions: actor.permissions },
+    target: { userId: roleKey === actor.role ? actor.userId : `role:${roleKey}`, roleKey, roleRank: rankByKey.get(roleKey) ?? 0 },
+    requestedPermissions: permissions,
+    knownPermissions: new Set(PERMISSIONS),
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   /*
    * Read before the delete, so the audit event can say what was *granted* and

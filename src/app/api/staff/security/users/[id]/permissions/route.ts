@@ -4,6 +4,8 @@ import { isArray, isRecord, isString } from "@/lib/typeGuards";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { resolveActorLabel } from "@/lib/audit/events";
 import { diffPermissionSets, recordPermissionSetChange, requestIp } from "@/lib/audit/security";
+import { PERMISSIONS } from "@/lib/permissions";
+import { canManagePermissionSet } from "@/lib/staff/userAccess";
 
 function parsePermListPayload(v: unknown): { permissions: string[] } | null {
   const r = asRecord(v);
@@ -13,7 +15,7 @@ function parsePermListPayload(v: unknown): { permissions: string[] } | null {
   for (const p of r.permissions) {
     if (isString(p)) perms.push(p);
   }
-  return { permissions: perms };
+  return { permissions: [...new Set(perms)] };
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -48,6 +50,18 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const payload = await readJson(req);
   const parsed = parsePermListPayload(payload);
   if (!parsed) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+
+  const { data: targetRoleRow } = await routeServiceClient.from("user_roles").select("role").eq("user_id", id).maybeSingle();
+  const targetRole = String(targetRoleRow?.role ?? "member").toLowerCase();
+  const { data: ranks } = await routeServiceClient.from("roles").select("key,rank").in("key", [actor.role, targetRole]);
+  const rankByKey = new Map((ranks ?? []).map((row) => [String(row.key), Number(row.rank)]));
+  const decision = canManagePermissionSet({
+    actor: { userId: actor.userId, roleKey: actor.role, roleRank: actor.isOp ? Number.MAX_SAFE_INTEGER : rankByKey.get(actor.role) ?? 0, isOp: actor.isOp === true, permissions: actor.permissions },
+    target: { userId: id, roleKey: targetRole, roleRank: rankByKey.get(targetRole) ?? 0 },
+    requestedPermissions: parsed.permissions,
+    knownPermissions: new Set(PERMISSIONS),
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   // Read before the delete: a direct grant is the strongest thing one staff
   // member can hand another, and the only readable record of it is the

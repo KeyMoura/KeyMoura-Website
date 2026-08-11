@@ -11,6 +11,7 @@ import {
   roleWriteErrorMessage,
   toRoleDbColumns,
 } from "@/lib/staff/roleSchema";
+import { canManageRole } from "@/lib/staff/userAccess";
 
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -84,6 +85,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ key: stri
     .select("key,name,description,rank,is_staff,badge_bg,badge_border,badge_text,badge_icon")
     .eq("key", roleKey)
     .maybeSingle();
+  if (!previous) return NextResponse.json({ error: "That role no longer exists." }, { status: 404 });
+  const { data: actorRole } = await routeServiceClient.from("roles").select("rank").eq("key", actor.role).maybeSingle();
+  const decision = canManageRole({
+    actor: { userId: actor.userId, roleKey: actor.role, roleRank: actor.isOp ? Number.MAX_SAFE_INTEGER : Number(actorRole?.rank ?? 0), isOp: actor.isOp === true, permissions: actor.permissions },
+    targetRoleKey: roleKey,
+    targetRank: Number((previous as { rank?: number }).rank ?? 0),
+    nextRank: Number((parsed.value as { rank?: number }).rank ?? (previous as { rank?: number }).rank ?? 0),
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   const { data, error } = await routeServiceClient
     .from("roles")

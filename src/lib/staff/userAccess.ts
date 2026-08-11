@@ -132,6 +132,57 @@ export function wouldRemoveLastAdmin(input: {
 }
 
 /**
+ * Guards edits to a role definition or a direct permission override.
+ *
+ * Possessing the management permission is not permission to manufacture powers
+ * the actor does not possess.  Non-owner actors may only manage a strictly
+ * weaker target and may only grant keys in their own effective permission set.
+ */
+export function canManagePermissionSet(input: {
+  actor: AccessActor;
+  target: AccessTarget;
+  requestedPermissions: readonly string[];
+  knownPermissions: ReadonlySet<string>;
+}): AccessDecision {
+  const { actor, target, requestedPermissions, knownPermissions } = input;
+
+  if (actor.userId === target.userId) {
+    return deny("You cannot change your own permission overrides.", 403);
+  }
+  if (!actor.isOp && target.roleRank >= actor.roleRank) {
+    return deny("You cannot change permissions for somebody at or above your own level.", 403);
+  }
+
+  for (const permission of requestedPermissions) {
+    if (!knownPermissions.has(permission)) return deny(`Unknown permission: ${permission}`, 400);
+    if (!actor.isOp && !actor.permissions.has(permission)) {
+      return deny(`You cannot grant a permission you do not hold: ${permission}`, 403);
+    }
+  }
+  return ALLOW;
+}
+
+/** Guard structural edits to a role, including its rank and staff standing. */
+export function canManageRole(input: {
+  actor: AccessActor;
+  targetRoleKey?: string;
+  targetRank?: number;
+  nextRank: number;
+}): AccessDecision {
+  const { actor, targetRoleKey, targetRank, nextRank } = input;
+  if (targetRoleKey === actor.roleKey) return deny("You cannot modify your own role.", 403);
+  if (!actor.isOp) {
+    if (targetRank !== undefined && targetRank >= actor.roleRank) {
+      return deny("You cannot modify a role at or above your own level.", 403);
+    }
+    if (nextRank >= actor.roleRank) {
+      return deny("You cannot create or raise a role to your own level or above.", 403);
+    }
+  }
+  return ALLOW;
+}
+
+/**
  * A role change loud enough to require an explicit confirmation in the UI.
  *
  * Granting staff standing, or taking it away, is the change somebody should have
