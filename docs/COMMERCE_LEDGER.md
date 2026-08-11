@@ -7194,3 +7194,196 @@ dash rather than `0`. A 500 on notes and a 403 on communications both render
 | Production build | clean | clean, exit 0, from a cleared `.next` |
 | Migration parity | 56 == 56 | 56 == 56 |
 
+---
+
+# Pass 25 — production gets one owner
+
+Branch `staff-production-consolidation-20260811`, from `2a503bf`.
+
+## Verified starting state — 2026-08-11
+
+| Check | Result |
+|---|---|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| Local `main` == `origin/main` | **`2a503bf520ed3b68406fe99996992d29bae20740`** |
+| Migration parity | **56 repo files == 56 production rows** |
+| Typecheck | clean |
+| Tests | 2006 pass, 0 fail |
+| Lint (`npx eslint src`) | 277 (128 errors, 149 warnings) |
+| Lint (`npm run lint`) | 1801 (138 errors, 1663 warnings) |
+| Production build | clean, exit 0 |
+
+**No schema in this pass.** Parity is still 56 == 56.
+
+## The audit came first, and most of the brief was already built
+
+The pass was commissioned as an eighteen-phase staff UX overhaul. The audit
+found that passes 19-24 had already built most of it, deliberately and with
+tests holding the line, so the honest scope was much smaller than the brief:
+
+| Asked for | Found |
+|---|---|
+| One navigation tree | `src/lib/staffNavigation.ts` — already one definition read by sidebar, drawer, breadcrumbs and the settings index |
+| Order workspace tabs | already eight, with legacy `#hash` anchors aliased so old links still land |
+| Dashboard redesign | already "blockers -> attention queue -> quick actions" |
+| Collapsible, independently scrolling sidebar | already built, including viewport-positioned tooltips that dodge the `overflow-clip-margin` trap |
+| Breadcrumbs | already one `staffBreadcrumbs()`; verified live |
+| Appearance grouped by storefront area | **already done** — see the correction below |
+
+Rebuilding any of it would have fought existing tests and discarded reasoning,
+so it was left alone. A test in this pass asserts the navigation was not
+disturbed.
+
+### A correction worth recording
+
+The audit's first reading said Appearance was "grouped by token family". That
+was wrong. `APPEARANCE_GROUPS` (brand / buttons / badges / surfaces / text /
+navbar) is the **token map's** axis and is read only by
+`appearance-token-map.test.ts`. The editor renders `APPEARANCE_TASK_SECTIONS`,
+which is already grouped by place: Brand, Buttons, **Product cards**,
+**Navigation**, **Forms**, Advanced. Verified in the browser — five `legend`
+elements, exactly those names.
+
+The requested groups that do **not** exist — Catalog, Product page, Order pages,
+Support, Footer — have no dedicated tokens. Those surfaces are coloured by the
+shared surface and text tokens, which is why the map carries `shared: true` and
+a `usedBy` list instead of filing one token under one screen. Inventing those
+groups would have meant either empty headings or a token listed under a screen
+it does not exclusively control.
+
+## Two production systems, one tab
+
+The real finding, proven against production rather than guessed:
+
+| | Modern | Legacy |
+|---|---|---|
+| Tables | `production_jobs` (31 cols), `production_job_tasks`, `_events`, `_files` | `order_workspaces`, `order_checklist_items`, `order_cost_items` |
+| Surfaced by | `OrderProductionJobs`, `/staff/production` | `StaffOrderWorkspace` |
+| Rows in production | jobs 1, tasks 0, events 1, files 0 | workspaces 1, checklist **0**, costs **3** |
+
+Both rendered on the **same** Production tab of an order, each with its own
+priority, its own assignee, its own start flag and its own task list.
+`production_jobs` is a strict superset of everything `order_workspaces` holds.
+
+`production_jobs` is now the only production state machine.
+
+### What was retired, and what was kept
+
+- **Retired**: the priority, assignee, "Production started" checkbox and
+  checklist on the order's Production tab, and `StaffOrderWorkspace.tsx` itself.
+  The checklist had **zero rows**; `production_job_tasks` does its job.
+- **Kept — triage**, moved to **Overview**. Priority and owner are order
+  properties, not production ones: `staff_order_queue` left-joins
+  `order_workspaces` for `priority` and `assigned_to` and ranks priority in SQL,
+  so the Orders queue filter and sort depend on them. Leaving them on Production
+  would have put two priority dropdowns writing two tables a few pixels apart —
+  the very defect being closed.
+- **Kept — job costing** (`order_cost_items`), on Production, renamed from
+  "Production workspace" to "Job costing". `production_jobs` records
+  `estimated_minutes`, `actual_minutes` and a free-text `materials_required`, but
+  nothing that adds up to money, and there are three real rows. Deleting the only
+  UI that can read them would have orphaned live data to tidy a diff.
+
+**Zero migrations. No data discarded. The queue view is untouched**, so priority
+resolves exactly as it did before.
+
+### A defect the change forced into the open
+
+`POST .../workspace` with `save_workspace` set
+`started_at = body.started ? ... : null`, so any caller that omitted the key
+silently cleared the timestamp. The triage panel does not send it. Omitting it
+now **preserves** the existing value; a caller that still sends it is unaffected.
+Asserted by a test.
+
+## Production to fulfillment
+
+Production owns manufacturing completion; packing, carrier, tracking and pickup
+stay with Fulfillment. A test asserts `OrderFulfillmentPanel` is mounted exactly
+once and never from inside the Production tab.
+
+## Settings lost a diagnostic
+
+The **Sentry connection test** — a button whose job is to throw an error — sat on
+`/staff/settings` as a ninth block beneath four headings of real configuration.
+It moved to `/staff/integrations`, whose entire question is "is this external
+service actually working". Its `security.view` gate is unchanged, so the move
+granted nobody access they did not have. Sentry itself is untouched, asserted by
+a test that checks the server, edge and instrumentation configs still exist.
+
+**Email** is now listed on the settings index through `settingsSection`, without
+moving in the sidebar. Sender identity, the master switch and template wording
+are configuration, and `/staff/settings` was the one place somebody would look
+for them and the one place they were absent. The index now reads: Email,
+Commerce, Automation / Appearance / Roles & permissions, People, Site access /
+Audit log, Recycle bin.
+
+## Three pages that had no title while they loaded
+
+Measured on the running pages: Email, Commerce and Automation each returned a
+bare `LoadingState` from an early return placed **above** their `PageHeader`, so
+the document had no title heading for the whole load — while Audit and
+Reconciliation, which return their header first, did. Each now checks access
+first, then renders a titled loading state. The order matters: the header may
+only be drawn after the permission check, or a viewer about to be refused would
+be shown the page's name.
+
+## The appearance preview can now take you to the control
+
+The preview already named the settings behind each block; it could not take you
+to them. Each block now offers **Edit these**, which clears a filter that would
+hide the target, opens a collapsed ancestor, scrolls, and **moves focus** rather
+than only scrolling — focus, because scrolling alone leaves a keyboard user's
+next Tab back in the preview they just left.
+
+Deferred with `setTimeout`, not `requestAnimationFrame`. rAF does not fire at all
+in a tab that is not being painted, so the jump silently did nothing — which is
+precisely the state a browser-driven check runs in, and how it was caught.
+
+## Verified in a browser
+
+Driven locally with `meAccess` pinned through the React fiber, since the local
+Supabase key is invalid and every staff data route 403s without a real session.
+
+- **Appearance**: five storefront-named sections (Brand, Buttons, Product cards,
+  Navigation, Forms), Advanced closed by default, 7 jump buttons, 16 task
+  anchors. Three jumps checked: each focused the correct editor
+  (`appearance-brand-surfaces`, `appearance-primary-button`,
+  `appearance-brand-accent`) and applied the highlight.
+- **Search then jump**: typing `navbar` narrowed the list to "4 results"; the
+  jump cleared the query, restored all 16 anchors, and focused the target.
+- **Settings**: no Sentry panel; four blocks; Email present.
+- **Integration health**: Sentry panel present, "Send test events" button.
+- **Responsive**: no horizontal overflow at 375 or 1024 with the rail visible.
+
+## Not verified
+
+- **The order Production tab, the production board and fulfillment**, in a
+  browser. Every staff data route needs a real session; the local Supabase key is
+  invalid and production middleware 307s `/staff/*` before any HTML. Those
+  surfaces are covered by the source-level regression tests instead, which is
+  stated plainly rather than dressed up as a walkthrough.
+- **The running Vercel preview**, as in every previous pass: previews are
+  SSO-gated.
+
+## Validation
+
+| Check | Before | After |
+|---|---|---|
+| Typecheck | clean | clean |
+| Tests | 2006 pass | **2020 pass**, 0 fail |
+| Lint (`npx eslint src`) | 277 (128/149) | **277 (128/149)** |
+| Lint (`npm run lint`) | 1801 (138/1663) | **1801 (138/1663)** |
+| Production build | clean | clean, exit 0, from a cleared `.next` |
+| Migration parity | 56 == 56 | 56 == 56 |
+
+## Remaining legacy production debt
+
+- `order_workspaces.started_at` is no longer written by any UI. It is preserved,
+  not dropped, because dropping a column is a migration and nothing reads it.
+- The workspace endpoint still exposes `add_checklist` / `toggle_checklist` /
+  `delete_checklist` against an empty table. The route is permission-gated and
+  tested; retiring the actions is a separate, safe cleanup.
+- `staff_order_queue` still left-joins `order_workspaces` for priority. That is
+  the deliberate compatibility path: order triage is genuinely an order property,
+  so this is correct rather than merely tolerated.
