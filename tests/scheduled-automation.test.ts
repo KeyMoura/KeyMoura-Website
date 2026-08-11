@@ -59,6 +59,8 @@ const read = (relative: string) => readFileSync(new URL(`../${relative}`, import
 
 const MIGRATION = read("supabase/migrations/20260811010000_scheduled_automation.sql");
 const ROLLBACK = read("supabase/rollback/20260811010000_scheduled_automation.rollback.sql");
+const SCHEDULER_MIGRATION = read("supabase/migrations/20260811020000_automation_scheduler.sql");
+const SCHEDULER_ROLLBACK = read("supabase/rollback/20260811020000_automation_scheduler.rollback.sql");
 const CRON_ROUTE = read("src/app/api/cron/automation/route.ts");
 const WORKER = read("src/lib/automation/worker.ts");
 const STORE = read("src/lib/automation/store.ts");
@@ -395,23 +397,61 @@ test("the cron expression matches the interval it claims", () => {
   assert.ok(SCHEDULER_INTERVAL_MINUTES >= 5 && SCHEDULER_INTERVAL_MINUTES <= 60);
 });
 
-test("the deployment schedule matches the cadence the application believes in", () => {
+test("the scheduler migration matches the cadence the application believes in", () => {
   /*
-   * The one place the repository can check its own deployment configuration.
+   * The schedule lives in Postgres, not in `vercel.json`.
    *
-   * `loadAutomationHealth` computes "next expected" from
-   * `SCHEDULER_INTERVAL_MINUTES` and calls the scheduler stalled when a run is
-   * two intervals late. If `vercel.json` said hourly, that page would report a
-   * healthy scheduler as broken every hour, forever — a false alarm nobody can
-   * fix from the code they would be reading.
+   * Vercel Hobby caps cron at once per day, and this system's finest useful
+   * cadence is fifteen minutes — so the wake-up call comes from `pg_cron`, which
+   * this project already runs (`purge-expired-moderation-recycle-bin`, nightly,
+   * since 20260729000000). That also puts the schedule in the same database as
+   * the job table it drives, which is where it belongs.
+   *
+   * This assertion exists because `loadAutomationHealth` computes "next
+   * expected" from `SCHEDULER_INTERVAL_MINUTES` and calls the scheduler stalled
+   * when a run is two intervals late. If the migration said hourly, that page
+   * would report a healthy scheduler as broken every hour, forever — a false
+   * alarm nobody could fix from the code they would be reading.
    */
-  const config = JSON.parse(read("vercel.json")) as {
-    crons?: { path: string; schedule: string }[];
-  };
-  const crons = config.crons ?? [];
-  assert.equal(crons.length, 1, "exactly one schedule; one worker processes every due job");
-  assert.equal(crons[0].path, SCHEDULER_PATH);
-  assert.equal(crons[0].schedule, SCHEDULER_CRON_EXPRESSION);
+  assert.ok(
+    SCHEDULER_MIGRATION.includes(`'${SCHEDULER_CRON_EXPRESSION}'`),
+    `the migration does not schedule ${SCHEDULER_CRON_EXPRESSION}`
+  );
+  assert.ok(
+    SCHEDULER_MIGRATION.includes(SCHEDULER_PATH),
+    `the migration does not call ${SCHEDULER_PATH}`
+  );
+  // One schedule, not ten: a single worker processes every due job.
+  assert.equal(
+    [...SCHEDULER_MIGRATION.matchAll(/cron\.schedule\(/g)].length,
+    1,
+    "more than one cron entry; one worker processes every due job"
+  );
+});
+
+test("the scheduler rollback leaves the other cron job alone", () => {
+  assert.match(SCHEDULER_ROLLBACK, /cron\.unschedule\('automation-worker'\)/);
+  assert.match(SCHEDULER_ROLLBACK, /drop function if exists public\.trigger_automation_worker\(\)/);
+  /*
+   * The recycle-bin purge belongs to 20260729000000 and this pass never touched
+   * it. A rollback that unscheduled it too would take a nightly retention job
+   * offline as a side effect of undoing something unrelated.
+   */
+  const code = SCHEDULER_ROLLBACK.replace(/^--.*$/gm, "");
+  assert.ok(!code.includes("purge-expired-moderation-recycle-bin"), "the rollback touches another pass's cron job");
+  // Dropping the extension to undo one function that used it is wider than what
+  // the migration did.
+  assert.ok(!code.includes("drop extension"), "the rollback drops a shared extension");
+});
+
+test("the scheduler cannot call anything without its secret", () => {
+  // No secret in Vault means the trigger returns without making a request,
+  // rather than calling the endpoint unauthenticated and logging a 401 every
+  // fifteen minutes forever.
+  assert.match(SCHEDULER_MIGRATION, /if v_secret is null/);
+  // And the secret is never written into the migration itself.
+  assert.ok(!/Bearer\s+[A-Za-z0-9_-]{8,}/.test(SCHEDULER_MIGRATION), "a literal secret is in the migration");
+  assert.match(SCHEDULER_MIGRATION, /vault\.decrypted_secrets/);
 });
 
 // ---------------------------------------------------------------------------
