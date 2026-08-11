@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
 
   const { data: profiles } = userIds.length
     ? await supabaseAdmin
-        .from("profiles")
+        .from("public_profiles")
         .select("id, username, display_name, is_verified, donation_rank")
         .in("id", userIds)
     : { data: [] as ProfileRow[] };

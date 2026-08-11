@@ -230,7 +230,7 @@ export default function GarageCarPage({ params }: Props) {
         void refreshLikes(carData.id);
 
         const { data: ownerData, error: ownerError } = await supabase
-          .from("profiles")
+          .from("public_profiles")
           .select("id, username, display_name, avatar_url, karma, last_seen_at, is_verified, donation_rank")
           .eq("id", carData.owner_id)
           .maybeSingle<OwnerProfile>();

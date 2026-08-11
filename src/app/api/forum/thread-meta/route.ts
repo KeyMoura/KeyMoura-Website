@@ -45,8 +45,8 @@ type MiniProfileRow = {
   karma: number;
   is_verified: boolean;
   donation_rank: string | null;
-  bio: string | null;
-  last_seen_at: string | null;
+  bio?: string | null;
+  last_seen_at?: string | null;
 };
 
 type RoleRow = {
@@ -135,8 +135,8 @@ export async function POST(req: NextRequest) {
 
   const profilesResult = ids.length
     ? await supabaseAdmin
-        .from("profiles")
-        .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank, bio, last_seen_at")
+        .from("public_profiles")
+        .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank")
         .in("id", ids)
     : { data: [] as MiniProfileRow[] };
 

@@ -224,7 +224,7 @@ export default function PublicGaragePage() {
         const ownersById = new Map<string, OwnerProfile>();
         if (ownerIds.length > 0) {
           const { data: ownerData, error: ownerError } = await supabase
-            .from("profiles")
+            .from("public_profiles")
             .select("id, display_name, username, avatar_url, is_verified, donation_rank")
             .in("id", ownerIds);
 

@@ -46,7 +46,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     const rows = (data ?? []) as Omit<Comment, "profiles">[];
     const authorIds = [...new Set(rows.map((row) => row.author_id))];
     const { data: profiles } = authorIds.length
-      ? await sb.from("profiles").select("id,username,display_name").in("id", authorIds)
+      ? await sb.from("public_profiles").select("id,username,display_name").in("id", authorIds)
       : { data: [] };
     const byId = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
     setComments(rows.map((row) => ({ ...row, profiles: byId.get(row.author_id) ?? null })));

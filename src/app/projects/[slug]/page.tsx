@@ -143,7 +143,7 @@ export default function InfoSlugPage() {
           const viewerId = sess.session?.user?.id;
           if (viewerId) {
             const { data: viewerProfile } = await supabase
-              .from("profiles")
+              .from("public_profiles")
               .select("is_verified")
               .eq("id", viewerId)
               .maybeSingle<{ is_verified?: boolean | null }>();
@@ -188,7 +188,7 @@ export default function InfoSlugPage() {
 
           if (ids.length > 0) {
             const { data: profiles } = await supabase
-              .from("profiles")
+              .from("public_profiles")
               .select("id, username, display_name, avatar_url, is_verified, donation_rank")
               .in("id", ids);
 
@@ -217,7 +217,7 @@ export default function InfoSlugPage() {
           const authorId = data.created_by;
 
           const { data: profile, error: profileError } = await supabase
-            .from("profiles")
+            .from("public_profiles")
             .select("id, username, display_name, avatar_url, is_verified, donation_rank")
             .eq("id", authorId)
             .maybeSingle<AuthorProfile>();

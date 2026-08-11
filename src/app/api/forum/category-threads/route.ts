@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
 
   const { data: profiles } = ids.length
     ? await supabaseAdmin
-        .from("profiles")
+        .from("public_profiles")
         .select("id, username, display_name, avatar_url, karma, is_verified, donation_rank")
         .in("id", ids)
     : { data: [] as ProfileRow[] };
