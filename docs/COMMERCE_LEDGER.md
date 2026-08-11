@@ -6996,3 +6996,37 @@ worker with the same discovery, revalidation and delivery claims.
 ### Final SHA
 
 `211d14d`
+
+### The scheduler applied — 2026-08-11
+
+`20260811020000_automation_scheduler` was applied after the deploy, restoring
+parity to **56 repo files == 56 production rows**. It was committed before it was
+applied, which broke parity for one commit — recorded here rather than quietly
+fixed, because parity has been a clean invariant for twenty-three passes and the
+next person should see that it moved.
+
+Applying it early is safe for a specific, verified reason rather than a hopeful
+one: with no Vault secret, `trigger_automation_worker()` returns before it builds
+a request.
+
+| Check | Result |
+|---|---|
+| Migration parity | 56 == 56 |
+| `pg_net` installed | yes |
+| `cron.job` entries | `automation-worker :: */15 * * * *` and `purge-expired-moderation-recycle-bin :: 17 3 * * *`, both active |
+| `trigger_automation_worker()` | `security definer`, zero execute grants to `anon`/`authenticated`/`PUBLIC` |
+| Vault secret present | **no** — the dormant state |
+
+And then the load-bearing observation, from the first real tick:
+
+| | |
+|---|---|
+| `cron.job_run_details` at 11:45:00 UTC | runid 13, **succeeded** |
+| `net.http_request_queue` | **0** |
+| `net._http_response` | **0** |
+| `automation_runs` | **0** |
+
+The schedule is live, firing on time, and correctly doing nothing. The moment a
+Vault secret named `automation_cron_secret` exists — and `CRON_SECRET` is set to
+the same value in Vercel — automation starts on its own, with no further deploy
+and no further migration.
