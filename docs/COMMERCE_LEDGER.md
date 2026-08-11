@@ -7030,3 +7030,167 @@ The schedule is live, firing on time, and correctly doing nothing. The moment a
 Vault secret named `automation_cron_secret` exists — and `CRON_SECRET` is set to
 the same value in Vercel — automation starts on its own, with no further deploy
 and no further migration.
+
+---
+
+# Pass 24 â€” user management, made a workspace people can read
+
+Branch `staff-people-workspace-20260811`, from `f81ad7c`.
+
+## Verified starting state â€” 2026-08-11
+
+| Check | Result |
+|---|---|
+| Repository | `KeyMoura/KeyMoura-Website` |
+| Working tree | clean |
+| Local `main` == `origin/main` | **`f81ad7cca8b792f9dd1a9ac3521233360decf6da`** |
+| Migration parity | **56 repo files == 56 production rows** |
+| Typecheck | clean |
+| Tests | 1955 pass, 0 fail |
+| Lint (`npx eslint src`) | 277 problems (128 errors, 149 warnings) |
+
+**No schema in this pass.** Every capability the redesign needed already existed
+in `staff_user_directory`, `role_permissions`, `user_permissions`, `user_bans`,
+`user_restrictions`, `user_staff_notes` and `support_conversations`. Parity is
+still 56 == 56.
+
+## The audit came first, and it was measured
+
+Full findings in `docs/USER_MANAGEMENT_UX_AUDIT.md`. The numbers below were read
+off the running pages through a temporary local harness that mounted the **real**
+components inside the real `StaffShell` with fixtures served through a
+`window.fetch` interceptor. The harness was deleted before the commit and no file
+in the diff references it.
+
+| Surface | Before | After |
+|---|---|---|
+| Access tab height | **6,367px** at a 900px viewport | **1,640px** for an admin |
+| Permission controls | **115 checkboxes**, one flat column, raw keys | **12 named groups**, collapsed, human labels |
+| Directory filter bar | 8 controls always, 12 when expanded; 78px / **147px at 375** | 4 controls + a 4-segment control; **46px** |
+| Directory row | 110px at 1280, **150px at 375** | **53px** / 100px |
+| Detail tabs | 7; **681px of strip in a 342px box at 375** | 6; wraps, all reachable |
+| Overview | facts + metrics + a **live profile editor** | a summary; editing behind a disclosure |
+
+## The Access tab
+
+It could not answer the question it exists for. 115 keys like
+`catalog.categories.manage`, with nothing saying which of them the person's role
+already granted â€” so every tick looked like the only thing standing between the
+person and the power.
+
+Now `src/lib/staff/permissionGroups.ts` decides three things purely, and a test
+asserts the partition is **total and disjoint** so a permission added next year
+cannot land nowhere and vanish from the screen:
+
+1. Which of twelve groups a permission belongs to (longest-prefix rules, not the
+   `PERMISSION_META` category â€” that one files `production.manage`,
+   `refunds.issue` and `emails.resend` together under "Commerce").
+2. Where a permission comes from for one person: **from the role**, **added for
+   this person**, or **not granted** â€” a tick, a plus, a circle, each with the
+   source spelled out in words beside it, because a matrix whose only distinction
+   is colour is unreadable to a good share of the people who must use it.
+3. What a role change would cost, as area names rather than keys.
+
+**There is no "denied" state, and the screen must not draw one.**
+`user_permissions` is additive; this codebase has never had a deny row. So a
+permission the role grants gets **no checkbox at all** â€” a control that cannot do
+what it looks like it does is worse than no control â€” and the rule is on screen:
+"Overrides can only add. Unticking something the role grants does not take it
+away â€” change the role instead."
+
+Groups open by default only when they hold an **exception**. Opening every group
+the person holds anything in looked helpful and was not: an administrator holds
+something in eleven of twelve, which was 4,463px of ticks confirming what the
+word "Administrator" already said.
+
+## Role changes now state their cost
+
+Before: a dropdown, a button, and one sentence â€” only when the change crossed the
+staff boundary. Administrator to Support said nothing about the catalog, people
+and commerce settings about to be lost.
+
+Now a `ConsequentialAction` naming **loses / gains / keeps** as areas. A group
+counts as lost only when the person ends up holding *nothing* in it, so losing
+one of nine commerce permissions is not announced as losing commerce. Overrides
+are on both sides of the diff because they survive a role change, so somebody
+keeping an area only through one is not warned they are losing it.
+
+Rank rules, self-edit refusal, the second-admin approval path, the last-admin
+protection and `expectedRole` stale-state checking are all unchanged.
+
+## Account status, and a gap the audit found
+
+`POST /api/staff/users/[id]/status` has accepted `durationHours` since the table
+was created **and the old UI never sent it** â€” so every restriction applied from
+that screen was permanent whether or not anybody meant it to be. The panel now
+offers a length, and the request carries it. Verified by capturing the body:
+
+    {"action":"restrict","kind":"site","reason":"...","durationHours":168,"expectedStatus":"active"}
+
+The three backend restriction kinds are **not** collapsed â€” lifting a suspension
+does not lift a community restriction, and pretending otherwise would be wrong.
+What changed is that each one now states what it withholds *and what survives*,
+and each act is a confirmation naming both. `STATUS_ACTION_COPY.suspend.preserved`
+is asserted to mention paid orders: a shop that takes somebody's money and then
+goes quiet because they were rude in the forum has a second problem.
+
+## Communications became a view, not a tab
+
+Seven tabs put 681px of strip into a 342px box at 375px â€” half unreachable behind
+a sideways scroll nothing signalled. Email history is a short list of things that
+happened to this account, which is what Activity already is, so it is a segment
+inside it. Its permission gate is unchanged and asserted: the segment does not
+exist without `emails.view`, the panel behind it still treats a 403 as an error,
+and re-sending still goes through the existing audited route behind a
+confirmation. Provider ids moved behind **Advanced**.
+
+## A container query, because the rail moves the goalposts
+
+The staff shell puts a 280px rail beside the content from 1024px up, so at a
+1024px viewport the list has ~667px. A viewport breakpoint switched five columns
+on there and produced a 75px row of wrapped words. `.staff-people` is now a
+container and the row asks its own box how wide it is â€” the only question that
+was ever relevant. Measured: columns at a 940px list, stacked at 669px, no
+horizontal overflow at 375 / 768 / 1024 / 1280 / 1440.
+
+## Legacy, moved rather than removed
+
+Verification, donation rank and bio are community-era attributes on a machine
+shop's customer record. All three keep their routes, their permissions and their
+behaviour, and all three moved into **Advanced profile** â€” asserted by a test
+that also checks display name, username and email did *not* move with them. The
+raw account uuid went there too; it used to be the first row of Overview.
+
+**Avatar replacement is now offered**, through the `.../avatar` route that has
+existed since pass 11 and that no UI had ever called. No second storage path.
+
+## Verified in a browser
+
+Directory: segments set the URL and read back (`?kind=staff`, `?status=limited`),
+`limited` returns restricted **and** suspended, each active filter chip removes
+only itself and leaves the rest, search/sort/paging still server-side.
+
+Workspace: six tabs with a roving tabindex and exactly one tab stop; header "Add
+note" lands on Notes **and focuses the composer**; "Manage access" lands on
+Access; the metric strip renders a support count the viewer may not read as a
+dash rather than `0`. A 500 on notes and a 403 on communications both render
+`role="alert"`, never an empty list.
+
+## Not verified
+
+- **The running Vercel preview**, as in every previous pass: previews are
+  SSO-gated. The identical production build was run clean locally from a cleared
+  `.next`.
+- **A real signed-in staff session.** Middleware 307s `/staff/*` before any HTML,
+  so every figure above came from fixtures. No production row was read or written.
+
+## Validation
+
+| Check | Before | After |
+|---|---|---|
+| Typecheck | clean | clean |
+| Tests | 1955 pass | **2006 pass**, 0 fail |
+| Lint (`npx eslint src`) | 277 (128 errors, 149 warnings) | **277 (128 errors, 149 warnings)** |
+| Production build | clean | clean, exit 0, from a cleared `.next` |
+| Migration parity | 56 == 56 | 56 == 56 |
+

@@ -774,6 +774,150 @@
   .staff-record-next-title { margin-top: .1875rem; color: var(--text); font-size: .9375rem; font-weight: 600; }
   .staff-record-next-detail { margin-top: .1875rem; color: var(--muted); font-size: .8125rem; line-height: 1.25rem; }
 
+  /* ------------------------------------------------------------------
+     People directory and the person workspace.
+
+     A person carries eight facts worth scanning, and the generic `.staff-row`
+     put every one of them into `title`/`detail`/`aside` — which produced a
+     110px row at 1280 and 150px at 375, so a phone showed one and a half
+     people. These rules give the directory its own column model: fixed tracks
+     at the top of the range so names, roles and money line up down the page,
+     collapsing to a stacked card on a phone rather than scrolling sideways.
+     ------------------------------------------------------------------ */
+
+  /* A **container** query, not a media query.
+     The staff shell puts a 280px rail beside the content from 1024px up, so at
+     a 1024px viewport the list has only ~667px to work with — a viewport
+     breakpoint switched five columns on there and produced a 75px row of
+     wrapped words. The list asks its own box how wide it is instead, which is
+     the only question that has ever been relevant. Where `@container` is
+     unsupported the row stays stacked, which is the safe way to be wrong. */
+  .staff-people {
+    container-type: inline-size;
+    overflow: hidden; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel);
+  }
+  .staff-person {
+    display: grid; align-items: center; gap: .25rem .875rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "avatar identity" "avatar meta" ". badges";
+    border-top: 1px solid var(--border); padding: .75rem .875rem; min-width: 0; width: 100%; text-align: left;
+    transition: background-color 120ms ease;
+  }
+  .staff-person:first-child { border-top: 0; }
+  a.staff-person:hover { background: var(--panel-strong); }
+  a.staff-person:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -2px; }
+
+  .staff-person-avatar { grid-area: avatar; align-self: start; }
+  .staff-person-identity { grid-area: identity; min-width: 0; }
+  .staff-person-name { color: var(--text); font-size: .9375rem; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .staff-person-email { color: var(--muted); font-size: .8125rem; line-height: 1.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .staff-person-role { grid-area: badges; color: var(--muted); font-size: .8125rem; display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; }
+  .staff-person-commerce { grid-area: meta; color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; }
+  .staff-person-commerce strong { color: var(--text); font-weight: 600; }
+  .staff-person-seen { grid-area: meta; color: var(--muted); font-size: .75rem; }
+
+  /* Five columns once there is room for them, so the page reads as a table
+     without being one — a real `<table>` cannot make the whole row a link. */
+  @container (min-width: 760px) {
+    .staff-person {
+      grid-template-columns: auto minmax(9rem, 2fr) minmax(6rem, 1fr) minmax(7rem, auto) minmax(6rem, auto);
+      grid-template-areas: "avatar identity badges meta seen";
+      gap: .875rem;
+      padding: .625rem .875rem;
+    }
+    .staff-person-commerce { grid-area: meta; text-align: right; }
+    .staff-person-seen { grid-area: seen; text-align: right; }
+    .staff-person-role { justify-content: flex-start; }
+  }
+
+  /* The column captions. Hidden below the width where columns exist. */
+  .staff-people-head { display: none; }
+  @container (min-width: 760px) {
+    .staff-people-head {
+      display: grid; align-items: center; gap: .875rem;
+      grid-template-columns: auto minmax(9rem, 2fr) minmax(6rem, 1fr) minmax(7rem, auto) minmax(6rem, auto);
+      border-bottom: 1px solid var(--border); background: var(--panel-strong);
+      padding: .5rem .875rem;
+      color: var(--muted); font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase;
+    }
+    .staff-people-head > :nth-child(4), .staff-people-head > :nth-child(5) { text-align: right; }
+  }
+
+  /* Active filters, each removable on its own. One "Clear" for everything is
+     how backing out of a date range loses the search that produced it. */
+  .staff-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; }
+  .staff-filter-chip {
+    display: inline-flex; min-height: 2rem; align-items: center; gap: .4rem;
+    border-radius: 9999px; border: 1px solid color-mix(in srgb, var(--brand-accent) 40%, var(--border));
+    background: color-mix(in srgb, var(--brand-accent) 10%, transparent);
+    padding: .2rem .25rem .2rem .65rem; color: var(--text); font-size: .75rem;
+  }
+  .staff-filter-chip-label { color: var(--muted); }
+  .staff-filter-chip-remove {
+    display: inline-flex; height: 1.75rem; width: 1.75rem; flex: none; align-items: center; justify-content: center;
+    border-radius: 9999px; color: var(--muted); font-size: .875rem; line-height: 1;
+  }
+  .staff-filter-chip-remove:hover { background: var(--panel-strong); color: var(--text); }
+  .staff-filter-chip-remove:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 1px; }
+
+  /* Six tabs do not fit 375px, and `overflow-x: auto` hides the rest behind a
+     sideways scroll nothing signals — the person workspace had 681px of strip
+     in a 342px box before this pass, and 501px after. On a phone the strip
+     wraps instead, so every tab is visible for ~40px of height. Opt-in, so the
+     order workspace's eight tabs are unaffected. */
+  @media (max-width: 639px) {
+    .ui-tabs-wrap { flex-wrap: wrap; overflow-x: visible; }
+  }
+
+  /* The record header's metric strip. Numbers, not cards. */
+  .staff-metric-strip {
+    display: grid; gap: .75rem 1.25rem; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .875rem;
+  }
+  .staff-metric-strip dt { color: var(--muted); font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+  .staff-metric-strip dd { margin-top: .1875rem; color: var(--text); font-size: 1.0625rem; font-weight: 620; font-variant-numeric: tabular-nums; }
+  .staff-metric-strip .staff-metric-quiet { color: var(--muted); font-size: .8125rem; font-weight: 500; }
+
+  /* The permission matrix. One row per permission, grouped, with the source
+     shown as a shape and a word — never as a colour alone. */
+  .staff-perm-group { border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); }
+  .staff-perm-group + .staff-perm-group { margin-top: .625rem; }
+  .staff-perm-summary {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem .75rem;
+    cursor: pointer; padding: .75rem .875rem; color: var(--text); font-size: .9375rem; font-weight: 600;
+  }
+  .staff-perm-summary::-webkit-details-marker { display: none; }
+  .staff-perm-summary:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -2px; }
+  .staff-perm-summary-note { color: var(--muted); font-size: .75rem; font-weight: 500; }
+  .staff-perm-list { border-top: 1px solid var(--border); padding: .25rem 0; }
+  .staff-perm-row {
+    display: grid; gap: .125rem .75rem; align-items: baseline;
+    grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+    padding: .45rem .875rem;
+  }
+  .staff-perm-mark { color: var(--muted); font-size: .875rem; text-align: center; }
+  .staff-perm-row[data-source="role"] .staff-perm-mark { color: var(--brand-accent); }
+  .staff-perm-row[data-source="override"] .staff-perm-mark { color: var(--brand-primary); }
+  .staff-perm-name { color: var(--text); font-size: .875rem; }
+  .staff-perm-row[data-source="none"] .staff-perm-name { color: var(--muted); }
+  .staff-perm-source { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+  .staff-perm-key { grid-column: 2 / -1; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .6875rem; }
+  .staff-perm-row label.staff-perm-toggle { display: contents; }
+  .staff-perm-row input[type="checkbox"] { justify-self: center; width: 1rem; height: 1rem; accent-color: var(--brand-primary); }
+  @media (max-width: 599px) {
+    .staff-perm-row { grid-template-columns: 1.5rem minmax(0, 1fr); }
+    .staff-perm-source { grid-column: 2; }
+  }
+
+  /* A quiet disclosure for the fields a shop rarely needs. */
+  .staff-disclosure { border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); }
+  .staff-disclosure > summary {
+    cursor: pointer; padding: .75rem .875rem; color: var(--text); font-size: .875rem; font-weight: 600;
+  }
+  .staff-disclosure > summary::-webkit-details-marker { display: none; }
+  .staff-disclosure > summary:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -2px; }
+  .staff-disclosure-body { border-top: 1px solid var(--border); padding: .875rem; }
+
   /* Attention rows carry a severity stripe rather than a coloured card. */
   .staff-attention { border-left: 3px solid var(--border); }
   .staff-attention-critical { border-left-color: #fb7185; }

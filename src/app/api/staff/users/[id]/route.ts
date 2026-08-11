@@ -95,6 +95,45 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const roles = (rolesRes.data ?? []) as RoleRow[];
   const actorRank = actor.isOp ? Number.MAX_SAFE_INTEGER : actorRoleRes.data?.rank ?? 0;
 
+  /*
+   * What each role can do, and what this person holds on top of it.
+   *
+   * The Access tab needs both to answer "what can this person actually do" and
+   * to say what a role change would cost, and fetching them here rather than
+   * from the client saves two round trips and, more importantly, avoids
+   * coupling the answer to `roles.manage` — the role-permission list route
+   * requires it, and a viewer holding only `permissions.grant` would have been
+   * shown an empty matrix rather than a refusal.
+   *
+   * Gated on being allowed to see role definitions at all. `null` rather than
+   * an empty object, so the page can say "not shown" instead of drawing a
+   * matrix in which everybody appears to have nothing.
+   */
+  const mayReadRoleDefinitions =
+    actor.permissions.has("roles.view") ||
+    actor.permissions.has("roles.manage") ||
+    actor.permissions.has("permissions.grant");
+
+  let rolePermissions: Record<string, string[]> | null = null;
+  let permissionOverrides: string[] | null = null;
+
+  if (mayReadRoleDefinitions) {
+    const [rolePermRes, overrideRes] = await Promise.all([
+      routeServiceClient.from("role_permissions").select("role_key,permission_key"),
+      routeServiceClient.from("user_permissions").select("permission_key").eq("user_id", id),
+    ]);
+
+    const byRole: Record<string, string[]> = {};
+    for (const role of roles) byRole[role.key] = [];
+    for (const row of (rolePermRes.data ?? []) as { role_key: string; permission_key: string }[]) {
+      (byRole[row.role_key] ??= []).push(row.permission_key);
+    }
+    rolePermissions = byRole;
+    permissionOverrides = ((overrideRes.data ?? []) as { permission_key: string }[]).map(
+      (row) => row.permission_key
+    );
+  }
+
   // --- status detail --------------------------------------------------------
   const [banRes, restrictionRes] = await Promise.all([
     routeServiceClient
@@ -147,6 +186,45 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       .ilike("guest_email", row.email);
     possibleGuestOrderCount = typeof count === "number" ? count : 0;
   }
+
+  /*
+   * The two summary slices the Overview needs, bounded and gated.
+   *
+   * Both are here rather than on the client so the workspace opens with one
+   * request instead of three racing each other, and both are capped — Overview
+   * shows three notes and a count, so it asks for three notes and a count. The
+   * full lists stay on their own tabs behind their own routes.
+   */
+  const mayReadNotes =
+    actor.permissions.has("users.notes.view") || actor.permissions.has("users.notes.manage");
+
+  const [openSupportRes, recentNotesRes] = await Promise.all([
+    actor.permissions.has("support.view")
+      ? routeServiceClient
+          .from("support_conversations")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_id", id)
+          .in("status", ["open", "waiting_on_staff", "waiting_on_customer"])
+      : Promise.resolve({ count: null }),
+    mayReadNotes
+      ? routeServiceClient
+          .from("user_staff_notes")
+          .select("id,author_label,body,category,created_at")
+          .eq("user_id", id)
+          .is("archived_at", null)
+          .order("created_at", { ascending: false })
+          .limit(3)
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const openSupportCount =
+    typeof (openSupportRes as { count?: number | null }).count === "number"
+      ? (openSupportRes as { count: number }).count
+      : null;
+
+  const recentNotes = ((recentNotesRes as { data?: unknown }).data ?? null) as
+    | { id: string; author_label: string; body: string; category: string; created_at: string }[]
+    | null;
 
   const metrics: UserMetrics = {
     orderCount: row.order_count ?? 0,
@@ -215,7 +293,26 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
     possibleGuestOrderCount,
 
+    /** `null` when the viewer may not read support at all — never 0. */
+    openSupportCount,
+
+    recentNotes:
+      recentNotes?.map((note) => ({
+        id: note.id,
+        authorLabel: note.author_label,
+        body: note.body,
+        category: note.category,
+        createdAt: note.created_at,
+      })) ?? null,
+
     roles: roles.map((r) => ({ key: r.key, name: r.name, rank: r.rank, isStaff: r.is_staff })),
+
+    /**
+     * `{ roleKey: [permission, …] }` for every role, and this person's own
+     * override rows. Both `null` when the viewer may not read role definitions.
+     */
+    rolePermissions,
+    permissionOverrides,
 
     /*
      * What *this* viewer may do, decided on the server.
