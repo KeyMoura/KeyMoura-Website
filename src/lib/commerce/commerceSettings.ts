@@ -9,6 +9,9 @@
  *
  * Anything needing the database belongs in `commerceSettingsServer.ts`.
  *
+ * Reminder timing lives in `lib/automation/settings.ts` and is folded in here as
+ * `automation`, so one settings read serves checkout and the worker alike.
+ *
  * Three separate addresses, on purpose. The shop's *origin* address is where
  * parcels are posted from, the *return* address is where they come back to,
  * and the *pickup* address is where a customer is invited to stand. For a
@@ -17,6 +20,20 @@
  * up on a public page. `publicCommerceSettings` is the only thing a customer
  * surface may read, and it carries no origin address at all.
  */
+
+/*
+ * The one import this module has, and it is to another pure module.
+ *
+ * Relative and extension-bearing so the file stays loadable by
+ * `node --experimental-strip-types`, the same convention `permissions.ts` uses
+ * for `./roles.ts`. A path alias here would make the four tests that import this
+ * file need a resolver they currently do without.
+ */
+import {
+  DEFAULT_AUTOMATION_SETTINGS,
+  parseAutomationSettings,
+  type AutomationSettings,
+} from "../automation/settings.ts";
 
 // ---------------------------------------------------------------------------
 // Addresses
@@ -316,6 +333,12 @@ export type CommerceSettings = {
     allowCheckout: boolean;
     allowRequests: boolean;
   };
+  /**
+   * Scheduled reminder timing. Shape and defaults live in
+   * `lib/automation/settings.ts`, which is imported rather than restated so the
+   * worker and this form cannot disagree about what "3 days" means.
+   */
+  automation: AutomationSettings;
   returnAddress: Address;
 };
 
@@ -385,6 +408,7 @@ export const DEFAULT_COMMERCE_SETTINGS: CommerceSettings = {
     allowCheckout: true,
     allowRequests: true,
   },
+  automation: DEFAULT_AUTOMATION_SETTINGS,
   returnAddress: { ...EMPTY_ADDRESS },
 };
 
@@ -608,6 +632,7 @@ export function parseCommerceSettings(raw: unknown): CommerceSettings {
       allowCheckout: bool(guest.allowCheckout, defaults.guest.allowCheckout),
       allowRequests: bool(guest.allowRequests, defaults.guest.allowRequests),
     },
+    automation: parseAutomationSettings(root.automation),
     returnAddress: parseAddress(root.returnAddress),
   };
 }

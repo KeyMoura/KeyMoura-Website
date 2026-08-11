@@ -67,8 +67,11 @@ strings as the HTML, so the two cannot drift.
 | `quote_updated` | `quote_updated` | customer | order | A revised quote is sent on an order that already had one. | `order-quote-{orderId}-rev{quoteRevision}` | suppressed | order_quotes + order_status_history | yes |
 | `payment_required` | `status_update` | customer | order | An order moves to awaiting_payment. | `order-update-{orderId}-{historyId}-status_update` | suppressed | order_status_history | yes |
 | `order_status_changed` | `status_update` | customer | order | Any other staff status change on PATCH /api/staff/orders/[id]. | `order-update-{orderId}-{historyId}-status_update` | suppressed | order_status_history | yes |
-| `quote_expired` | `status_update` | customer | order | A quote passes quote_expires_at. | `order-quote-expired-{orderId}-rev{quoteRevision}` | suppressed | order_status_history | **no** |
-| `payment_reminder` | `status_update` | customer | order | An accepted quote stays unpaid past a configured window. | `order-payment-reminder-{orderId}-{windowDays}` | suppressed | order_status_history | **no** |
+| `quote_expiring` | `quote_expiring` | customer | order | A scheduled job fires the configured number of hours before quote_expires_at, if the quote is still unpaid and live. | `automation-quote-expiring-{orderId}-{expiresAtMinute}` | suppressed | scheduled_jobs + automation.reminder_sent | yes |
+| `quote_expired` | `status_update` | customer | order | A scheduled job fires at quote_expires_at and the quote is still unpaid. | `automation-quote-expired-{orderId}-{expiresAtMinute}` | suppressed | scheduled_jobs + automation.reminder_sent | yes |
+| `order_action_required` | `customer_action_required_reminder` | customer | order | An order has sat in a state that needs the customer to act — needs_information, awaiting_payment or customer_review — past the configured window. | `automation-action-required-{orderId}-n{sequence}` | suppressed | scheduled_jobs + automation.reminder_sent | yes |
+| `pickup_reminder` | `pickup_reminder` | customer | order | An order has been ready for collection for one of the configured numbers of days. | `automation-pickup-reminder-{orderId}-day{n}` | suppressed | scheduled_jobs + automation.reminder_sent | yes |
+| `support_waiting_customer` | `support_waiting_customer` | customer | support | A conversation has been waiting_on_customer past the configured window, with no reply from them. | `automation-support-waiting-{conversationId}-day{n}` | suppressed | scheduled_jobs + automation.reminder_sent | yes |
 
 ### Support
 
@@ -151,30 +154,54 @@ send fails the suite.
 | `guest_order_access_requested` | `guest_order_access` | customer | order | A guest opens their order without a valid session, or asks for a new code. | `guest-access-{challengeId}` | suppressed | guest_order_access_codes | yes |
 | `low_stock` | `low_stock_alert` | staff | product | A tracked product falls to or below its low-stock threshold. | `inventory-alert-{alertId}-low-{recipient}` | suppressed | inventory_alerts | yes |
 | `out_of_stock` | `out_of_stock_alert` | staff | product | A tracked product reaches zero, or an open low alert escalates. | `inventory-alert-{alertId}-out-{recipient}` | suppressed | inventory_alerts | yes |
-| `fulfillment_overdue` | `staff_fulfillment_due` | staff | order | An order sits unfulfilled past the configured window. | `fulfillment-overdue-{orderId}-{windowDays}` | suppressed | — | **no** |
+| `fulfillment_overdue` | `staff_fulfillment_due` | staff | order | An order sits unfulfilled past the configured window. | `fulfillment-overdue-{orderId}-{windowDays}` | suppressed | — | **no**, by choice |
 | `reservation_inconsistency` | `staff_integration_failure` | staff | product | Reconciliation finds a hold that lapsed or outlived its order's payment. | `ops-{alertKind}-{subjectId}` | suppressed | — | **no** |
 | `webhook_failure` | `staff_integration_failure` | staff | system | A Stripe webhook is received but cannot be processed. | `ops-webhook_failure-{stripeEventId}` | suppressed | stripe_webhook_events | yes |
 | `email_delivery_failure` | `staff_integration_failure` | staff | system | A customer email is refused by Resend. | `ops-email_failure-{deliveryEventKey}` | suppressed | email_deliveries | yes |
 
 
-Totals: 52 events across 44 templates; 48 wired, 4 recorded-not-built.
+Totals: 59 events across 52 templates; 57 wired, 2 in-app by choice.
 
-## Recorded, not built
+(Counted from the module, not from this table. The previous rendering said "52
+events across 44 templates", which was wrong on both numbers — exactly the drift
+the generated-from-the-module arrangement exists to stop, and a reminder that the
+`tests/transactional-emails.test.ts` assertion checks every event *appears* here
+but has never checked the totals sentence.)
 
-Four events are catalogued with `wired: false`. Each needs the same missing
-thing — **a scheduled job runner, which this project does not have**:
+## Scheduled reminders
 
-- `quote_expired` — `quote_expires_at` exists from `20260801050000` and nothing
-  sweeps it.
-- `payment_reminder` — an accepted quote left unpaid past a window.
-- `fulfillment_overdue` — surfaced as an in-app alert and on the dashboard
-  instead.
+Five events are sent by `/api/cron/automation` rather than by a request. They
+are the ones that used to sit under "recorded, not built" with the note that
+each needed *a scheduled job runner, which this project does not have*.
+
+The layering is worth stating, because it is what makes a worker that wakes
+every fifteen minutes safe to point at a customer's inbox:
+
+1. **`scheduled_jobs.dedupe_key` is unique**, so a reminder is queued once
+   however many times discovery notices the same stale row.
+2. **The handler reloads the entity and re-asks** whether the reminder is still
+   true. A quote paid between scheduling and firing sends nothing.
+3. **`email_deliveries.event_key` claims the send**, so even two workers racing
+   past both of the above produce one email.
+
+The keys carry the *occurrence*, never the clock: `day3`, `n2`, or the expiry
+timestamp the job was scheduled against. That last one is deliberate — moving a
+quote's deadline makes a genuinely new reminder rather than reusing one already
+sent.
+
+## Deliberately in-app only, not unbuilt
+
+Two events remain `wired: false`, and neither is now waiting on anything. Both
+are staff-facing, and both are raised as operational notifications instead:
+
+- `fulfillment_overdue` — the automation worker raises
+  `fulfillment.pickup_uncollected` into the bell those staff already read.
 - `reservation_inconsistency` — surfaced by reconciliation, which is read-only
   and runs when a staff member opens it.
 
-Sending any of these from a page load would mean whoever opened the page
-triggered the customer's email. They are specified and unbuilt rather than
-half-wired.
+Every staff-facing reminder this application schedules takes the same route. An
+alert about an internal delay does not need to arrive by email at 3am, and the
+people who can act on it are already reading the bell all day.
 
 ## Deliberately in-app only
 

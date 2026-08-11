@@ -512,6 +512,36 @@ export type LifecycleNotification = {
 };
 
 /**
+ * Who a customer email for this order actually goes to, and what to call them.
+ *
+ * A guest order has no account, so there is no auth user to look up and no bell
+ * for a notification to land in — their address is on the order itself. The
+ * lookup is skipped rather than attempted with a null id: asking the admin API
+ * for user `null` is a request that can only fail, and callers swallow failures,
+ * so it would present as a customer silently not being told their refund
+ * completed.
+ *
+ * Exported because the scheduled-reminder handlers need exactly this answer and
+ * must not arrive at it a second way. A reminder that addresses a guest by their
+ * account name — which they do not have — is the kind of drift two copies of
+ * these eight lines produce within a pass or two.
+ */
+export async function resolveOrderRecipient(
+  order: Pick<OrderLifecycleRow, "customer_id" | "guest_email" | "guest_name">
+): Promise<{ recipient: string | undefined; displayName: string }> {
+  const authUserResult = order.customer_id
+    ? await db().auth.admin.getUserById(order.customer_id)
+    : { data: null };
+  const authUser = authUserResult.data;
+  return {
+    recipient: order.customer_id ? authUser?.user?.email : order.guest_email ?? undefined,
+    displayName: order.customer_id
+      ? authUser?.user?.user_metadata?.display_name || authUser?.user?.email?.split("@")[0] || "Customer"
+      : order.guest_name?.trim() || order.guest_email?.split("@")[0] || "Customer",
+  };
+}
+
+/**
  * One customer email, one customer notification, and optionally a staff
  * notification — all keyed so a repeat delivery is a no-op.
  *
@@ -520,28 +550,10 @@ export type LifecycleNotification = {
  */
 export async function sendLifecycleNotification(input: LifecycleNotification) {
   try {
-    /**
-     * A guest order has no account, so there is no auth user to look up and no
-     * bell for a notification to land in. Their address is on the order.
-     *
-     * The lookup is skipped rather than attempted with a null id: asking the
-     * admin API for user `null` is a request that can only fail, and a failure
-     * here is swallowed by the catch below — so it would present as a customer
-     * silently not being told their refund completed.
-     */
-    const [authUserResult, config] = await Promise.all([
-      input.order.customer_id
-        ? db().auth.admin.getUserById(input.order.customer_id)
-        : Promise.resolve({ data: null }),
+    const [{ recipient, displayName }, config] = await Promise.all([
+      resolveOrderRecipient(input.order),
       getCommerceEmailConfig(),
     ]);
-    const authUser = authUserResult.data;
-    const recipient = input.order.customer_id
-      ? authUser?.user?.email
-      : input.order.guest_email ?? undefined;
-    const displayName = input.order.customer_id
-      ? authUser?.user?.user_metadata?.display_name || authUser?.user?.email?.split("@")[0] || "Customer"
-      : input.order.guest_name?.trim() || input.order.guest_email?.split("@")[0] || "Customer";
 
     if (config.sendStatusUpdates !== false) {
       await sendCommerceEmail({

@@ -6696,3 +6696,203 @@ It is also the end-to-end proof no fixture could give:
 ### Final SHA
 
 `6b736e2`
+
+---
+
+# Pass 23 — Scheduled communications, reminders and operational follow-up
+
+Starting SHA `8a7fbed`. The pass that made the shop notice things on its own.
+
+## The scheduler that was already there
+
+Three source files said *"there is no cron service in this project"* and built
+around it — opportunistic reservation sweeps, an email catalogue with four events
+marked `wired: false` because each needed "a scheduled job runner, which this
+project does not have". That was **wrong**, and had been for a fortnight.
+
+`pg_cron` 1.6.4 is installed in production and has been running
+`purge-expired-moderation-recycle-bin` at `17 3 * * *` since migration
+`20260729000000`. `pgmq` 1.5.1 is installed with zero queues. `pg_net` is
+available and not installed, which is why pg_cron could not have done this job:
+it can run SQL and cannot call Resend.
+
+That same migration's own comment specified this pass a fortnight early —
+*"Projects without it can call the function daily from a protected Vercel cron
+route in a later migration."* The recycle-bin job is left exactly as it is. It is
+a single-purpose retention purge, not a general scheduler, and absorbing it would
+have been a second system pretending to be a simplification.
+
+## One job table, one worker, one schedule
+
+Cron wakes the worker; **the database decides what needs doing**. `scheduled_jobs`
+carries a unique `dedupe_key`, and that uniqueness is the entire point of the
+column: a discovery pass running every fifteen minutes writes
+`pickup_reminder:<order>:day3` once.
+
+Three layers stand between a worker that never sleeps and a customer's inbox:
+
+1. **`dedupe_key` is unique** — the reminder is queued once however many times
+   discovery notices the same stale row.
+2. **The handler reloads the entity** and re-asks whether the reminder is still
+   true, at the moment it would fire. A quote paid between scheduling and firing
+   sends nothing and cancels the job.
+3. **`email_deliveries.event_key` claims the send** — the guarantee that already
+   existed. Two workers racing past both of the above still produce one email.
+
+Keys carry the *occurrence*, never the clock: `day3`, `n2`, or the expiry
+timestamp the job was scheduled against. That last one is deliberate — moving a
+quote's deadline mints a genuinely new reminder rather than reusing one already
+sent, and the handler refuses a job whose stored expiry no longer matches.
+
+## Ten reminders, and what each is for
+
+| Job | Who | Pattern |
+|---|---|---|
+| `quote_expiry_warning` | customer | explicit `run_at`, discovered by scan |
+| `quote_expired` | customer | explicit |
+| `order_action_required` | customer | discovery, capped at two |
+| `pickup_reminder` | customer | discovery, configured days |
+| `pickup_stale_staff` | staff bell | discovery |
+| `support_waiting_customer` | customer | discovery, one only |
+| `support_waiting_staff` | staff bell | discovery |
+| `production_due_soon` / `overdue` / `blocked` | staff bell | discovery |
+
+**Every staff reminder is a bell, never an email.** `staff_fulfillment_due` stays
+`wired: false` and is now so by choice rather than for want of a scheduler: an
+alert about an internal delay does not need to arrive at 3am, and the people who
+can act on it read the bell all day.
+
+**No customer is told production is late.** That is a decision somebody makes,
+not one a timer makes for them, and the brief was explicit it needs a
+customer-facing policy this project does not have.
+
+Shipping is never chased. A parcel in transit has a carrier telling the customer
+about it already.
+
+## Discovery, and the one thing it is not
+
+Two reminders hang off a deterministic future instant, and their `run_at`
+genuinely is explicit — the job is written for `expiry - 24h`. What is a *scan*
+is the noticing, deliberately: a hook on the quote-setting route would miss every
+quote that already exists and leave nothing to repair the gap. The scan is
+self-healing.
+
+The rest are state-based. "Waiting on staff for eight hours" is a `where` clause,
+not an event; writing a speculative row per conversation per threshold would be
+millions of rows to express it.
+
+## Invalidation, and the file that was not edited
+
+Phase 23 asks for stale jobs to be cancelled on state change *and* revalidated at
+execution. The second is done and is the guarantee. The first is a **bounded
+reconciliation sweep** rather than six hooks — and one of those six would have
+been inside the Stripe payment webhook.
+
+That trade is worth stating plainly: the benefit of a hook is that a doomed job
+dies now rather than within one cadence, and since the handler refuses it either
+way, what that buys is a tidier table. It is not worth a new failure mode in the
+file where a customer's order confirmation lives. The sweep may only ever
+anticipate a refusal, never cause one.
+
+## Cadence
+
+Every fifteen minutes — 96 a day, ~2,880 a month. The finest threshold in the
+system is hours, so precision is not what sets the cadence; how late a quote
+warning may fire is. Hourly would make the one reminder whose whole point is
+arriving before a deadline up to an hour late.
+
+One schedule, not ten. Ten cron entries would be ten things to configure and ten
+places to look when a reminder does not arrive; one worker reads the job table
+and does whatever is due, which is why the job table exists.
+
+## Numbers
+
+| | |
+|---|---|
+| Tests | 1879 -> **1953**, all green |
+| Lint | 277 -> **277**, unchanged (`npx eslint src`) |
+| Migrations | 54 -> **55** repo files == 55 production rows |
+| Email templates | 48 -> **52** production rows == 52 catalogue keys |
+| Reminders sent to real customers | **0** |
+
+### The baseline was not what the ledger said
+
+Pass 22 recorded 1879 "all green". On this Windows checkout one test failed:
+`tests/support-system.test.ts:918` asserted `ROLLBACK_SQL.includes` against a
+two-line statement carrying a bare `\n`, in a file with CRLF endings — so the
+match returned -1 and reported a correctly-ordered rollback as wrong. Fixed by
+normalising line endings before matching. The rollback file was always right; the
+assertion was reading the line endings.
+
+The transactional-email matrix also carried "52 events across 44 templates". Both
+numbers were wrong — measured from the module, it was 56 and 48 before this pass,
+59 and 52 after. The generated-from-the-module arrangement exists to stop exactly
+that drift, and the test asserts every event *appears* in the doc but has never
+checked the totals sentence.
+
+## An error worth recording
+
+The dry-run was meant to end in `rollback`. The script sent ended in `commit`, so
+the two tables and the function were briefly created in production and two probe
+rows written, before approval. It was reverted immediately with the rollback file
+and production returned to exactly its prior state; migration parity never broke,
+because `execute_sql` writes no migration row.
+
+The rollback file is therefore proven against a real applied schema rather than
+only read, which is not a defence of the mistake but is the one useful thing that
+came out of it.
+
+## Verified in a browser, and what was not
+
+The local service-role key is a placeholder, so a temporary harness served
+fixtures to the **real** page at its real URL and was deleted before commit —
+`git status` carries no residue of it.
+
+Driven and confirmed: all six tabs and hash routing; the Status tab's health chip,
+nine facts, failures panel and run history; per-state button affordances on the
+jobs list (pending -> Cancel only, cancelled -> none, failed -> Retry + Cancel
+with critical severity styling); toggling pickup reminders off disabling exactly
+its three day-fields and not the staff one; a real keystroke changing the support
+threshold 8 -> 4 and reaching React; Retry and Run now firing and reloading;
+375px with no page-level horizontal overflow and the tab strip scrolling in its
+own `overflow-x: auto` container; 768px reflowing the facts grid to three columns.
+
+**The load-bearing one.** Re-seeded as `automation.view` only: the warning notice
+appears, Save is disabled, **Run now is gone entirely**, every input is disabled,
+and the jobs list renders five rows with *no action buttons at all*.
+
+**Not verified in a browser:** the refusal paths on the manual controls. The
+harness stub short-circuits before validation, so `action: "send_now"` and a
+non-UUID id both returned 200 through it. Both are asserted by tests instead
+(400 on an unknown action, 400 on a bad id, 409 on a stale state). Nor was any
+page driven against real production data — that needs a real staff session, and
+the grants, RLS and constraints were checked against the database directly.
+
+## Schema
+
+Additive: two tables, one function, six indexes, four template seeds with
+`on conflict do nothing`. No existing table, column, policy, trigger or row was
+altered.
+
+Neither table is reachable from a browser session: `revoke all` from `public`,
+`anon` and `authenticated`, RLS enabled with **no policies**, and service-role
+only. TRUNCATE was revoked **in the same migration** this time rather than in a
+follow-up — the hole pass 22 had to come back for.
+
+Eleven behavioural probes passed in a rolled-back transaction before approval and
+were re-verified in production after applying: dedupe uniqueness refuses a
+duplicate, the state check refuses garbage, a claim takes due and expired-lease
+rows while skipping future ones, a second worker holding no lease claims nothing,
+attempts increment, browser roles hold zero privileges, service_role holds no
+TRUNCATE, RLS is on with no policies, and all six indexes exist.
+
+## Known gaps
+
+* **The refusal paths are test-verified only.** See above.
+* **No hook inside the payment webhook.** Deliberate; see Invalidation.
+* **`user_staff_notes` can still be truncated** — pass 21's hole, still recorded
+  rather than fixed, still one `revoke` when somebody wants it.
+* **The deployment schedule cannot be read by the code that depends on it.**
+  `tests/scheduled-automation.test.ts` pins `vercel.json` to the cadence
+  constants, which closes the repo-side gap; if the Vercel dashboard is edited by
+  hand the health page reports the scheduler stalled, which is the true statement.

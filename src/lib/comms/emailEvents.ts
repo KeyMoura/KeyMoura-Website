@@ -71,6 +71,11 @@ export const EMAIL_TEMPLATE_KEYS = [
   "refund_partial_completed",
   "refund_completed",
   "refund_failed",
+  // Scheduled reminders
+  "quote_expiring",
+  "pickup_reminder",
+  "customer_action_required_reminder",
+  "support_waiting_customer",
   // Inventory and operations
   "low_stock_alert",
   "out_of_stock_alert",
@@ -369,33 +374,84 @@ export const EMAIL_EVENTS: readonly EmailEvent[] = [
     resendable: true,
     wired: true,
   },
+  /*
+   * The four scheduled reminders, wired by the automation pass.
+   *
+   * Every one of these carried a `wired: false` note saying it was waiting on
+   * "the scheduling this project does not have" and that firing it from a page
+   * load would mean whoever opened the page triggered somebody else's reminder.
+   * `/api/cron/automation` is that scheduling, and the note was the specification.
+   *
+   * They are all `suppressed`, and the event key is what does it: the key names
+   * the *occurrence* — this expiry, day three of this pickup — so a worker that
+   * runs every fifteen minutes claims the send once and every later attempt
+   * finds the delivery row already there.
+   */
+  {
+    id: "quote_expiring",
+    templateKey: "quote_expiring",
+    audience: "customer",
+    related: "order",
+    trigger:
+      "A scheduled job fires the configured number of hours before quote_expires_at, if the quote is still unpaid and live.",
+    // The expiry is in the key, so moving a quote's deadline produces a
+    // genuinely new reminder rather than being suppressed by the old one.
+    eventKeyShape: "automation-quote-expiring-{orderId}-{expiresAtMinute}",
+    idempotency: "suppressed",
+    activity: "scheduled_jobs + automation.reminder_sent",
+    resendable: true,
+    wired: true,
+  },
   {
     id: "quote_expired",
     templateKey: "status_update",
     audience: "customer",
     related: "order",
-    trigger: "A quote passes quote_expires_at.",
-    eventKeyShape: "order-quote-expired-{orderId}-rev{quoteRevision}",
+    trigger: "A scheduled job fires at quote_expires_at and the quote is still unpaid.",
+    eventKeyShape: "automation-quote-expired-{orderId}-{expiresAtMinute}",
     idempotency: "suppressed",
-    activity: "order_status_history",
+    activity: "scheduled_jobs + automation.reminder_sent",
     resendable: true,
-    wired: false,
-    notes:
-      "The column exists from 20260801050000 but nothing sweeps it. Expiry needs a scheduled job, which this project does not have; a request-time sweep would fire on whoever happens to load the page. Recorded rather than half-wired.",
+    wired: true,
   },
   {
-    id: "payment_reminder",
-    templateKey: "status_update",
+    id: "order_action_required",
+    templateKey: "customer_action_required_reminder",
     audience: "customer",
     related: "order",
-    trigger: "An accepted quote stays unpaid past a configured window.",
-    eventKeyShape: "order-payment-reminder-{orderId}-{windowDays}",
+    trigger:
+      "An order has sat in a state that needs the customer to act — needs_information, awaiting_payment or customer_review — past the configured window.",
+    // Capped at two: `n1` then `n2`, and never a third.
+    eventKeyShape: "automation-action-required-{orderId}-n{sequence}",
     idempotency: "suppressed",
-    activity: "order_status_history",
+    activity: "scheduled_jobs + automation.reminder_sent",
     resendable: true,
-    wired: false,
-    notes:
-      "Needs the same scheduling this project lacks. Sending it from a page load would mean a customer's own visit triggers their reminder.",
+    wired: true,
+  },
+  {
+    id: "pickup_reminder",
+    templateKey: "pickup_reminder",
+    audience: "customer",
+    related: "order",
+    trigger: "An order has been ready for collection for one of the configured numbers of days.",
+    eventKeyShape: "automation-pickup-reminder-{orderId}-day{n}",
+    idempotency: "suppressed",
+    activity: "scheduled_jobs + automation.reminder_sent",
+    resendable: true,
+    wired: true,
+  },
+  {
+    id: "support_waiting_customer",
+    templateKey: "support_waiting_customer",
+    audience: "customer",
+    related: "support",
+    trigger:
+      "A conversation has been waiting_on_customer past the configured window, with no reply from them.",
+    eventKeyShape: "automation-support-waiting-{conversationId}-day{n}",
+    idempotency: "suppressed",
+    activity: "scheduled_jobs + automation.reminder_sent",
+    resendable: true,
+    wired: true,
   },
 
   // ------------------------------------------------------------------ support
@@ -935,7 +991,7 @@ export const EMAIL_EVENTS: readonly EmailEvent[] = [
     resendable: false,
     wired: false,
     notes:
-      "Surfaced as an in-app operational notification and on the dashboard instead. An email needs the scheduling this project does not have; sending it on a page load would mean whoever opens the dashboard triggers it.",
+      "Still an in-app operational notification rather than an email, and now deliberately so rather than for want of a scheduler. `fulfillment.pickup_uncollected` is raised by the automation worker and lands in the bell those staff already read. Every staff-facing reminder this pass added took the same route: an alert about an internal delay does not need to arrive by email at 3am, and a shop that wants one can configure a recipient without a code change.",
   },
   {
     id: "reservation_inconsistency",

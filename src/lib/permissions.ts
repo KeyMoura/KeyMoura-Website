@@ -151,6 +151,13 @@ export const PERMISSIONS = [
   "support.reply",
   "support.manage",
   "support.assign",
+  // Scheduled automation, added in this pass. Two powers, and the split is the
+  // usual one: reading what the scheduler is doing is useful to anyone on a desk
+  // wondering why a reminder did or did not go out, while changing a threshold
+  // decides what lands in a customer's inbox and when. Neither is granted to any
+  // non-admin role by default.
+  "automation.view",
+  "automation.manage",
 ] as const;
 
 /**
@@ -365,6 +372,18 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       label: "Assign support",
       description:
         "Allows assigning a conversation to a staff member, taking it, or leaving it unassigned. Only staff who can already view support may be assigned.",
+    },
+    "automation.view": {
+      category: "Operations",
+      label: "View automation",
+      description:
+        "Allows seeing scheduled reminders, whether the scheduler is running, and which jobs have failed. Does not allow changing timing or retrying anything.",
+    },
+    "automation.manage": {
+      category: "Operations",
+      label: "Manage automation",
+      description:
+        "Allows changing reminder timing, enabling or disabling optional reminders, and retrying or cancelling a scheduled job. Grant this deliberately: the thresholds decide when real customers are emailed.",
     },
     "audit.view": {
       category: "Audit",

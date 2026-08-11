@@ -53,8 +53,13 @@ export type NotificationAlertKind =
   | "support.new_conversation"
   | "support.customer_replied"
   | "support.assigned"
+  | "support.waiting_on_staff"
   // Production
   | "production.overdue"
+  | "production.due_soon"
+  | "production.blocked"
+  // Fulfillment staleness
+  | "fulfillment.pickup_uncollected"
   // Customer decisions
   | "cancellation.requested"
   | "return.requested"
@@ -66,7 +71,8 @@ export type NotificationAlertKind =
   // Platform
   | "ops.email_failure"
   | "ops.webhook_failure"
-  | "ops.integration_blocker";
+  | "ops.integration_blocker"
+  | "ops.automation_failure";
 
 export type NotificationAlertSpec = {
   kind: NotificationAlertKind;
@@ -177,11 +183,54 @@ export const NOTIFICATION_ALERTS: readonly NotificationAlertSpec[] = [
     title: "Support conversation assigned to you",
     resolvable: false,
   },
+  /*
+   * The staleness alerts the scheduler raises.
+   *
+   * All four are `resolvable`, because all four describe a condition that
+   * genuinely clears: a job gets finished, a customer is finally replied to, a
+   * parcel is collected. An alert nobody ever sees close teaches staff that the
+   * bell is a list of things that were once true, which is how a real blocker
+   * gets scrolled past — the same reasoning the inventory alerts already follow.
+   *
+   * `support.waiting_on_staff` goes to `support.view` rather than to the
+   * assignee alone. An unanswered customer is the desk's problem even when the
+   * person it was assigned to is away, which is usually exactly why it is stale.
+   */
+  {
+    kind: "support.waiting_on_staff",
+    permissionKey: "support.view",
+    priority: "high",
+    title: "Customer waiting on a reply",
+    resolvable: true,
+  },
   {
     kind: "production.overdue",
     permissionKey: "production.view",
     priority: "high",
     title: "Production overdue",
+    resolvable: true,
+  },
+  {
+    kind: "production.due_soon",
+    permissionKey: "production.view",
+    // Normal, not high: a job due tomorrow is information, not a problem. Only
+    // the one that has already slipped earns the louder badge.
+    priority: "normal",
+    title: "Production due soon",
+    resolvable: true,
+  },
+  {
+    kind: "production.blocked",
+    permissionKey: "production.view",
+    priority: "high",
+    title: "Production blocked too long",
+    resolvable: true,
+  },
+  {
+    kind: "fulfillment.pickup_uncollected",
+    permissionKey: "fulfillment.view",
+    priority: "normal",
+    title: "Order still uncollected",
     resolvable: true,
   },
   {
@@ -247,6 +296,25 @@ export const NOTIFICATION_ALERTS: readonly NotificationAlertSpec[] = [
     title: "Integration blocker",
     resolvable: true,
   },
+  /*
+   * The scheduler telling on itself.
+   *
+   * Raised when a job exhausts its retries or when the worker finds it cannot
+   * do its job at all — no API key, no configured staff address. Gated on
+   * `automation.view`, so the people told are the people who can open the page
+   * that explains it.
+   *
+   * Not resolvable: a job that failed did fail, and the record of that should
+   * not quietly close itself because the next one worked. Retrying it is an
+   * explicit act with its own audit row.
+   */
+  {
+    kind: "ops.automation_failure",
+    permissionKey: "automation.view",
+    priority: "high",
+    title: "Scheduled job failed",
+    resolvable: false,
+  },
 ];
 
 export const NOTIFICATION_ALERTS_BY_KIND: Readonly<Record<NotificationAlertKind, NotificationAlertSpec>> =
@@ -311,13 +379,17 @@ export function alertHref(kind: NotificationAlertKind, subjectId: string): strin
       return `/staff/orders/${subjectId}`;
     case "order.ready_for_production":
     case "production.overdue":
+    case "production.due_soon":
+    case "production.blocked":
       return `/staff/production/${subjectId}`;
     case "order.ready_to_fulfill":
     case "order.ready_for_pickup":
+    case "fulfillment.pickup_uncollected":
       return `/staff/orders/${subjectId}`;
     case "support.new_conversation":
     case "support.customer_replied":
     case "support.assigned":
+    case "support.waiting_on_staff":
       return `/staff/support/${subjectId}`;
     case "inventory.low_stock":
     case "inventory.out_of_stock":
@@ -329,6 +401,10 @@ export function alertHref(kind: NotificationAlertKind, subjectId: string): strin
       return "/staff/integrations";
     case "ops.integration_blocker":
       return "/staff/launch-readiness";
+    case "ops.automation_failure":
+      // The failures panel, not the settings form: somebody following this link
+      // wants to see what broke, not to change a threshold.
+      return "/staff/settings/automation";
   }
 }
 
