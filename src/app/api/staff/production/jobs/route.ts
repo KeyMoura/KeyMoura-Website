@@ -10,6 +10,7 @@ import {
 import {
   JOB_COLUMNS,
   loadJobReferences,
+  loadTaskProgress,
   logProductionFailure,
   recordJobAction,
   type JobRow,
@@ -60,6 +61,12 @@ export async function GET(req: NextRequest) {
   if (assignedTo === "unassigned") query = query.is("assigned_to", null);
   else if (assignedTo) query = query.eq("assigned_to", assignedTo);
 
+  const attention = params.get("attention");
+  if (attention === "blocked") {
+    query = query.in("status", ["waiting_on_customer", "waiting_on_materials", "on_hold"]);
+  }
+  if (attention === "qc") query = query.in("status", ["quality_check", "rework_required"]);
+
   // `orderId=none` lists standalone shop work — jobs raised against no order at
   // all. That is both a real way to look at the queue ("what are we making for
   // stock?") and what the order page offers when linking existing work, so the
@@ -105,15 +112,20 @@ export async function GET(req: NextRequest) {
   // An empty table is a real answer, not a failure: `data` is `[]` and the
   // queue renders its empty state. Only `error` above is a failure.
   const jobs = data ?? [];
-  const references = await loadJobReferences(jobs);
+  const [references, taskProgress] = await Promise.all([
+    loadJobReferences(jobs),
+    loadTaskProgress(jobs.map((job) => job.id)),
+  ]);
 
   return NextResponse.json({
     jobs,
     ...references,
+    taskProgress,
     total: count ?? jobs.length,
     limit,
     offset,
     canManage: actor.permissions.has("production.manage"),
+    currentUserId: actor.userId,
   });
 }
 

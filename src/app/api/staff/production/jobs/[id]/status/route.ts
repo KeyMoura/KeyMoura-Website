@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import {
   completionWarnings,
+  completionProblem,
   isProductionStatus,
   statusSideEffects,
   transitionProblem,
@@ -78,24 +79,27 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   const problem = transitionProblem(from, to, { reason, reopen });
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
-  // Completion warnings are advisory. They are returned unacknowledged once so
-  // the browser can show them in the confirmation, and the same request with
-  // `acknowledge: true` goes through. Nothing here blocks a job from finishing.
-  if (to === "completed" && body.acknowledge !== true) {
+  if (to === "completed") {
     const { data: tasks } = await routeServiceClient
       .from("production_job_tasks")
       .select(TASK_COLUMNS)
       .eq("job_id", id);
 
+    const normalizedTasks = (tasks ?? []).map((task) => ({
+      kind: task.kind as "step" | "completion" | "quality",
+      is_done: Boolean(task.is_done),
+    }));
+    const blocker = completionProblem(normalizedTasks);
+    if (blocker) {
+      return NextResponse.json({ error: blocker, completionBlocked: true }, { status: 409 });
+    }
+
     const warnings = completionWarnings(
       { materials_acquired: job.materials_acquired, actual_minutes: job.actual_minutes },
-      (tasks ?? []).map((task) => ({
-        kind: task.kind as "step" | "completion" | "quality",
-        is_done: Boolean(task.is_done),
-      }))
+      normalizedTasks
     );
 
-    if (warnings.length) {
+    if (warnings.length && body.acknowledge !== true) {
       return NextResponse.json({ warnings, requiresAcknowledgement: true }, { status: 409 });
     }
   }
@@ -139,7 +143,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     jobNumber: updated.job_number,
     eventType: reopen ? "job.reopened" : "job.status_changed",
     auditType: "staff.production.job.status",
-    action: "production.status_changed",
+    action:
+      to === "completed"
+        ? "production.completed"
+        : to === "on_hold"
+          ? "production.blocked"
+          : from === "on_hold"
+            ? "production.unblocked"
+            : "production.status_changed",
     fromStatus: from,
     toStatus: to,
     orderId: updated.order_id,

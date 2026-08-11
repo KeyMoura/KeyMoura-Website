@@ -64,6 +64,7 @@ type JobRecord = {
   hold_reason: string | null;
   failure_reason: string | null;
   assigned_to: string | null;
+  customer_id: string | null;
   order_id: string | null;
   product_id: string | null;
   updated_at: string;
@@ -74,10 +75,12 @@ type Payload = {
   people: Record<string, string>;
   orders: Record<string, { order_number: string | null }>;
   products: Record<string, { name: string }>;
+  taskProgress: Record<string, { done: number; total: number; qcOpen: number }>;
   total: number;
   limit: number;
   offset: number;
   canManage: boolean;
+  currentUserId: string;
 };
 
 /**
@@ -107,8 +110,10 @@ function QueueContent() {
   const status = params.get("status");
   const priority = params.get("priority");
   const assignedTo = params.get("assignedTo");
+  const attention = params.get("attention");
   const overdue = params.get("overdue") === "true";
   const search = params.get("q") ?? "";
+  const view = params.get("view") === "list" ? "list" : "board";
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -146,6 +151,7 @@ function QueueContent() {
       if (status) query.set("status", status);
       if (priority) query.set("priority", priority);
       if (assignedTo) query.set("assignedTo", assignedTo);
+      if (attention) query.set("attention", attention);
       if (overdue) query.set("overdue", "true");
       if (search) query.set("q", search);
       // The shop's own day, so an overdue filter matches what the badges say.
@@ -167,7 +173,7 @@ function QueueContent() {
     } finally {
       setLoading(false);
     }
-  }, [scope, status, priority, assignedTo, overdue, search, now]);
+  }, [scope, status, priority, assignedTo, attention, overdue, search, now]);
 
   useEffect(() => {
     if (canView) void load();
@@ -204,8 +210,8 @@ function QueueContent() {
   }
 
   const activeFilters =
-    Boolean(status) || Boolean(priority) || Boolean(assignedTo) || overdue || Boolean(search) || scope !== "open";
-  const panelFilterCount = [status, priority, assignedTo].filter(Boolean).length;
+    Boolean(status) || Boolean(priority) || Boolean(assignedTo) || Boolean(attention) || overdue || Boolean(search) || scope !== "open";
+  const panelFilterCount = [status, priority, assignedTo, attention].filter(Boolean).length;
 
   const groups: Array<{ key: string; heading: string; hint: string; jobs: JobRecord[] }> = [
     { key: "overdue", heading: "Overdue", hint: "Past the due date and still live.", jobs: buckets.overdue as JobRecord[] },
@@ -249,6 +255,15 @@ function QueueContent() {
           className="staff-view"
         >
           Overdue only
+        </button>
+      </nav>
+
+      <nav aria-label="Production layout" className="staff-views">
+        <button type="button" className="staff-view" aria-pressed={view === "board"} onClick={() => setParam("view", null)}>
+          Board
+        </button>
+        <button type="button" className="staff-view" aria-pressed={view === "list"} onClick={() => setParam("view", "list")}>
+          List
         </button>
       </nav>
 
@@ -326,12 +341,20 @@ function QueueContent() {
               onChange={(event) => setParam("assignedTo", event.target.value || null)}
             >
               <option value="">Anyone</option>
+              <option value={shown?.currentUserId ?? ""}>Assigned to me</option>
               <option value="unassigned">Unassigned</option>
               {Object.entries(shown?.people ?? {}).map(([id, name]) => (
                 <option key={id} value={id}>
                   {name}
                 </option>
               ))}
+            </select>
+          </Field>
+          <Field label="Attention">
+            <select className="ui-input w-full" value={attention ?? ""} onChange={(event) => setParam("attention", event.target.value || null)}>
+              <option value="">Any state</option>
+              <option value="blocked">Blocked</option>
+              <option value="qc">QC needed</option>
             </select>
           </Field>
         </div>
@@ -360,6 +383,37 @@ function QueueContent() {
                   : "Raise a job from an order, or create one directly for stock work."}
               </p>
             </EmptyState>
+          ) : view === "list" ? (
+            <div className="overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full min-w-[940px] text-left text-sm">
+                <thead className="bg-white/5 text-xs uppercase tracking-wide text-brand-textMuted">
+                  <tr>
+                    {["Job", "Order", "Item", "Status", "Priority", "Assignee", "Machine", "Due", "Progress", "Updated"].map((heading) => (
+                      <th key={heading} className="px-3 py-2 font-medium">{heading}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {jobs.map((job) => {
+                    const progress = shown.taskProgress[job.id] ?? { done: 0, total: 0, qcOpen: 0 };
+                    return (
+                      <tr key={job.id} className="hover:bg-white/[.03]">
+                        <td className="px-3 py-3"><Link className="font-mono text-brand-accent hover:underline" href={`/staff/production/${job.id}`}>{job.job_number}</Link></td>
+                        <td className="px-3 py-3">{job.order_id ? shown.orders[job.order_id]?.order_number ?? '—' : 'Stock'}</td>
+                        <td className="max-w-64 truncate px-3 py-3" title={job.title}>{shown.products[job.product_id ?? '']?.name ?? job.title}</td>
+                        <td className="px-3 py-3"><StatusBadge status={job.status} /></td>
+                        <td className="px-3 py-3"><PriorityBadge priority={job.priority} /></td>
+                        <td className="px-3 py-3">{job.assigned_to ? shown.people[job.assigned_to] ?? 'Unknown' : 'Unassigned'}</td>
+                        <td className="px-3 py-3 text-brand-textMuted">Not assigned</td>
+                        <td className="px-3 py-3"><DueDate job={job} now={now} /></td>
+                        <td className="px-3 py-3 tabular-nums">{progress.done} / {progress.total}{progress.qcOpen ? <span className="ml-1 text-amber-200">· QC</span> : null}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-brand-textMuted">{new Date(job.updated_at).toLocaleDateString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           ) : (
             groups.map((group) =>
               group.jobs.length ? (
@@ -400,6 +454,9 @@ function QueueContent() {
                                 : " · Unassigned"}
                             </div>
                             {blocker ? <div className="staff-row-meta mt-1 text-amber-200">{blocker}</div> : null}
+                            {job.customer_id && shown.people[job.customer_id] ? (
+                              <div className="staff-row-meta mt-1">Customer: {shown.people[job.customer_id]}</div>
+                            ) : null}
                           </div>
                           <div className="staff-row-aside flex-col !items-start gap-1 sm:!items-end">
                             <span className="flex flex-wrap gap-1.5">
@@ -408,6 +465,10 @@ function QueueContent() {
                             </span>
                             <span className="text-xs">
                               <DueDate job={job} now={now} />
+                            </span>
+                            <span className="text-xs tabular-nums text-brand-textMuted">
+                              {(shown.taskProgress[job.id]?.done ?? 0)} / {(shown.taskProgress[job.id]?.total ?? 0)} tasks
+                              {(shown.taskProgress[job.id]?.qcOpen ?? 0) > 0 ? " · QC waiting" : ""}
                             </span>
                           </div>
                         </Link>

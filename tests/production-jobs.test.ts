@@ -7,6 +7,7 @@ import {
   STATUS_META,
   bucketJobs,
   checklistProgress,
+  completionProblem,
   completionWarnings,
   compareQueue,
   daysUntilDue,
@@ -183,6 +184,18 @@ test("warning counts are pluralised from the real number", () => {
 test("a missing actual labour time is worth mentioning", () => {
   const warnings = completionWarnings({ materials_acquired: true, actual_minutes: null }, []);
   assert.deepEqual(warnings, ["No actual labour time has been recorded."]);
+});
+
+test("open manufacturing and QC work blocks the fulfillment handoff", () => {
+  assert.match(completionProblem([{ kind: "quality", is_done: false }]) ?? "", /quality check/);
+  assert.match(completionProblem([{ kind: "step", is_done: false }]) ?? "", /production task/);
+  assert.equal(
+    completionProblem([
+      { kind: "step", is_done: true },
+      { kind: "quality", is_done: true },
+    ]),
+    null
+  );
 });
 
 // ---------------------------------------------------------------------------

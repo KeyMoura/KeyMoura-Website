@@ -237,11 +237,11 @@ test("destructive actions confirm first", () => {
   assert.match(jobPage, /Make “\$\{file\.label\}” visible to the customer\?/);
 });
 
-test("completion warnings are advisory, not a block", () => {
-  // The route answers 409 with the warnings once, and the same call with
-  // `acknowledge` goes through. Nothing refuses completion outright.
+test("open tasks and QC block completion while non-safety warnings can be acknowledged", () => {
+  assert.match(statusRoute, /completionProblem\(normalizedTasks\)/);
+  assert.match(statusRoute, /completionBlocked: true/);
   assert.match(statusRoute, /requiresAcknowledgement: true/);
-  assert.match(statusRoute, /body\.acknowledge !== true/);
+  assert.match(statusRoute, /warnings\.length && body\.acknowledge !== true/);
   assert.match(jobPage, /changeStatus\(true\)/);
 });
 
