@@ -278,6 +278,44 @@ export const AUDIT_ACTIONS = {
   // --- Communications -----------------------------------------------------
   "email.template_changed": { label: "Edited email template", area: "communications", entityType: "email_template" },
   "email.manual_resend": { label: "Re-sent email", area: "communications", entityType: "email_delivery" },
+
+  // --- Scheduled automation ------------------------------------------------
+  //
+  // Four actions, and what is missing from the list is the point: there is no
+  // `automation.run_completed`. The worker wakes every fifteen minutes, which is
+  // 2,880 heartbeats a month, and a log that records its own scheduler ticking
+  // grows faster from being alive than from anything happening. Run history
+  // lives in `automation_runs`, where the health page reads it.
+  //
+  // What *is* audited is the four things that have an effect somebody might
+  // later need to account for: a message actually going to a customer, a
+  // reminder being abandoned, one exhausting its retries, and a human changing
+  // the thresholds that decide any of it.
+  //
+  // `automation.reminder_sent` is recorded for customer-facing sends only.
+  // A staff bell ringing is not a thing that needs an audit trail, and
+  // `email_deliveries` remains authoritative for what actually left the building.
+  "automation.reminder_sent": {
+    label: "Sent a scheduled reminder",
+    area: "communications",
+    entityType: "order",
+  },
+  "automation.job_cancelled": {
+    label: "Cancelled a scheduled job",
+    area: "system",
+    entityType: "other",
+  },
+  "automation.job_failed": {
+    label: "Scheduled job failed",
+    area: "system",
+    entityType: "other",
+  },
+  "automation.settings_changed": {
+    label: "Changed automation settings",
+    area: "settings",
+    entityType: "setting",
+    sensitive: true,
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

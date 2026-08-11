@@ -46,7 +46,14 @@ export async function POST(req: NextRequest) {
   // Parsed, never trusted. What is stored is what the total parser produced
   // from the request, so a field the form omitted falls back to a known
   // default rather than being written as undefined and read back as garbage.
-  const settings = parseCommerceSettings(body.settings);
+  //
+  // `automation` is the one exception, and it has to be. It lives inside the
+  // same jsonb column but is edited on `/staff/settings/automation` under a
+  // different permission, and this form does not render it — so "fall back to a
+  // known default" would mean every save of a shipping price silently reset the
+  // reminder thresholds to theirs. Carried forward from the stored row instead,
+  // which makes this route structurally unable to change them.
+  const settings = { ...parseCommerceSettings(body.settings), automation: previous.automation };
   const policy = parseCommercePolicy(body.policy);
 
   // Refusals that the parser cannot express, because they are about coherence

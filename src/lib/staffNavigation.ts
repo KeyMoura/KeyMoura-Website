@@ -364,6 +364,29 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
     label: "More tools",
     secondary: true,
     items: [
+      /*
+       * Automation is secondary in the sidebar and a first-class row under
+       * Settings, which is what `settingsSection` exists for.
+       *
+       * It could have gone in the Settings group beside Commerce, and that would
+       * have made it the eighteenth always-visible destination. The ceiling
+       * assertion in `tests/staff-navigation.test.ts` asks whoever raises it to
+       * argue the case, and the case is not there: Support earned its slot by
+       * being a queue with people waiting in it, worked every day. Reminder
+       * thresholds are set once and then left alone for months. A page nobody
+       * opens twice a month does not deserve the same weight as Orders.
+       *
+       * The failures it surfaces do not depend on anybody finding this row —
+       * `ops.automation_failure` goes to the bell, and its deep link lands here.
+       */
+      {
+        href: "/staff/settings/automation",
+        label: "Automation",
+        description: "Scheduled reminders, when they go out, and whether the scheduler is running.",
+        icon: "settings",
+        settingsSection: "store",
+        anyOf: ["automation.view", "automation.manage"],
+      },
       {
         href: "/staff/info/analytics",
         label: "Analytics",

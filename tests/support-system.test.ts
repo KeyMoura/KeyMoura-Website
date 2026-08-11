@@ -915,9 +915,16 @@ test("the rollback removes everything the migration added, in dependency order",
     "the rollback drops the tables before the view that depends on them"
   );
   // And role grants before the permission rows they reference.
+  //
+  // Matched against a newline-normalised copy rather than the raw file. The
+  // statement spans two lines, and this repository is checked out with CRLF on
+  // Windows — so an assertion carrying a bare `\n` matched nothing, returned
+  // -1, and reported the ordering as wrong on a rollback that is correctly
+  // ordered. The file's line endings are not what this test is about.
+  const rollbackLines = ROLLBACK_SQL.replace(/\r\n/g, "\n");
   assert.ok(
-    ROLLBACK_SQL.indexOf("delete from public.role_permissions") <
-      ROLLBACK_SQL.indexOf("delete from public.permissions\nwhere key"),
+    rollbackLines.indexOf("delete from public.role_permissions") <
+      rollbackLines.indexOf("delete from public.permissions\nwhere key"),
     "the rollback deletes permissions before the grants referencing them"
   );
   for (const key of ["support.view", "support.reply", "support.manage", "support.assign"]) {

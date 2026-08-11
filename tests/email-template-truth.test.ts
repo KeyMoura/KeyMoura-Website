@@ -50,6 +50,9 @@ const page = read("src/app/staff/emails/page.tsx");
  * being an assertion about what somebody *decided* should exist.
  */
 const PRODUCTION_TEMPLATE_KEYS = [
+  // Scheduled reminders, added 2026-08-11 by 20260811010000_scheduled_automation.
+  // Re-verified against production after applying: 52 rows, 52 keys.
+  "quote_expiring", "pickup_reminder", "customer_action_required_reminder", "support_waiting_customer",
   // Support, added 2026-08-10 by 20260810100000_support_conversations.
   "support_received", "support_staff_reply", "support_resolved", "support_staff_new",
   "cancellation_approved", "cancellation_denied", "cancellation_requested", "cancellation_withdrawn",
@@ -124,9 +127,10 @@ test("production holds exactly the templates the catalogue describes", () => {
   // A catalogued template with no row means the sender silently uses its
   // hard-coded fallback and the editor shows nothing to change.
   assert.deepEqual(missing, [], `catalogued templates with no database row: ${missing.join(", ")}`);
-  // 44 → 48 in the support pass. Verified against production after the migration
-  // was applied, not assumed from the migration file.
-  assert.equal(live.length, 48);
+  // 44 → 48 in the support pass, 48 → 52 in the automation pass. Verified
+  // against production after each migration was applied, not assumed from the
+  // migration file: `select count(*) from email_templates` returned 52.
+  assert.equal(live.length, 52);
 });
 
 test("every template is referenced by at least one event", () => {
