@@ -59,6 +59,10 @@ import type { CommercePolicy } from "@/lib/commerce/orderLifecycle";
 
 type Payload = { settings: CommerceSettings; policy: CommercePolicy };
 
+/** Written once, so the loading header and the loaded header cannot drift apart. */
+const COMMERCE_DESCRIPTION =
+  "How orders are paid for, delivered, returned and announced. Nothing takes effect until you press Save.";
+
 export default function CommerceSettingsPage() {
   const { data: access, isLoading: accessLoading } = useMeAccess();
   const permissions = new Set(access?.permissions ?? []);
@@ -161,9 +165,28 @@ export default function CommerceSettingsPage() {
     }
   }
 
-  if (accessLoading || loading) return <LoadingState>Loading settings…</LoadingState>;
+  /*
+   * Access first, then the titled loading state.
+   *
+   * These were one `accessLoading || loading` early return of a bare
+   * `LoadingState`, so the page had no title heading at all while it loaded —
+   * measured on the running page, and the reason Email, Commerce and Automation
+   * were the three staff pages whose name only appeared once their data
+   * arrived. The split matters: the header may only be drawn *after* the
+   * permission check, or a viewer who is about to be refused would be shown the
+   * page's name.
+   */
+  if (accessLoading) return <LoadingState>Loading settings…</LoadingState>;
   if (!permissions.has("commerce.settings.view")) {
     return <AccessDeniedCard message="You need the commerce.settings.view permission to see these settings." />;
+  }
+  if (loading) {
+    return (
+      <StaffPage>
+        <PageHeader title="Commerce" description={COMMERCE_DESCRIPTION} />
+        <LoadingState>Loading settings…</LoadingState>
+      </StaffPage>
+    );
   }
   if (error) return <Notice tone="danger" role="alert">{error}</Notice>;
   if (!settings || !policy) return null;
@@ -172,10 +195,7 @@ export default function CommerceSettingsPage() {
 
   return (
     <StaffPage>
-      <PageHeader
-        title="Commerce"
-        description="How orders are paid for, delivered, returned and announced. Nothing takes effect until you press Save."
-      />
+      <PageHeader title="Commerce" description={COMMERCE_DESCRIPTION} />
 
       {!canManage ? (
         <Notice tone="warning">

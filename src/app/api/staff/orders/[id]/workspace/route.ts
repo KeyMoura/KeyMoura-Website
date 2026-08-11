@@ -48,7 +48,21 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       if (!assignedRole) return NextResponse.json({ error: "Assignee must be a staff member" }, { status: 400 });
     }
     const { data: currentWorkspace } = await routeServiceClient.from("order_workspaces").select("started_at").eq("order_id", id).maybeSingle();
-    const startedAt = body.started ? currentWorkspace?.started_at || new Date().toISOString() : null;
+    /*
+     * `started` is optional, and omitting it preserves what is already there.
+     *
+     * The order page used to carry a "Production started" checkbox beside
+     * priority and assignee, so every save sent the flag and `null` genuinely
+     * meant "not started". That checkbox is gone: whether a thing is being made
+     * is `production_jobs.started_at`, and two columns answering that question
+     * is exactly the split this pass closed. The triage panel that replaced it
+     * saves priority and assignee only — so a *missing* key must leave
+     * `started_at` alone rather than silently clearing a timestamp nobody asked
+     * about. A caller that still sends `started` keeps the old behaviour.
+     */
+    const startedAt = Object.prototype.hasOwnProperty.call(body, "started")
+      ? (body.started ? currentWorkspace?.started_at || new Date().toISOString() : null)
+      : (currentWorkspace?.started_at ?? null);
     const { error } = await routeServiceClient.from("order_workspaces").upsert({ order_id:id, priority, assigned_to:assignedTo, started_at:startedAt, updated_by:actor.userId, updated_at:new Date().toISOString() });
     if (error) return NextResponse.json({ error: "Could not save workspace" }, { status: 500 });
   } else if (action === "add_checklist") {

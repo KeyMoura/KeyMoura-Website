@@ -28,11 +28,28 @@ test("workspace API validates every mutation behind order management permission"
   assert.match(route, /\.eq\("order_id", id\)/);
 });
 
-test("staff UI exposes planning, costs, job sheet, and priority filtering", () => {
-  const detail = read("src/components/staff/StaffOrderWorkspace.tsx");
+test("staff UI exposes triage, costs, and priority filtering", () => {
+  /*
+   * Re-pointed off `StaffOrderWorkspace`, which is gone.
+   *
+   * That one panel drew priority, an assignee, a "Production started" flag, a
+   * checklist and a cost table under the heading "Production workspace" — a
+   * second production state machine sitting on the same tab as the real one.
+   * Its two survivors are asserted here: triage (an order property, read by
+   * `staff_order_queue`) and costing (the one thing `production_jobs` has no
+   * column for).
+   */
+  const triage = read("src/components/staff/OrderTriagePanel.tsx");
+  const costing = read("src/components/staff/OrderCostingPanel.tsx");
   const list = read("src/app/staff/orders/page.tsx");
-  for (const label of ["Production workspace", "Production checklist", "Materials & costs", "Print job sheet", "Assigned to"]) assert.match(detail, new RegExp(label));
-  assert.match(detail, /window\.print\(\)/);
+
+  assert.match(triage, /Priority/);
+  assert.match(triage, /Owned by/);
+  assert.match(costing, /Add cost/);
+  assert.match(costing, /billable/i);
+  // The internal/customer-price distinction has been confused on this page
+  // before. The sentence that separates them is load-bearing.
+  assert.match(costing, /not the customer/i);
 
   /*
    * Priority filtering moved to the server, so the old "All priorities" option

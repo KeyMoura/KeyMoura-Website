@@ -499,9 +499,22 @@ test("reduced motion is honoured by the staff chrome", () => {
 // ---------------------------------------------------------------------------
 
 test("monitoring test is staff-only on both the page and API", () => {
-  const settings = read("src/app/staff/settings/page.tsx");
+  /*
+   * Re-pointed from `/staff/settings` to `/staff/integrations`.
+   *
+   * The panel moved because it is a diagnostic, not a setting — but the
+   * property this test exists for is unchanged and still asserted: the same
+   * `security.view` gate on the page, and the same gate plus real Sentry
+   * plumbing on the API behind it. The move granted nobody new access.
+   */
+  const host = read("src/app/staff/integrations/page.tsx");
   const route = read("src/app/api/staff/monitoring/test/route.ts");
-  assert.match(settings, /permissions\.has\("security\.view"\)/);
+  assert.match(host, /permissions\.has\("security\.view"\)/);
+  assert.doesNotMatch(
+    read("src/app/staff/settings/page.tsx"),
+    /SentryTestPanel/,
+    "the settings index must not host diagnostics"
+  );
   assert.match(route, /requirePermission\(request, "security\.view"\)/);
   assert.match(route, /Sentry\.captureException/);
   assert.match(route, /Sentry\.flush/);
