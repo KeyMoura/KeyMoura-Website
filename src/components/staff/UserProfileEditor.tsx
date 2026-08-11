@@ -1,27 +1,46 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Card, Section } from "@/components/staff/StaffPage";
+import { UserAvatar } from "@/components/staff/UserAvatar";
 import { Field } from "@/components/ui/DesignSystem";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { donationRankOptions } from "@/lib/donationRanks";
 import { PROFILE_FIELD_LIMITS } from "@/lib/staff/userAccess";
 
 /**
- * The profile fields staff may edit, and the two flags that live beside them.
+ * The profile fields staff may edit — and only those.
  *
- * Three routes, not one, because they are three different permissions:
+ * ## Three routes, not one
+ *
  * `users.profile.edit` writes the text fields, `users.verify` flips
  * verification, `users.donation_rank.set` sets the badge. Merging them into a
- * single Save would mean a staff member with one of the three pressing a button
- * that fails for reasons they cannot see.
+ * single Save would mean a staff member holding one of the three pressing a
+ * button that fails for reasons they cannot see.
+ *
+ * ## What moved, and why
+ *
+ * This used to sit open on the Overview tab with its own Save button, which is
+ * what made a summary page a settings page. It is now inside a disclosure that
+ * is closed until somebody wants to edit.
+ *
+ * **Verified** and **Donation rank** moved behind *Advanced*. They are real,
+ * they still work, and their routes and permissions are untouched — but they are
+ * community-era attributes on a shop's customer record, and giving them the same
+ * weight as a display name is what made this page read as an old forum admin
+ * screen. `Bio` went with them for the same reason.
  *
  * **Email is displayed and not editable.** It lives in `auth.users` and this
  * codebase has no verified email-change flow; an unverified change is an
  * account-takeover primitive. The input is absent rather than disabled, because
  * a greyed-out field invites somebody to go looking for the permission that
  * enables it.
+ *
+ * ## The avatar
+ *
+ * Replacing it posts to the existing `…/avatar` route, which validates the type
+ * and size, writes one object per user under a key derived from the uuid, and
+ * removes the previous one. No second storage path is created here.
  */
 
 type Props = {
@@ -33,6 +52,7 @@ type Props = {
     bio: string | null;
     location: string | null;
     email: string | null;
+    avatarUrl: string | null;
     isVerified: boolean;
     donationRank: string | null;
   };
@@ -61,6 +81,10 @@ export function UserProfileEditor({
   const [verified, setVerified] = useState(initial.isVerified);
   const [rank, setRank] = useState(initial.donationRank ?? "");
   const [flagMessage, setFlagMessage] = useState<string | null>(null);
+
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setUsername(initial.username ?? "");
@@ -115,18 +139,62 @@ export function UserProfileEditor({
     }
   };
 
+  const uploadAvatar = async (file: File) => {
+    setAvatarBusy(true);
+    setAvatarMessage(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/staff/security/users/${userId}/avatar`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setAvatarMessage(json?.error ?? "Could not replace the picture.");
+        return;
+      }
+      setAvatarMessage("Picture replaced.");
+      onChanged();
+    } finally {
+      setAvatarBusy(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
   if (!canEditProfile && !canVerify && !canSetDonationRank) return null;
 
   return (
-    <Section
-      headingLevel={3}
-      title="Details"
-      description="Staff-editable profile fields. Email, password, sign-in methods and multi-factor settings are not editable here."
-    >
-      <Card>
+    <details className="staff-disclosure">
+      <summary>Edit profile</summary>
+      <div className="staff-disclosure-body">
         {canEditProfile ? (
           <>
-            <div className="staff-form-grid">
+            <div className="flex flex-wrap items-center gap-3">
+              <UserAvatar src={initial.avatarUrl} label={displayName || username || "Person"} size={48} />
+              <div>
+                <input
+                  ref={fileInput}
+                  id="avatar-file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void uploadAvatar(file);
+                  }}
+                />
+                <label htmlFor="avatar-file" className="ui-btn ui-btn-secondary cursor-pointer">
+                  {avatarBusy ? "Uploading…" : "Replace picture"}
+                </label>
+                <p className="mt-1 text-xs" aria-live="polite" style={{ color: "var(--muted)" }}>
+                  {avatarMessage ?? "PNG, JPEG or WebP. Replaces the existing picture."}
+                </p>
+              </div>
+            </div>
+
+            <div className="staff-form-grid mt-4">
               <Field label="Display name">
                 <input
                   className="ui-input"
@@ -158,18 +226,6 @@ export function UserProfileEditor({
               </Field>
             </div>
 
-            <div className="staff-form-wide mt-3">
-              <Field label="Bio">
-                <textarea
-                  className="ui-input"
-                  rows={3}
-                  value={bio}
-                  maxLength={PROFILE_FIELD_LIMITS.bio}
-                  onChange={(event) => setBio(event.target.value)}
-                />
-              </Field>
-            </div>
-
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -177,7 +233,7 @@ export function UserProfileEditor({
                 disabled={!dirty || saving}
                 onClick={() => void saveProfile()}
               >
-                {saving ? "Saving…" : "Save details"}
+                {saving ? "Saving…" : "Save profile"}
               </button>
               <span className="text-xs" aria-live="polite" style={{ color: "var(--muted)" }}>
                 {saving ? "Saving…" : dirty ? "Unsaved changes" : message ?? "Everything saved"}
@@ -186,62 +242,97 @@ export function UserProfileEditor({
           </>
         ) : null}
 
-        {canVerify || canSetDonationRank ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-3" style={{ borderColor: "var(--border)" }}>
-            {canVerify ? (
-              <label className="staff-check">
-                <input
-                  type="checkbox"
-                  checked={verified}
-                  onChange={(event) => {
-                    const next = event.target.checked;
-                    setVerified(next);
-                    void patch(
-                      `/api/staff/security/users/${userId}/verify`,
-                      { is_verified: next },
-                      onChanged,
-                      setFlagMessage
-                    );
-                  }}
-                />
-                <span className="staff-check-text">
-                  Verified
-                  <span className="staff-check-help">Grants any bonus permissions configured under Verified perks.</span>
-                </span>
-              </label>
-            ) : null}
+        {/*
+         * Community-era attributes, kept and de-emphasised.
+         *
+         * Bio, verification and donation rank predate the shop. Nothing about
+         * them is removed — same routes, same permissions, same behaviour — but
+         * a customer record for a machine shop should not open on them.
+         */}
+        {canEditProfile || canVerify || canSetDonationRank ? (
+          <details className="staff-disclosure mt-4">
+            <summary>Advanced profile</summary>
+            <div className="staff-disclosure-body">
+              {/* The raw identifier, which used to be the first row of the
+                  Overview tab. Nobody opens a customer record to read a uuid,
+                  but the one person who needs it — reconciling a support
+                  ticket, a log line, a database row — needs it exactly. */}
+              <p className="text-xs" style={{ color: "var(--muted)" }}>
+                Account ID <span className="font-mono break-all">{userId}</span>
+              </p>
 
-            {canSetDonationRank ? (
-              <label className="flex items-center gap-2 text-xs" style={{ color: "var(--muted)" }}>
-                Donation rank
-                <MenuSelect
-                  ariaLabel="Donation rank"
-                  value={rank}
-                  options={[
-                    { value: "", label: "None" },
-                    ...donationRankOptions.map((o) => ({ value: o.value, label: o.label })),
-                  ]}
-                  onChange={(value) => {
-                    setRank(value);
-                    void patch(
-                      `/api/staff/security/users/${userId}/donation-rank`,
-                      { donation_rank: value || null },
-                      onChanged,
-                      setFlagMessage
-                    );
-                  }}
-                />
-              </label>
-            ) : null}
+              {canEditProfile ? (
+                <Field label="Bio" help="Shown on their public profile.">
+                  <textarea
+                    className="ui-input"
+                    rows={3}
+                    value={bio}
+                    maxLength={PROFILE_FIELD_LIMITS.bio}
+                    onChange={(event) => setBio(event.target.value)}
+                  />
+                </Field>
+              ) : null}
 
-            {flagMessage ? (
-              <span className="text-xs" aria-live="polite" style={{ color: "var(--muted)" }}>
-                {flagMessage}
-              </span>
-            ) : null}
-          </div>
+              {canVerify || canSetDonationRank ? (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {canVerify ? (
+                    <label className="staff-check">
+                      <input
+                        type="checkbox"
+                        checked={verified}
+                        onChange={(event) => {
+                          const next = event.target.checked;
+                          setVerified(next);
+                          void patch(
+                            `/api/staff/security/users/${userId}/verify`,
+                            { is_verified: next },
+                            onChanged,
+                            setFlagMessage
+                          );
+                        }}
+                      />
+                      <span className="staff-check-text">
+                        Verified member
+                        <span className="staff-check-help">
+                          A community flag. Grants any bonus permissions configured under Verified perks.
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
+
+                  {canSetDonationRank ? (
+                    <Field label="Donation rank" help="A community badge. Not related to orders or spend.">
+                      <MenuSelect
+                        ariaLabel="Donation rank"
+                        value={rank}
+                        options={[
+                          { value: "", label: "None" },
+                          ...donationRankOptions.map((o) => ({ value: o.value, label: o.label })),
+                        ]}
+                        onChange={(value) => {
+                          setRank(value);
+                          void patch(
+                            `/api/staff/security/users/${userId}/donation-rank`,
+                            { donation_rank: value || null },
+                            onChanged,
+                            setFlagMessage
+                          );
+                        }}
+                      />
+                    </Field>
+                  ) : null}
+
+                  {flagMessage ? (
+                    <span className="text-xs" aria-live="polite" style={{ color: "var(--muted)" }}>
+                      {flagMessage}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </details>
         ) : null}
-      </Card>
-    </Section>
+      </div>
+    </details>
   );
 }

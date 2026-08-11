@@ -940,16 +940,22 @@ const WORKSPACE = readCode("src/app/staff/users/[id]/page.tsx");
 const TABS = readCode("src/components/staff/UserWorkspaceTabs.tsx");
 
 test("the workspace declares the six tabs, and each has a panel", () => {
+  /*
+   * Six, not seven. "Roles & access" became "Access" and Communications became
+   * a view inside Activity — at 375px the seven-tab strip was 681px of content
+   * in a 342px box, so half of it was unreachable behind a sideways scroll
+   * nothing signalled.
+   */
   for (const [id, label] of [
     ["overview", "Overview"],
     ["orders", "Orders"],
-    ["activity", "Activity"],
-    ["access", "Roles & access"],
+    ["support", "Support"],
+    ["access", "Access"],
     ["notes", "Notes"],
-    ["communications", "Communications"],
+    ["activity", "Activity"],
   ]) {
     assert.ok(
-      new RegExp(`\\{ id: "${id}", label: "${label}"`).test(WORKSPACE),
+      new RegExp(`\\{\\s*id: "${id}",\\s*\\n?\\s*label: "${label}"`).test(WORKSPACE),
       `the "${label}" tab is not declared`
     );
     assert.ok(
@@ -957,6 +963,11 @@ test("the workspace declares the six tabs, and each has a panel", () => {
       `the "${label}" tab has no panel, so selecting it would show an empty frame`
     );
   }
+
+  assert.ok(
+    !/\{\s*id: "communications"/.test(WORKSPACE),
+    "Communications is a view inside Activity now; a seventh tab would put the strip back over the width"
+  );
 });
 
 test("a tab the viewer may not open is dropped, not disabled", () => {
@@ -969,10 +980,10 @@ test("a tab the viewer may not open is dropped, not disabled", () => {
   for (const [id, flag] of [
     ["activity", "canViewActivity"],
     ["notes", "canViewNotes"],
-    ["communications", "canViewCommunications"],
+    ["support", "canViewSupport"],
     ["orders", "canViewOrders"],
   ]) {
-    const declaration = WORKSPACE.match(new RegExp(`\\{ id: "${id}",[^}]*\\}`));
+    const declaration = WORKSPACE.match(new RegExp(`\\{\\s*id: "${id}",[^}]*\\}`));
     assert.ok(declaration, `the ${id} tab is missing`);
     assert.match(declaration[0], /available:/, `the ${id} tab is never gated`);
     assert.ok(
@@ -982,10 +993,36 @@ test("a tab the viewer may not open is dropped, not disabled", () => {
   }
 });
 
+test("communications keeps its own permission gate inside Activity", () => {
+  // Folding a surface into another tab must not widen who can see it.
+  assert.match(
+    WORKSPACE,
+    /canViewCommunications=\{state\.data\.viewer\.canViewCommunications\}/,
+    "the Activity tab must pass the server's own flag through"
+  );
+  const segment = TABS.slice(TABS.indexOf("canViewCommunications ? ("));
+  assert.ok(segment.length > 0, "the Communications segment is not gated at all");
+  assert.match(
+    segment.slice(0, segment.indexOf(") : null")),
+    /Communications/,
+    "the Communications segment must not render without the permission"
+  );
+  assert.ok(
+    TABS.includes("You do not have permission to view email history."),
+    "and the panel behind it still treats a refusal as an error"
+  );
+});
+
 test("the workspace renders the identity header from the loaded user, not the URL", () => {
   assert.match(WORKSPACE, /userDisplayLabel\(user\)/, "the header names the user it actually loaded");
   assert.match(WORKSPACE, /404[\s\S]{0,80}No such user/, "a missing user is a 404, not an empty workspace");
-  assert.match(WORKSPACE, /Account ID/, "the account id is stated, so the page proves which record it opened");
+  // The raw uuid moved off the top of Overview and into Advanced — it is still
+  // stated, so the page can prove which record it opened.
+  assert.match(
+    readCode("src/components/staff/UserProfileEditor.tsx"),
+    /Account ID/,
+    "the account id is stated somewhere, so the page proves which record it opened"
+  );
 });
 
 test("every viewer capability the workspace reads is one the API actually sends", () => {
@@ -998,9 +1035,11 @@ test("every viewer capability the workspace reads is one the API actually sends"
     [...viewerBlock.matchAll(/\b(can[A-Z]\w+|isSelf|outranksViewer|assignableRoles)\s*[:,]/g)].map((m) => m[1])
   );
 
-  const used = new Set(
-    [...WORKSPACE.matchAll(/viewer\.(\w+)/g), ...WORKSPACE.matchAll(/state\.data\.viewer\.(\w+)/g)].map((m) => m[1])
-  );
+  // `viewer?.canViewOrders` as well as `viewer.canViewOrders`: the tabs array
+  // is built before the workspace has loaded, so those reads are optional and a
+  // matcher that only understood `.` reported the page as gating on nothing.
+  const surfaces = [WORKSPACE, readCode("src/components/staff/UserAccessTab.tsx"), readCode("src/components/staff/UserOverviewTab.tsx")].join("\n");
+  const used = new Set([...surfaces.matchAll(/viewer\??\.(\w+)/g)].map((m) => m[1]));
 
   for (const flag of used) {
     assert.ok(sent.has(flag), `the page reads viewer.${flag}, which the API never sends — it would be undefined`);
@@ -1028,6 +1067,8 @@ test("every capability the old people page offered is still reachable", () => {
   const SURFACES = [
     WORKSPACE,
     TABS,
+    readCode("src/components/staff/UserAccessTab.tsx"),
+    readCode("src/components/staff/UserOverviewTab.tsx"),
     readCode("src/components/staff/UserProfileEditor.tsx"),
     readCode("src/components/staff/UserPermissionOverrides.tsx"),
     readCode("src/app/staff/users/page.tsx"),
@@ -1035,6 +1076,7 @@ test("every capability the old people page offered is still reachable", () => {
 
   const capabilities: [string, RegExp][] = [
     ["role assignment", /\/api\/staff\/security\/users\/\$\{[^}]+\}\/role/],
+    ["avatar replacement", /\/api\/staff\/security\/users\/\$\{[^}]+\}\/avatar/],
     ["permission overrides", /\/api\/staff\/security\/users\/\$\{[^}]+\}\/permissions/],
     ["verification", /\/api\/staff\/security\/users\/\$\{[^}]+\}\/verify/],
     ["donation rank", /\/api\/staff\/security\/users\/\$\{[^}]+\}\/donation-rank/],
@@ -1052,8 +1094,27 @@ test("the workspace still shows the avatar, verification and donation rank", () 
   assert.match(WORKSPACE, /UserAvatar/, "the avatar is still displayed");
   assert.match(editor, /donationRankOptions/, "the donation rank picker is still offered");
   assert.match(editor, /is_verified/, "verification is still settable");
-  // Avatar upload stays read-only in this pass; the display must still work.
   assert.match(readCode("src/components/staff/UserAvatar.tsx"), /onError/, "a stale avatar URL falls back to an initial");
+});
+
+test("verification and donation rank moved behind Advanced, and were not removed", () => {
+  /*
+   * Community-era attributes on a machine shop's customer record. The brief
+   * asked for them to stop dominating the screen without losing any backend
+   * support — so the routes, the permissions and the controls are all still
+   * here, inside a disclosure.
+   */
+  const editor = read("src/components/staff/UserProfileEditor.tsx");
+  const advanced = editor.slice(editor.indexOf("Advanced profile"));
+  assert.ok(advanced.length > 0, "there is no Advanced disclosure");
+  for (const capability of ["donationRankOptions", "is_verified", 'label="Bio"']) {
+    assert.ok(advanced.includes(capability), `${capability} is not inside Advanced profile`);
+  }
+  // And the fields a shop reads every day are still outside it.
+  const everyday = editor.slice(0, editor.indexOf("Advanced profile"));
+  for (const field of ['label="Display name"', 'label="Username"', 'label="Email"']) {
+    assert.ok(everyday.includes(field), `${field} should not be behind Advanced`);
+  }
 });
 
 test("the profile editor shows email but offers no input for it", () => {
@@ -1196,13 +1257,16 @@ test("no route in this pass unlinks an identity or writes auth", () => {
 });
 
 test("the workspace presents sign-in methods as read-only and says so", () => {
-  assert.match(WORKSPACE, /Sign-in methods/);
-  assert.match(WORKSPACE, /Read-only\. Staff cannot unlink an identity here\./);
+  // The panel moved from the page file into the Access tab; the promise did not.
+  const accessTab = readCode("src/components/staff/UserAccessTab.tsx").replace(/\s+/g, " ");
+  assert.match(accessTab, /Sign-in methods/);
+  assert.match(accessTab, /Read-only\./);
   assert.match(
-    WORKSPACE,
+    accessTab,
     /Passwords, tokens and multi-factor settings are never shown here/,
     "the page states the boundary rather than leaving it implied"
   );
+  assert.match(accessTab, /an identity cannot be unlinked from here/);
 });
 
 // ---------------------------------------------------------------------------
@@ -1241,10 +1305,11 @@ test("the directory sends what the list renders, and withholds the rest", () => 
 test("the directory page shows role, staff standing and status on every row", () => {
   const page = readCode("src/app/staff/users/page.tsx");
   assert.match(page, /user\.roleName/, "the role is shown");
-  assert.match(page, /user\.isStaff \? <Badge tone="accent">Staff<\/Badge>/, "staff are marked as staff");
+  assert.match(page, /tone=\{user\.isStaff \? "accent" : "neutral"\}/, "staff are marked as staff");
   assert.match(page, /ACCOUNT_STATUS_LABELS\[user\.accountStatus\]/, "a limited account says so on the row");
   assert.match(page, /formatCents\(user\.netSpendCents\)/, "spend is rendered from cents");
   assert.match(page, /user\.orderCount/, "the order count is on the row");
+  assert.match(page, /formatRelative\(user\.lastSeenAt\)/, "last activity is on the row");
 });
 
 test("a refused directory query is an error, never an empty list", () => {
@@ -1257,7 +1322,7 @@ test("a refused directory query is an error, never an empty list", () => {
   );
   // The empty state must only be reachable from a successful response.
   const emptyBranch = page.slice(page.indexOf('state.kind === "ready"'));
-  assert.match(emptyBranch, /No users match these filters|No users yet/);
+  assert.match(emptyBranch, /Nobody matches these filters|No people yet/);
 });
 
 test("each tab panel treats a refusal as an error too", () => {

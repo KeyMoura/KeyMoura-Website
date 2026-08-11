@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import {
@@ -25,10 +25,10 @@ import {
 import { formatCents } from "@/lib/staff/userDirectory";
 
 /**
- * The loaded tabs of the user workspace.
+ * The loaded tabs of the person workspace.
  *
  * Each panel fetches when its tab is first opened, not when the page loads.
- * Orders, activity, communications and notes are four separate queries against
+ * Orders, activity, email history and notes are four separate queries against
  * four different tables, and running all of them to render one of them is how a
  * workspace becomes slow for the ninety per cent of visits that only wanted the
  * Overview.
@@ -118,6 +118,23 @@ type OrderItem = {
 
 type GuestMatch = { id: string; orderNumber: string | null; status: string; createdAt: string };
 
+/** Orders that are still somebody's job today. */
+const OPEN_ORDER_STATES = new Set([
+  "requested",
+  "needs_information",
+  "accepted",
+  "awaiting_payment",
+  "in_progress",
+  "in_production",
+  "customer_review",
+  "final_review",
+  "ready",
+  "processing",
+]);
+
+/** Orders where money or the sale went backwards. */
+const REVERSED_ORDER_STATES = new Set(["cancelled", "canceled", "refunded", "declined"]);
+
 export function OrdersPanel({ userId, auth }: { userId: string; auth: Auth }) {
   const [page, setPage] = useState(1);
   const { state, reload } = usePanel<{
@@ -133,56 +150,58 @@ export function OrdersPanel({ userId, auth }: { userId: string; auth: Auth }) {
 
   const { orders, total, hasMore, possibleGuestOrders, possibleGuestOrderTotal } = state.data;
 
+  /*
+   * Split by what a person would do about them, not by database status.
+   *
+   * "Open" is work outstanding; "Closed" is everything settled — completed,
+   * cancelled, refunded. Cancelled and refunded rows keep their own chips so the
+   * distinction the brief asks for stays visible inside the group.
+   */
+  const open = orders.filter((order) => OPEN_ORDER_STATES.has(order.status));
+  const closed = orders.filter((order) => !OPEN_ORDER_STATES.has(order.status));
+
   return (
     <>
       <Section
         headingLevel={3}
         title={`Orders (${total})`}
-        description="Orders this account owns. Click through for the full workspace."
+        description="Orders this account owns. Open one for the full workspace."
+        actions={
+          <Link href={`/staff/orders?customer=${userId}`} className="ui-btn ui-btn-secondary">
+            Open in orders →
+          </Link>
+        }
       >
         {orders.length === 0 ? (
           <EmptyState>This account has not placed an order.</EmptyState>
         ) : (
-          <Rows>
-            {orders.map((order) => (
-              <Row
-                key={order.id}
-                href={`/staff/orders/${order.id}`}
-                title={`${order.orderNumber ?? "Draft"} — ${order.productName}`}
-                detail={
-                  <>
-                    {formatDate(order.createdAt)} · {order.quantity} ×{" "}
-                    {order.totalCents === null ? "not priced" : formatCents(order.totalCents)}
-                    {order.refundedCents > 0 ? ` · ${formatCents(order.refundedCents)} refunded` : ""}
-                  </>
-                }
-                meta={
-                  order.production.length ? (
-                    <span className="flex flex-wrap gap-x-3 gap-y-1">
-                      {order.production.map((job) => (
-                        <Link
-                          key={job.id}
-                          href={`/staff/production/${job.id}`}
-                          className="underline"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {job.jobNumber ?? "Job"} · {job.status.replaceAll("_", " ")}
-                          {job.dueDate ? ` · due ${formatDate(job.dueDate)}` : ""}
-                        </Link>
-                      ))}
-                    </span>
-                  ) : null
-                }
-                aside={
-                  <>
-                    <StatusChip value={order.status} />
-                    <StatusChip value={order.paymentStatus} prefix="Payment " />
-                    <StatusChip value={order.fulfillmentStatus} prefix="Delivery " />
-                  </>
-                }
-              />
-            ))}
-          </Rows>
+          <>
+            {open.length ? (
+              <>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                  Open — {open.length}
+                </p>
+                <Rows>
+                  {open.map((order) => (
+                    <OrderRow key={order.id} order={order} />
+                  ))}
+                </Rows>
+              </>
+            ) : null}
+
+            {closed.length ? (
+              <>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                  Closed — {closed.length}
+                </p>
+                <Rows>
+                  {closed.map((order) => (
+                    <OrderRow key={order.id} order={order} />
+                  ))}
+                </Rows>
+              </>
+            ) : null}
+          </>
         )}
 
         {total > orders.length || page > 1 ? (
@@ -221,8 +240,8 @@ export function OrdersPanel({ userId, auth }: { userId: string; auth: Auth }) {
       {possibleGuestOrderTotal > 0 ? (
         <Section
           headingLevel={3}
-          title="Possible guest orders"
-          description="Guest orders placed with the same email address. These are NOT owned by this account, are not counted in its totals, and matching an address is not proof the same person placed them."
+          title="Unclaimed guest orders with matching email"
+          description="These are NOT part of this account. They are counted in none of its totals, and matching an address is not proof the same person placed them."
         >
           <Rows>
             {possibleGuestOrders.map((order) => (
@@ -233,7 +252,7 @@ export function OrdersPanel({ userId, auth }: { userId: string; auth: Auth }) {
                 detail={formatDate(order.createdAt)}
                 aside={
                   <>
-                    <Badge tone="warning">Unclaimed guest order</Badge>
+                    <Badge tone="warning">Not this account</Badge>
                     <StatusChip value={order.status} />
                   </>
                 }
@@ -251,8 +270,52 @@ export function OrdersPanel({ userId, auth }: { userId: string; auth: Auth }) {
   );
 }
 
+function OrderRow({ order }: { order: OrderItem }) {
+  return (
+    <Row
+      href={`/staff/orders/${order.id}`}
+      // Money that went back gets the stripe an attention row uses, so a
+      // refunded order is distinguishable from a completed one at a glance and
+      // not only by reading its chip.
+      severity={REVERSED_ORDER_STATES.has(order.status) ? "warning" : undefined}
+      title={`${order.orderNumber ?? "Draft"} — ${order.productName}`}
+      detail={
+        <>
+          {formatDate(order.createdAt)} · {order.quantity} ×{" "}
+          {order.totalCents === null ? "not priced" : formatCents(order.totalCents)}
+          {order.refundedCents > 0 ? ` · ${formatCents(order.refundedCents)} refunded` : ""}
+        </>
+      }
+      meta={
+        order.production.length ? (
+          <span className="flex flex-wrap gap-x-3 gap-y-1">
+            {order.production.map((job) => (
+              <Link
+                key={job.id}
+                href={`/staff/production/${job.id}`}
+                className="underline"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {job.jobNumber ?? "Job"} · {job.status.replaceAll("_", " ")}
+                {job.dueDate ? ` · due ${formatDate(job.dueDate)}` : ""}
+              </Link>
+            ))}
+          </span>
+        ) : null
+      }
+      aside={
+        <>
+          <StatusChip value={order.status} />
+          <StatusChip value={order.paymentStatus} prefix="Payment " />
+          <StatusChip value={order.fulfillmentStatus} prefix="Delivery " />
+        </>
+      }
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Activity
+// Activity — audit events, and email history beside them
 // ---------------------------------------------------------------------------
 
 type ActivityEvent = {
@@ -270,76 +333,148 @@ type ActivityEvent = {
   isSubject: boolean;
 };
 
-export function ActivityPanel({ userId, auth }: { userId: string; auth: Auth }) {
+/**
+ * Events not worth a line on a person's timeline.
+ *
+ * A read is not a change, and a page view is not a decision. Filtering them out
+ * here rather than server-side keeps `/staff/audit` complete — the full log is
+ * one link away and shows everything.
+ */
+const LOW_VALUE_ACTIONS = /(\.viewed|\.read|\.searched|\.exported|\.listed)$/;
+
+function meaningfulEvents(events: ActivityEvent[]): ActivityEvent[] {
+  return events.filter((event) => !LOW_VALUE_ACTIONS.test(event.action));
+}
+
+export function ActivityPanel({
+  userId,
+  auth,
+  canViewCommunications,
+}: {
+  userId: string;
+  auth: Auth;
+  canViewCommunications: boolean;
+}) {
+  /*
+   * Communications is a view of this tab, not a tab of its own.
+   *
+   * Seven tabs put 681px of strip into a 342px box at 375px wide — half of them
+   * unreachable without a sideways scroll nothing signalled. Email history is a
+   * short list of things that happened to this account, which is what this tab
+   * already is, so it became a segment. Its permission gate is unchanged: the
+   * segment does not exist without `emails.view`, and the panel behind it still
+   * treats a refusal as an error.
+   */
+  const [view, setView] = useState<"account" | "email">("account");
   const [scope, setScope] = useState<"all" | "subject" | "actor">("all");
-  const { state, reload } = usePanel<{ events: ActivityEvent[]; hasMore: boolean }>(
-    `/api/staff/users/${userId}/activity?scope=${scope}`,
-    auth.token,
-    "You do not have permission to view the audit log."
-  );
 
   return (
     <Section
       headingLevel={3}
-      title="Audit activity"
-      description="Recorded changes to this account, and changes this person made."
+      title="Activity"
+      description="What was done to this account, what this person did, and what KeyMoura sent them."
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <MenuSelect
-            ariaLabel="Activity scope"
-            value={scope}
-            options={[
-              { value: "all", label: "Everything" },
-              { value: "subject", label: "Changes to this account" },
-              { value: "actor", label: "Changes they made" },
-            ]}
-            onChange={(value) => setScope(value as "all" | "subject" | "actor")}
-          />
+          {view === "account" ? (
+            <MenuSelect
+              ariaLabel="Activity scope"
+              value={scope}
+              options={[
+                { value: "all", label: "Everything" },
+                { value: "subject", label: "Changes to this account" },
+                { value: "actor", label: "Changes they made" },
+              ]}
+              onChange={(value) => setScope(value as "all" | "subject" | "actor")}
+            />
+          ) : null}
           <Link href={`/staff/audit?actor=${userId}`} className="ui-btn ui-btn-secondary">
-            View full audit log →
+            View in audit log →
           </Link>
         </div>
       }
     >
-      {state.kind === "loading" ? <LoadingState /> : null}
-      {state.kind === "error" ? <ErrorState onRetry={() => void reload()}>{state.message}</ErrorState> : null}
-      {state.kind === "ready" ? (
-        state.data.events.length === 0 ? (
-          <EmptyState>No recorded activity for this account.</EmptyState>
-        ) : (
-          <Rows>
-            {state.data.events.map((event) => (
-              <Row
-                key={event.id}
-                title={
-                  <span className="flex flex-wrap items-center gap-2">
-                    {event.actionLabel || actionLabel(event.action)}
-                    {event.sensitive ? <Badge tone="warning">Sensitive</Badge> : null}
-                  </span>
-                }
-                detail={event.summary ?? event.entityLabel ?? null}
-                meta={
-                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span>{event.actorLabel}</span>
-                    <span>{formatDateTime(event.occurredAt)}</span>
-                    {event.relatedOrderId ? (
-                      <Link href={`/staff/orders/${event.relatedOrderId}`} className="underline">
-                        Open order
-                      </Link>
-                    ) : null}
-                  </span>
-                }
-                aside={
-                  <Badge tone={event.isSubject ? "accent" : "neutral"}>
-                    {event.isSubject ? "To this account" : "By this person"}
-                  </Badge>
-                }
-              />
-            ))}
-          </Rows>
-        )
+      {canViewCommunications ? (
+        <div className="staff-views" role="group" aria-label="Activity view">
+          <button
+            type="button"
+            className="staff-view"
+            aria-pressed={view === "account"}
+            onClick={() => setView("account")}
+          >
+            Account activity
+          </button>
+          <button type="button" className="staff-view" aria-pressed={view === "email"} onClick={() => setView("email")}>
+            Communications
+          </button>
+        </div>
       ) : null}
-      {state.kind === "ready" && state.data.hasMore ? (
+
+      {view === "account" ? (
+        <AccountActivity userId={userId} auth={auth} scope={scope} />
+      ) : (
+        <CommunicationsPanel userId={userId} auth={auth} />
+      )}
+    </Section>
+  );
+}
+
+function AccountActivity({
+  userId,
+  auth,
+  scope,
+  limit,
+}: {
+  userId: string;
+  auth: Auth;
+  scope: "all" | "subject" | "actor";
+  limit?: number;
+}) {
+  const { state, reload } = usePanel<{ events: ActivityEvent[]; hasMore: boolean }>(
+    `/api/staff/users/${userId}/activity?scope=${scope}${limit ? `&size=${limit}` : ""}`,
+    auth.token,
+    "You do not have permission to view the audit log."
+  );
+
+  if (state.kind === "loading") return <LoadingState />;
+  if (state.kind === "error") return <ErrorState onRetry={() => void reload()}>{state.message}</ErrorState>;
+
+  const events = meaningfulEvents(state.data.events);
+
+  if (events.length === 0) return <EmptyState>No recorded activity for this account.</EmptyState>;
+
+  return (
+    <>
+      <Rows>
+        {events.map((event) => (
+          <Row
+            key={event.id}
+            title={
+              <span className="flex flex-wrap items-center gap-2">
+                {event.actionLabel || actionLabel(event.action)}
+                {event.sensitive ? <Badge tone="warning">Sensitive</Badge> : null}
+              </span>
+            }
+            detail={event.summary ?? event.entityLabel ?? null}
+            meta={
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>{event.actorLabel}</span>
+                <span>{formatDateTime(event.occurredAt)}</span>
+                {event.relatedOrderId ? (
+                  <Link href={`/staff/orders/${event.relatedOrderId}`} className="underline">
+                    Open order
+                  </Link>
+                ) : null}
+              </span>
+            }
+            aside={
+              <Badge tone={event.isSubject ? "accent" : "neutral"}>
+                {event.isSubject ? "To this account" : "By this person"}
+              </Badge>
+            }
+          />
+        ))}
+      </Rows>
+      {state.data.hasMore ? (
         <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>
           Showing the most recent events.{" "}
           <Link href={`/staff/audit?actor=${userId}`} className="underline">
@@ -348,8 +483,13 @@ export function ActivityPanel({ userId, auth }: { userId: string; auth: Auth }) 
           .
         </p>
       ) : null}
-    </Section>
+    </>
   );
+}
+
+/** The Overview's five most recent meaningful events. Same loader, no controls. */
+export function RecentActivityList({ userId, auth }: { userId: string; auth: Auth }) {
+  return <AccountActivity userId={userId} auth={auth} scope="all" limit={5} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,10 +511,13 @@ export function NotesPanel({
   userId,
   auth,
   canWrite,
+  autoFocusComposer = false,
 }: {
   userId: string;
   auth: Auth;
   canWrite: boolean;
+  /** Set when the header's "Add note" brought the reader here. */
+  autoFocusComposer?: boolean;
 }) {
   const [showArchived, setShowArchived] = useState(false);
   const { state, reload } = usePanel<{ notes: NoteItem[] }>(
@@ -387,6 +530,11 @@ export function NotesPanel({
   const [category, setCategory] = useState<NoteCategory>("general");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (autoFocusComposer && canWrite) composer.current?.focus();
+  }, [autoFocusComposer, canWrite]);
 
   const submit = async () => {
     if (!draft.trim() || saving) return;
@@ -421,24 +569,29 @@ export function NotesPanel({
     await reload();
   };
 
+  const notes = state.kind === "ready" ? state.data.notes : [];
+  const live = notes.filter((note) => !note.archivedAt);
+  const archived = notes.filter((note) => note.archivedAt);
+
   return (
     <Section
       headingLevel={3}
-      title="Staff notes"
-      description="Internal only. Never shown to the customer. Notes cannot be edited or deleted once written — archive them instead."
+      title="Internal notes"
+      description="Staff only. Never shown to the customer, and never sent in an email. A note cannot be edited or deleted once written — archive it instead."
       actions={
-        <button type="button" className="ui-chip" onClick={() => setShowArchived((v) => !v)}>
+        <button type="button" className="ui-chip" aria-pressed={showArchived} onClick={() => setShowArchived((v) => !v)}>
           {showArchived ? "Hide archived" : "Show archived"}
         </button>
       }
     >
       {canWrite ? (
-        <Card className="mb-3">
-          <label className="sr-only" htmlFor="note-body">
-            New note
+        <Card>
+          <label className="ui-label" htmlFor="note-body">
+            Add a note
           </label>
           <textarea
             id="note-body"
+            ref={composer}
             className="ui-input"
             rows={3}
             maxLength={MAX_NOTE_LENGTH}
@@ -476,41 +629,72 @@ export function NotesPanel({
       {state.kind === "loading" ? <LoadingState /> : null}
       {state.kind === "error" ? <ErrorState onRetry={() => void reload()}>{state.message}</ErrorState> : null}
       {state.kind === "ready" ? (
-        state.data.notes.length === 0 ? (
-          <EmptyState>No staff notes on this account.</EmptyState>
+        notes.length === 0 ? (
+          <EmptyState>No internal notes on this account.</EmptyState>
         ) : (
-          <Rows>
-            {state.data.notes.map((note) => (
-              <Row
-                key={note.id}
-                title={<span className="whitespace-pre-wrap font-normal">{note.body}</span>}
-                meta={
-                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span>{note.authorLabel}</span>
-                    <span>{formatDateTime(note.createdAt)}</span>
-                    {note.orderNumber ? <span>about {note.orderNumber}</span> : null}
-                    {note.archivedAt ? <span>Archived by {note.archivedByLabel} on {formatDate(note.archivedAt)}</span> : null}
-                  </span>
-                }
-                aside={
-                  <>
-                    <Badge tone={note.category === "warning" ? "danger" : "neutral"}>
-                      {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
-                    </Badge>
-                    {canWrite && !note.archivedAt ? (
-                      <button type="button" className="ui-chip" onClick={() => void archive(note.id)}>
-                        Archive
-                      </button>
-                    ) : null}
-                    {note.archivedAt ? <Badge tone="neutral">Archived</Badge> : null}
-                  </>
-                }
-              />
-            ))}
-          </Rows>
+          <>
+            <Rows>
+              {live.map((note) => (
+                <NoteRow key={note.id} note={note} canWrite={canWrite} onArchive={() => void archive(note.id)} />
+              ))}
+            </Rows>
+            {archived.length ? (
+              <details className="staff-disclosure mt-3">
+                <summary>Archived notes ({archived.length})</summary>
+                <div className="staff-disclosure-body">
+                  <Rows>
+                    {archived.map((note) => (
+                      <NoteRow key={note.id} note={note} canWrite={false} onArchive={() => {}} />
+                    ))}
+                  </Rows>
+                </div>
+              </details>
+            ) : null}
+          </>
         )
       ) : null}
     </Section>
+  );
+}
+
+function NoteRow({
+  note,
+  canWrite,
+  onArchive,
+}: {
+  note: NoteItem;
+  canWrite: boolean;
+  onArchive: () => void;
+}) {
+  return (
+    <Row
+      title={<span className="whitespace-pre-wrap font-normal">{note.body}</span>}
+      meta={
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>{note.authorLabel}</span>
+          <span>{formatDateTime(note.createdAt)}</span>
+          {note.orderNumber ? <span>about {note.orderNumber}</span> : null}
+          {note.archivedAt ? (
+            <span>
+              Archived by {note.archivedByLabel} on {formatDate(note.archivedAt)}
+            </span>
+          ) : null}
+        </span>
+      }
+      aside={
+        <>
+          <Badge tone={note.category === "warning" ? "danger" : "neutral"}>
+            {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
+          </Badge>
+          {canWrite && !note.archivedAt ? (
+            <button type="button" className="ui-chip" onClick={onArchive}>
+              Archive
+            </button>
+          ) : null}
+          {note.archivedAt ? <Badge tone="neutral">Archived</Badge> : null}
+        </>
+      }
+    />
   );
 }
 
@@ -532,8 +716,10 @@ type SupportConversationItem = {
   noteCount: number;
 };
 
+const OPEN_SUPPORT_STATES = new Set(["open", "waiting_on_staff", "waiting_on_customer"]);
+
 /**
- * This customer's support conversations.
+ * This person's support conversations.
  *
  * **A list, not a second copy of the thread.** The conversation lives at
  * `/staff/support/[id]` and that is the only place it is read or replied to;
@@ -552,68 +738,100 @@ export function SupportPanel({ userId, auth }: { userId: string; auth: Auth }) {
     "You do not have permission to view support conversations."
   );
 
+  const grouped = useMemo(() => {
+    if (state.kind !== "ready") return { open: [], past: [] };
+    return {
+      open: state.data.conversations.filter((row) => OPEN_SUPPORT_STATES.has(row.status)),
+      past: state.data.conversations.filter((row) => !OPEN_SUPPORT_STATES.has(row.status)),
+    };
+  }, [state]);
+
   if (state.kind === "loading") return <LoadingState />;
   if (state.kind === "error") return <ErrorState onRetry={() => void reload()}>{state.message}</ErrorState>;
 
-  const { conversations, total } = state.data;
-  const open = conversations.filter((row) =>
-    ["open", "waiting_on_staff", "waiting_on_customer"].includes(row.status)
-  ).length;
+  const { total } = state.data;
 
   return (
     <Section
       headingLevel={3}
       title={`Support (${total})`}
       description={
-        open
-          ? `${open} still open. Open a conversation to read it or reply.`
+        grouped.open.length
+          ? `${grouped.open.length} still open. Open a conversation to read it or reply.`
           : "Nothing open. Open a conversation to read the thread."
       }
       actions={
         <Link href={`/staff/support?customer=${userId}&view=all`} className="ui-btn ui-btn-secondary">
-          Open in support →
+          View all support for this person →
         </Link>
       }
     >
-      {conversations.length === 0 ? (
+      {total === 0 ? (
         <EmptyState>This account has not contacted support.</EmptyState>
       ) : (
-        <Rows>
-          {conversations.map((row) => (
-            <Row
-              key={row.id}
-              href={`/staff/support/${row.id}`}
-              title={
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs">{row.reference}</span>
-                  <span>{row.subject}</span>
-                </span>
-              }
-              detail={
-                <>
-                  {formatDateTime(row.lastMessageAt)}
-                  {row.relatedOrderNumber ? ` · ${row.relatedOrderNumber}` : ""}
-                  {` · ${row.assignedToLabel ?? "unassigned"}`}
-                </>
-              }
-              aside={
-                <>
-                  {row.priority === "urgent" || row.priority === "high" ? (
-                    <Badge tone={row.priority === "urgent" ? "danger" : "warning"}>{row.priority}</Badge>
-                  ) : null}
-                  <StatusChip value={row.status} />
-                </>
-              }
-            />
-          ))}
-        </Rows>
+        <>
+          {grouped.open.length ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                Open — {grouped.open.length}
+              </p>
+              <Rows>
+                {grouped.open.map((row) => (
+                  <SupportRow key={row.id} row={row} />
+                ))}
+              </Rows>
+            </>
+          ) : null}
+
+          {grouped.past.length ? (
+            <>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                Recent — {grouped.past.length}
+              </p>
+              <Rows>
+                {grouped.past.map((row) => (
+                  <SupportRow key={row.id} row={row} />
+                ))}
+              </Rows>
+            </>
+          ) : null}
+        </>
       )}
     </Section>
   );
 }
 
+function SupportRow({ row }: { row: SupportConversationItem }) {
+  return (
+    <Row
+      href={`/staff/support/${row.id}`}
+      title={
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs">{row.reference}</span>
+          <span>{row.subject}</span>
+        </span>
+      }
+      detail={
+        <>
+          Updated {formatDateTime(row.lastMessageAt)}
+          {row.relatedOrderNumber ? ` · ${row.relatedOrderNumber}` : ""}
+          {` · ${row.assignedToLabel ?? "unassigned"}`}
+        </>
+      }
+      aside={
+        <>
+          {row.priority === "urgent" || row.priority === "high" ? (
+            <Badge tone={row.priority === "urgent" ? "danger" : "warning"}>{row.priority}</Badge>
+          ) : null}
+          <StatusChip value={row.status} />
+        </>
+      }
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Communications
+// Communications — a view inside Activity
 // ---------------------------------------------------------------------------
 
 type DeliveryItem = {
@@ -642,6 +860,7 @@ export function CommunicationsPanel({ userId, auth }: { userId: string; auth: Au
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
 
   const resend = async (deliveryId: string) => {
     setBusy(deliveryId);
@@ -665,13 +884,19 @@ export function CommunicationsPanel({ userId, auth }: { userId: string; auth: Au
   if (state.kind === "error") return <ErrorState onRetry={() => void reload()}>{state.message}</ErrorState>;
 
   return (
-    <Section
-      headingLevel={3}
-      title={`Email history (${state.data.total})`}
-      description="Transactional email sent about this account's orders. Addresses are masked; provider message ids are not shown."
-    >
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          {state.data.total} transactional {state.data.total === 1 ? "message" : "messages"} about this account&apos;s
+          orders. Addresses are masked.
+        </p>
+        <button type="button" className="ui-chip" aria-pressed={showDetail} onClick={() => setShowDetail((v) => !v)}>
+          {showDetail ? "Hide delivery detail" : "Advanced"}
+        </button>
+      </div>
+
       {message ? (
-        <p className="mb-2 text-xs" aria-live="polite" style={{ color: "var(--muted)" }}>
+        <p className="text-xs" aria-live="polite" style={{ color: "var(--muted)" }}>
           {message}
         </p>
       ) : null}
@@ -686,7 +911,7 @@ export function CommunicationsPanel({ userId, auth }: { userId: string; auth: Au
               title={delivery.subject}
               detail={
                 <>
-                  {delivery.templateName} → {delivery.maskedRecipient}
+                  {delivery.templateName}
                   {delivery.failureSummary ? ` · ${delivery.failureSummary}` : ""}
                 </>
               }
@@ -699,6 +924,10 @@ export function CommunicationsPanel({ userId, auth }: { userId: string; auth: Au
                     </Link>
                   ) : null}
                   {delivery.isResend ? <span>Re-sent copy</span> : null}
+                  {/* The masked address and the delivery id are debugging
+                      detail, not something a default view needs. */}
+                  {showDetail ? <span>{delivery.maskedRecipient}</span> : null}
+                  {showDetail ? <span className="font-mono">{delivery.id}</span> : null}
                 </span>
               }
               aside={
@@ -713,7 +942,7 @@ export function CommunicationsPanel({ userId, auth }: { userId: string; auth: Au
                           disabled={busy === delivery.id}
                           onClick={() => void resend(delivery.id)}
                         >
-                          {busy === delivery.id ? "Sending…" : "Send it"}
+                          {busy === delivery.id ? "Sending…" : "Send it again"}
                         </button>
                         <button type="button" className="ui-chip" onClick={() => setConfirming(null)}>
                           Cancel
@@ -733,6 +962,6 @@ export function CommunicationsPanel({ userId, auth }: { userId: string; auth: Au
           ))}
         </Rows>
       )}
-    </Section>
+    </>
   );
 }

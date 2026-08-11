@@ -398,11 +398,14 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         // `/staff/security/users` redirects here. The nav points at the real
         // page so the browser does not take a redirect on every visit.
         href: "/staff/users",
-        label: "People & accounts",
+        // One word, and the same word the page's own title uses. "People &
+        // accounts" was the menu row, the page heading, and half of two buttons
+        // ("All people", "Back to people") that went to the same place.
+        label: "People",
         // The name promised orders and history and now delivers them: the
         // workspace behind this link carries a customer's orders, spend,
-        // production, email and audit trail beside their roles and status.
-        description: "Accounts, orders and spend, roles, notes and account status.",
+        // production, support, email and audit trail beside their access.
+        description: "Customers and staff: orders, spend, support, access, notes and account status.",
         icon: "users",
         alsoOwns: ["/staff/info/users", "/staff/security/users"],
         settingsSection: "access",
@@ -630,6 +633,10 @@ const LEAF_LABELS: Readonly<Record<string, string>> = {
 
 const LEAF_PATTERNS: readonly { test: RegExp; label: string }[] = [
   { test: /^\/staff\/support\/[^/]+$/, label: "Conversation" },
+  // "Person" rather than their name, for the reason stated above: the crumb
+  // renders before the record loads, and a trail that changes from "Person" to
+  // "Ethan Example" after a beat moves the page under the reader.
+  { test: /^\/staff\/users\/[^/]+$/, label: "Person" },
   { test: /^\/staff\/orders\/[^/]+\/print\/[^/]+$/, label: "Printable document" },
   { test: /^\/staff\/orders\/[^/]+$/, label: "Order" },
   { test: /^\/staff\/production\/[^/]+\/print$/, label: "Printable documents" },

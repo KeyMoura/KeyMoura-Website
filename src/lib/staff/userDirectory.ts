@@ -59,6 +59,24 @@ export const ACCOUNT_STATUS_MEANING: Readonly<Record<AccountStatus, string>> = {
   suspended: "Cannot sign in. Existing paid orders and their email updates are unaffected.",
 };
 
+/**
+ * What the *filter* offers, which is one value more than a user can be.
+ *
+ * `limited` is not a status any account holds — it is "restricted or
+ * suspended", the question a staff member actually asks ("who is not in good
+ * standing?"). Keeping it in the filter vocabulary rather than in
+ * {@link ACCOUNT_STATUSES} is deliberate: a derived status must stay a closed
+ * set of three, or the directory row and the workspace header could disagree
+ * about what an account *is*.
+ */
+export const ACCOUNT_STATUS_FILTERS = [...ACCOUNT_STATUSES, "limited"] as const;
+export type AccountStatusFilter = (typeof ACCOUNT_STATUS_FILTERS)[number];
+
+/** The statuses a filter value selects. `limited` widens to two. */
+export function statusFilterValues(filter: AccountStatusFilter): AccountStatus[] {
+  return filter === "limited" ? ["restricted", "suspended"] : [filter];
+}
+
 export const USER_KINDS = ["staff", "customer"] as const;
 export type UserKind = (typeof USER_KINDS)[number];
 
@@ -121,7 +139,7 @@ export type UserFilters = {
   search: string;
   role: string | null;
   kind: UserKind | null;
-  status: AccountStatus | null;
+  status: AccountStatusFilter | null;
   orders: OrderPresence | null;
   provider: LoginProvider | null;
   /** ISO date (YYYY-MM-DD), inclusive, against `created_at`. */
@@ -244,7 +262,7 @@ export function parseUserFilters(params: URLSearchParams): UserFilters {
     search: (params.get(USER_PARAM.search) ?? "").trim().slice(0, MAX_USER_SEARCH_LENGTH),
     role: rawRole || null,
     kind: pickFrom(params.get(USER_PARAM.kind), USER_KINDS),
-    status: pickFrom(params.get(USER_PARAM.status), ACCOUNT_STATUSES),
+    status: pickFrom(params.get(USER_PARAM.status), ACCOUNT_STATUS_FILTERS),
     orders: pickFrom(params.get(USER_PARAM.orders), ORDER_PRESENCE),
     provider: pickFrom(params.get(USER_PARAM.provider), LOGIN_PROVIDERS),
     joinedFrom: pickDate(params.get(USER_PARAM.joinedFrom)),
@@ -275,6 +293,137 @@ export function userFiltersToQuery(filters: Partial<UserFilters>): string {
   }
   return params.toString();
 }
+
+// ---------------------------------------------------------------------------
+// The four segments
+// ---------------------------------------------------------------------------
+
+/**
+ * The one control that answers "who am I looking at".
+ *
+ * The directory used to offer eight controls side by side, of which two —
+ * account type and status — are the ones anybody actually reaches for. They are
+ * promoted into a single segmented control here and the rest move behind a
+ * disclosure.
+ *
+ * Deliberately **derived** from the existing filters rather than stored as a
+ * ninth parameter. A segment that had its own URL key could disagree with the
+ * filters it is supposed to summarise — `?segment=staff&kind=customer` is a
+ * state somebody would eventually produce by editing a URL, and there is no
+ * right answer for what it should show.
+ */
+export const USER_SEGMENTS = ["all", "customers", "staff", "limited"] as const;
+export type UserSegment = (typeof USER_SEGMENTS)[number];
+
+export const USER_SEGMENT_LABELS: Readonly<Record<UserSegment, string>> = {
+  all: "All",
+  customers: "Customers",
+  staff: "Staff",
+  limited: "Restricted",
+};
+
+/** The filter values a segment stands for. Every segment clears the other's key. */
+export function segmentFilters(segment: UserSegment): Pick<UserFilters, "kind" | "status"> {
+  switch (segment) {
+    case "customers":
+      return { kind: "customer", status: null };
+    case "staff":
+      return { kind: "staff", status: null };
+    case "limited":
+      return { kind: null, status: "limited" };
+    default:
+      return { kind: null, status: null };
+  }
+}
+
+/**
+ * Which segment a filter set reads as, or `null` when it reads as none of them.
+ *
+ * `null` rather than falling back to "All" matters: a saved link filtering to
+ * suspended staff is a legitimate state that no segment describes, and lighting
+ * up "All" would tell the reader they are seeing everybody when they are not.
+ */
+export function userSegment(filters: Pick<UserFilters, "kind" | "status">): UserSegment | null {
+  if (!filters.kind && !filters.status) return "all";
+  if (filters.kind === "customer" && !filters.status) return "customers";
+  if (filters.kind === "staff" && !filters.status) return "staff";
+  if (!filters.kind && filters.status === "limited") return "limited";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Active filters, as removable chips
+// ---------------------------------------------------------------------------
+
+export type ActiveFilterChip = {
+  /** The filter key to clear, for the chip's remove button. */
+  key: keyof UserFilters;
+  label: string;
+  value: string;
+};
+
+/**
+ * The filters currently narrowing the list, named so each can be removed alone.
+ *
+ * The old page offered one "Clear" button for everything, so backing out of a
+ * date range meant losing the search that produced it. The segment's own two
+ * keys are excluded — they are shown by the segmented control itself, and a chip
+ * repeating them would be a second place to turn the same thing off.
+ */
+export function activeFilterChips(
+  filters: UserFilters,
+  roleName: (key: string) => string = (key) => key
+): ActiveFilterChip[] {
+  const chips: ActiveFilterChip[] = [];
+  const segment = userSegment(filters);
+
+  if (filters.search) chips.push({ key: "search", label: "Search", value: filters.search });
+  if (filters.role) chips.push({ key: "role", label: "Role", value: roleName(filters.role) });
+
+  // Only when the segmented control is not already saying it.
+  if (filters.kind && segment === null) {
+    chips.push({ key: "kind", label: "Type", value: filters.kind === "staff" ? "Staff" : "Customers" });
+  }
+  if (filters.status && segment === null) {
+    chips.push({
+      key: "status",
+      label: "Status",
+      value:
+        filters.status === "limited"
+          ? "Restricted or suspended"
+          : ACCOUNT_STATUS_LABELS[filters.status as AccountStatus],
+    });
+  }
+
+  if (filters.orders) {
+    chips.push({
+      key: "orders",
+      label: "Orders",
+      value: filters.orders === "has_orders" ? "Has orders" : "No orders",
+    });
+  }
+  if (filters.provider) {
+    chips.push({ key: "provider", label: "Signs in with", value: LOGIN_PROVIDER_LABELS[filters.provider] });
+  }
+  if (filters.joinedFrom) chips.push({ key: "joinedFrom", label: "Joined after", value: filters.joinedFrom });
+  if (filters.joinedTo) chips.push({ key: "joinedTo", label: "Joined before", value: filters.joinedTo });
+  if (filters.activeWithinDays) {
+    chips.push({
+      key: "activeWithinDays",
+      label: "Active",
+      value: filters.activeWithinDays === 1 ? "Today" : `In ${filters.activeWithinDays} days`,
+    });
+  }
+
+  return chips;
+}
+
+/** Provider names as a person would say them. */
+export const LOGIN_PROVIDER_LABELS: Readonly<Record<LoginProvider, string>> = {
+  email: "Email",
+  google: "Google",
+  facebook: "Facebook",
+};
 
 /** True when any filter beyond sorting and paging is set. */
 export function hasActiveUserFilters(filters: UserFilters): boolean {

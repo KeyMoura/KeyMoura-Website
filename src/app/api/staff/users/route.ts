@@ -6,6 +6,7 @@ import {
   looksLikeEmail,
   normalizeOrderNumber,
   parseUserFilters,
+  statusFilterValues,
   USER_SORT_COLUMNS,
   type AccountStatus,
   type UserDirectoryRow,
@@ -144,7 +145,13 @@ export async function GET(req: NextRequest) {
   // --- filters --------------------------------------------------------------
   if (filters.role) query = query.eq("role_key", filters.role);
   if (filters.kind) query = query.eq("is_staff", filters.kind === "staff");
-  if (filters.status) query = query.eq("account_status", filters.status);
+  if (filters.status) {
+    // `limited` is the one filter value that is not a status an account holds —
+    // it stands for "restricted or suspended". Widened here rather than in the
+    // parser so the URL keeps saying what the reader chose.
+    const wanted = statusFilterValues(filters.status);
+    query = wanted.length === 1 ? query.eq("account_status", wanted[0]) : query.in("account_status", wanted);
+  }
   if (filters.provider) query = query.contains("providers", [filters.provider]);
 
   if (filters.orders === "has_orders") query = query.gt("order_count", 0);

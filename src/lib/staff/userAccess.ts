@@ -167,8 +167,83 @@ export const STATUS_ACTION_PERMISSIONS: Readonly<
   unrestrict: { direct: "moderation.restrict", request: null },
 };
 
+/**
+ * The three areas a restriction can withhold, and what each one actually costs
+ * the person.
+ *
+ * The old panel offered "Site / Community / Direct messages" in a bare dropdown
+ * beside a second dropdown of verbs, and nothing on screen said what any of them
+ * meant. These sentences are the screen's only description of the consequence,
+ * so they live here where a test can hold them to naming what survives as well
+ * as what is withheld.
+ */
+export const RESTRICTION_KINDS = ["site", "community", "dm"] as const;
+export type RestrictionKind = (typeof RESTRICTION_KINDS)[number];
+
+export const RESTRICTION_KIND_LABELS: Readonly<Record<RestrictionKind, string>> = {
+  site: "Site access",
+  community: "Community",
+  dm: "Direct messages",
+};
+
+export const RESTRICTION_KIND_MEANING: Readonly<Record<RestrictionKind, string>> = {
+  site: "Cannot browse or order while it lasts. Paid orders already placed are unaffected.",
+  community: "Cannot post, reply or start threads. Can still sign in, browse and order.",
+  dm: "Cannot send direct messages. Everything else is unaffected.",
+};
+
 export const MIN_STATUS_REASON_LENGTH = 8;
 export const MAX_STATUS_REASON_LENGTH = 500;
+
+/**
+ * How each status action is described before it is taken.
+ *
+ * One sentence for what happens, one for what keeps working. The second sentence
+ * is the one that stops a staff member hesitating over whether suspending an
+ * account also cancels the order it already paid for — it does not, and nothing
+ * on the old screen said so.
+ */
+export const STATUS_ACTION_COPY: Readonly<
+  Record<StatusAction, { title: string; verb: string; effect: string; preserved: string; danger: boolean }>
+> = {
+  suspend: {
+    title: "Suspend account",
+    verb: "Suspend",
+    effect: "This person will not be able to sign in.",
+    preserved: "Paid orders, their history and their delivery email are unaffected.",
+    danger: true,
+  },
+  unsuspend: {
+    title: "Restore access",
+    verb: "Restore access",
+    effect: "This person will be able to sign in again.",
+    preserved: "Any separate area restrictions stay in place until lifted individually.",
+    danger: false,
+  },
+  restrict: {
+    title: "Restrict account",
+    verb: "Restrict",
+    effect: "One area is withheld. They can still sign in.",
+    preserved: "Paid orders, their history and their delivery email are unaffected.",
+    danger: true,
+  },
+  unrestrict: {
+    title: "Lift restriction",
+    verb: "Lift restriction",
+    effect: "The chosen area becomes available again.",
+    preserved: "Any suspension stays in place until lifted separately.",
+    danger: false,
+  },
+};
+
+/** Restriction lengths the panel offers. `null` means until manually lifted. */
+export const RESTRICTION_DURATIONS: readonly { hours: number | null; label: string }[] = [
+  { hours: null, label: "Until manually lifted" },
+  { hours: 24, label: "24 hours" },
+  { hours: 24 * 7, label: "7 days" },
+  { hours: 24 * 30, label: "30 days" },
+  { hours: 24 * 90, label: "90 days" },
+];
 
 /**
  * Every status change carries a reason, and a blank one is not a reason.
