@@ -33,6 +33,8 @@ import { type CategoryRow } from "@/lib/commerce/categories";
 import { allowsDirectPurchase, PURCHASE_MODE_COPY, PURCHASE_MODES, type PurchaseMode } from "@/lib/commerce/purchaseModes";
 import ProductContentEditor from "@/components/staff/ProductContentEditor";
 import { ProductOptionValueRow } from "@/components/staff/ProductOptionValueRow";
+import { ProductOptionPreview } from "@/components/staff/ProductOptionPreview";
+import { choicePresentation, presentationPatch, type ChoicePresentation } from "@/lib/commerce/optionPresentation";
 import { ProductShippingEditor } from "@/components/staff/ProductShippingEditor";
 import { EMPTY_DETAIL_CONTENT, parseDetailContent, serializeDetailContent, type ProductDetailContent } from "@/lib/commerce/productContent";
 
@@ -624,6 +626,17 @@ export default function StaffCatalogPage() {
     } : group));
   }
 
+  function moveValue(groupId: string, valueIndex: number, direction: -1 | 1) {
+    setGroups(current => current.map(group => {
+      if (group.id !== groupId) return group;
+      const values = [...(group.product_option_values ?? [])];
+      const destination = valueIndex + direction;
+      if (destination < 0 || destination >= values.length) return group;
+      [values[valueIndex], values[destination]] = [values[destination], values[valueIndex]];
+      return { ...group, product_option_values: values };
+    }));
+  }
+
   if (isLoading) return <LoadingState>Loading products…</LoadingState>;
   if (!canView) return <AccessDeniedCard message="You do not have access to catalog management." />;
 
@@ -1035,7 +1048,7 @@ export default function StaffCatalogPage() {
                           <Field label="Saved key" help="How the choice is stored on an order.">
                             <input className={`${input} w-full`} value={group.option_key} onChange={e => setGroups(current => current.map(item => item.id === group.id ? { ...item, option_key: optionKey(e.target.value) } : item))} />
                           </Field>
-                          <Field label="Control type">
+                          <Field label="Field type" help="Choose a customer presentation below for options with fixed values.">
                             <MenuSelect
                               className="ui-select-trigger"
                               ariaLabel="Control type"
@@ -1043,7 +1056,7 @@ export default function StaffCatalogPage() {
                               onChange={value => setGroups(current => current.map(item => item.id === group.id ? { ...item, input_type: value as ProductOptionGroup["input_type"] } : item))}
                               options={[
                                 { value: "select", label: "Dropdown" },
-                                { value: "radio", label: "Choice cards" },
+                                { value: "radio", label: "Fixed choices" },
                                 { value: "text", label: "Short text" },
                                 { value: "textarea", label: "Long text" },
                                 { value: "number", label: "Number" },
@@ -1074,19 +1087,16 @@ export default function StaffCatalogPage() {
                                 with no photographs should keep its buttons. */}
                             <div className="mt-4 max-w-sm">
                               <Field
-                                label="Display as"
-                                help={
-                                  group.display_style === "swatches"
-                                    ? "Thumbnails from each choice's associated image. Choices without one still show as labelled tiles."
-                                    : "Uses the control type above — a dropdown, or choice cards."
-                                }
+                                label="Presentation"
+                                help="How these values appear on the storefront. This uses the existing field type and display style settings."
                               >
                                 <MenuSelect
                                   className="ui-select-trigger"
-                                  ariaLabel="Display as"
-                                  value={group.display_style ?? "buttons"}
-                                  onChange={value => setGroups(current => current.map(item => item.id === group.id ? { ...item, display_style: value as ProductOptionGroup["display_style"] } : item))}
+                                  ariaLabel={`${group.name} presentation`}
+                                  value={choicePresentation(group)}
+                                  onChange={value => setGroups(current => current.map(item => item.id === group.id ? { ...item, ...presentationPatch(value as ChoicePresentation) } : item))}
                                   options={[
+                                    { value: "dropdown", label: "Dropdown" },
                                     { value: "buttons", label: "Buttons" },
                                     { value: "swatches", label: "Image swatches" },
                                   ]}
@@ -1095,7 +1105,13 @@ export default function StaffCatalogPage() {
                             </div>
 
                             <div className="mt-4 space-y-2">
-                              {(group.product_option_values ?? []).map(value => (
+                              {(group.product_option_values ?? []).map((value, valueIndex) => (
+                                <div key={value.id} className="option-value-editor">
+                                <div className="option-value-order" aria-label={`${value.label || "Value"} ordering`}>
+                                  <span>Value {valueIndex + 1}</span>
+                                  <button type="button" className="ui-btn ui-btn-ghost text-xs" disabled={!canManage || valueIndex === 0} onClick={() => moveValue(group.id, valueIndex, -1)}>Move up</button>
+                                  <button type="button" className="ui-btn ui-btn-ghost text-xs" disabled={!canManage || valueIndex === (group.product_option_values?.length ?? 0) - 1} onClick={() => moveValue(group.id, valueIndex, 1)}>Move down</button>
+                                </div>
                                 <ProductOptionValueRow
                                   key={value.id}
                                   value={value}
@@ -1104,7 +1120,9 @@ export default function StaffCatalogPage() {
                                   onChange={patch => setGroups(current => current.map(item => item.id !== group.id ? item : {
                                     ...item,
                                     product_option_values: item.product_option_values?.map(choice => {
-                                      if (choice.id !== value.id) return choice;
+                                      if (choice.id !== value.id) {
+                                        return patch.is_default ? { ...choice, is_default: false } : choice;
+                                      }
                                       const next = { ...choice, ...patch };
                                       // The saved value follows the label while
                                       // it is being typed, exactly as before —
@@ -1119,8 +1137,10 @@ export default function StaffCatalogPage() {
                                   }))}
                                   onRemove={() => void removeValue(group.id, value.id)}
                                 />
+                                </div>
                               ))}
                             </div>
+                            <ProductOptionPreview group={group} media={media} />
                           </>
                         ) : null}
 

@@ -15,6 +15,8 @@ type Props<T extends string = string> = {
   options: MenuSelectOption<T>[];
   disabled?: boolean;
   ariaLabel?: string;
+  ariaDescribedBy?: string;
+  ariaInvalid?: boolean;
   className?: string;
   menuClassName?: string;
   align?: "left" | "right";
@@ -33,6 +35,8 @@ export function MenuSelect<T extends string = string>({
   onChange,
   options,
   ariaLabel,
+  ariaDescribedBy,
+  ariaInvalid,
   className,
   menuClassName,
   align = "right",
@@ -41,6 +45,7 @@ export function MenuSelect<T extends string = string>({
   disabled = false,
 }: Props<T>) {
   const [open, setOpen] = React.useState(false);
+  const menuId = React.useId();
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
@@ -168,6 +173,10 @@ export function MenuSelect<T extends string = string>({
       <button
         type="button"
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid || undefined}
+        aria-controls={menuId}
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={disabled}
@@ -200,7 +209,7 @@ export function MenuSelect<T extends string = string>({
               }}
               className={menuWrapCls}
             >
-              <div className="p-2" role="listbox" aria-label={ariaLabel ?? "Select"}>
+              <div id={menuId} className="p-2" role="listbox" aria-label={ariaLabel ?? "Select"}>
                 {/* show max 8 options before scrolling */}
                 <div className="max-h-72 overflow-y-auto pr-1">
                   <div className="space-y-1">

@@ -231,20 +231,19 @@ export default function ProductPurchasePanel({
     startingPriceCents == null
       ? "Priced after review"
       : modeAllowsBuy
-        ? `$${((total ?? 0) / 100).toFixed(2)}`
+        ? `$${((unitPrice ?? 0) / 100).toFixed(2)}`
         : `From $${(startingPriceCents / 100).toFixed(2)}`;
 
   return (
     <div className="product-purchase">
       <div className="product-purchase-price">
-        <p className="product-price">{priceLabel}</p>
+        <p className="product-price"><span className="sr-only">Configured unit price: </span>{priceLabel}</p>
         {/* Direct purchase explains how the number was reached; every other
             mode explains what happens before anything is charged. */}
         {modeAllowsBuy && startingPriceCents != null ? (
           <p className="product-price-note">
-            {quantity > 1 ? `${quantity} × $${((unitPrice ?? 0) / 100).toFixed(2)}` : null}
-            {quantity > 1 && adjustment !== 0 ? " · " : null}
-            {adjustment !== 0 ? `includes ${money(adjustment)} in options` : null}
+            {adjustment !== 0 ? `Base price plus ${money(adjustment)} in options` : "Configured unit price"}
+            {quantity > 1 ? ` · ${quantity} items: $${((total ?? 0) / 100).toFixed(2)} before discounts` : null}
           </p>
         ) : (
           <p className="product-price-note">{PURCHASE_MODE_COPY[purchaseMode].customerHint}</p>
@@ -256,7 +255,9 @@ export default function ProductPurchasePanel({
           {choiceGroups.map((group) => {
             const values = group.product_option_values ?? [];
             const isMissing = showErrors && group.is_required && !selections[group.option_key];
-            const describedBy = `option-help-${group.option_key}`;
+            const helpId = `option-help-${group.option_key}`;
+            const errorId = `option-error-${group.option_key}`;
+            const describedBy = [group.description ? helpId : null, isMissing ? errorId : null].filter(Boolean).join(" ") || undefined;
 
             return (
               <fieldset key={group.id} className="product-option-group">
@@ -270,7 +271,7 @@ export default function ProductPurchasePanel({
                 </legend>
 
                 {group.description ? (
-                  <p id={describedBy} className="product-option-description">
+                  <p id={helpId} className="product-option-description">
                     {group.description}
                   </p>
                 ) : null}
@@ -290,6 +291,8 @@ export default function ProductPurchasePanel({
                   <div
                     role="radiogroup"
                     aria-label={group.name}
+                    aria-describedby={describedBy}
+                    aria-invalid={isMissing || undefined}
                     className={`product-option-swatches${isMissing ? " is-invalid" : ""}`}
                   >
                     {values.map((value) => {
@@ -305,6 +308,14 @@ export default function ProductPurchasePanel({
                           tabIndex={checked || (!selections[group.option_key] && value === values[0]) ? 0 : -1}
                           id={checked ? `option-${group.option_key}` : undefined}
                           onClick={() => choose(group.option_key, value.value)}
+                          onKeyDown={(event) => {
+                            if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+                            event.preventDefault();
+                            const direction = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+                            const next = (values.indexOf(value) + direction + values.length) % values.length;
+                            choose(group.option_key, values[next].value);
+                            (event.currentTarget.parentElement?.children[next] as HTMLElement | undefined)?.focus();
+                          }}
                           className={`product-option-swatch${checked ? " is-selected" : ""}`}
                         >
                           <span className="product-option-swatch-frame" aria-hidden="true">
@@ -332,6 +343,8 @@ export default function ProductPurchasePanel({
                     value={selections[group.option_key] ?? ""}
                     onChange={(value) => choose(group.option_key, value)}
                     ariaLabel={group.name}
+                    ariaDescribedBy={describedBy}
+                    ariaInvalid={isMissing}
                     align="left"
                     className={`ui-select-trigger product-option-select${isMissing ? " is-invalid" : ""}`}
                     options={[
@@ -347,7 +360,7 @@ export default function ProductPurchasePanel({
                     ]}
                   />
                 ) : (
-                  <div className="product-option-choices">
+                  <div className="product-option-choices" aria-describedby={describedBy}>
                     {values.map((value) => {
                       const checked = selections[group.option_key] === value.value;
                       return (
@@ -379,7 +392,7 @@ export default function ProductPurchasePanel({
                 )}
 
                 {isMissing ? (
-                  <p role="alert" className="product-option-error">
+                  <p id={errorId} role="alert" className="product-option-error">
                     Choose a {group.name.toLowerCase()}.
                   </p>
                 ) : null}

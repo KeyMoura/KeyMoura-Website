@@ -242,7 +242,9 @@ export default function CartPage() {
                       </Link>
                     </h3>
                     {item.optionLabels.length ? (
-                      <ul className="mt-1 text-sm text-brand-textMuted">
+                      <div className="mt-1 text-sm text-brand-textMuted">
+                      <p className="font-medium text-brand-text">Configuration</p>
+                      <ul>
                         {item.optionLabels.map((option) => (
                           <li key={option.group}>
                             {option.group}: {option.label}
@@ -250,8 +252,9 @@ export default function CartPage() {
                           </li>
                         ))}
                       </ul>
+                      </div>
                     ) : null}
-                    <p className="mt-1 text-sm text-brand-textMuted">{formatCents(item.unitPriceCents)} each</p>
+                    <p className="mt-1 text-sm text-brand-textMuted">Unit: {formatCents(item.unitPriceCents)} · Total: {formatCents(item.lineSubtotalCents)}</p>
 
                     <div className="mt-3 flex flex-wrap items-center gap-3">
                       {/* Committed on blur, Enter or a step button — never per
