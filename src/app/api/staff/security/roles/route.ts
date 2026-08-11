@@ -15,6 +15,7 @@ import {
   roleWriteErrorMessage,
   toRoleDbColumns,
 } from "@/lib/staff/roleSchema";
+import { canManageRole } from "@/lib/staff/userAccess";
 
 type RoleRow = {
   key: string;
@@ -142,6 +143,13 @@ export async function POST(req: NextRequest) {
   const payload = await readJson(req);
   const parsed = parseCreatePayload(payload);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+
+  const { data: actorRole } = await routeServiceClient.from("roles").select("rank").eq("key", actor.role).maybeSingle();
+  const decision = canManageRole({
+    actor: { userId: actor.userId, roleKey: actor.role, roleRank: actor.isOp ? Number.MAX_SAFE_INTEGER : Number(actorRole?.rank ?? 0), isOp: actor.isOp === true, permissions: actor.permissions },
+    nextRank: parsed.value.priority,
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   const { key, ...rest } = parsed.value;
   const row = { key, ...toRoleDbColumns(rest) };
