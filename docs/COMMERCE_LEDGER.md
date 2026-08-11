@@ -6896,3 +6896,103 @@ TRUNCATE, RLS is on with no policies, and all six indexes exist.
   `tests/scheduled-automation.test.ts` pins `vercel.json` to the cadence
   constants, which closes the repo-side gap; if the Vercel dashboard is edited by
   hand the health page reports the scheduler stalled, which is the true statement.
+
+## Merged and deployed — 2026-08-11
+
+`8a7fbed..211d14d`. Confirmed to contain this work the way passes 21 and 22
+established: Vercel exposes no git SHA, so the build log names the artifacts
+instead — all five, including `app/api/cron/automation/route.js` and
+`app/staff/settings/automation/page.js`, which exist only in these commits.
+
+### Vercel is a Hobby account, and the first deploy was refused
+
+The pass shipped a `vercel.json` at `*/15 * * * *`. The deploy failed outright:
+
+> Hobby accounts are limited to daily cron jobs. This cron expression
+> (`*/15 * * * *`) would run more than once per day.
+
+The team scope had been read as implying Pro. It does not — Vercel allows Hobby
+teams. Nothing deployed, and production stayed on pass 22's build until the
+schedule was moved into Postgres and `vercel.json` deleted.
+
+Worth recording for the next pass: **this project has no Git integration.**
+Pushing to GitHub deploys nothing; production comes from `vercel deploy --prod`
+run by hand. Ten minutes were spent waiting for an automatic build that was never
+going to start.
+
+### Why the schedule ended up in the database
+
+Daily was not a workable fallback. The quote-expiry warning is configured for 24
+hours ahead, so a once-a-day sweep could deliver it up to 24 hours late — at or
+after the quote had already lapsed, which is the exact failure it exists to
+prevent. It is also one of the two reminders that cannot be switched off, because
+it keeps an active purchase moving.
+
+`pg_cron` was already installed and already running the nightly recycle-bin
+purge, so the schedule moved there and `pg_net` makes the one call SQL cannot.
+The result is better than the original design rather than a concession: the
+schedule now lives in the same database as the job table it drives, and there is
+no platform cron limit to design around.
+
+### Smoke test, no production mutation
+
+| Probe | Result |
+|---|---|
+| `GET /api/cron/automation` no auth | 401 |
+| `GET /api/cron/automation` wrong bearer | 401 |
+| `GET /api/cron/automation` empty bearer | 401 |
+| `POST` / `PUT` / `DELETE` on the cron route | 405 each |
+| `GET /api/staff/automation` (no session) | 307 at the middleware |
+| `POST /api/staff/automation` (no session) | 307 |
+| `POST /api/staff/automation/run` (no session) | 307 |
+| `POST /api/staff/automation/jobs/<uuid>` (no session) | 307 |
+| `GET /staff/settings/automation` (no session) | 307 |
+| `GET /` and `GET /support` | 200, unchanged |
+
+The three 401s are the fail-closed path proving itself: `CRON_SECRET` is not set,
+so the route refuses everything including a correct caller. That is the intended
+behaviour and not a temporary state to be worked around.
+
+### Role-switched probes, in the database
+
+Five, all refused with `42501`:
+
+| Role | Object | Result |
+|---|---|---|
+| `anon` | `scheduled_jobs` | refused |
+| `anon` | `automation_runs` | refused |
+| `anon` | `claim_scheduled_jobs()` | refused |
+| `authenticated` | `scheduled_jobs` | refused |
+| `authenticated` | `automation_runs` | refused |
+
+### Production state after deploy
+
+| | |
+|---|---|
+| Migration parity | 55 repo files == 55 production rows |
+| `scheduled_jobs` rows | 0 |
+| `automation_runs` rows | 0 |
+| Reminder emails sent | 0 |
+| `automation.*` audit rows | 0 |
+| cron jobs | 1 — the recycle-bin purge, untouched |
+
+### Still dormant, deliberately
+
+Two secrets are outstanding and neither is Claude's to create: `CRON_SECRET` in
+the Vercel Production environment, and a Vault secret named
+`automation_cron_secret` holding the same value. Until both exist the endpoint
+refuses every caller and the trigger returns without making a request.
+
+`20260811020000_automation_scheduler` is written, dry-run with eight passing
+probes and rolled back — including that no HTTP request is queued while the
+secret is absent, and that the nightly recycle-bin job is untouched. It is **not
+applied**, and should not be until both secrets exist, or the scheduler will call
+an endpoint that can only refuse it.
+
+Staff can already exercise the whole system through **Run now** on
+`/staff/settings/automation` under `automation.manage`, which runs the same
+worker with the same discovery, revalidation and delivery claims.
+
+### Final SHA
+
+`211d14d`
