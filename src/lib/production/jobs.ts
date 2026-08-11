@@ -253,6 +253,28 @@ export function completionWarnings(
   return warnings;
 }
 
+/**
+ * Hard manufacturing gates for declaring a job complete.
+ *
+ * A checklist is optional, but once a job has one it is part of the work
+ * definition rather than an advisory note. In particular, an open quality
+ * check cannot be acknowledged away: doing so would make a failed or skipped
+ * inspection indistinguishable from a passed one at the fulfillment handoff.
+ */
+export function completionProblem(tasks: ProductionTaskLike[]): string | null {
+  const openQuality = tasks.filter((task) => task.kind === "quality" && !task.is_done).length;
+  if (openQuality) {
+    return `Complete ${openQuality} open quality check${openQuality === 1 ? "" : "s"} before finishing production.`;
+  }
+
+  const openRequired = tasks.filter((task) => task.kind !== "quality" && !task.is_done).length;
+  if (openRequired) {
+    return `Complete ${openRequired} open production task${openRequired === 1 ? "" : "s"} before finishing production.`;
+  }
+
+  return null;
+}
+
 /** Local-date comparison. A due date is a calendar day, not an instant. */
 function startOfDay(value: Date) {
   const copy = new Date(value);

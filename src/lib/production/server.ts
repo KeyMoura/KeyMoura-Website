@@ -269,3 +269,26 @@ export async function loadJobReferences(jobs: readonly JobRow[]) {
     products: Object.fromEntries((products.data ?? []).map((row) => [row.id as string, row])),
   };
 }
+
+/** One batched query supplies compact board/list progress without loading task bodies. */
+export async function loadTaskProgress(jobIds: readonly string[]) {
+  if (!jobIds.length) return {} as Record<string, { done: number; total: number; qcOpen: number }>;
+  const { data, error } = await routeServiceClient
+    .from("production_job_tasks")
+    .select("job_id,kind,is_done")
+    .in("job_id", [...jobIds]);
+  if (error) {
+    logProductionFailure("jobs.task_progress", error);
+    return {} as Record<string, { done: number; total: number; qcOpen: number }>;
+  }
+  const progress: Record<string, { done: number; total: number; qcOpen: number }> = {};
+  for (const task of data ?? []) {
+    const jobId = String(task.job_id);
+    const current = progress[jobId] ?? { done: 0, total: 0, qcOpen: 0 };
+    current.total += 1;
+    if (task.is_done) current.done += 1;
+    if (task.kind === "quality" && !task.is_done) current.qcOpen += 1;
+    progress[jobId] = current;
+  }
+  return progress;
+}

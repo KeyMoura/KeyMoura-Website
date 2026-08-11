@@ -1,5 +1,10 @@
 # Commerce transformation — implementation ledger
 
+Pass 26: Production Workflow 2.0 audit and zero-migration safety increment. The
+canonical board/list now exposes customer and task/QC progress, and manufacturing
+completion cannot bypass open tasks or QC. Full audit and deferred schema decisions:
+`docs/PRODUCTION_WORKFLOW_2.md`.
+
 Pass 1: `commerce-catalog-transformation` → PR #5, merged as `706919e`.
 Pass 2: `commerce-completion-20260803` → PR #6, merged as `c4b98d1`, in production.
 Pass 3: `commerce-launch-readiness-20260803` → merged as `f47005e`, in production.
