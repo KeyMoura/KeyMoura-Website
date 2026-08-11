@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { snapshotPurchasedOptions } from "@/lib/commerce/orderConfiguration";
 import { getUserFromRequest, routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { captureCommerceException } from "@/lib/monitoring";
@@ -249,7 +250,10 @@ export async function POST(req: NextRequest) {
       product_id: line.productId,
       product_name: line.product.name,
       product_slug: line.product.slug,
-      selected_options: line.selectedOptions,
+      // Immutable display snapshot, deliberately richer than the cart's raw
+      // selection map. Historical pages never resolve names or adjustments
+      // from mutable product option rows.
+      selected_options: snapshotPurchasedOptions(line),
       quantity: line.quantity,
       unit_price_cents: line.unitPriceCents,
       line_subtotal_cents: line.lineSubtotalCents,

@@ -62,6 +62,7 @@ type Order = {
   proposal_sent_at: string | null;
   proposal_decided_at: string | null;
   proposal_decline_reason: string | null;
+  order_items?: Array<{ id: string; product_name: string; selected_options: Record<string, unknown> | null }>;
 };
 type Message = {
   id: number;
@@ -95,7 +96,7 @@ export default function OrderDetailPage() {
     const auth = await supabase.auth.getUser();
     setUserId(auth.data.user?.id ?? "");
     const [o, m, h, p, r] = await Promise.all([
-      supabase.from("orders").select("*").eq("id", id).maybeSingle(),
+      supabase.from("orders").select("*,order_items(id,product_name,selected_options)").eq("id", id).maybeSingle(),
       supabase
         .from("order_messages")
         .select("id,sender_id,body,is_internal,created_at")
@@ -343,6 +344,14 @@ export default function OrderDetailPage() {
             <dd>{order.quantity}</dd>
           </div>
           <RequestSpecifications specifications={order.specifications || {}} />
+          {(order.order_items ?? []).map((item) =>
+            item.selected_options && Object.keys(item.selected_options).length ? (
+              <div key={item.id} className="sm:col-span-2">
+                <dt className="font-semibold">{item.product_name} configuration</dt>
+                <dd><dl className="mt-2 grid gap-3 sm:grid-cols-2"><RequestSpecifications specifications={item.selected_options} /></dl></dd>
+              </div>
+            ) : null
+          )}
         </dl>
         {order.customer_notes ? (
           <p className="mt-4 whitespace-pre-wrap border-t border-zinc-800 pt-4 text-sm">

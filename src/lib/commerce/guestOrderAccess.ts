@@ -82,7 +82,7 @@ export type GuestOrderItem = {
   quantity: number;
   unit_price_cents: number;
   line_subtotal_cents: number;
-  selected_options: Record<string, string> | null;
+  selected_options: Record<string, unknown> | null;
 };
 
 export type GuestOrderMessage = {

@@ -84,10 +84,10 @@ export default function ProductPurchasePanel({
     const initial: Selections = {};
     for (const group of groups) {
       const values = group.product_option_values ?? [];
-      const preset = values.find((value) => value.is_default) ?? values[0];
-      // A required group starts on its default so the common path is one click;
-      // an optional group starts empty so "no preference" stays the default.
-      if (group.is_required && preset) initial[group.option_key] = preset.value;
+      const preset = values.find((value) => value.is_default && value.is_active);
+      // Required does not mean preselected. Only an explicit staff default may
+      // make the choice for the customer.
+      if (preset) initial[group.option_key] = preset.value;
     }
     return initial;
   });
@@ -335,7 +335,9 @@ export default function ProductPurchasePanel({
                     align="left"
                     className={`ui-select-trigger product-option-select${isMissing ? " is-invalid" : ""}`}
                     options={[
-                      ...(group.is_required ? [] : [{ value: "", label: "No preference" }]),
+                      ...(!selections[group.option_key]
+                        ? [{ value: "", label: group.is_required ? `Choose ${group.name.toLowerCase()}` : "No preference" }]
+                        : group.is_required ? [] : [{ value: "", label: "No preference" }]),
                       ...values.map((value) => ({
                         value: value.value,
                         label: `${value.label}${

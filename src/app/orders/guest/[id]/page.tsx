@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { RequestSpecifications } from "@/components/RequestSpecifications";
 import GuestOrderActions from "@/components/commerce/GuestOrderActions";
 import { GuestOrderVerification } from "@/components/commerce/GuestOrderVerification";
 import { OrderFulfillmentStatus } from "@/components/commerce/OrderFulfillmentStatus";
@@ -185,6 +186,14 @@ export default async function GuestOrderPage({
                   <p className="mt-1 text-xs text-brand-textMuted">
                     {item.quantity} × {money(item.unit_price_cents)}
                   </p>
+                  {item.selected_options && Object.keys(item.selected_options).length ? (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-brand-textMuted">Configuration</p>
+                      <dl className="mt-1 grid gap-1 text-sm">
+                        <RequestSpecifications specifications={item.selected_options} />
+                      </dl>
+                    </div>
+                  ) : null}
                 </div>
                 <p className="font-semibold">{money(item.line_subtotal_cents)}</p>
               </li>
