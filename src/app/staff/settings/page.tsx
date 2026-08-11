@@ -3,7 +3,6 @@
 import Link from "next/link";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
-import { SentryTestPanel } from "@/components/staff/SentryTestPanel";
 import { StaffNavIcon } from "@/components/staff/StaffNavIcon";
 import { LoadingState, PageHeader, Section, StaffPage } from "@/components/staff/StaffPage";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
@@ -60,8 +59,6 @@ export default function StaffSettingsPage() {
           </div>
         </Section>
       ))}
-
-      {permissions.has("security.view") ? <SentryTestPanel /> : null}
     </StaffPage>
   );
 }

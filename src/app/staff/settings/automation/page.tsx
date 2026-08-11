@@ -146,6 +146,10 @@ function NumberField({
   );
 }
 
+/** Written once, so the loading header and the loaded header cannot drift apart. */
+const AUTOMATION_DESCRIPTION =
+  "The reminders this shop sends on its own, when they go out, and whether the scheduler is running. Nothing takes effect until you press Save.";
+
 export default function AutomationSettingsPage() {
   const { data: access, isLoading: accessLoading } = useMeAccess();
   const permissions = useMemo(() => new Set(access?.permissions ?? []), [access?.permissions]);
@@ -293,9 +297,19 @@ export default function AutomationSettingsPage() {
     }
   }
 
-  if (accessLoading || loading) return <LoadingState>Loading automation…</LoadingState>;
+  // Access first, then a titled loading state — see the note on the same split
+  // in `settings/commerce`. The header must not be drawn before the check.
+  if (accessLoading) return <LoadingState>Loading automation…</LoadingState>;
   if (!canView) {
     return <AccessDeniedCard message="You need the automation.view permission to see this page." />;
+  }
+  if (loading) {
+    return (
+      <StaffPage>
+        <PageHeader title="Automation" description={AUTOMATION_DESCRIPTION} />
+        <LoadingState>Loading automation…</LoadingState>
+      </StaffPage>
+    );
   }
   if (error && !settings) {
     return (
@@ -364,10 +378,7 @@ export default function AutomationSettingsPage() {
 
   return (
     <StaffPage>
-      <PageHeader
-        title="Automation"
-        description="The reminders this shop sends on its own, when they go out, and whether the scheduler is running. Nothing takes effect until you press Save."
-      />
+      <PageHeader title="Automation" description={AUTOMATION_DESCRIPTION} />
 
       {!canManage ? (
         <Notice tone="warning">

@@ -271,6 +271,18 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         icon: "email",
         // The delivery log is a tab of this page now, not a route of its own.
         alsoOwns: ["/staff/emails/deliveries"],
+        /*
+         * Listed on the settings index as well as in Business.
+         *
+         * Sender identity, the master switch and the wording of every
+         * transactional message are configuration by any reading — set once and
+         * then left alone — and `/staff/settings` was the one place a person
+         * looking for "where do I change what our emails say" would go, and the
+         * one place it was not. `settingsSection` exists exactly so a tool can
+         * be listed there without moving in the sidebar, which is why the
+         * Business group below is unchanged.
+         */
+        settingsSection: "store",
         anyOf: ["emails.manage", "emails.view", "emails.resend"],
       },
       {

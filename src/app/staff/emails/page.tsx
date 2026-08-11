@@ -220,6 +220,10 @@ function Toggle({
   );
 }
 
+/** Written once, so the loading header and the loaded header cannot drift apart. */
+const EMAIL_DESCRIPTION =
+  "What KeyMoura sends to customers, whether it arrived, and who it comes from. Nothing here changes the email address used to sign in to Resend.";
+
 export default function StaffEmailPage() {
   const { data: access, isLoading } = useMeAccess();
   const allowed = (access?.permissions ?? []).includes("emails.manage");
@@ -291,7 +295,16 @@ export default function StaffEmailPage() {
       </ErrorState>
     );
   }
-  if (!config) return <LoadingState>Loading email settings…</LoadingState>;
+  // Past the access check, so the page may name itself while its data arrives.
+  // See the note on the same split in `settings/commerce`.
+  if (!config) {
+    return (
+      <StaffPage>
+        <PageHeader title="Email" description={EMAIL_DESCRIPTION} />
+        <LoadingState>Loading email settings…</LoadingState>
+      </StaffPage>
+    );
+  }
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -321,10 +334,7 @@ export default function StaffEmailPage() {
 
   return (
     <StaffPage>
-      <PageHeader
-        title="Email"
-        description="What KeyMoura sends to customers, whether it arrived, and who it comes from. Nothing here changes the email address used to sign in to Resend."
-      />
+      <PageHeader title="Email" description={EMAIL_DESCRIPTION} />
 
       {!provider ? (
         <Notice tone="warning" role="status">

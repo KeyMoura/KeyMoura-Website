@@ -9,7 +9,8 @@ import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { useHashTab } from "@/lib/hooks/useHashTab";
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
 import { RequestSpecifications } from "@/components/RequestSpecifications";
-import { StaffOrderWorkspace } from "@/components/staff/StaffOrderWorkspace";
+import { OrderTriagePanel } from "@/components/staff/OrderTriagePanel";
+import { OrderCostingPanel } from "@/components/staff/OrderCostingPanel";
 import { OrderProductionJobs } from "@/components/staff/production/OrderProductionJobs";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
@@ -686,6 +687,20 @@ export default function StaffOrderDetail() {
           </Card>
         </Section>
 
+        {/*
+          Triage sits on Overview because it is a property of the *order*: the
+          Orders queue sorts and filters on this priority, and an order with no
+          shop work still has an owner. The job's own priority and assignee are
+          on the Production tab, on the job — two controls, two tables, two
+          clearly different questions.
+        */}
+        <Section
+          title="Triage"
+          description="How urgent this order is, and who is answerable for it."
+        >
+          <OrderTriagePanel orderId={id} canManage={canManage} />
+        </Section>
+
         {order.customer_notes ? (
           <Section title="Customer notes" headingLevel={2}>
             <Card>
@@ -970,10 +985,10 @@ export default function StaffOrderDetail() {
         </Section>
 
         <Section
-          title="Production workspace"
-          description="Private job planning, tasks, materials and costs for this order."
+          title="Job costing"
+          description="Internal material and labour cost for this order. Never shown to the customer."
         >
-          <StaffOrderWorkspace orderId={id} canManage={canManage} />
+          <OrderCostingPanel orderId={id} canManage={canManage} />
         </Section>
 
         {order.status === "in_progress" && canManage ? (

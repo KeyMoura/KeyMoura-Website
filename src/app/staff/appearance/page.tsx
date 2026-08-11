@@ -604,7 +604,27 @@ export default function AppearancePage() {
           <button type="button" onClick={resetSection} className="ui-btn ui-btn-ghost">Reset this section</button>
         </div>
 
-        <AppearancePreview form={form} />
+        {/*
+          Clearing the search before jumping is not tidiness — a filtered list
+          may not contain the target, and `scrollIntoView` on an element that is
+          not in the DOM fails silently. The clear is a state update, so the
+          jump is deferred until React has put the full list back.
+
+          `setTimeout`, deliberately, not `requestAnimationFrame`: rAF does not
+          fire at all while the tab is not being painted, so the jump silently
+          did nothing in a backgrounded tab — which is exactly the state a
+          browser-driven check runs in, and how this was caught. A timeout is
+          throttled in the background but still fires, and it lands after
+          React's commit just as reliably.
+        */}
+        <AppearancePreview
+          form={form}
+          onJump={(taskId) => {
+            setSection("colors");
+            setColorQuery("");
+            window.setTimeout(() => jumpToAppearanceTask(taskId), 0);
+          }}
+        />
       </div>
 
       {confirmDelete ? (
@@ -768,7 +788,20 @@ function TaskEditor({
   }
 
   return (
-    <div className="rounded-[var(--control-radius)] border border-brand-border p-3" id={`appearance-${task.id}`}>
+    /*
+      `tabIndex={-1}` so the preview's "Edit these" jump can *focus* this block
+      rather than only scrolling to it. Scrolling alone leaves a keyboard user's
+      focus wherever it was, so the next Tab returns them to the preview they
+      just left; focusing moves the caret into the settings they asked for.
+
+      `scroll-mt-24` keeps the heading clear of the sticky page header once
+      `scrollIntoView` lands.
+    */
+    <div
+      className="scroll-mt-24 rounded-[var(--control-radius)] border border-brand-border p-3"
+      id={`appearance-${task.id}`}
+      tabIndex={-1}
+    >
       <p className="text-sm font-semibold">{task.label}</p>
       <p className="mt-1 text-xs text-brand-textMuted">{task.description}</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -889,10 +922,71 @@ function PreviewNote({ children }: { children: ReactNode }) {
   return <p className="mt-2 text-[11px] leading-4 text-brand-textMuted">{children}</p>;
 }
 
-function PreviewBlock({ title, note, children }: { title: string; note: ReactNode; children: ReactNode }) {
+/**
+ * Scroll to a task editor, open whatever is hiding it, and put focus in it.
+ *
+ * The preview could always *show* a change and name the settings behind it; it
+ * could not take you to them, so "I can see the thing, I cannot find the
+ * control" survived one step further down the page than before. This closes it.
+ *
+ * Three things have to happen in order, and skipping any one of them makes the
+ * jump silently do nothing:
+ *
+ * 1. **Clear the search.** A filtered list may not contain the target at all,
+ *    and scrolling to an element that is not in the DOM is a no-op with no
+ *    feedback. The caller clears the query before this runs.
+ * 2. **Open the ancestor disclosure.** Seven of the eighteen tasks live inside
+ *    the collapsed "Advanced" `<details>`; `scrollIntoView` on a `display:none`
+ *    subtree lands nowhere.
+ * 3. **Focus, not just scroll**, for the reason in `TaskEditor`.
+ *
+ * The highlight is an inline style rather than a class. A new `globals.css`
+ * rule is not served until `.next` is cleared, and an unused Tailwind ring
+ * utility may never be generated — either way the failure is invisible, which
+ * is the worst kind for a confirmation cue.
+ */
+function jumpToAppearanceTask(taskId: string) {
+  const target = document.getElementById(`appearance-${taskId}`);
+  if (!target) return;
+  target.closest("details")?.setAttribute("open", "");
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  target.focus({ preventScroll: true });
+  target.style.outline = "2px solid var(--brand-primary)";
+  target.style.outlineOffset = "3px";
+  window.setTimeout(() => {
+    target.style.outline = "";
+    target.style.outlineOffset = "";
+  }, 1800);
+}
+
+function PreviewBlock({
+  title,
+  note,
+  jumpTo,
+  onJump,
+  children,
+}: {
+  title: string;
+  note: ReactNode;
+  /** The task editor this block's settings live in. */
+  jumpTo?: string;
+  onJump?: (taskId: string) => void;
+  children: ReactNode;
+}) {
   return (
     <div className="rounded-[var(--control-radius)] border border-brand-border p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-brand-textMuted">{title}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-brand-textMuted">{title}</p>
+        {jumpTo && onJump ? (
+          <button
+            type="button"
+            onClick={() => onJump(jumpTo)}
+            className="text-[11px] font-semibold text-brand-accent hover:underline"
+          >
+            Edit these →
+          </button>
+        ) : null}
+      </div>
       <div className="mt-3">{children}</div>
       <PreviewNote>{note}</PreviewNote>
     </div>
@@ -908,7 +1002,7 @@ function PreviewBlock({ title, note, children }: { title: string; note: ReactNod
  * they actually asked about (the custom-project CTA and the "Customizable"
  * badge) appeared nowhere at all.
  */
-function AppearancePreview({ form }: { form: Appearance }) {
+function AppearancePreview({ form, onJump }: { form: Appearance; onJump: (taskId: string) => void }) {
   return (
     <section className="ui-preview ui-card sticky top-5 h-fit space-y-3 self-start" aria-label="Live appearance preview">
       <div className="flex items-center gap-3">
@@ -923,6 +1017,8 @@ function AppearancePreview({ form }: { form: Appearance }) {
 
       <PreviewBlock
         title="Product card"
+        jumpTo="brand-surfaces"
+        onJump={onJump}
         note={
           <>
             Background: <b>Card background</b> · Title: <b>Heading text</b> · Category and description:{" "}
@@ -947,6 +1043,8 @@ function AppearancePreview({ form }: { form: Appearance }) {
           card — and honest about the fact that it has no control of its own. */}
       <PreviewBlock
         title="“Customizable” badge"
+        jumpTo="customizable-badge"
+        onJump={onJump}
         note={
           <>
             Background: <b>Badge background</b> · Text: <b>Badge text</b> · Border: <b>Badge border</b>. All three
@@ -959,6 +1057,8 @@ function AppearancePreview({ form }: { form: Appearance }) {
 
       <PreviewBlock
         title="Custom project CTA"
+        jumpTo="custom-project-button"
+        onJump={onJump}
         note={
           <>
             Background: <b>Secondary button background</b> · Text: <b>Secondary button text</b> · Border:{" "}
@@ -974,6 +1074,8 @@ function AppearancePreview({ form }: { form: Appearance }) {
 
       <PreviewBlock
         title="Buttons"
+        jumpTo="primary-button"
+        onJump={onJump}
         note={
           <>
             Primary fill: <b>Primary brand colour</b> · Primary label: <b>Primary button text</b> · Secondary
@@ -990,6 +1092,8 @@ function AppearancePreview({ form }: { form: Appearance }) {
 
       <PreviewBlock
         title="Form field"
+        jumpTo="form-input"
+        onJump={onJump}
         note={
           <>
             Label: <b>Quiet text</b> · Field background: <b>Input &amp; raised background</b> · Outline:{" "}
@@ -1005,6 +1109,8 @@ function AppearancePreview({ form }: { form: Appearance }) {
 
       <PreviewBlock
         title="Status badges"
+        jumpTo="brand-accent"
+        onJump={onJump}
         note={
           <>
             “In review” follows <b>Accent colour</b>. In stock and Sold out are deliberately fixed green and red —
@@ -1021,6 +1127,8 @@ function AppearancePreview({ form }: { form: Appearance }) {
 
       <PreviewBlock
         title="Staff panel"
+        jumpTo="brand-surfaces"
+        onJump={onJump}
         note={
           <>
             The same <b>Card background</b>, <b>Border colour</b> and <b>Heading text</b> as the storefront. Only

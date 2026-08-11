@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AccessDeniedCard } from "@/components/AccessDeniedCard";
+import { SentryTestPanel } from "@/components/staff/SentryTestPanel";
 import { LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { Badge, EmptyState, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
@@ -196,6 +197,23 @@ export default function IntegrationsPage() {
             </Panel>
           ))
         : null}
+
+      {/*
+        The Sentry connection test, moved here from `/staff/settings`.
+
+        It sat on the settings directory as a ninth block under four headings of
+        real configuration — a button that deliberately throws an error, beside
+        "Commerce" and "Appearance". Nothing about it is a setting: it changes
+        no state, it is run once when somebody is wiring up monitoring, and its
+        whole question is "is this integration actually working", which is the
+        question this page exists to answer and answers for every other service.
+
+        Its permission is unchanged. It needed `security.view` on the settings
+        page and it needs `security.view` here, on top of the
+        `operations.health.view` that opens the page at all — so this move gives
+        nobody access they did not already have.
+      */}
+      {permissions.has("security.view") ? <SentryTestPanel /> : null}
     </StaffPage>
   );
 }
