@@ -37,6 +37,14 @@ import { ProductOptionPreview } from "@/components/staff/ProductOptionPreview";
 import { choicePresentation, presentationPatch, type ChoicePresentation } from "@/lib/commerce/optionPresentation";
 import { ProductShippingEditor } from "@/components/staff/ProductShippingEditor";
 import { EMPTY_DETAIL_CONTENT, parseDetailContent, serializeDetailContent, type ProductDetailContent } from "@/lib/commerce/productContent";
+import {
+  filterAndSortStaffProducts,
+  staffProductStatus,
+  staffStockState,
+  type StaffProductSort,
+  type StaffProductStatus,
+  type StaffStockFilter,
+} from "@/lib/commerce/staffCatalog";
 
 /**
  * The product editor.
@@ -90,7 +98,11 @@ export default function StaffCatalogPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"active" | "draft" | "published" | "archived" | "all">("active");
+  const [statusFilter, setStatusFilter] = useState<StaffProductStatus>("all");
+  const [stockFilter, setStockFilter] = useState<StaffStockFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [customizableOnly, setCustomizableOnly] = useState(false);
+  const [productSort, setProductSort] = useState<StaffProductSort>("newest");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   /** True when this product's media or options could not be read. Gates option editing. */
   const [editorLoadFailed, setEditorLoadFailed] = useState(false);
@@ -127,16 +139,9 @@ export default function StaffCatalogPage() {
   );
   const [tab, setTab] = useHashTab(tabs);
 
-  const filteredProducts = useMemo(() => products.filter(product => {
-    const term = search.trim().toLowerCase();
-    const matchesSearch = !term || [product.name, product.slug, product.sku, product.category].some(value => value?.toLowerCase().includes(term));
-    const matchesStatus = statusFilter === "all" ||
-      (statusFilter === "active" && !product.archived_at) ||
-      (statusFilter === "archived" && Boolean(product.archived_at)) ||
-      (statusFilter === "published" && product.is_published && !product.archived_at) ||
-      (statusFilter === "draft" && !product.is_published && !product.archived_at);
-    return matchesSearch && matchesStatus;
-  }), [products, search, statusFilter]);
+  const filteredProducts = useMemo(() => filterAndSortStaffProducts(products, categories, {
+    query: search, status: statusFilter, stock: stockFilter, categoryId: categoryFilter, customizableOnly, sort: productSort,
+  }), [products, categories, search, statusFilter, stockFilter, categoryFilter, customizableOnly, productSort]);
   const imageCount = media.filter(item => item.kind === "image").length;
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -659,8 +664,8 @@ export default function StaffCatalogPage() {
   return (
     <StaffPage>
       <PageHeader
-        title="Products"
-        description="Everything customers can buy: details, media, pricing, options, stock rules and how each one is delivered."
+        title="Catalog"
+        description="Manage products, category structure, merchandising order, and inventory health from one workspace."
         actions={
           canManage ? (
             <button
@@ -674,6 +679,25 @@ export default function StaffCatalogPage() {
           ) : null
         }
       />
+
+      <nav aria-label="Catalog workspace" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Link href="/staff/catalog" aria-current="page" className="ui-card p-4 transition hover:border-brand-primary">
+          <strong className="block">Products</strong>
+          <span className="mt-1 block text-sm text-[var(--muted)]">{products.length} catalog records</span>
+        </Link>
+        <Link href="/staff/catalog/categories" className="ui-card p-4 transition hover:border-brand-primary">
+          <strong className="block">Categories</strong>
+          <span className="mt-1 block text-sm text-[var(--muted)]">{categories.filter(category => !category.archived_at).length} active records and hierarchy</span>
+        </Link>
+        <Link href="/staff/inventory" className="ui-card p-4 transition hover:border-brand-primary">
+          <strong className="block">Inventory</strong>
+          <span className="mt-1 block text-sm text-[var(--muted)]">Stock, reservations, and adjustments</span>
+        </Link>
+        <Link href="/staff/catalog/discounts" className="ui-card p-4 transition hover:border-brand-primary">
+          <strong className="block">Merchandising</strong>
+          <span className="mt-1 block text-sm text-[var(--muted)]">Manual order and discount controls</span>
+        </Link>
+      </nav>
 
       {/* The create form is behind the page action rather than pinned above the
           catalog. It was the first thing on the page every time, so opening
@@ -721,29 +745,47 @@ export default function StaffCatalogPage() {
 
       {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
         {/* ---------------- Product list ---------------- */}
         <aside className="min-w-0 space-y-3">
-          <input
-            className={`${input} w-full`}
-            value={search}
-            onChange={event => setSearch(event.target.value)}
-            placeholder="Search products or SKU"
-            aria-label="Search products"
-          />
-          <MenuSelect
-            ariaLabel="Filter products"
-            className="ui-select-trigger"
-            value={statusFilter}
-            onChange={value => setStatusFilter(value as typeof statusFilter)}
-            options={[
-              { value: "active", label: "Active products" },
-              { value: "published", label: "Published" },
-              { value: "draft", label: "Drafts" },
-              { value: "archived", label: "Archived" },
-              { value: "all", label: "All products" },
-            ]}
-          />
+          <Card>
+            <div className="space-y-3">
+              <input
+                className={`${input} w-full`}
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Search products or SKU"
+                aria-label="Search products"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <MenuSelect ariaLabel="Product status" className="ui-select-trigger w-full" value={statusFilter} onChange={value => setStatusFilter(value as StaffProductStatus)} options={[
+                  { value: "all", label: "All statuses" }, { value: "active", label: "Active" },
+                  { value: "draft", label: "Draft" }, { value: "hidden", label: "Hidden / archived" },
+                ]} />
+                <MenuSelect ariaLabel="Stock status" className="ui-select-trigger w-full" value={stockFilter} onChange={value => setStockFilter(value as StaffStockFilter)} options={[
+                  { value: "all", label: "All stock" }, { value: "in_stock", label: "In stock" },
+                  { value: "low_stock", label: "Low stock" }, { value: "out_of_stock", label: "Out of stock" },
+                ]} />
+                <MenuSelect ariaLabel="Product category" className="ui-select-trigger w-full" value={categoryFilter ?? ""} onChange={value => setCategoryFilter(value || null)} options={[
+                  { value: "", label: "All categories" },
+                  ...categories.filter(category => !category.archived_at).map(category => ({
+                    value: category.id,
+                    label: `${category.parent_id ? "↳ " : ""}${category.name}`,
+                  })),
+                ]} />
+                <MenuSelect ariaLabel="Sort products" className="ui-select-trigger w-full" value={productSort} onChange={value => setProductSort(value as StaffProductSort)} options={[
+                  { value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "name", label: "Name" },
+                  { value: "price_asc", label: "Price: low first" }, { value: "price_desc", label: "Price: high first" },
+                  { value: "inventory", label: "Inventory: low first" }, { value: "manual", label: "Manual order" },
+                ]} />
+              </div>
+              <CheckField label="Customizable only" checked={customizableOnly} onChange={setCustomizableOnly} />
+              <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+                <span>{filteredProducts.length} of {products.length} products</span>
+                <button type="button" className="underline" onClick={() => { setSearch(""); setStatusFilter("all"); setStockFilter("all"); setCategoryFilter(null); setCustomizableOnly(false); setProductSort("newest"); }}>Clear</button>
+              </div>
+            </div>
+          </Card>
           {filteredProducts.length ? (
             <div className="staff-rows">
               {filteredProducts.map(product => (
@@ -754,18 +796,21 @@ export default function StaffCatalogPage() {
                   aria-current={selectedId === product.id ? "true" : undefined}
                   className="staff-row"
                 >
+                  <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-black/20">
+                    {product.image_url ? <Image src={product.image_url} alt="" fill sizes="48px" className="object-cover" unoptimized /> : null}
+                  </span>
                   <span className="staff-row-main">
                     <span className="staff-row-title block">{product.name}</span>
                     <span className="staff-row-detail block">
-                      {product.sku ? `${product.sku} · ` : ""}/{product.slug}
+                      {product.sku ? `${product.sku} · ` : ""}{categories.find(category => category.id === product.category_id)?.name ?? "Uncategorized"}
                     </span>
+                    <span className="staff-row-detail block">{product.starting_price_cents == null ? "Quote only" : `$${(product.starting_price_cents / 100).toFixed(2)}`}</span>
                   </span>
                   <span className="staff-row-aside">
-                    {product.inventory_policy === "track" && product.inventory_quantity <= product.low_stock_threshold ? (
-                      <Badge tone="warning">{product.inventory_quantity} left</Badge>
-                    ) : null}
-                    <Badge tone={product.archived_at ? "neutral" : product.is_published ? "success" : "neutral"}>
-                      {product.archived_at ? "Archived" : product.is_published ? "Published" : "Draft"}
+                    {staffStockState(product) === "low_stock" ? <Badge tone="warning">{product.inventory_quantity} left</Badge> : null}
+                    {staffStockState(product) === "out_of_stock" ? <Badge tone="danger">Out of stock</Badge> : null}
+                    <Badge tone={staffProductStatus(product) === "active" ? "success" : "neutral"}>
+                      {staffProductStatus(product) === "active" ? "Active" : staffProductStatus(product) === "hidden" ? "Hidden" : "Draft"}
                     </Badge>
                   </span>
                 </button>

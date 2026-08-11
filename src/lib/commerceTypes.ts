@@ -93,6 +93,8 @@ export type CatalogProduct = {
   low_stock_threshold: number;
   continue_selling_when_out_of_stock: boolean;
   archived_at: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   /**
    * Structured product content, added by `20260804030000`.
    *
