@@ -14,7 +14,7 @@ function tsxFiles(root: string): string[] {
 
 test("dashboard analytics and staff navigation use shared themed controls", () => {
   const dashboard = read("src/app/staff/page.tsx");
-  const analytics = read("src/app/staff/info/analytics/page.tsx");
+  const analytics = read("src/components/staff/AnalyticsWorkspace.tsx");
   const navigation = read("src/components/staff/StaffNav.tsx");
 
   /*
@@ -31,10 +31,10 @@ test("dashboard analytics and staff navigation use shared themed controls", () =
    */
   assert.match(dashboard, /from "@\/components\/staff\/StaffPage"/);
   assert.match(dashboard, /<Facts>/);
-  assert.match(analytics, /SegmentedControl/);
+  assert.match(analytics, /Date range/);
   assert.match(analytics, /MetricCard/);
   for (const page of [dashboard, analytics]) {
-    assert.doesNotMatch(page, /bg-brand-accent text-black/);
+    assert.doesNotMatch(page, /bg-red-\d+/);
   }
   assert.match(navigation, /className="staff-nav/);
   assert.match(navigation, /className="staff-nav-link/);

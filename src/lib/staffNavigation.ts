@@ -400,7 +400,7 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
         anyOf: ["automation.view", "automation.manage"],
       },
       {
-        href: "/staff/info/analytics",
+        href: "/staff/analytics",
         label: "Analytics",
         description: "Revenue, orders and site metrics over time.",
         icon: "analytics",

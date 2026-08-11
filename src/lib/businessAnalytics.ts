@@ -1,4 +1,28 @@
-export type AnalyticsRange = "30d" | "90d" | "all";
+export type AnalyticsRange = "today" | "7d" | "30d" | "month" | "last_month" | "year" | "custom" | "90d" | "all";
+
+export type AnalyticsWindow = { start: Date | null; end: Date; previousStart: Date | null; previousEnd: Date | null };
+
+/** UTC, half-open reporting windows. `end` is exclusive so adjacent periods never double count. */
+export function resolveAnalyticsWindow(range: AnalyticsRange, now: Date, customStart?: string | null, customEnd?: string | null): AnalyticsWindow {
+  const end = new Date(now);
+  let start: Date | null = null;
+  if (range === "today") { start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())); end.setTime(start.getTime() + 86_400_000); }
+  else if (range === "7d" || range === "30d" || range === "90d") { const days = Number.parseInt(range); start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() - days + 1)); end.setTime(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1)); }
+  else if (range === "month") { start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1)); end.setTime(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 1)); }
+  else if (range === "last_month") { start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 1, 1)); end.setTime(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1)); }
+  else if (range === "year") { start = new Date(Date.UTC(end.getUTCFullYear(), 0, 1)); end.setTime(Date.UTC(end.getUTCFullYear() + 1, 0, 1)); }
+  else if (range === "custom" && customStart && customEnd) {
+    start = new Date(`${customStart}T00:00:00.000Z`); end.setTime(new Date(`${customEnd}T00:00:00.000Z`).getTime() + 86_400_000);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end || end.getTime() - start.getTime() > 366 * 86_400_000) throw new Error("Custom range must be valid and no longer than 366 days.");
+  }
+  if (!start) return { start: null, end, previousStart: null, previousEnd: null };
+  const duration = end.getTime() - start.getTime();
+  return { start, end, previousStart: new Date(start.getTime() - duration), previousEnd: new Date(start) };
+}
+
+export function percentageChange(current: number, previous: number): number | null {
+  return previous === 0 ? null : (current - previous) / Math.abs(previous);
+}
 
 export type AnalyticsOrder = {
   id: string;
@@ -33,13 +57,7 @@ export type AnalyticsRefund = { order_id: string; amount_cents: number; created_
 
 const terminalStatuses = new Set(["completed", "declined", "cancelled"]);
 
-function rangeStart(range: AnalyticsRange, now: Date) {
-  if (range === "all") return null;
-  const start = new Date(now);
-  start.setUTCHours(0, 0, 0, 0);
-  start.setUTCDate(start.getUTCDate() - (range === "30d" ? 29 : 89));
-  return start;
-}
+function rangeStart(range: AnalyticsRange, now: Date) { return resolveAnalyticsWindow(range, now).start; }
 
 const inWindow = (date: string | null, start: Date | null, end: Date) => {
   if (!date) return false;
@@ -56,13 +74,14 @@ export function buildBusinessAnalytics(
   now: Date,
 ) {
   const start = rangeStart(range, now);
-  const periodOrders = orders.filter((order) => inWindow(order.created_at, start, now));
-  const periodPayments = payments.filter((payment) => inWindow(payment.received_at, start, now));
-  const periodRefunds = refunds.filter((refund) => inWindow(refund.created_at, start, now));
+  const windowEnd = resolveAnalyticsWindow(range, now).end;
+  const periodOrders = orders.filter((order) => inWindow(order.created_at, start, windowEnd));
+  const periodPayments = payments.filter((payment) => inWindow(payment.received_at, start, windowEnd));
+  const periodRefunds = refunds.filter((refund) => inWindow(refund.created_at, start, windowEnd));
   const paidOrderIds = new Set(periodPayments.map((payment) => payment.order_id));
   const grossCollectedCents = periodPayments.reduce((sum, payment) => sum + payment.amount_cents, 0);
   const refundedCents = periodRefunds.reduce((sum, refund) => sum + refund.amount_cents, 0);
-  const netCollectedCents = Math.max(0, grossCollectedCents - refundedCents);
+  const netCollectedCents = grossCollectedCents - refundedCents;
   const activeOrders = orders.filter((order) => !terminalStatuses.has(order.status));
   const outstandingCents = activeOrders.reduce((sum, order) => {
     if (order.agreed_price_cents == null) return sum;
