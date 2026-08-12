@@ -11,6 +11,7 @@ import {
   roleWriteErrorMessage,
   toRoleDbColumns,
 } from "@/lib/staff/roleSchema";
+import { canManageRole } from "@/lib/staff/userAccess";
 
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -79,11 +80,36 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ key: stri
    * `toRoleDbColumns` is the one place that translates. Selecting the wire
    * names here would have failed with 42703 on every role edit.
    */
-  const { data: previous } = await routeServiceClient
+  const { data: previous, error: previousError } = await routeServiceClient
     .from("roles")
     .select("key,name,description,rank,is_staff,badge_bg,badge_border,badge_text,badge_icon")
     .eq("key", roleKey)
     .maybeSingle();
+  if (previousError) return NextResponse.json({ error: "Could not read the role." }, { status: 500 });
+  if (!previous) return NextResponse.json({ error: "That role no longer exists." }, { status: 404 });
+
+  const { data: actorRole, error: actorRoleError } = await routeServiceClient
+    .from("roles")
+    .select("rank")
+    .eq("key", actor.role)
+    .maybeSingle<{ rank: number }>();
+  if (actorRoleError || (!actor.isOp && !actorRole)) {
+    return NextResponse.json({ error: "Could not verify your role hierarchy." }, { status: 500 });
+  }
+  const currentRank = Number((previous as { rank?: number }).rank ?? 0);
+  const nextRank = Number((parsed.value as { rank?: number }).rank ?? currentRank);
+  const decision = canManageRole({
+    actor: {
+      userId: actor.userId,
+      roleKey: actor.role,
+      roleRank: actorRole?.rank ?? 0,
+      isOp: actor.isOp === true,
+      permissions: actor.permissions,
+    },
+    targetRoleRank: currentRank,
+    nextRoleRank: nextRank,
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   const { data, error } = await routeServiceClient
     .from("roles")
@@ -109,7 +135,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ key: stri
       id: roleKey,
       label: String((data[0] as { name?: string }).name ?? roleKey),
     },
-    changes: buildChangeSet(previous ?? {}, data[0], ROLE_AUDIT_FIELDS),
+    changes: buildChangeSet(previous, data[0], ROLE_AUDIT_FIELDS),
     source: "staff_ui",
     actorIp: requestIp(req.headers),
   });
@@ -148,7 +174,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ key: str
   // role that carries every permission — from inside the page that requires it.
   const { data: role, error: readError } = await routeServiceClient
     .from("roles")
-    .select("key,is_system")
+    .select("key,is_system,rank")
     .eq("key", roleKey)
     .maybeSingle();
   if (readError) return NextResponse.json({ error: "Could not read the role." }, { status: 400 });
@@ -156,6 +182,27 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ key: str
   if (role.is_system) {
     return NextResponse.json({ error: "Built-in roles cannot be deleted." }, { status: 409 });
   }
+
+  const { data: actorRole, error: actorRoleError } = await routeServiceClient
+    .from("roles")
+    .select("rank")
+    .eq("key", actor.role)
+    .maybeSingle<{ rank: number }>();
+  if (actorRoleError || (!actor.isOp && !actorRole)) {
+    return NextResponse.json({ error: "Could not verify your role hierarchy." }, { status: 500 });
+  }
+  const decision = canManageRole({
+    actor: {
+      userId: actor.userId,
+      roleKey: actor.role,
+      roleRank: actorRole?.rank ?? 0,
+      isOp: actor.isOp === true,
+      permissions: actor.permissions,
+    },
+    targetRoleRank: role.rank,
+    nextRoleRank: role.rank,
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   // Deleting a role that people still hold would leave `profiles.role` naming
   // something that no longer exists, and those accounts would resolve to no

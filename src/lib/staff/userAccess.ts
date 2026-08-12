@@ -30,6 +30,8 @@
  * checks and not one.
  */
 
+import { PERMISSIONS } from "../permissions.ts";
+
 export type AccessActor = {
   userId: string;
   roleKey: string;
@@ -51,6 +53,78 @@ const ALLOW: AccessDecision = { allowed: true };
 
 function deny(reason: string, status: number): AccessDecision {
   return { allowed: false, reason, status };
+}
+
+const CANONICAL_PERMISSIONS: ReadonlySet<string> = new Set(PERMISSIONS);
+
+/** Refuse invented permission names before they can reach a service-role write. */
+export function unknownPermissionKeys(permissions: readonly string[]): string[] {
+  return [...new Set(permissions.filter((key) => !CANONICAL_PERMISSIONS.has(key)))].sort();
+}
+
+function validatePermissionGrant(actor: AccessActor, permissions: readonly string[]): AccessDecision {
+  const unknown = unknownPermissionKeys(permissions);
+  if (unknown.length) return deny(`Unknown permission: ${unknown.join(", ")}.`, 400);
+
+  if (!actor.isOp) {
+    const unheld = [...new Set(permissions.filter((key) => !actor.permissions.has(key)))].sort();
+    if (unheld.length) {
+      return deny(`You cannot grant permissions you do not hold: ${unheld.join(", ")}.`, 403);
+    }
+  }
+  return ALLOW;
+}
+
+/** Hierarchy guard for creating and editing role definitions. */
+export function canManageRole(input: {
+  actor: AccessActor;
+  targetRoleRank?: number;
+  nextRoleRank: number;
+}): AccessDecision {
+  const { actor, targetRoleRank, nextRoleRank } = input;
+  if (!actor.permissions.has("roles.manage")) return deny("You do not have permission to manage roles.", 403);
+  if (actor.isOp) return ALLOW;
+  if (targetRoleRank !== undefined && targetRoleRank >= actor.roleRank) {
+    return deny("You cannot modify a role at or above your own level.", 403);
+  }
+  if (nextRoleRank >= actor.roleRank) {
+    return deny("A role must remain below your own level.", 403);
+  }
+  return ALLOW;
+}
+
+/** Permission-set guard for a role. Unknown keys are never bypassed, including by operators. */
+export function canSetRolePermissions(input: {
+  actor: AccessActor;
+  targetRoleRank: number;
+  permissions: readonly string[];
+}): AccessDecision {
+  const hierarchy = canManageRole({
+    actor: input.actor,
+    targetRoleRank: input.targetRoleRank,
+    nextRoleRank: input.targetRoleRank,
+  });
+  if (!hierarchy.allowed) return hierarchy;
+  return validatePermissionGrant(input.actor, input.permissions);
+}
+
+/** Permission override guard. Operators retain their deliberate hierarchy exception. */
+export function canSetUserPermissions(input: {
+  actor: AccessActor;
+  target: AccessTarget;
+  permissions: readonly string[];
+}): AccessDecision {
+  const { actor, target, permissions } = input;
+  if (!actor.permissions.has("permissions.grant")) {
+    return deny("You do not have permission to grant permissions.", 403);
+  }
+  if (!actor.isOp) {
+    if (actor.userId === target.userId) return deny("You cannot change your own permission overrides.", 403);
+    if (target.roleRank >= actor.roleRank) {
+      return deny("You cannot change permissions for somebody at or above your own level.", 403);
+    }
+  }
+  return validatePermissionGrant(actor, permissions);
 }
 
 /**
