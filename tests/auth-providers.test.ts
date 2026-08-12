@@ -12,7 +12,7 @@ const code = (source: string) =>
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
 
 const login = read("src/app/auth/login/page.tsx");
-const account = read("src/app/account/page.tsx");
+const account = read("src/app/account/profile/page.tsx");
 
 /**
  * Replacing Discord with Facebook.

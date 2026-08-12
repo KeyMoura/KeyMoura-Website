@@ -14,6 +14,33 @@ export function orderLabel(value: string) {
 }
 
 /**
+ * Deliberately small customer projection. Internal workflow vocabulary must not
+ * leak just because another production status was added to the database.
+ */
+export function orderCustomerStatus(status: string, fulfillmentStatus?: string | null) {
+  if (["shipped", "in_transit"].includes(fulfillmentStatus ?? "")) return "Shipped";
+  if (fulfillmentStatus === "ready_for_pickup") return "Ready for pickup";
+  const labels: Record<string, string> = {
+    requested: "Request received",
+    needs_information: "Details needed",
+    accepted: "Preparing your order",
+    customer_review: "Your review needed",
+    awaiting_payment: "Payment needed",
+    awaiting_production: "Preparing your order",
+    in_progress: "In production",
+    production_active: "In production",
+    qc: "Final checks",
+    final_review: "Your review needed",
+    ready: "Ready for fulfillment",
+    fulfilled: "Shipped",
+    completed: "Complete",
+    declined: "Not proceeding",
+    cancelled: "Cancelled",
+  };
+  return labels[status] ?? "Order in progress";
+}
+
+/**
  * "Is there still money due?" — asked of the amounts rather than of
  * `payment_status`.
  *

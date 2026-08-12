@@ -116,7 +116,7 @@ test("a stable key still produces a changing URL", () => {
 });
 
 test("both upload surfaces use the shared key builder rather than their own", () => {
-  const account = read("src/app/account/page.tsx");
+  const account = read("src/app/account/profile/page.tsx");
   const staff = read("src/app/api/staff/security/users/[id]/avatar/route.ts");
 
   for (const [name, source] of [["account", account], ["staff", staff]] as const) {
