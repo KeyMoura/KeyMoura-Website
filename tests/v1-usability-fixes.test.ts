@@ -28,7 +28,7 @@ test("catalog uses gallery media and exposes image navigation", () => {
 });
 
 test("account is the customer order launch point", () => {
-  const account = read("src/app/account/page.tsx");
+  const account = read("src/app/account/profile/page.tsx");
   assert.match(account, /href="\/orders"/);
   assert.match(account, /Requests & orders/);
   assert.match(account, /href="\/orders\/new"/);

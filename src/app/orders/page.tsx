@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { moneyFromCents, orderLabel, orderNeedsCustomerAction, orderNextStep } from "@/lib/orderHub";
+import { moneyFromCents, orderCustomerStatus, orderLabel, orderNeedsCustomerAction, orderNextStep } from "@/lib/orderHub";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { Badge, EmptyState, MetricCard, Notice } from "@/components/ui/DesignSystem";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
@@ -20,7 +20,7 @@ type Order = {
   updated_at: string;
 };
 
-type Filter = "active" | "action" | "complete" | "all";
+type Filter = "active" | "complete" | "cancelled" | "all";
 type Sort = "updated" | "newest" | "oldest" | "attention" | "price_high" | "price_low";
 
 export default function OrdersPage() {
@@ -52,7 +52,9 @@ export default function OrdersPage() {
   const actionable = orders.filter(orderNeedsCustomerAction);
   const active = orders.filter((order) => !["completed", "declined", "cancelled"].includes(order.status));
   const completed = orders.filter((order) => ["completed", "declined", "cancelled"].includes(order.status));
-  const filtered = filter === "action" ? actionable : filter === "active" ? active : filter === "complete" ? completed : orders;
+  const cancelled = orders.filter((order) => ["declined", "cancelled"].includes(order.status));
+  const finished = orders.filter((order) => order.status === "completed");
+  const filtered = filter === "active" ? active : filter === "complete" ? finished : filter === "cancelled" ? cancelled : orders;
   const shown = [...filtered].sort((left, right) => {
     if (sort === "newest") return Date.parse(right.created_at) - Date.parse(left.created_at);
     if (sort === "oldest") return Date.parse(left.created_at) - Date.parse(right.created_at);
@@ -90,7 +92,7 @@ export default function OrdersPage() {
       ) : null}
 
       <div className="ui-filter-bar flex-col sm:flex-row sm:items-center sm:justify-between">
-        <SegmentedControl className="w-full sm:w-auto" value={filter} onChange={setFilter} ariaLabel="Filter orders" options={[{ value: "active", label: `Active (${active.length})` }, { value: "action", label: `Needs attention (${actionable.length})` }, { value: "complete", label: `Finished (${completed.length})` }, { value: "all", label: `All (${orders.length})` }]} />
+        <SegmentedControl className="w-full sm:w-auto" value={filter} onChange={setFilter} ariaLabel="Filter orders" options={[{ value: "active", label: `Active (${active.length})` }, { value: "complete", label: `Completed (${finished.length})` }, { value: "cancelled", label: `Cancelled / refunded (${cancelled.length})` }, { value: "all", label: `All (${orders.length})` }]} />
         <label className="flex w-full items-center gap-2 text-sm text-brand-textMuted sm:w-auto sm:shrink-0">
           <span className="shrink-0">Sort by</span>
           <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="ui-input min-w-0 flex-1 sm:w-auto sm:flex-none" aria-label="Sort your orders">
@@ -113,7 +115,7 @@ export default function OrdersPage() {
             <Link key={order.id} href={`/orders/${order.id}`} className={`ui-card ui-card-hover group ${needsAction ? "!border-brand-primary/45" : ""}`}>
               <div className="flex items-start justify-between gap-4">
                 <div><p className="text-xs text-brand-textMuted">{order.order_number || "Request pending review"}</p><h2 className="mt-1 text-lg font-semibold group-hover:text-brand-primary">{order.product_name}</h2></div>
-                <Badge>{orderLabel(order.status)}</Badge>
+                <Badge>{orderCustomerStatus(order.status, null)}</Badge>
               </div>
               <div className={`mt-5 rounded-xl border p-3 text-sm ${needsAction ? "border-brand-primary/30 bg-brand-primary/10 text-brand-primary" : "border-zinc-800 text-brand-textMuted"}`}><span className="font-medium">Next:</span> {orderNextStep(order)}</div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-brand-textMuted">

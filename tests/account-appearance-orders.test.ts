@@ -51,7 +51,7 @@ test("primary order and notification controls adapt for mobile", () => {
 });
 
 test("account security exposes safe Supabase identity linking", () => {
-  const page = read("src/app/account/page.tsx");
+  const page = read("src/app/account/profile/page.tsx");
   assert.match(page, /getUserIdentities\(\)/);
   assert.match(page, /linkIdentity\(/);
   assert.match(page, /unlinkIdentity\(/);
@@ -118,7 +118,7 @@ test("every colour control is rendered from the declared task list", () => {
 });
 
 test("account tabs use the shared configurable tab system", () => {
-  const page = read("src/app/account/page.tsx");
+  const page = read("src/app/account/profile/page.tsx");
   assert.match(page, /className="ui-tabs/);
   assert.match(page, /className=\{`ui-tab/);
   assert.match(page, /role="tab"/);
