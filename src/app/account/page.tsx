@@ -21,12 +21,13 @@ export default function AccountOverviewPage() {
   const load = useCallback(async () => {
     setState("loading");
     const auth = await supabase.auth.getSession();
-    const user = auth.data.session?.user;
-    if (!user) { setState("signed-out"); return; }
+    const session = auth.data.session;
+    if (!session) { setState("signed-out"); return; }
+    const user = session.user;
     const [profile, orderResult, supportResult] = await Promise.all([
       supabase.from("profiles").select("display_name,username").eq("id", user.id).maybeSingle<{display_name:string|null;username:string|null}>(),
       supabase.from("orders").select("id,order_number,product_name,status,payment_status,agreed_price_cents,amount_paid_cents,amount_refunded_cents,fulfillment_method,fulfillment_status,tracking_number,updated_at,created_at").eq("customer_id", user.id).order("updated_at", { ascending:false }).limit(8),
-      fetch("/api/support/conversations", { headers:{ Authorization:`Bearer ${auth.data.session.access_token}` } }),
+      fetch("/api/support/conversations", { headers:{ Authorization:`Bearer ${session.access_token}` } }),
     ]);
     if (profile.error || orderResult.error || !supportResult.ok) { setState("error"); return; }
     const supportBody = await supportResult.json() as { conversations?:Conversation[] };
