@@ -4,6 +4,7 @@ import { isArray, isRecord, isString } from "@/lib/typeGuards";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { resolveActorLabel } from "@/lib/audit/events";
 import { diffPermissionSets, recordPermissionSetChange, requestIp } from "@/lib/audit/security";
+import { canSetUserPermissions } from "@/lib/staff/userAccess";
 
 function parsePermListPayload(v: unknown): { permissions: string[] } | null {
   const r = asRecord(v);
@@ -48,6 +49,39 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const payload = await readJson(req);
   const parsed = parsePermListPayload(payload);
   if (!parsed) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+
+  const { data: userRoles, error: roleError } = await routeServiceClient
+    .from("user_roles")
+    .select("user_id,role")
+    .in("user_id", [...new Set([actor.userId, id])]);
+  if (roleError) return NextResponse.json({ error: "Could not verify the user hierarchy." }, { status: 500 });
+  const roleByUser = new Map((userRoles ?? []).map((row) => [String(row.user_id), String(row.role ?? "member")]));
+  const actorRoleKey = roleByUser.get(actor.userId) ?? actor.role;
+  const targetRoleKey = roleByUser.get(id) ?? "member";
+  const { data: roles, error: ranksError } = await routeServiceClient
+    .from("roles")
+    .select("key,rank")
+    .in("key", [...new Set([actorRoleKey, targetRoleKey])]);
+  if (ranksError) return NextResponse.json({ error: "Could not verify the user hierarchy." }, { status: 500 });
+  const rankByRole = new Map((roles ?? []).map((row) => [String(row.key), Number(row.rank)]));
+  if (!actor.isOp && !rankByRole.has(actorRoleKey)) {
+    return NextResponse.json({ error: "Could not verify your role hierarchy." }, { status: 500 });
+  }
+  if (!rankByRole.has(targetRoleKey)) {
+    return NextResponse.json({ error: "Could not verify the target role hierarchy." }, { status: 409 });
+  }
+  const decision = canSetUserPermissions({
+    actor: {
+      userId: actor.userId,
+      roleKey: actorRoleKey,
+      roleRank: rankByRole.get(actorRoleKey) ?? 0,
+      isOp: actor.isOp === true,
+      permissions: actor.permissions,
+    },
+    target: { userId: id, roleKey: targetRoleKey, roleRank: rankByRole.get(targetRoleKey) ?? 0 },
+    permissions: parsed.permissions,
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   // Read before the delete: a direct grant is the strongest thing one staff
   // member can hand another, and the only readable record of it is the

@@ -15,6 +15,7 @@ import {
   roleWriteErrorMessage,
   toRoleDbColumns,
 } from "@/lib/staff/roleSchema";
+import { canManageRole } from "@/lib/staff/userAccess";
 
 type RoleRow = {
   key: string;
@@ -145,6 +146,26 @@ export async function POST(req: NextRequest) {
 
   const { key, ...rest } = parsed.value;
   const row = { key, ...toRoleDbColumns(rest) };
+
+  const { data: actorRole, error: actorRoleError } = await routeServiceClient
+    .from("roles")
+    .select("rank")
+    .eq("key", actor.role)
+    .maybeSingle<{ rank: number }>();
+  if (actorRoleError || (!actor.isOp && !actorRole)) {
+    return NextResponse.json({ error: "Could not verify your role hierarchy." }, { status: 500 });
+  }
+  const decision = canManageRole({
+    actor: {
+      userId: actor.userId,
+      roleKey: actor.role,
+      roleRank: actorRole?.rank ?? 0,
+      isOp: actor.isOp === true,
+      permissions: actor.permissions,
+    },
+    nextRoleRank: parsed.value.priority,
+  });
+  if (!decision.allowed) return NextResponse.json({ error: decision.reason }, { status: decision.status });
 
   const { error } = await routeServiceClient.from("roles").insert(row);
   if (error) {
