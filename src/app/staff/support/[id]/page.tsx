@@ -345,17 +345,19 @@ export default function StaffSupportConversationPage({ params }: { params: Promi
                         // a reply is a note somebody will eventually send as one.
                         "border-amber-500/40 bg-amber-500/[.07]"
                       : message.author_type === "customer"
-                        ? "border-zinc-800 bg-black/20"
+                        ? "border-[var(--border)] bg-[var(--panel)]"
                         : message.author_type === "system"
-                          ? "border-zinc-800 bg-black/10 text-brand-textMuted"
+                          ? "border-[var(--border)] bg-[var(--panel)] text-brand-textMuted"
                           : "border-brand-primary/30 bg-brand-primary/5"
                   }`}
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="text-sm font-semibold">
                       {message.author_label}
+                      {/* The tone stays amber — this must not look like a reply.
+                          Only the pill's geometry joins the rest of the app. */}
                       {message.visibility === "internal" ? (
-                        <span className="ml-2 rounded-full border border-amber-500/40 px-2 py-0.5 text-xs font-medium text-amber-200">
+                        <span className="ui-badge ui-badge-warning ml-2">
                           Internal note · the customer cannot see this
                         </span>
                       ) : null}

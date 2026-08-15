@@ -4,6 +4,7 @@ import ProductCard from "@/components/ProductCard";
 import { Badge, EmptyState, Field, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 
 import { productFixtures, staffCatalogFixtures } from "./fixtures";
+import { StaffSurfaces } from "./surfaces";
 
 const money = (cents: number | null) => (cents == null ? "Quote only" : `$${(cents / 100).toFixed(2)}`);
 
@@ -141,6 +142,9 @@ export default function VisualHarness() {
         </div>
         <EmptyState data-harness="empty">No products match this view.</EmptyState>
       </Group>
+
+      {/* The page-level surfaces: each route's actual composition. */}
+      <StaffSurfaces />
     </div>
   );
 }

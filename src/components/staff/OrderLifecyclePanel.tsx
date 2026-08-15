@@ -39,8 +39,9 @@ import {
  */
 
 const money = (cents: number) => `$${(Math.max(0, cents) / 100).toFixed(2)}`;
-const input =
-  "rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 text-sm outline-none focus:border-brand-accent";
+/* The shared input primitive, so the lifecycle forms match every other form
+   and follow the Border and Input background appearance settings. */
+const input = "ui-input text-sm";
 
 type LifecycleLine = {
   order_item_id: string;
@@ -376,7 +377,7 @@ export function OrderLifecyclePanel({
             {new Date(openRequest.created_at).toLocaleString()}
           </p>
           {openRequest.customer_note ? (
-            <p className="mt-3 whitespace-pre-wrap rounded-xl border border-zinc-700 bg-black/30 p-3 text-sm">
+            <p className="mt-3 whitespace-pre-wrap rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 text-sm">
               {openRequest.customer_note}
             </p>
           ) : null}
@@ -468,7 +469,7 @@ export function OrderLifecyclePanel({
               </div>
 
               {/* The financial effect, stated before the button that causes it. */}
-              <p className="mt-4 rounded-xl border border-zinc-700 bg-black/30 p-3 text-xs">
+              <p className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 text-xs">
                 Approving will refund <strong>{money(plannedRefund)}</strong>, leaving{" "}
                 <strong>{money(Math.max(0, data.refundableCents - plannedRefund))}</strong> refundable. The order becomes
                 Cancelled and the customer is emailed.
@@ -610,7 +611,7 @@ export function OrderLifecyclePanel({
       {showMoney && data.refunds.length ? (
         <div className="mt-6">
           <h3 className="text-sm font-semibold">Refunds</h3>
-          <ul className="mt-2 divide-y divide-white/10">
+          <ul className="mt-2 divide-y divide-[var(--border)]">
             {data.refunds.map((refund) => (
               <li key={refund.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
                 <span>
@@ -641,7 +642,7 @@ export function OrderLifecyclePanel({
       {showMoney && data.inventoryAdjustments && data.inventoryAdjustments.length ? (
         <div className="mt-6">
           <h3 className="text-sm font-semibold">Inventory impact</h3>
-          <ul className="mt-2 divide-y divide-white/10">
+          <ul className="mt-2 divide-y divide-[var(--border)]">
             {data.inventoryAdjustments.map((row) => (
               <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-xs">
                 <span>
@@ -730,12 +731,12 @@ function ReturnWorkflow({
       </div>
 
       {record.customer_note ? (
-        <p className="mt-3 whitespace-pre-wrap rounded-xl border border-zinc-700 bg-black/30 p-3 text-sm">
+        <p className="mt-3 whitespace-pre-wrap rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 text-sm">
           {record.customer_note}
         </p>
       ) : null}
 
-      <ul className="mt-3 divide-y divide-white/10 text-sm">
+      <ul className="mt-3 divide-y divide-[var(--border)] text-sm">
         {record.order_return_items.map((item) => (
           <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <span>{item.product_name}</span>
@@ -935,7 +936,7 @@ function ReturnWorkflow({
                   </Notice>
                 ) : null}
               </fieldset>
-              <p className={cx("rounded-xl border border-zinc-700 bg-black/30 p-3 text-xs")}>
+              <p className={cx("rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 text-xs")}>
                 Completing this will refund <strong>{money(plannedRefund)}</strong> and{" "}
                 {restock ? "return the received units to stock" : "leave stock unchanged"}.
               </p>

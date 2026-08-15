@@ -122,6 +122,37 @@ narrow   "media main  main"        wide   "media main figure aside"
          "media aside figure"
 ```
 
+A **second** container step at `46rem` caps the identity track and groups the
+columns to the start (`justify-content: start`). Without it a `1fr` identity
+track pushed status badges to the far edge: measured on the production board,
+the support inbox and the fulfillment queue, badges sat 795–1025px from the
+title they described at 1440px, and drifted further on every wider screen. With
+the cap the distance is **constant at 456px from 1024px upward** and every
+status lands on the same x down the page.
+
+Three bands, all deliberate:
+
+| Container | Layout | Status position |
+| --- | --- | --- |
+| < 34rem | Stacked | Directly under the identity it describes |
+| 34–46rem | Two columns | Right-aligned — right edges line up |
+| ≥ 46rem | Capped identity | Fixed x — left edges line up, distance bounded |
+
+## Tables
+
+`.ui-table` is the one screen-table treatment: uppercase muted header with a
+`--border` rule under it, 0.75rem cells, `--border` row separators, a
+`--panel-strong` row hover, and `.is-numeric` for right-aligned tabular
+figures. Wide tables scroll inside `.ui-table-wrap`, never at page level.
+
+Before this there were four: the inventory tables used `--border`, the
+production queue used `white/10` over a `white/5` header, the account session
+list used `zinc-800`, and the email delivery table drew no rule at all — three
+of which ignored the Border appearance setting entirely.
+
+Print tables (`/staff/**/print/*`) are deliberately black-on-white and are not
+part of this.
+
 ## Cards and panels
 
 `.ui-card` is the panel. A card inside a `.staff-section` drops its own heading

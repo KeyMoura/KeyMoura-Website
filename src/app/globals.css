@@ -678,6 +678,33 @@
   .ui-btn-danger { background: color-mix(in srgb, #fb7185 10%, transparent); border-color: color-mix(in srgb, #fb7185 48%, var(--border)); color: #fecdd3; }
   .ui-btn-danger:hover { background: color-mix(in srgb, #fb7185 17%, transparent); }
   .ui-table-wrap { overflow-x: auto; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); }
+
+  /*
+   * The one table treatment.
+   *
+   * Four screen tables had four ideas about a header: the two inventory tables
+   * used `var(--border)`, the production queue used `white/10` over a `white/5`
+   * header, the account's session list used `zinc-800`, and the email delivery
+   * table drew no rule at all. Three of those ignore the Border appearance
+   * setting entirely, so an owner who lightened their borders got a production
+   * queue that did not move.
+   *
+   * Numeric columns opt in with `.is-numeric` rather than every page inventing
+   * `tabular-nums text-right` again.
+   */
+  .ui-table { width: 100%; border-collapse: collapse; text-align: left; font-size: .875rem; }
+  .ui-table thead th {
+    border-bottom: 1px solid var(--border);
+    padding: .625rem .75rem;
+    color: var(--muted);
+    font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .ui-table tbody td { border-top: 1px solid var(--border); padding: .75rem; color: var(--text); vertical-align: middle; }
+  /* The header already drew the line above the first row. */
+  .ui-table tbody tr:first-child td { border-top: 0; }
+  .ui-table tbody tr:hover { background: var(--panel-strong); }
+  .ui-table :where(th, td).is-numeric { text-align: right; font-variant-numeric: tabular-nums; }
   .theme-primary-glow { box-shadow: 0 0 18px color-mix(in srgb, var(--brand-primary) 32%, transparent); }
   .theme-accent-glow { box-shadow: 0 0 18px color-mix(in srgb, var(--brand-accent) 28%, transparent); }
   .theme-accent-glow:hover { box-shadow: 0 0 26px color-mix(in srgb, var(--brand-accent) 45%, transparent); }
@@ -806,6 +833,18 @@
   /* Numeric facts that deserve their own column once there is room for one. */
   .staff-row-figure { grid-area: figure; color: var(--text); font-size: .875rem; font-variant-numeric: tabular-nums; }
 
+  /*
+   * A list entry whose control is a nested element rather than the row itself.
+   *
+   * The audit log expands in place, so its row is a wrapper holding a button
+   * and a disclosure panel — it cannot be an `a.staff-row`. It still needs the
+   * list's separator, which is all this carries. Previously it drew its own
+   * `border-zinc-800`, so the audit log was the one list in the staff area
+   * whose rules ignored the Border appearance setting.
+   */
+  .staff-row-plain { border-top: 1px solid var(--border); }
+  .staff-row-plain:first-child { border-top: 0; }
+
   @container staff-rows (min-width: 34rem) {
     .staff-row {
       grid-template-columns: minmax(0, 1fr) auto;
@@ -827,6 +866,29 @@
     .staff-row-media { align-self: center; }
     .staff-row-aside { justify-content: flex-end; }
     .staff-row-figure { text-align: right; }
+  }
+
+  /*
+   * Past a comfortable reading measure, identity stops stretching.
+   *
+   * A `1fr` identity track is right for a 700px list and wrong for a 1400px
+   * one. Measured on the production board, the support inbox and the
+   * fulfillment queue at a 1440px viewport, the status badges sat between 795
+   * and 1024 pixels from the title they describe: still right-aligned, so
+   * still tidy down the page, but no longer *attached* to anything. That is
+   * the `/staff/catalog` complaint again — a badge is only a label if you can
+   * see what it labels.
+   *
+   * Capping the identity track and grouping the columns to the start keeps
+   * both properties: every status still lands on the same x down the page, and
+   * that x is now a couple of centimetres from the words rather than the far
+   * edge of the screen.
+   */
+  @container staff-rows (min-width: 46rem) {
+    .staff-row { grid-template-columns: minmax(0, 34rem) auto; justify-content: start; column-gap: 2rem; }
+    .staff-row:has(.staff-row-media) { grid-template-columns: auto minmax(0, 32rem) auto; }
+    .staff-row:has(.staff-row-figure) { grid-template-columns: minmax(0, 30rem) auto auto; }
+    .staff-row:has(.staff-row-media):has(.staff-row-figure) { grid-template-columns: auto minmax(0, 28rem) auto auto; }
   }
 
   /* Toolbar: the common controls stay out; the rest go behind Filters. */
@@ -926,8 +988,18 @@
 
   .staff-person-avatar { grid-area: avatar; align-self: start; }
   .staff-person-identity { grid-area: identity; min-width: 0; }
-  .staff-person-name { color: var(--text); font-size: .9375rem; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .staff-person-email { color: var(--muted); font-size: .8125rem; line-height: 1.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /*
+   * `display: block` is load-bearing, not tidiness.
+   *
+   * Both are `<span>`s, and `overflow`/`text-overflow` do not apply to a
+   * non-replaced *inline* box — so the truncation here silently did nothing. A
+   * long display name or a long email ran to its full width (measured 374px and
+   * 308px inside a 267px column at 375px) and was hard-clipped by the list's
+   * own `overflow: hidden`, cutting the text mid-character with no ellipsis to
+   * say it had been cut.
+   */
+  .staff-person-name { display: block; color: var(--text); font-size: .9375rem; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .staff-person-email { display: block; color: var(--muted); font-size: .8125rem; line-height: 1.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .staff-person-role { grid-area: badges; color: var(--muted); font-size: .8125rem; display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; }
   .staff-person-commerce { grid-area: meta; color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; }
   .staff-person-commerce strong { color: var(--text); font-weight: 600; }

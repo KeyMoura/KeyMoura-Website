@@ -7,6 +7,7 @@ import { ImageCropModal } from "@/components/ImageCropModal";
 import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
 import { RolePill } from "@/components/RolePill";
+import { Badge } from "@/components/ui/DesignSystem";
 import { useBlocks } from "@/components/BlocksProvider";
 import {
   AVATAR_BUCKET,
@@ -1307,32 +1308,30 @@ const loadMyReports = async (viewerId: string) => {
       </div>
     ) : (
       <div className="ui-table-wrap">
-        <table className="min-w-full text-left text-[12px]">
-          <thead className="text-[11px] text-brand-textMuted">
-            <tr className="border-b border-zinc-800">
-              <th className="px-3 py-2">Created</th>
-              <th className="px-3 py-2">Category</th>
-              <th className="px-3 py-2">Reason</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2 text-right">Open</th>
+        <table className="ui-table min-w-full">
+          <thead>
+            <tr>
+              <th scope="col">Created</th>
+              <th scope="col">Category</th>
+              <th scope="col">Reason</th>
+              <th scope="col">Status</th>
+              <th scope="col" className="is-numeric">Open</th>
             </tr>
           </thead>
           <tbody>
             {myReports.map((r) => (
-              <tr key={r.id} className="border-b border-zinc-900">
-                <td className="px-3 py-2 whitespace-nowrap text-[11px] text-brand-textMuted">
+              <tr key={r.id}>
+                <td className="whitespace-nowrap text-[11px] text-brand-textMuted">
                   {new Date(r.created_at).toLocaleString()}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap">
+                <td className="whitespace-nowrap">
                   {r.category ? (
-                    <span className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[11px] text-zinc-200">
-                      {r.category.replace(/_/g, " ")}
-                    </span>
+                    <Badge>{r.category.replace(/_/g, " ")}</Badge>
                   ) : (
                     <span className="text-[11px] text-brand-textMuted">—</span>
                   )}
                 </td>
-                <td className="px-3 py-2">
+                <td>
                   <div className="line-clamp-2 max-w-[520px] text-[11px] text-brand-text">
                     {(() => {
                       const s = (r.reason ?? "").trim();
@@ -1341,12 +1340,10 @@ const loadMyReports = async (viewerId: string) => {
                     })()}
                   </div>
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <span className="rounded-full border border-zinc-700 bg-black/40 px-2 py-0.5 text-[11px] text-zinc-200">
-                    {r.status.replace(/_/g, " ")}
-                  </span>
+                <td className="whitespace-nowrap">
+                  <Badge>{r.status.replace(/_/g, " ")}</Badge>
                 </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
+                <td className="is-numeric whitespace-nowrap">
                   <Link
                     href={`/reports/${r.id}`}
                     className="ui-btn ui-btn-primary px-3 py-1 text-xs"
