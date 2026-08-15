@@ -340,6 +340,8 @@ export default function AppearancePage() {
       "--km-badge-border": form.theme.badgeBorder,
       "--km-secondary-button-bg": form.theme.secondaryButtonBackground,
       "--km-secondary-button-border": form.theme.secondaryButtonBorder,
+      "--km-primary-button-bg": form.theme.primaryButtonBackground,
+      "--km-primary-button-border": form.theme.primaryButtonBorder,
     }),
   } as CSSProperties;
 
@@ -1078,8 +1080,9 @@ function AppearancePreview({ form, onJump }: { form: Appearance; onJump: (taskId
         onJump={onJump}
         note={
           <>
-            Primary fill: <b>Primary brand colour</b> · Primary label: <b>Primary button text</b> · Secondary
-            label: <b>Secondary button text</b> · Quiet: <b>Body text</b>
+            Primary fill: <b>Primary button background</b> · Primary label: <b>Primary button text</b> · Secondary
+            label: <b>Secondary button text</b> · Quiet: <b>Body text</b> · Shape: <b>Primary buttons</b> under
+            Shapes &amp; density (currently <b>{form.theme.primaryButtonStyle}</b>)
           </>
         }
       >
@@ -1087,6 +1090,32 @@ function AppearancePreview({ form, onJump }: { form: Appearance; onJump: (taskId
           <button type="button" className="ui-btn ui-btn-primary">Add to Cart</button>
           <button type="button" className="ui-btn ui-btn-secondary">Request a Custom Version</button>
           <button type="button" className="ui-btn ui-btn-ghost">Cancel</button>
+        </div>
+      </PreviewBlock>
+
+      {/*
+        The storefront call-to-action, rendered with the real
+        `.product-card-action` class rather than an approximation, so what is
+        previewed here is literally what the catalog paints. It is the primary
+        role at card size — the note says so rather than implying a control of
+        its own.
+      */}
+      <PreviewBlock
+        title="Product card CTA"
+        jumpTo="primary-button"
+        onJump={onJump}
+        note={
+          <>
+            “Buy now” is your <b>primary button</b> at card size: fill from <b>Primary button background</b>, label
+            from <b>Primary button text</b>, edge from <b>Primary button border</b>. On the Soft, Outline and Framed
+            shapes the label follows <b>Primary brand colour</b>, because it then sits on the page rather than on
+            the fill.
+          </>
+        }
+      >
+        <div className="product-card-footer !pt-0">
+          <p className="text-sm font-semibold text-brand-primary">$84.00</p>
+          <span className="product-card-action">Buy now</span>
         </div>
       </PreviewBlock>
 

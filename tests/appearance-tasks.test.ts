@@ -133,11 +133,14 @@ test("searching “navbar” finds the navbar, not a bank of tokens", () => {
 
 test("a search for something real always answers, even when it is shared", () => {
   // "price" has no colour of its own; the honest answer is where it comes from.
+  // That answer is the *brand* primary, not the primary button: the button now
+  // has its own optional fill, so pointing a price at it would send an owner to
+  // a control that does not move prices.
   const price = searchAppearanceTasks("price");
   assert.ok(price.some((task) => task.id === "product-price"));
   const pointer = taskById("product-price");
   assert.equal(pointer?.fields.length, 0, "a pointer must not duplicate the control");
-  assert.equal(pointer?.pointer?.toTaskId, "primary-button");
+  assert.equal(pointer?.pointer?.toTaskId, "brand-primary");
   assert.ok((pointer?.pointer?.because ?? "").length > 30, "it must say why");
 
   const focus = searchAppearanceTasks("focus");

@@ -86,6 +86,15 @@ export const APPEARANCE_TASK_SECTIONS: readonly {
 export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
   // ---- Brand -------------------------------------------------------------
   {
+    id: "brand-primary",
+    label: "Brand primary",
+    description:
+      "The main action colour. Prices, section eyebrows, focus outlines and the selected staff sidebar item follow it, and buttons fall back to it.",
+    section: "brand",
+    fields: [{ role: "Colour", key: "primaryColor" }],
+    keywords: ["primary", "brand", "main colour", "gold", "action colour", "price"],
+  },
+  {
     id: "brand-accent",
     label: "Brand accent",
     description: "The highlight colour. Badges, footer links and the request stepper all follow it.",
@@ -122,13 +131,18 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
   {
     id: "primary-button",
     label: "Primary button",
-    description: "Add to cart, Checkout, and the main action on every screen.",
+    description:
+      "Add to cart, Checkout, the storefront's “Buy now”, and the main action on every screen.",
     section: "buttons",
     fields: [
-      { role: "Background", key: "primaryColor" },
+      { role: "Background", key: "primaryButtonBackground" },
       { role: "Text", key: "primaryButtonText" },
+      { role: "Border", key: "primaryButtonBorder" },
     ],
-    keywords: ["primary", "main button", "add to cart", "checkout", "action", "cta", "buy"],
+    keywords: [
+      "primary", "main button", "add to cart", "checkout", "action", "cta", "buy", "buy now",
+      "product card button", "purchase", "customize",
+    ],
   },
   {
     id: "custom-project-button",
@@ -163,8 +177,8 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
     section: "cards",
     fields: [],
     pointer: {
-      toTaskId: "primary-button",
-      because: "Prices use the primary brand colour, the same one behind your main button.",
+      toTaskId: "brand-primary",
+      because: "Prices are drawn in the brand primary colour, directly on the page.",
     },
     keywords: ["price", "cost", "amount", "money", "£", "$"],
   },

@@ -796,7 +796,7 @@ export default function StaffCatalogPage() {
                   aria-current={selectedId === product.id ? "true" : undefined}
                   className="staff-row"
                 >
-                  <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-black/20">
+                  <span className="staff-row-media">
                     {product.image_url ? <Image src={product.image_url} alt="" fill sizes="48px" className="object-cover" unoptimized /> : null}
                   </span>
                   <span className="staff-row-main">
@@ -804,7 +804,12 @@ export default function StaffCatalogPage() {
                     <span className="staff-row-detail block">
                       {product.sku ? `${product.sku} · ` : ""}{categories.find(category => category.id === product.category_id)?.name ?? "Uncategorized"}
                     </span>
-                    <span className="staff-row-detail block">{product.starting_price_cents == null ? "Quote only" : `$${(product.starting_price_cents / 100).toFixed(2)}`}</span>
+                  </span>
+                  {/* Price is a number people compare down the column, so it
+                      gets an aligned track of its own rather than a third line
+                      of muted detail text. */}
+                  <span className="staff-row-figure">
+                    {product.starting_price_cents == null ? "Quote only" : `$${(product.starting_price_cents / 100).toFixed(2)}`}
                   </span>
                   <span className="staff-row-aside">
                     {staffStockState(product) === "low_stock" ? <Badge tone="warning">{product.inventory_quantity} left</Badge> : null}

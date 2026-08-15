@@ -22,6 +22,21 @@ export type SiteTheme = {
    */
   badgeBackground: string; badgeText: string; badgeBorder: string;
   secondaryButtonBackground: string; secondaryButtonBorder: string;
+  /**
+   * The primary button's fill and edge.
+   *
+   * Secondary buttons have had background, border and text since the last
+   * pass; primary had only text, so the fill was reachable only through the
+   * primary *brand* colour — which also draws prices, section eyebrows, focus
+   * outlines and the selected staff sidebar item. "Make the Buy now button
+   * green" meant "make every price green" and there was no way to say
+   * otherwise.
+   *
+   * Optional for the same reason as the others: `""` keeps following the
+   * brand colour, so an existing site renders identically until somebody sets
+   * one, and a future palette change still moves the button.
+   */
+  primaryButtonBackground: string; primaryButtonBorder: string;
   radius: "soft" | "rounded" | "pill";
   density: "compact" | "comfortable";
   font: "system" | "modern" | "technical";
@@ -53,6 +68,7 @@ export const defaultSiteTheme: SiteTheme = {
   primaryButtonText: "#09090b", secondaryButtonText: "#f4f4f5",
   badgeBackground: "", badgeText: "", badgeBorder: "",
   secondaryButtonBackground: "", secondaryButtonBorder: "",
+  primaryButtonBackground: "", primaryButtonBorder: "",
   radius: "rounded", density: "comfortable", font: "modern",
   primaryButtonStyle: "solid", secondaryButtonStyle: "outline",
   tabStyle: "framed", cardStyle: "soft", inputStyle: "solid",
@@ -117,6 +133,8 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     badgeBorder: optionalColor("badgeBorder"),
     secondaryButtonBackground: optionalColor("secondaryButtonBackground"),
     secondaryButtonBorder: optionalColor("secondaryButtonBorder"),
+    primaryButtonBackground: optionalColor("primaryButtonBackground"),
+    primaryButtonBorder: optionalColor("primaryButtonBorder"),
     navigationBackground: color("navigationBackground"), navigationText: color("navigationText"),
     navigationActiveText: color("navigationActiveText"), navigationBorder: color("navigationBorder"),
     navigationHoverBackground: color("navigationHoverBackground"), navigationHoverText: color("navigationHoverText"),

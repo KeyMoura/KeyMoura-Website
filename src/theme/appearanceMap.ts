@@ -145,6 +145,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     group: "brand",
     shared: true,
     usedBy: [
+      "“Buy now” on storefront product cards, unless Primary button background is set",
       "Add to Cart button",
       "Send proposal, Save and Publish buttons",
       "Product prices",
@@ -152,7 +153,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
       "The selected item in the staff sidebar",
       "Focus outlines",
     ],
-    keywords: ["primary", "main", "action", "cta", "price", "button", "accent"],
+    keywords: ["primary", "main", "action", "cta", "price", "button", "accent", "buy now"],
   },
   {
     key: "accentColor",
@@ -173,13 +174,46 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
 
   // ---- Buttons -----------------------------------------------------------
   {
+    key: "primaryButtonBackground",
+    variable: "--km-primary-button-bg",
+    label: "Primary button background",
+    description:
+      "The fill behind your main action buttons, including the storefront's “Buy now”. Leave unset and it follows the primary brand colour.",
+    group: "buttons",
+    optional: { inheritsFrom: "the primary brand colour and the Primary buttons shape" },
+    usedBy: [
+      "“Buy now” on storefront product cards",
+      "Add to Cart",
+      "Checkout",
+      "Send proposal, Save and Publish buttons",
+    ],
+    keywords: ["button", "background", "primary", "fill", "buy now", "add to cart", "cta", "checkout"],
+  },
+  {
+    key: "primaryButtonBorder",
+    variable: "--km-primary-button-border",
+    label: "Primary button border",
+    description: "The edge around your main action buttons.",
+    group: "buttons",
+    optional: { inheritsFrom: "the primary button background" },
+    usedBy: ["“Buy now” on storefront product cards", "Add to Cart", "Checkout"],
+    keywords: ["button", "border", "primary", "edge", "outline", "buy now"],
+  },
+  {
     key: "primaryButtonText",
     variable: "--km-primary-button-text",
     label: "Primary button text",
-    description: "The words on your main action buttons, sitting on the primary brand colour.",
+    description:
+      "The words on your main action buttons, sitting on the primary button background. Applies while Primary buttons is set to Solid; the Soft, Outline and Framed shapes put the label on the page, so it follows the primary brand colour instead.",
     group: "buttons",
-    usedBy: ["Add to Cart", "Checkout", "Publish appearance", "Send proposal"],
-    keywords: ["button", "text", "label", "primary", "add to cart", "checkout"],
+    usedBy: [
+      "“Buy now” on storefront product cards",
+      "Add to Cart",
+      "Checkout",
+      "Publish appearance",
+      "Send proposal",
+    ],
+    keywords: ["button", "text", "label", "primary", "add to cart", "checkout", "buy now"],
   },
   {
     key: "secondaryButtonText",
