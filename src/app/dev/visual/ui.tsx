@@ -10,6 +10,7 @@ import type { CatalogProductRow } from "@/lib/commerce/catalogData";
 import { OrderHistoryCard } from "@/components/commerce/OrderHistoryCard";
 
 import { categoryFixtures, orderHistoryFixtures, productFixtures, staffCatalogFixtures } from "./fixtures";
+import { HomeSurfaces } from "./homeSurfaces";
 import { StaffSurfaces } from "./surfaces";
 
 const money = (cents: number | null) => (cents == null ? "Quote only" : `$${(cents / 100).toFixed(2)}`);
@@ -30,6 +31,7 @@ function Group({ id, title, note, children }: { id: string; title: string; note?
 
 export default function VisualHarness() {
   return (
+    <>
     <div className="page-container-wide page-stack" data-visual-harness="true">
       <header className="staff-page-header">
         <div className="staff-page-heading">
@@ -201,6 +203,15 @@ export default function VisualHarness() {
       {/* The page-level surfaces: each route's actual composition. */}
       <StaffSurfaces />
     </div>
+
+    {/*
+      Outside the harness container on purpose. The homepage's sections break
+      to full bleed — the custom-work band, the materials block, the close —
+      and rendering them inside a 100rem column would measure a layout that
+      never ships.
+    */}
+    <HomeSurfaces />
+    </>
   );
 }
 

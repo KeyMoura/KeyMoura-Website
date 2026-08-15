@@ -8,6 +8,7 @@ const css = read("src/app/globals.css");
 const layout = read("src/app/layout.tsx");
 const reveal = read("src/components/Reveal.tsx");
 const home = read("src/app/page.tsx");
+const sections = read("src/components/home/HomeSections.tsx");
 
 test("reveals are hidden only when motion is explicitly enabled", () => {
   // The hidden state must be scoped, so content stays visible without
@@ -43,10 +44,18 @@ test("reveals degrade to visible when IntersectionObserver is unavailable", () =
 });
 
 test("homepage sections keep accessible headings and landmarks", () => {
-  assert.match(home, /aria-labelledby="home-capabilities"/);
-  assert.match(home, /aria-labelledby="home-process"/);
-  assert.match(home, /aria-labelledby="home-cta"/);
-  assert.equal((home.match(/<h1/g) ?? []).length, 1, "exactly one h1 on the homepage");
+  // The sections moved out of the route in Homepage 3.0. `homepage-3.test.ts`
+  // checks the outline against rendered markup, which is stronger than this;
+  // what stays here is the landmark contract itself, so a section cannot lose
+  // its label without something failing.
+  const hero = read("src/components/home/HomeHero.tsx");
+  for (const id of ["home-what", "home-process", "home-custom", "home-close"]) {
+    assert.match(sections, new RegExp(`aria-labelledby="${id}"`), `no landmark label for ${id}`);
+  }
+  assert.match(hero, /aria-labelledby="home-hero-title"/);
+  assert.equal((hero.match(/<h1/g) ?? []).length, 1, "the hero carries the only h1");
+  assert.equal((sections.match(/<h1/g) ?? []).length, 0, "no section may add a second h1");
+  assert.equal((home.match(/<h1/g) ?? []).length, 0, "the route composes sections rather than markup");
 });
 
 test("the homepage does not pull in an animation dependency", () => {

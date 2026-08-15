@@ -131,12 +131,13 @@ test("media rows group by product and stay ordered", () => {
 });
 
 test("homepage and catalog resolve product images through the shared pipeline", () => {
-  const home = read("src/app/page.tsx");
-  // The catalog's query lives in the shared loader and its grid in the shared
-  // browser, so /catalog and both category routes are covered by one check
-  // rather than three near-identical ones.
+  // Both queries now live in the shared loader — `loadCatalogData` for the
+  // catalog, `loadFeaturedProducts` for the homepage's bounded row — so they
+  // are checked as two functions in one file rather than two files.
   const catalogLoader = read("src/lib/commerce/catalogData.ts");
+  const home = catalogLoader.slice(catalogLoader.indexOf("export async function loadFeaturedProducts"));
   const catalogGrid = read("src/components/catalog/CatalogBrowser.tsx");
+  const homeGrid = read("src/components/home/HomeSections.tsx");
   const card = read("src/components/ProductCard.tsx");
   const image = read("src/components/ProductImage.tsx");
 
@@ -145,7 +146,7 @@ test("homepage and catalog resolve product images through the shared pipeline", 
     assert.match(source, /product_media/, `${name} must query gallery media`);
     assert.match(source, /groupMediaByProduct/, `${name} must group media through the shared helper`);
   }
-  assert.match(home, /ProductCard/, "homepage must render the shared product card");
+  assert.match(homeGrid, /ProductCard/, "homepage must render the shared product card");
   assert.match(catalogGrid, /ProductCard/, "the catalog grid must render the shared product card");
 
   assert.match(home, /\.is\("archived_at", null\)/, "homepage must exclude archived products");
