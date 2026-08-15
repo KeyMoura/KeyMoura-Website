@@ -7,7 +7,9 @@ import CatalogPageView from "@/components/catalog/CatalogPageView";
 import type { CategoryRow } from "@/lib/commerce/categories";
 import type { CatalogProductRow } from "@/lib/commerce/catalogData";
 
-import { categoryFixtures, productFixtures, staffCatalogFixtures } from "./fixtures";
+import { OrderHistoryCard } from "@/components/commerce/OrderHistoryCard";
+
+import { categoryFixtures, orderHistoryFixtures, productFixtures, staffCatalogFixtures } from "./fixtures";
 import { StaffSurfaces } from "./surfaces";
 
 const money = (cents: number | null) => (cents == null ? "Quote only" : `$${(cents / 100).toFixed(2)}`);
@@ -172,6 +174,27 @@ export default function VisualHarness() {
             category={categoryFixtures[0] as CategoryRow}
             parent={null}
           />
+        </div>
+      </Group>
+
+      {/*
+        Order history, one card per state the real page has to survive.
+
+        `/orders` needs a session and real rows, so the shipped, pickup-ready,
+        unpaid, refunded and multi-item cases could previously only be checked
+        by owning an order in each of them. These are the same component the
+        route renders, against fixtures, which is what makes "does a two-item
+        order stay one card" a question you can answer by looking.
+      */}
+      <Group
+        id="order-history"
+        title="Order history cards"
+        note="Shipped, in production, ready for pickup, multi-item, unpaid, refunded — and one legacy order with no line items."
+      >
+        <div className="order-history-list" data-surface="order-history">
+          {orderHistoryFixtures.map((order) => (
+            <OrderHistoryCard key={order.id} order={order} />
+          ))}
         </div>
       </Group>
 
