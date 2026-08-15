@@ -387,7 +387,9 @@ test("the customer's delivery section reads the state field, not timestamps", ()
   assert.match(component, /order\.fulfillment_status/);
   assert.match(component, /FULFILLMENT_LABELS/);
   const page = read("src/app/orders/[id]/page.tsx");
-  assert.match(page, /<OrderFulfillmentStatus order=\{order\} \/>/);
+  const overview = read("src/components/commerce/CustomerOrderOverview.tsx");
+  assert.match(page, /<CustomerOrderOverview/);
+  assert.match(overview, /<OrderFulfillmentStatus order=/);
 });
 
 test("the customer never sees an internal fulfillment note", () => {

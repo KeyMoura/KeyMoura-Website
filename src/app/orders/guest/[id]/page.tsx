@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { RequestSpecifications } from "@/components/RequestSpecifications";
 import GuestOrderActions from "@/components/commerce/GuestOrderActions";
 import { GuestOrderVerification } from "@/components/commerce/GuestOrderVerification";
-import { OrderFulfillmentStatus } from "@/components/commerce/OrderFulfillmentStatus";
+import { CustomerOrderOverview } from "@/components/commerce/CustomerOrderOverview";
 import { resolveGuestOrder } from "@/lib/commerce/guestOrderAccess";
 import { GUEST_ACCESS_WINDOW_LABEL } from "@/lib/commerce/guestAccessWindow";
-import { lifecycleLabel, PAYMENT_LABELS, paymentWasTaken } from "@/lib/commerce/orderLifecycle";
+import { paymentWasTaken } from "@/lib/commerce/orderLifecycle";
 
 /**
  * A guest's own order, read-only.
@@ -123,113 +122,11 @@ export default async function GuestOrderPage({
         </p>
       ) : null}
 
-      <header className="mt-4 max-w-3xl">
-        <p className="ui-eyebrow">{order.order_number ?? "Order"}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{order.product_name}</h1>
-        <p className="mt-3 leading-7 text-brand-textMuted">
-          Placed {new Date(order.created_at).toLocaleDateString()} as a guest.{" "}
-          {/* Said plainly rather than discovered, and taken from the same
-              constant the cookie and the order row use, so the promise on the
-              page cannot outlive the session it describes. */}
-          This browser stays signed in to your order for {GUEST_ACCESS_WINDOW_LABEL}. After that, or on another
-          device, we email you a 6-digit code to open it again.
-        </p>
-      </header>
-
-      <section aria-labelledby="guest-order-summary" className="ui-card mt-6 p-5">
-        <h2 id="guest-order-summary" className="text-lg font-semibold">
-          Summary
-        </h2>
-        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs text-brand-textMuted">Status</dt>
-            <dd className="mt-1 text-sm">{order.status.replace(/_/g, " ")}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-brand-textMuted">Payment</dt>
-            {/* The customer wording table, which also title-cases anything it
-                does not recognise — a legacy payment state renders as a neutral
-                phrase rather than as a blank or a crash. */}
-            <dd className="mt-1 text-sm">{lifecycleLabel(PAYMENT_LABELS, order.payment_status)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-brand-textMuted">Paid</dt>
-            <dd className="mt-1 text-sm">{money(order.amount_paid_cents)}</dd>
-          </div>
-          {Number(order.amount_refunded_cents ?? 0) > 0 ? (
-            <div>
-              <dt className="text-xs text-brand-textMuted">Refunded</dt>
-              <dd className="mt-1 text-sm">{money(order.amount_refunded_cents)}</dd>
-            </div>
-          ) : null}
-        </dl>
-      </section>
-
-      {items.length ? (
-        <section aria-labelledby="guest-order-items" className="ui-card mt-4 p-5">
-          <h2 id="guest-order-items" className="text-lg font-semibold">
-            Items
-          </h2>
-          <ul className="mt-4 grid gap-3">
-            {items.map((item, index) => (
-              <li key={`${item.product_slug ?? item.product_name}-${index}`} className="flex flex-wrap justify-between gap-3 border-b border-brand-border pb-3 last:border-0 last:pb-0">
-                <div className="min-w-0">
-                  <p className="font-medium">
-                    {item.product_slug ? (
-                      <Link href={`/catalog/${item.product_slug}`} className="hover:text-brand-primary">
-                        {item.product_name}
-                      </Link>
-                    ) : (
-                      item.product_name
-                    )}
-                  </p>
-                  <p className="mt-1 text-xs text-brand-textMuted">
-                    {item.quantity} × {money(item.unit_price_cents)}
-                  </p>
-                  {item.selected_options && Object.keys(item.selected_options).length ? (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-brand-textMuted">Configuration</p>
-                      <dl className="mt-1 grid gap-1 text-sm">
-                        <RequestSpecifications specifications={item.selected_options} />
-                      </dl>
-                    </div>
-                  ) : null}
-                </div>
-                <p className="font-semibold">{money(item.line_subtotal_cents)}</p>
-              </li>
-            ))}
-          </ul>
-
-          <dl className="mt-4 grid gap-2 border-t border-brand-border pt-4 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-brand-textMuted">Subtotal</dt>
-              <dd>{money(order.subtotal_cents)}</dd>
-            </div>
-            {Number(order.discount_cents ?? 0) > 0 ? (
-              <div className="flex justify-between">
-                <dt className="text-brand-textMuted">Discount</dt>
-                <dd>−{money(order.discount_cents)}</dd>
-              </div>
-            ) : null}
-            {order.shipping_cents != null ? (
-              <div className="flex justify-between">
-                <dt className="text-brand-textMuted">Delivery</dt>
-                <dd>{money(order.shipping_cents)}</dd>
-              </div>
-            ) : null}
-            <div className="flex justify-between font-semibold">
-              <dt>Total</dt>
-              <dd>{money(order.agreed_price_cents)}</dd>
-            </div>
-          </dl>
-        </section>
-      ) : null}
-
-      {/* The same component signed-in customers see, reading the same state
-          field — so a guest and an account customer cannot be told two
-          different things about where their parcel is. */}
-      <div className="mt-4">
-        <OrderFulfillmentStatus order={order} />
+      <p className="mt-4 text-sm leading-6 text-brand-textMuted">
+        Viewing as a guest. This browser stays verified for {GUEST_ACCESS_WINDOW_LABEL}; another device will require the 6-digit code sent by email.
+      </p>
+      <div className="page-stack mt-4">
+        <CustomerOrderOverview order={order} items={items} />
       </div>
 
       <GuestOrderActions
