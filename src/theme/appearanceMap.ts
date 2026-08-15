@@ -60,13 +60,24 @@ export type AppearanceSetting = {
   /** Extra words somebody might search. The label and description are searched too. */
   keywords?: readonly string[];
   /**
-   * An optional override: `""` is a real value meaning "follow the accent".
+   * An optional override: `""` is a real value meaning "follow something else".
    *
-   * These get a "Following the accent colour" state and a Clear button rather
-   * than a colour swatch that lies about being set. `inheritsFrom` names what
-   * it follows, in the same words the control that owns it uses.
+   * These get a "following" state rather than a colour swatch that lies about
+   * being set. `inheritsFrom` names what it follows in the words the owning
+   * control uses.
+   *
+   * `follows` is the machine-readable half, and it is not decoration: the
+   * editor paints the automatic swatch with it, labels the toggle with it, and
+   * writes it into the field when somebody turns automatic *off*. Every
+   * optional colour used to be assumed to follow the accent, so the two
+   * primary-button overrides — which follow the *primary* — showed an orange
+   * swatch, said "Use brand accent", and silently repainted the button orange
+   * the moment an owner opted out.
    */
-  optional?: { inheritsFrom: string };
+  optional?: {
+    inheritsFrom: string;
+    follows: "accentColor" | "primaryColor" | "primaryButtonBackground";
+  };
   /**
    * True when the colour is *shared* — changing it moves several unrelated
    * things. The page warns rather than pretending the control is narrow.
@@ -180,7 +191,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     description:
       "The fill behind your main action buttons, including the storefront's “Buy now”. Leave unset and it follows the primary brand colour.",
     group: "buttons",
-    optional: { inheritsFrom: "the primary brand colour and the Primary buttons shape" },
+    optional: { inheritsFrom: "the primary brand colour and the Primary buttons shape", follows: "primaryColor" },
     usedBy: [
       "“Buy now” on storefront product cards",
       "Add to Cart",
@@ -195,7 +206,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Primary button border",
     description: "The edge around your main action buttons.",
     group: "buttons",
-    optional: { inheritsFrom: "the primary button background" },
+    optional: { inheritsFrom: "the primary button background", follows: "primaryButtonBackground" },
     usedBy: ["“Buy now” on storefront product cards", "Add to Cart", "Checkout"],
     keywords: ["button", "border", "primary", "edge", "outline", "buy now"],
   },
@@ -238,7 +249,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     description:
       "The fill behind supporting buttons, including the catalog's “Need something else? Start a custom project”.",
     group: "buttons",
-    optional: { inheritsFrom: "the Secondary buttons shape and the accent colour" },
+    optional: { inheritsFrom: "the Secondary buttons shape and the accent colour", follows: "accentColor" },
     usedBy: [
       "“Need something else? Start a custom project” on the catalog",
       "“Request a Custom Version” on a product",
@@ -252,7 +263,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Secondary button border",
     description: "The edge around supporting buttons.",
     group: "buttons",
-    optional: { inheritsFrom: "the accent colour" },
+    optional: { inheritsFrom: "the accent colour", follows: "accentColor" },
     usedBy: [
       "“Need something else? Start a custom project” on the catalog",
       "“Request a Custom Version” on a product",
@@ -267,7 +278,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Badge background",
     description: "The fill behind the “Customizable” badge and every other accent badge.",
     group: "badges",
-    optional: { inheritsFrom: "the accent colour" },
+    optional: { inheritsFrom: "the accent colour", follows: "accentColor" },
     usedBy: [
       "The “Customizable” badge on product cards",
       "“In review” and other accent badges on orders",
@@ -280,7 +291,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Badge text",
     description: "The words inside the “Customizable” badge and other accent badges.",
     group: "badges",
-    optional: { inheritsFrom: "the accent colour" },
+    optional: { inheritsFrom: "the accent colour", follows: "accentColor" },
     usedBy: [
       "The word “Customizable” on product cards",
       "“In review” and other accent badges on orders",
@@ -293,7 +304,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Badge border",
     description: "The edge around the “Customizable” badge and other accent badges.",
     group: "badges",
-    optional: { inheritsFrom: "the accent colour and the border colour" },
+    optional: { inheritsFrom: "the accent colour and the border colour", follows: "accentColor" },
     usedBy: ["The “Customizable” badge on product cards", "Accent badges on orders"],
     keywords: ["badge", "border", "customizable", "outline", "edge", "ring"],
   },

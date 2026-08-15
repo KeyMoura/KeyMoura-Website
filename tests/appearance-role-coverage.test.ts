@@ -127,6 +127,68 @@ test("the new primary overrides stay optional, so an untouched site is unchanged
   assert.equal(set.primaryButtonBackground, "#1d4ed8");
 });
 
+test("every optional colour declares what it actually follows", () => {
+  /*
+   * The editor paints the automatic swatch with this, labels the toggle with
+   * it, and writes it into the field when automatic is switched off. It was
+   * hard-coded to the accent for every optional colour, so the two
+   * primary-button overrides — which follow the *primary* — showed an orange
+   * swatch, said "Use brand accent", and repainted the button orange the
+   * moment an owner opted out of automatic.
+   */
+  const optional = APPEARANCE_SETTINGS.filter((setting) => setting.optional);
+  assert.ok(optional.length >= 7, "the optional overrides should all be flagged");
+  for (const setting of optional) {
+    assert.ok(
+      setting.optional?.follows,
+      `${setting.key} must say which colour it follows, not leave the editor to assume the accent`
+    );
+  }
+  const followsFor = (key: string) =>
+    APPEARANCE_SETTINGS.find((setting) => setting.key === key)?.optional?.follows;
+  assert.equal(followsFor("primaryButtonBackground"), "primaryColor");
+  assert.equal(followsFor("primaryButtonBorder"), "primaryButtonBackground");
+  assert.equal(followsFor("badgeBackground"), "accentColor");
+  assert.equal(followsFor("secondaryButtonBackground"), "accentColor");
+});
+
+test("the editor resolves each automatic colour rather than assuming the accent", () => {
+  const page = readFileSync(new URL("../src/app/staff/appearance/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /case "primaryColor":\s*\n\s*return form\.primaryColor;/, "a primary-following field must show the primary");
+  assert.match(
+    page,
+    /case "primaryButtonBackground":\s*\n\s*return form\.theme\.primaryButtonBackground \|\| form\.primaryColor;/,
+    "the border must follow the fill, falling back to the primary"
+  );
+  // Opting out must seed the field with what was already rendering.
+  assert.match(page, /onChange\(event\.target\.checked \? "" : fallback\)/);
+  assert.doesNotMatch(page, /onChange\(event\.target\.checked \? "" : accent\)/, "the accent must not be written into a primary-following field");
+  // And the toggle must name the right colour.
+  assert.match(page, /"Use brand primary"/);
+  assert.match(page, /"Use button background"/);
+});
+
+test("the contrast warning checks the fill that actually renders", () => {
+  /*
+   * With a Primary button background set, the fill is that override — not the
+   * brand colour. Comparing the label against `primaryColor` let a dark
+   * override with the default near-black label pass, then publish an
+   * unreadable Buy now, Checkout and every staff primary action.
+   */
+  const page = readFileSync(new URL("../src/app/staff/appearance/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /const primaryFill = form\.theme\.primaryButtonBackground \|\| form\.primaryColor;/);
+  assert.match(page, /const secondaryFill = form\.theme\.secondaryButtonBackground \|\| form\.accentColor;/);
+  assert.match(page, /contrast\(form\.theme\.primaryButtonText, primaryFill\)/);
+  assert.match(page, /contrast\(form\.theme\.secondaryButtonText, secondaryFill\)/);
+  assert.doesNotMatch(
+    page,
+    /contrast\(form\.theme\.primaryButtonText, form\.primaryColor\)/,
+    "the check must not compare the label against a colour the button may not be using"
+  );
+  // The non-solid shapes draw the label in the brand colour, on the fill.
+  assert.match(page, /contrast\(form\.primaryColor, primaryFill\)/);
+});
+
 test("the appearance preview shows the real Buy now component, not an approximation", () => {
   const page = readFileSync(new URL("../src/app/staff/appearance/page.tsx", import.meta.url), "utf8");
   assert.match(page, /className="product-card-action"/, "the preview must render the real CTA class");

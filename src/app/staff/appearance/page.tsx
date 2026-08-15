@@ -296,8 +296,24 @@ export default function AppearancePage() {
     // in-content links are drawn in them directly on the page background.
     if (contrast(form.primaryColor, form.theme.background) < 4.5) return "The primary color needs more contrast against the page background — it is also used for small text like prices and section links.";
     if (contrast(form.theme.linkText, form.theme.background) < 4.5) return "Link text needs more contrast against the page background.";
-    if (form.theme.primaryButtonStyle === "solid" && contrast(form.theme.primaryButtonText, form.primaryColor) < 4.5) return "Primary button text needs more contrast against the primary color.";
-    if (form.theme.secondaryButtonStyle === "solid" && contrast(form.theme.secondaryButtonText, form.accentColor) < 4.5) return "Secondary button text needs more contrast against the accent color.";
+    /*
+     * Validate against the fill that actually renders, not the brand colour.
+     *
+     * These used to compare the label with `primaryColor` / `accentColor`. Once
+     * the buttons gained their own optional backgrounds that stopped being the
+     * same thing: a dark blue Primary button background with the default
+     * near-black label passed the check — because the *unrelated* brand gold
+     * had plenty of contrast — and published an unreadable Buy now, Checkout
+     * and every staff primary action.
+     *
+     * On the non-solid shapes the label follows the brand colour and sits on
+     * the page rather than on a fill, which is what the pair below compares.
+     */
+    const primaryFill = form.theme.primaryButtonBackground || form.primaryColor;
+    const secondaryFill = form.theme.secondaryButtonBackground || form.accentColor;
+    if (form.theme.primaryButtonStyle === "solid" && contrast(form.theme.primaryButtonText, primaryFill) < 4.5) return "Primary button text needs more contrast against the primary button background.";
+    if (form.theme.primaryButtonStyle !== "solid" && form.theme.primaryButtonBackground && contrast(form.primaryColor, primaryFill) < 4.5) return "The primary brand colour needs more contrast against the primary button background — the Soft, Outline and Framed shapes draw the label in it.";
+    if (form.theme.secondaryButtonStyle === "solid" && contrast(form.theme.secondaryButtonText, secondaryFill) < 4.5) return "Secondary button text needs more contrast against the secondary button background.";
     return "";
   }, [form]);
 
@@ -681,12 +697,31 @@ function ColorSection({
         ? form.accentColor
         : (form.theme[setting.key as keyof SiteTheme] as string);
 
+  /**
+   * What an automatic colour actually renders as.
+   *
+   * Not always the accent. The two primary-button overrides follow the primary
+   * brand colour, and the button border follows the button *background* — so a
+   * single shared accent made the automatic swatch a lie, the toggle's wording
+   * wrong, and turning automatic off silently repaint the button.
+   */
+  const fallbackOf = (setting: AppearanceSetting) => {
+    switch (setting.optional?.follows) {
+      case "primaryColor":
+        return form.primaryColor;
+      case "primaryButtonBackground":
+        return form.theme.primaryButtonBackground || form.primaryColor;
+      default:
+        return form.accentColor;
+    }
+  };
+
   const renderTask = (task: AppearanceTask) => (
     <TaskEditor
       key={task.id}
       task={task}
       valueOf={valueOf}
-      accent={form.accentColor}
+      fallbackOf={fallbackOf}
       onChange={onChange}
     />
   );
@@ -766,12 +801,13 @@ function ColorSection({
 function TaskEditor({
   task,
   valueOf,
-  accent,
+  fallbackOf,
   onChange,
 }: {
   task: AppearanceTask;
   valueOf: (setting: AppearanceSetting) => string;
-  accent: string;
+  /** The colour an automatic field renders as — per setting, not one shared accent. */
+  fallbackOf: (setting: AppearanceSetting) => string;
   onChange: (setting: AppearanceSetting, value: string) => void;
 }) {
   if (task.pointer) {
@@ -815,7 +851,7 @@ function TaskEditor({
               role={field.role}
               setting={setting}
               value={valueOf(setting)}
-              accent={accent}
+              fallback={fallbackOf(setting)}
               onChange={(value) => onChange(setting, value)}
             />
           );
@@ -835,16 +871,26 @@ function TaskColorField({
   role,
   setting,
   value,
-  accent,
+  fallback,
   onChange,
 }: {
   role: string;
   setting: AppearanceSetting;
   value: string;
-  accent: string;
+  /** What this renders as while automatic — the accent, the primary, or the button fill. */
+  fallback: string;
   onChange: (value: string) => void;
 }) {
   const following = Boolean(setting.optional) && !value;
+  /* The toggle names the colour it actually follows. Saying "brand accent" on
+     a control that follows the primary is how an owner ends up changing a
+     colour they were told they were leaving alone. */
+  const followLabel =
+    setting.optional?.follows === "primaryColor"
+      ? "Use brand primary"
+      : setting.optional?.follows === "primaryButtonBackground"
+        ? "Use button background"
+        : "Use brand accent";
 
   return (
     <div>
@@ -860,7 +906,7 @@ function TaskColorField({
           */}
           <input
             type="color"
-            value={value || accent}
+            value={value || fallback}
             aria-label={`${setting.label} colour picker`}
             onChange={(event) => onChange(event.target.value)}
             className="ui-color-input"
@@ -881,15 +927,19 @@ function TaskColorField({
         The stored value is an empty string and the mechanism is variable
         absence, but neither of those is what the owner is deciding. They are
         deciding whether this thing has its own colour or follows the brand.
+
+        Turning automatic *off* seeds the field with the colour it was already
+        rendering, so opting out never changes what is on screen — it only
+        stops it tracking future palette changes.
       */}
       {setting.optional ? (
         <label className="mt-1.5 flex items-center gap-1.5 text-xs text-brand-textMuted">
           <input
             type="checkbox"
             checked={following}
-            onChange={(event) => onChange(event.target.checked ? "" : accent)}
+            onChange={(event) => onChange(event.target.checked ? "" : fallback)}
           />
-          <span>Use brand accent</span>
+          <span>{followLabel}</span>
         </label>
       ) : null}
     </div>
