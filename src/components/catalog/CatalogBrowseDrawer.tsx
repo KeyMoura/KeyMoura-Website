@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSliders, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faList } from "@fortawesome/free-solid-svg-icons";
+import CatalogCategoryTree from "@/components/catalog/CatalogCategoryTree";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import {
   AVAILABILITY_OPTIONS,
@@ -55,14 +56,14 @@ export default function CatalogBrowseDrawer({
   onClear,
 }: CatalogBrowseDrawerProps) {
   const pathname = usePathname();
-  const [openedOn, setOpenedOn] = useState<string | null>(null);
-  const open = openedOn === pathname;
+  const [opened, setOpened] = useState<{ path: string; panel: "categories" | "filters" } | null>(null);
+  const open = opened?.path === pathname;
 
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
-  const close = () => setOpenedOn(null);
+  const close = () => setOpened(null);
   const dismiss = () => {
     close();
     triggerRef.current?.focus();
@@ -102,7 +103,7 @@ export default function CatalogBrowseDrawer({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setOpenedOn(null);
+        setOpened(null);
         triggerRef.current?.focus();
         return;
       }
@@ -127,33 +128,28 @@ export default function CatalogBrowseDrawer({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  const here =
-    menu.trail.length ? menu.trail[menu.trail.length - 1].name : menu.all.name;
+  const here = menu.trail.length ? menu.trail[menu.trail.length - 1].name : menu.all.name;
+  const title = opened?.panel === "categories" ? "Categories" : "Filters";
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpenedOn(pathname)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        className="catalog-drawer-trigger"
-      >
-        <FontAwesomeIcon icon={faSliders} className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate">
-          Browse &amp; filter
-          {/* Where you are, on the button — so a phone user does not have to
-              open the sheet to find out which category they are in. */}
-          <span className="catalog-drawer-trigger-here">{here}</span>
-        </span>
-        {filterCount ? (
-          <span className="catalog-drawer-trigger-badge">
-            {filterCount}
-            <span className="sr-only"> filters applied</span>
-          </span>
-        ) : null}
-      </button>
+      <div className="catalog-compact-controls">
+        <button ref={triggerRef} type="button" onClick={(event) => { triggerRef.current = event.currentTarget; setOpened({ path: pathname, panel: "categories" }); }}
+          aria-expanded={open && opened?.panel === "categories"} aria-haspopup="dialog" className="catalog-drawer-trigger">
+          <FontAwesomeIcon icon={faList} className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>Categories<span className="catalog-drawer-trigger-here">{here}</span></span>
+        </button>
+        <button type="button" onClick={(event) => { triggerRef.current = event.currentTarget; setOpened({ path: pathname, panel: "filters" }); }}
+          aria-expanded={open && opened?.panel === "filters"} aria-haspopup="dialog" className="catalog-drawer-trigger">
+          <FontAwesomeIcon icon={faSliders} className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>Filters</span>
+          {filterCount ? <span className="catalog-drawer-trigger-badge">{filterCount}<span className="sr-only"> filters applied</span></span> : null}
+        </button>
+        <div className="catalog-mobile-sort">
+          <MenuSelect ariaLabel="Sort products" className="ui-select-trigger" value={filters.sort}
+            onChange={(value) => onChange({ sort: value as CatalogFilters["sort"] }, "push")} options={SORT_OPTIONS} />
+        </div>
+      </div>
 
       {open && typeof document !== "undefined"
         ? createPortal(
@@ -170,64 +166,24 @@ export default function CatalogBrowseDrawer({
               >
                 <div className="catalog-drawer-header">
                   <h2 id="catalog-drawer-title" className="catalog-drawer-title">
-                    Browse products
+                    {title}
                   </h2>
                   <button
                     ref={closeRef}
                     type="button"
                     onClick={dismiss}
                     className="catalog-drawer-close"
-                    aria-label="Close browse and filter"
+                    aria-label={`Close ${title.toLowerCase()}`}
                   >
                     <FontAwesomeIcon icon={faXmark} className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
 
                 <div className="catalog-drawer-scroll">
-                  <nav aria-label="Product categories" className="catalog-drawer-section">
+                  {opened?.panel === "categories" ? <nav aria-label="Product categories" className="catalog-drawer-section">
                     <p className="catalog-drawer-heading">Categories</p>
-                    <Link
-                      href={menu.all.href}
-                      onClick={close}
-                      aria-current={menu.all.isActive ? "page" : undefined}
-                      className={`catalog-drawer-item${menu.all.isActive ? " is-active" : ""}`}
-                    >
-                      <span className="min-w-0 truncate">{menu.all.name}</span>
-                      <span className="catalog-drawer-count">{menu.all.count}</span>
-                    </Link>
-
-                    {menu.categories.map((entry) => (
-                      <div key={entry.id}>
-                        <Link
-                          href={entry.href}
-                          onClick={close}
-                          aria-current={entry.isActive ? "page" : undefined}
-                          className={`catalog-drawer-item${entry.isActive ? " is-active" : ""}`}
-                        >
-                          <span className="min-w-0 truncate">{entry.name}</span>
-                          <span className="catalog-drawer-count">{entry.count}</span>
-                        </Link>
-                        {/* Subcategories are always listed here rather than
-                            hidden behind a second tap: the sheet is already a
-                            deliberate detour, and making the customer take two
-                            to reach a subcategory is what makes them invisible. */}
-                        {entry.children.map((child) => (
-                          <Link
-                            key={child.id}
-                            href={child.href}
-                            onClick={close}
-                            aria-current={child.isActive ? "page" : undefined}
-                            className={`catalog-drawer-item is-child${child.isActive ? " is-active" : ""}`}
-                          >
-                            <span className="min-w-0 truncate">{child.name}</span>
-                            <span className="catalog-drawer-count">{child.count}</span>
-                          </Link>
-                        ))}
-                      </div>
-                    ))}
-                  </nav>
-
-                  <div className="catalog-drawer-section">
+                    <CatalogCategoryTree menu={menu} variant="drawer" onNavigate={close} />
+                  </nav> : <div className="catalog-drawer-section">
                     <p className="catalog-drawer-heading">Filter</p>
                     <label className="catalog-drawer-field">
                       <span>Search</span>
@@ -261,17 +217,7 @@ export default function CatalogBrowseDrawer({
                         options={MODE_OPTIONS}
                       />
                     </label>
-                    <label className="catalog-drawer-field">
-                      <span>Sort</span>
-                      <MenuSelect
-                        ariaLabel="Sort products"
-                        className="ui-select-trigger w-full"
-                        value={filters.sort}
-                        onChange={(value) => onChange({ sort: value as CatalogFilters["sort"] }, "push")}
-                        options={SORT_OPTIONS}
-                      />
-                    </label>
-                  </div>
+                  </div>}
                 </div>
 
                 <div className="catalog-drawer-footer">
@@ -284,7 +230,7 @@ export default function CatalogBrowseDrawer({
                     Clear filters
                   </button>
                   <button type="button" onClick={dismiss} className="ui-btn ui-btn-primary">
-                    Show products
+                    Done
                   </button>
                 </div>
               </div>

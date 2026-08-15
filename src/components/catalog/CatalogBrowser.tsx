@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import ProductCard, { type ProductCardProduct } from "@/components/ProductCard";
 import CatalogBrowseDrawer from "@/components/catalog/CatalogBrowseDrawer";
+import CatalogCategoryTree from "@/components/catalog/CatalogCategoryTree";
 import CatalogDensityControl from "@/components/catalog/CatalogDensityControl";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import type { CategoryRow } from "@/lib/commerce/categories";
@@ -193,55 +194,7 @@ export default function CatalogBrowser({
       <nav aria-label="Browse products" className="catalog-rail">
         <section className="catalog-rail-section">
           <h2 className="catalog-rail-heading">Categories</h2>
-          <ul className="catalog-rail-list">
-            <li>
-              <Link
-                href={menu.all.href}
-                aria-current={menu.all.isActive ? "page" : undefined}
-                className={`catalog-rail-link${menu.all.isActive ? " is-active" : ""}`}
-              >
-                <span className="catalog-rail-label">{menu.all.name}</span>
-                <span className="catalog-rail-count">{menu.all.count}</span>
-              </Link>
-            </li>
-
-            {menu.categories.map((entry) => (
-              <li key={entry.id}>
-                <Link
-                  href={entry.href}
-                  aria-current={entry.isActive ? "page" : undefined}
-                  className={`catalog-rail-link${entry.isActive ? " is-active" : ""}${
-                    entry.isCurrentBranch && !entry.isActive ? " is-branch" : ""
-                  }`}
-                >
-                  <span className="catalog-rail-label">{entry.name}</span>
-                  <span className="catalog-rail-count">{entry.count}</span>
-                </Link>
-
-                {/* Children are shown for the branch you are in and folded away
-                    otherwise. Every child of every category at once is a wall;
-                    none at all makes subcategories undiscoverable. Expanding is
-                    navigating — there is no separate disclosure control to get
-                    out of step with the page you are on. */}
-                {entry.isCurrentBranch && entry.children?.length ? (
-                  <ul className="catalog-rail-sublist" aria-label={`${entry.name} subcategories`}>
-                    {entry.children.map((child) => (
-                      <li key={child.id}>
-                        <Link
-                          href={child.href}
-                          aria-current={child.isActive ? "page" : undefined}
-                          className={`catalog-rail-sublink${child.isActive ? " is-active" : ""}`}
-                        >
-                          <span className="catalog-rail-label">{child.name}</span>
-                          <span className="catalog-rail-count">{child.count}</span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <CatalogCategoryTree menu={menu} variant="rail" />
         </section>
 
         {/* Refinements, kept visually distinct from the category list above.
@@ -338,6 +291,32 @@ export default function CatalogBrowser({
             Clear filters
           </button>
         </div>
+
+        {!isDefault ? (
+          <div className="catalog-active-filters" aria-label="Active filters">
+            <span className="catalog-active-filters-label">Active filters</span>
+            {effectiveFilters.query ? (
+              <button type="button" onClick={() => { setTyped(""); setFilters({ query: "" }); }} className="catalog-filter-chip">
+                Search: {effectiveFilters.query} <span aria-hidden="true">×</span>
+              </button>
+            ) : null}
+            {effectiveFilters.availability !== "all" ? (
+              <button type="button" onClick={() => setFilters({ availability: "all" }, "push")} className="catalog-filter-chip">
+                {AVAILABILITY_OPTIONS.find((item) => item.value === effectiveFilters.availability)?.label} <span aria-hidden="true">×</span>
+              </button>
+            ) : null}
+            {effectiveFilters.mode !== "all" ? (
+              <button type="button" onClick={() => setFilters({ mode: "all" }, "push")} className="catalog-filter-chip">
+                {MODE_OPTIONS.find((item) => item.value === effectiveFilters.mode)?.label} <span aria-hidden="true">×</span>
+              </button>
+            ) : null}
+            {effectiveFilters.sort !== "featured" ? (
+              <button type="button" onClick={() => setFilters({ sort: "featured" }, "push")} className="catalog-filter-chip">
+                {SORT_OPTIONS.find((item) => item.value === effectiveFilters.sort)?.label} <span aria-hidden="true">×</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         {visible.length ? (
           <section className="mt-6" aria-labelledby="catalog-products">

@@ -67,10 +67,17 @@ export async function loadCatalogData(): Promise<CatalogData> {
       .order("display_order"),
   ]);
 
+  // A failed public query is an error page, never a convincing empty shop.
+  // Throwing here lets the route error boundary and observability pipeline do
+  // their jobs instead of translating an outage into "0 products".
+  if (productResult.error || categoryResult.error) {
+    throw new Error("Unable to load the storefront catalog");
+  }
+
   const products = (productResult.data ?? []) as CatalogProductRow[];
 
   if (products.length) {
-    const { data: media } = await supabase
+    const { data: media, error: mediaError } = await supabase
       .from("product_media")
       .select("product_id,url,kind,sort_order")
       .in(
@@ -79,6 +86,8 @@ export async function loadCatalogData(): Promise<CatalogData> {
       )
       .eq("kind", "image")
       .order("sort_order");
+
+    if (mediaError) throw new Error("Unable to load storefront product media");
 
     const byProduct = groupMediaByProduct(media ?? []);
     for (const product of products) product.product_media = byProduct.get(product.id) ?? [];
