@@ -2043,7 +2043,225 @@
     padding-inline: 0.1rem;
   }
 
-  /* Homepage */
+  /* =========================================================================
+   * Homepage
+   *
+   * Nine sections that have to read as one page rather than nine stacked
+   * cards. Three devices do that work, and they are worth stating up front
+   * because every rule below is one of them:
+   *
+   * 1. **A shared shell, not a shared box.** `.home-shell` sets the reading
+   *    width and the gutter. Sections own their own vertical rhythm and their
+   *    own background, so a section can break full width without escaping a
+   *    wrapper — which is what the old homepage's single `.home-sections`
+   *    flex column made impossible.
+   *
+   * 2. **Alternating ground.** `.home-section` sits on the page background,
+   *    `.home-band` on a raised one, and two sections (`.home-custom`,
+   *    `.home-close`) carry a brand wash. Read top to bottom the page changes
+   *    surface five times, which is what gives it pacing without a border
+   *    around every block.
+   *
+   * 3. **Motion that cannot hide content.** Entrances come from `Reveal`,
+   *    which is gated on `[data-motion="on"]`. Scroll-linked movement is
+   *    CSS-only — `animation-timeline: view()` — and every element it touches
+   *    is authored in its *finished* state, so a browser without support, or a
+   *    visitor who asked for less motion, gets the static composition rather
+   *    than an empty one. Nothing on this page waits for JavaScript to become
+   *    visible.
+   *
+   * No colour is introduced here. Surfaces are --panel / --panel-strong, the
+   * accent is --brand-primary, and every button is a semantic role, so the
+   * Appearance editor still owns the homepage.
+   * ====================================================================== */
+
+  .home-shell {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+
+  [data-content-width="wide"] .home-shell { max-width: 88rem; }
+  [data-content-width="full"] .home-shell { max-width: 100rem; }
+
+  /* The section label. Small, spaced, brand-coloured — and used sparingly:
+     one per section, never on a subheading. */
+  .home-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--brand-primary);
+  }
+
+  /* A call to action sized for a landing page rather than a form. Padding
+     only — the colours still come from .ui-btn-primary / .ui-btn-secondary,
+     which is what keeps the hero's buttons inside the appearance system. */
+  .home-cta-lg {
+    padding-inline: 1.5rem;
+    padding-block: 0.75rem;
+    font-size: 0.9375rem;
+  }
+
+  .home-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+
+  /* ---- Section rhythm ---------------------------------------------------- */
+
+  .home-section { padding-block: clamp(3.5rem, 8vw, 6.5rem); }
+
+  .home-band {
+    padding-block: clamp(3.5rem, 8vw, 6.5rem);
+    background: color-mix(in srgb, var(--panel) 60%, transparent);
+    border-block: 1px solid var(--border);
+  }
+
+  .home-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.25rem;
+  }
+
+  /* Wide enough to read, capped so a headline never runs the full 88rem on a
+     large desktop — the failure Phase 40 calls "absurdly wide text lines". */
+  .home-section-heading { max-width: 46rem; }
+
+  .home-section-title {
+    margin-top: 0.75rem;
+    font-size: clamp(1.875rem, 4vw, 2.75rem);
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+    text-wrap: balance;
+    color: var(--heading);
+  }
+
+  .home-section-body {
+    margin-top: 1rem;
+    max-width: 42rem;
+    font-size: 1.0625rem;
+    line-height: 1.75;
+    color: var(--muted);
+  }
+
+  /* `padding-block` rather than a taller line-height: it lifts the hit area
+     over the 24px minimum without changing where the text sits. */
+  .home-section-link,
+  .home-inline-link {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--brand-primary);
+    white-space: nowrap;
+    padding-block: 0.25rem;
+  }
+
+  .home-section-link:hover,
+  .home-inline-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+  .home-inline-link { display: inline-block; margin-top: 1.5rem; }
+
+  /* ---- Media frames ------------------------------------------------------ */
+
+  /*
+   * One frame for every picture on the page. The ratio is a custom property so
+   * each caller declares its own box and the space is always reserved before
+   * anything loads — the hero frame is the largest element above the fold, and
+   * a late image that resized it would move both calls to action.
+   */
+  .home-media {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: var(--home-media-ratio, 4 / 3);
+    border-radius: calc(var(--control-radius) * 1.5);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+  }
+
+  /* ProductImage brings its own 4:3 box for card layouts; inside a frame the
+     frame is the box. */
+  .home-media .product-image {
+    position: absolute;
+    inset: 0;
+    aspect-ratio: auto;
+    height: 100%;
+    background: transparent;
+  }
+
+  /*
+   * The drawn panel, for products with no photograph and for a catalog that
+   * did not load. A plotted grid with corner registration marks: it belongs to
+   * this business in a way a grey rectangle does not, and it occupies exactly
+   * the layout real media will take later.
+   */
+  .home-media-sheet {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background-color: var(--panel-strong);
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--border) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--border) 55%, transparent) 1px, transparent 1px);
+    background-size: 2.25rem 2.25rem;
+  }
+
+  .home-media-sheet::before,
+  .home-media-sheet::after {
+    content: "";
+    position: absolute;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, transparent);
+  }
+
+  .home-media-sheet::before { top: 1rem; left: 1rem; border-right: 0; border-bottom: 0; }
+  .home-media-sheet::after { bottom: 1rem; right: 1rem; border-left: 0; border-top: 0; }
+
+  .home-media-mark {
+    font-size: clamp(1.75rem, 5vw, 3rem);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: color-mix(in srgb, var(--brand-primary) 42%, transparent);
+  }
+
+  /*
+   * Scroll-linked drift, for the two largest frames only.
+   *
+   * The scaled rest state is authored on the element, so a browser without
+   * scroll-driven animations shows a correctly filled frame and simply does
+   * not move it. The keyframes carry the same scale, which is what stops the
+   * drift ever exposing an edge of the image.
+   *
+   * No scroll listener, no rAF loop, no dependency: the compositor runs this.
+   */
+  .home-media-parallax .product-image-media,
+  .home-media-parallax .home-media-sheet { transform: scale(1.14); }
+
+  @keyframes home-media-drift {
+    from { transform: translate3d(0, -5%, 0) scale(1.14); }
+    to { transform: translate3d(0, 5%, 0) scale(1.14); }
+  }
+
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      [data-motion="on"] .home-media-parallax .product-image-media,
+      [data-motion="on"] .home-media-parallax .home-media-sheet {
+        animation: home-media-drift linear both;
+        animation-timeline: view();
+        animation-range: cover 0% cover 100%;
+      }
+    }
+  }
+
+  /* ---- Hero -------------------------------------------------------------- */
+
   .home-hero {
     position: relative;
     overflow: hidden;
@@ -2067,33 +2285,60 @@
     pointer-events: none;
   }
 
+  /*
+   * Plotted rules behind the hero, faded out before they reach the copy.
+   *
+   * This is the page's one piece of non-photographic texture and it is doing a
+   * specific job: saying "drawings happen here" without a stock photograph of
+   * somebody else's workshop. The mask is what keeps it from becoming a
+   * background pattern — it exists at the top edge and is gone by the time the
+   * headline starts.
+   */
+  .home-hero-rules {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        color-mix(in srgb, var(--border) 40%, transparent) 0 1px,
+        transparent 1px 5.5rem
+      );
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent 55%);
+    mask-image: linear-gradient(to bottom, black, transparent 55%);
+    opacity: 0.7;
+  }
+
   .home-hero-inner {
     position: relative;
     display: grid;
     width: 100%;
     max-width: 72rem;
     margin-inline: auto;
-    gap: 2.5rem;
-    padding: 4rem 1rem;
+    gap: 3rem;
+    padding: 3.5rem 1rem 3rem;
   }
 
-  [data-content-width="wide"] :where(.home-hero-inner, .home-sections) { max-width: 88rem; }
-  [data-content-width="full"] :where(.home-hero-inner, .home-sections) { max-width: 100rem; }
+  [data-content-width="wide"] .home-hero-inner { max-width: 88rem; }
+  [data-content-width="full"] .home-hero-inner { max-width: 100rem; }
+
+  .home-hero-copy { min-width: 0; }
 
   .home-hero-title {
     margin-top: 1.25rem;
-    font-size: clamp(2.25rem, 6vw, 3.75rem);
+    font-size: clamp(2.5rem, 6.4vw, 4.25rem);
     font-weight: 650;
-    letter-spacing: -0.03em;
-    line-height: 1.05;
+    letter-spacing: -0.035em;
+    line-height: 1.02;
     text-wrap: balance;
+    color: var(--heading);
   }
 
   .home-hero-accent { color: var(--brand-primary); }
 
   .home-hero-lede {
-    margin-top: 1.5rem;
-    max-width: 42rem;
+    margin-top: 1.75rem;
+    max-width: 38rem;
     font-size: 1.0625rem;
     line-height: 1.8;
     color: var(--muted);
@@ -2102,125 +2347,689 @@
   .home-hero-actions {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.75rem;
-    margin-top: 2rem;
+    margin-top: 2.25rem;
   }
 
-  .home-hero-note {
-    margin-top: 1.25rem;
-    font-size: 0.875rem;
+  .home-hero-quiet {
+    font-size: 0.9375rem;
+    font-weight: 600;
     color: var(--muted);
-  }
-
-  .home-hero-note a {
-    color: var(--brand-primary);
     text-decoration: underline;
-    text-underline-offset: 3px;
+    text-underline-offset: 4px;
+    padding-block: 0.5rem;
   }
 
-  .home-hero-facts {
-    display: grid;
-    gap: 1.25rem;
-    align-content: start;
-    border-radius: var(--control-radius);
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--panel-strong) 82%, transparent);
-    padding: 1.5rem;
-    backdrop-filter: blur(6px);
+  .home-hero-quiet:hover { color: var(--brand-primary); }
+
+  /*
+   * The hero stage: one tall frame with a smaller one overlapping its lower
+   * corner. Two products rather than one, because a single photograph reads as
+   * a product page and two read as a shop with a range.
+   *
+   * Below `md` the stage is a single frame — the support frame is hidden
+   * rather than stacked, since a second picture on a phone pushes the calls to
+   * action off the first screen for no gain.
+   */
+  .home-hero-stage { position: relative; min-width: 0; }
+
+  /*
+   * The lead frame's ratio is owned here rather than by the component, because
+   * the right shape depends entirely on the layout it is sitting in and a prop
+   * cannot hold three answers:
+   *
+   *   phone      portrait — a full-width picture that is not a letterbox
+   *   tablet     landscape — 4:5 at 608px wide is a 760px-tall wall of image
+   *   desktop    portrait again — it is a column beside the copy, not a band
+   *
+   * Both intermediate shapes were measured before they were chosen; the tablet
+   * one is the failure Phase 39 describes, and it only exists between the
+   * point the hero stops being a phone layout and the point it becomes two
+   * columns.
+   */
+  .home-hero-frame-lead {
+    aspect-ratio: 4 / 5;
+    box-shadow: 0 24px 60px -32px rgb(0 0 0 / 0.85);
   }
 
-  .home-sections {
+  .home-hero-frame-support { display: none; }
+
+  .home-hero-foot {
+    position: relative;
     display: flex;
-    flex-direction: column;
-    gap: 4.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem 1.5rem;
     width: 100%;
     max-width: 72rem;
     margin-inline: auto;
-    padding: 4rem 1rem;
+    padding: 1.25rem 1rem 1.5rem;
+    border-top: 1px solid var(--border);
   }
 
-  .home-section-head {
+  [data-content-width="wide"] .home-hero-foot { max-width: 88rem; }
+  [data-content-width="full"] .home-hero-foot { max-width: 100rem; }
+
+  .home-hero-rail {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 1rem;
+    gap: 0.5rem 1.5rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--muted);
   }
 
-  .home-section-title {
-    margin-top: 0.5rem;
-    font-size: clamp(1.5rem, 3.4vw, 2rem);
+  /* A drawn separator rather than a bullet character, so a wrapped item never
+     starts a line with a stray dot. */
+  .home-hero-rail > li { display: flex; align-items: center; gap: 1.5rem; }
+
+  .home-hero-rail > li:not(:last-child)::after {
+    content: "";
+    width: 1px;
+    height: 0.875rem;
+    background: var(--border);
+  }
+
+  .home-scroll-cue {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding-block: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .home-scroll-cue:hover { color: var(--brand-primary); }
+
+  .home-scroll-cue-line {
+    display: block;
+    width: 2.5rem;
+    height: 1px;
+    background: color-mix(in srgb, var(--brand-primary) 70%, transparent);
+  }
+
+  /* A 12px nudge on a 40px line, once per second and a half. Small enough not
+     to pull the eye during reading, and gone entirely under reduced motion. */
+  @keyframes home-cue-slide {
+    0%, 65%, 100% { transform: translateX(0); }
+    80% { transform: translateX(0.375rem); }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    [data-motion="on"] .home-scroll-cue-line {
+      animation: home-cue-slide 2.4s ease-in-out infinite;
+    }
+  }
+
+  /* ---- What we do: alternating panels ------------------------------------ */
+
+  .home-panels {
+    margin-top: clamp(2.5rem, 5vw, 4rem);
+    display: grid;
+    gap: clamp(2.5rem, 5vw, 4.5rem);
+  }
+
+  .home-panel {
+    display: grid;
+    gap: 1.75rem;
+    align-items: center;
+  }
+
+  .home-panel-copy { min-width: 0; }
+
+  .home-panel-title {
+    margin-top: 0.75rem;
+    font-size: clamp(1.5rem, 2.8vw, 2rem);
     font-weight: 650;
     letter-spacing: -0.02em;
+    line-height: 1.2;
     text-wrap: balance;
+    color: var(--heading);
   }
 
-  .home-section-link {
-    font-size: 0.875rem;
-    font-weight: 600;
+  .home-panel-body {
+    margin-top: 1rem;
+    max-width: 34rem;
+    line-height: 1.75;
+    color: var(--muted);
+  }
+
+  /* ---- Featured products ------------------------------------------------- */
+
+  /*
+   * More room than the catalog grid, and three items rather than a page of
+   * them. The card itself is unchanged — this is presentation, not a second
+   * card implementation.
+   */
+  .home-product-row {
+    margin-top: clamp(2.5rem, 5vw, 3.5rem);
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  .home-empty {
+    margin-top: 2.5rem;
+    display: grid;
+    justify-items: start;
+    gap: 1.25rem;
+    border-radius: calc(var(--control-radius) * 1.5);
+    border: 1px dashed var(--border);
+    background: color-mix(in srgb, var(--panel) 70%, transparent);
+    padding: 2rem;
+    color: var(--muted);
+  }
+
+  /* ---- Product focus ----------------------------------------------------- */
+
+  .home-focus {
+    display: grid;
+    gap: 2rem;
+    align-items: center;
+  }
+
+  .home-focus-copy { min-width: 0; }
+
+  .home-focus-body {
+    margin-top: 1.25rem;
+    max-width: 34rem;
+    font-size: 1.0625rem;
+    line-height: 1.75;
+    color: var(--muted);
+  }
+
+  .home-focus-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+    margin-top: 1.75rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .home-focus-facts dt {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .home-focus-facts dd {
+    margin-top: 0.375rem;
+    font-size: 1.125rem;
+    font-weight: 650;
     color: var(--brand-primary);
   }
 
-  .home-section-link:hover { text-decoration: underline; }
+  .home-focus .home-cta-lg { margin-top: 2rem; }
 
-  .home-process { display: grid; gap: 2rem; }
+  /* ---- Custom work ------------------------------------------------------- */
 
-  .home-process-steps {
+  .home-custom {
+    position: relative;
+    overflow: hidden;
+    padding-block: clamp(4rem, 9vw, 7.5rem);
+    border-block: 1px solid color-mix(in srgb, var(--brand-primary) 22%, var(--border));
+  }
+
+  .home-custom-wash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        58rem 30rem at 18% 0%,
+        color-mix(in srgb, var(--brand-primary) 14%, transparent),
+        transparent 64%
+      ),
+      radial-gradient(
+        40rem 26rem at 88% 100%,
+        color-mix(in srgb, var(--brand-accent) 12%, transparent),
+        transparent 62%
+      );
+  }
+
+  .home-custom-inner { position: relative; }
+
+  .home-custom-copy { max-width: 48rem; }
+
+  .home-custom-title {
+    margin-top: 0.875rem;
+    font-size: clamp(2rem, 5vw, 3.25rem);
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.08;
+    text-wrap: balance;
+    color: var(--heading);
+  }
+
+  .home-custom-body {
+    margin-top: 1.5rem;
+    font-size: 1.125rem;
+    line-height: 1.75;
+    color: var(--text);
+  }
+
+  .home-custom-detail {
+    margin-top: 1rem;
+    line-height: 1.75;
+    color: var(--muted);
+  }
+
+  /* ---- How it works ------------------------------------------------------ */
+
+  .home-process { display: grid; gap: 2.5rem; }
+
+  .home-process-intro { min-width: 0; }
+
+  .home-process-cta { margin-top: 2rem; }
+
+  /*
+   * The steps, with a rail beside them.
+   *
+   * The rail's fill is drawn by a scroll-linked animation and is *decoration*:
+   * `aria-hidden`, and authored full so that a browser without scroll-driven
+   * animation support shows a complete rail rather than an empty one. Nothing
+   * is allowed to mean anything by its length, which is the rule that makes it
+   * safe to remove under reduced motion.
+   */
+  .home-process-track { position: relative; min-width: 0; }
+
+  .home-process-rail {
+    position: absolute;
+    top: 0.75rem;
+    bottom: 0.75rem;
+    left: 0;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--border);
+    overflow: hidden;
+  }
+
+  .home-process-rail-fill {
+    display: block;
+    height: 100%;
+    width: 100%;
+    transform-origin: top;
+    background: linear-gradient(
+      to bottom,
+      var(--brand-primary),
+      color-mix(in srgb, var(--brand-accent) 80%, transparent)
+    );
+  }
+
+  @keyframes home-rail-fill {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      [data-motion="on"] .home-process-rail-fill {
+        animation: home-rail-fill linear both;
+        animation-timeline: view();
+        animation-range: entry 85% exit 15%;
+      }
+    }
+  }
+
+  .home-steps {
     display: grid;
-    gap: 1rem;
-    counter-reset: none;
+    gap: 2rem;
+    padding-left: 2rem;
   }
 
-  .home-process-step {
-    display: flex;
-    gap: 1rem;
-    border-radius: var(--control-radius);
-    border: 1px solid var(--border);
-    background: var(--panel);
-    padding: 1.25rem;
+  .home-step {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
   }
 
-  [data-card-style="solid"] :where(.home-process-step, .home-cta-primary, .home-cta-faq) { background: var(--panel-strong); }
-  [data-card-style="outline"] :where(.home-process-step, .home-cta-faq) { background: transparent; }
-
-  .home-process-number {
-    flex: 0 0 auto;
-    font-size: 0.8125rem;
+  .home-step-number {
+    font-size: 0.875rem;
     font-weight: 700;
     letter-spacing: 0.12em;
     color: var(--brand-primary);
+    font-variant-numeric: tabular-nums;
     padding-top: 0.25rem;
   }
 
-  .home-cta { display: grid; gap: 1.25rem; }
+  .home-step-copy { min-width: 0; }
 
-  .home-cta-primary {
-    border-radius: var(--control-radius);
-    border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--border));
-    background: color-mix(in srgb, var(--brand-primary) 7%, var(--panel));
-    padding: 1.75rem;
+  .home-step-title {
+    font-size: 1.25rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--heading);
   }
 
-  .home-cta-faq {
-    border-radius: var(--control-radius);
+  .home-step-body {
+    margin-top: 0.625rem;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  /* ---- In the shop ------------------------------------------------------- */
+
+  .home-making {
+    padding-block: clamp(3.5rem, 8vw, 6.5rem);
+    background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
+    border-block: 1px solid var(--border);
+  }
+
+  .home-materials {
+    margin-top: clamp(2.5rem, 5vw, 3.5rem);
+    display: grid;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--control-radius) * 1.5);
+    overflow: hidden;
+  }
+
+  /*
+   * Cells divided by a single hairline rather than four separate cards. The
+   * page already has enough bordered boxes on it; a divided block reads as one
+   * table of materials, which is what it is.
+   */
+  .home-material {
+    background: var(--bg);
+    padding: 1.75rem 1.5rem;
+  }
+
+  .home-material-title {
+    font-size: 1.0625rem;
+    font-weight: 650;
+    color: var(--brand-primary);
+  }
+
+  .home-material-body {
+    margin-top: 0.625rem;
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  /* ---- Recent work ------------------------------------------------------- */
+
+  .home-work-grid {
+    margin-top: clamp(2.5rem, 5vw, 3.5rem);
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .home-work-card {
+    position: relative;
+    border-radius: calc(var(--control-radius) * 1.5);
     border: 1px solid var(--border);
     background: var(--panel);
     padding: 1.75rem;
+    transition: border-color 200ms ease, background-color 200ms ease;
   }
 
-  .home-faq-item { padding-block: 0.875rem; }
-  .home-faq-item > summary { cursor: pointer; font-weight: 600; list-style: none; }
-  .home-faq-item > summary::-webkit-details-marker { display: none; }
-  .home-faq-item > summary::after { content: "+"; float: right; color: var(--brand-primary); font-weight: 700; }
-  .home-faq-item[open] > summary::after { content: "–"; }
-  .home-cta-faq a { color: var(--brand-primary); text-decoration: underline; text-underline-offset: 3px; }
+  .home-work-card:hover {
+    border-color: color-mix(in srgb, var(--brand-primary) 40%, var(--border));
+    background: var(--panel-strong);
+  }
+
+  .home-work-category {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--brand-primary);
+  }
+
+  .home-work-title {
+    margin-top: 0.875rem;
+    font-size: 1.1875rem;
+    font-weight: 650;
+    line-height: 1.35;
+    color: var(--heading);
+  }
+
+  /* One stretched link per card, the same contract the product card uses: the
+     whole card is clickable without giving the keyboard three stops on it. */
+  .home-work-link::after { content: ""; position: absolute; inset: 0; }
+
+  .home-work-date {
+    margin-top: 1rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  /* ---- Assurances and questions ------------------------------------------ */
+
+  .home-assurance-layout { display: grid; gap: 2.5rem; }
+
+  .home-assurance-main { min-width: 0; }
+
+  .home-assurance-grid {
+    margin-top: 2.25rem;
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  .home-assurance {
+    border-left: 2px solid color-mix(in srgb, var(--brand-primary) 55%, transparent);
+    padding-left: 1.25rem;
+  }
+
+  .home-assurance-title {
+    font-size: 1rem;
+    font-weight: 650;
+    color: var(--heading);
+  }
+
+  .home-assurance-body {
+    margin-top: 0.5rem;
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  .home-questions {
+    border-radius: calc(var(--control-radius) * 1.5);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 1.75rem;
+    align-self: start;
+  }
+
+  [data-card-style="solid"] :where(.home-questions, .home-work-card) { background: var(--panel-strong); }
+  [data-card-style="outline"] :where(.home-questions, .home-work-card) { background: transparent; }
+
+  .home-questions-title { font-size: 1.125rem; font-weight: 650; }
+
+  .home-questions-list {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .home-question { border-bottom: 1px solid var(--border); }
+
+  /*
+   * The padding is on the summary, not on the <details> around it. With it on
+   * the parent the tap target was the 24px line of text itself — the row
+   * *looked* 52px tall and only the middle of it opened the answer, which is
+   * the kind of thing only a phone finds.
+   */
+  .home-question > summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+    padding-block: 0.875rem;
+  }
+
+  .home-question > summary::-webkit-details-marker { display: none; }
+  .home-question > summary::after { content: "+"; flex: none; color: var(--brand-primary); font-weight: 700; }
+  .home-question[open] > summary::after { content: "–"; }
+
+  .home-question > p {
+    margin-top: -0.125rem;
+    padding-bottom: 1rem;
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  .home-questions-more { margin-top: 1.25rem; font-size: 0.875rem; color: var(--muted); }
+  .home-questions-more a { color: var(--brand-primary); text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ---- The close --------------------------------------------------------- */
+
+  /*
+   * A deliberate landing before the footer rather than a product grid that
+   * stops. Centred, full width, and carrying the same two doors the hero
+   * opened with.
+   */
+  .home-close {
+    position: relative;
+    overflow: hidden;
+    padding-block: clamp(4.5rem, 10vw, 8rem);
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+
+  .home-close-wash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      54rem 28rem at 50% 108%,
+      color-mix(in srgb, var(--brand-primary) 16%, transparent),
+      transparent 66%
+    );
+  }
+
+  .home-close-inner { position: relative; }
+
+  .home-close-title {
+    margin-top: 1rem;
+    margin-inline: auto;
+    max-width: 24ch;
+    font-size: clamp(2rem, 5.2vw, 3.5rem);
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.06;
+    text-wrap: balance;
+    color: var(--heading);
+  }
+
+  .home-close-body {
+    margin-top: 1.5rem;
+    margin-inline: auto;
+    max-width: 44rem;
+    font-size: 1.0625rem;
+    line-height: 1.8;
+    color: var(--muted);
+  }
+
+  .home-close-actions { justify-content: center; }
+
+  .home-close-quiet { margin-top: 1.5rem; font-size: 0.9375rem; }
+  .home-close-quiet a { color: var(--muted); text-decoration: underline; text-underline-offset: 4px; }
+  .home-close-quiet a:hover { color: var(--brand-primary); }
+
+  /* ---- Homepage breakpoints ----------------------------------------------
+   *
+   * Explicit and few. The split sections all turn at the same two widths, so
+   * there is no band where one section has gone two-column and its neighbour
+   * has not — the "awkward in-between layout" Phase 39 is about.
+   * ---------------------------------------------------------------------- */
+
+  /*
+   * Below 480px the two buttons take the full width one above the other.
+   * Allowed to wrap naturally they produce a lone primary on the first row and
+   * the secondary sharing the second with the quiet link, which reads as a
+   * mistake rather than a hierarchy — and gives the most important control on
+   * the page the smallest touch target in the group.
+   */
+  @media (max-width: 479px) {
+    .home-hero-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+    .home-hero-quiet { justify-self: start; }
+  }
+
+  @media (min-width: 480px) {
+    /* Stacked but no longer phone-shaped: a portrait frame at this width is a
+       wall of image between the buttons and everything below them. */
+    .home-hero-frame-lead { aspect-ratio: 3 / 2; }
+  }
+
+  @media (min-width: 640px) {
+    .home-product-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .home-work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .home-materials { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .home-assurance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
 
   @media (min-width: 768px) {
-    .home-hero-inner { padding-block: 6rem; grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr); align-items: center; }
-    .home-process { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 3rem; }
+    .home-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; }
+    /* Alternate which side the picture takes, so two panels do not read as a
+       repeated row. */
+    .home-panel:nth-child(even) .home-panel-media { order: 2; }
+  }
+
+  /*
+   * 1024 is where the page becomes a desktop layout, and every split section
+   * turns at once. Staggering them produced exactly the band Phase 39 warns
+   * about: at 768 the hero was two columns with a 235px-wide photograph in it
+   * while the section under it was still stacked full width.
+   */
+  @media (min-width: 1024px) {
+    .home-hero-inner {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: center;
+      padding-block: 5rem 4rem;
+      gap: 3.5rem;
+    }
+
+    .home-hero-frame-lead { aspect-ratio: 4 / 5; }
+
+    /* The stage becomes a composition only once there is width for the offset
+       frame to overlap without covering the lead frame's subject. */
+    .home-hero-stage { padding-bottom: 3.5rem; padding-left: 3rem; }
+
+    .home-hero-frame-support {
+      display: block;
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 46%;
+      box-shadow: 0 20px 45px -25px rgb(0 0 0 / 0.9);
+    }
+
+    .home-focus { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 3rem; }
+    .home-product-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+    .home-materials { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .home-work-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    /*
+     * The one sticky story on the page. Below this width it is a plain stacked
+     * section: a sticky column on a narrow viewport is a piece of the screen
+     * the reader cannot scroll away from.
+     */
+    .home-process { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 4rem; }
     .home-process-intro { position: sticky; top: 6rem; align-self: start; }
-    .home-cta { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); }
-    .home-cta-primary, .home-cta-faq { padding: 2.25rem; }
+    .home-steps { gap: 3rem; padding-left: 2.5rem; }
+
+    .home-assurance-layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 3.5rem; }
+    .home-assurance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
+  }
+
+  @media (min-width: 1280px) {
+    .home-hero-inner { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 4.5rem; }
+    .home-focus { gap: 4.5rem; }
   }
 
   /* Product cards: one shared silhouette for the homepage and the catalog. */

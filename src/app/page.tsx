@@ -1,333 +1,113 @@
-import Link from "next/link";
 import type { Metadata } from "next";
-import ProductCard, { type ProductCardProduct } from "@/components/ProductCard";
-import Reveal from "@/components/Reveal";
-import { supabaseAdmin } from "@/lib/supabaseServer";
-import { groupMediaByProduct } from "@/lib/productImages";
+
+import HomeHero from "@/components/home/HomeHero";
+import {
+  HomeAssurances,
+  HomeCapabilities,
+  HomeCustomProject,
+  HomeFeaturedProducts,
+  HomeFinalCta,
+  HomeMaking,
+  HomeProcess,
+  HomeProductFocus,
+  HomeRecentWork,
+} from "@/components/home/HomeSections";
+import type { ProductCardProduct } from "@/components/ProductCard";
+import { loadFeaturedProducts } from "@/lib/commerce/catalogData";
+import { meta } from "@/lib/home/content";
+import { loadRecentWork } from "@/lib/home/recentWork";
 import { getSiteSettings } from "@/lib/siteSettings";
 
 export const revalidate = 300;
 
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSiteSettings();
+  const title = `${settings.name} | ${meta.titleSuffix}`;
+
   return {
-    title: `${settings.name} | Custom Parts, Made to Order`,
-    description:
-      "KeyMoura designs and machines custom parts, prototypes, fixtures, and short runs. Browse the products or send a drawing, CAD file, or description and get a reviewed quote before you pay.",
+    title,
+    description: meta.description,
     alternates: { canonical: "/" },
+    // The root layout sets the site-wide Open Graph card. The homepage restates
+    // title and description because it is the URL that actually gets shared,
+    // and inheriting "KeyMoura — <tagline>" there would describe the brand
+    // rather than what the page offers.
+    openGraph: { title, description: meta.description, url: "/" },
+    twitter: { title, description: meta.description },
   };
 }
 
-type FeaturedProject = { id: string; title: string; slug: string; category: string | null; updated_at: string | null };
-
 /**
- * The homepage and /catalog resolve product images the same way: gallery media
- * first, then the denormalized products.image_url. Reading only image_url here
- * is what made products with real photographs render as placeholders.
+ * How the page's few product photographs are shared out.
+ *
+ * A shop with six published products has to fill a hero, two capability panels,
+ * a focus section and a product row without the same photograph appearing twice
+ * in adjacent sections — and a shop with one product has to look deliberate too.
+ *
+ * The rule, in order of prominence:
+ *
+ *   - The **focus** section takes the first product. It is the largest single
+ *     product on the page and the catalog's featured order already says which
+ *     product should lead, so this is that product.
+ *   - The **row** takes the next three, so nothing in the row repeats the
+ *     product shown immediately above it.
+ *   - The **hero and panels** rotate over whatever is left, wrapping back to the
+ *     start when the catalog is smaller than the page. Wrapping is visible only
+ *     on very small catalogs, where the alternative is an empty frame.
+ *
+ * Every frame degrades to a drawn panel rather than a gap, so a catalog with no
+ * photographs at all still renders a complete page. See `HomeMedia`.
  */
-async function loadFeaturedProducts(): Promise<ProductCardProduct[]> {
-  try {
-    const client = supabaseAdmin();
-    const { data } = await client
-      .from("products")
-      .select(
-        "id,name,slug,short_description,image_url,category,category_id,purchase_mode,starting_price_cents,is_custom,availability_status,lead_time_text,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock"
-      )
-      .eq("is_published", true)
-      .is("archived_at", null)
-      .order("sort_order")
-      .limit(3);
+function allocateMedia(products: ProductCardProduct[]) {
+  const focus = products[0] ?? null;
+  const row = products.slice(1, 4);
 
-    const products = (data ?? []) as ProductCardProduct[];
-    if (!products.length) return [];
+  const pool = products.slice(1);
+  let cursor = 0;
+  const next = (): ProductCardProduct | null => {
+    if (!pool.length) return products[0] ?? null;
+    const item = pool[cursor % pool.length];
+    cursor += 1;
+    return item ?? null;
+  };
 
-    const { data: media } = await client
-      .from("product_media")
-      .select("product_id,url,kind,sort_order")
-      .in(
-        "product_id",
-        products.map((product) => product.id)
-      )
-      .eq("kind", "image")
-      .order("sort_order");
-
-    const byProduct = groupMediaByProduct(media ?? []);
-    return products.map((product) => ({ ...product, product_media: byProduct.get(product.id) ?? [] }));
-  } catch {
-    return [];
-  }
+  return { focus, row, heroLead: next(), heroSupport: next(), panelA: next(), panelB: next() };
 }
-
-async function loadFeaturedProjects(): Promise<FeaturedProject[]> {
-  try {
-    const { data } = await supabaseAdmin()
-      .from("info_pages")
-      .select("id,title,slug,category,updated_at")
-      .eq("status", "approved")
-      .order("updated_at", { ascending: false })
-      .limit(3);
-    return (data ?? []) as FeaturedProject[];
-  } catch {
-    return [];
-  }
-}
-
-const capabilities = [
-  {
-    title: "Plastics",
-    body: "Delrin and acetal, HDPE, acrylic, and other machinable plastics for housings, jigs, and wear parts.",
-  },
-  {
-    title: "Wood",
-    body: "Hardwoods, softwoods, plywood, and selected engineered sheet goods for panels, signage, and trim.",
-  },
-  {
-    title: "Aluminum",
-    body: "Aluminum work reviewed individually for geometry, finish, and the tolerance the part actually needs.",
-  },
-  {
-    title: "Something else?",
-    body: "Ask first. Workholding, tooling, dust, heat, and safety decide what is practical — we will tell you plainly.",
-  },
-];
-
-const process = [
-  {
-    step: "01",
-    title: "Describe the part",
-    body: "Start from a product page or send a CAD file, drawing, sketch, or plain-language description. Dimensions, material, finish, quantity, and how the part gets used all help.",
-  },
-  {
-    step: "02",
-    title: "We review it and quote",
-    body: "Every request is read by a person. We confirm the part can actually be made the way you need it, raise anything that should change, and send a price tied to the agreed specification.",
-  },
-  {
-    step: "03",
-    title: "You approve, then pay",
-    body: "Nothing is charged until the scope and price are settled and you approve the quote. Checkout is handled by Stripe.",
-  },
-  {
-    step: "04",
-    title: "Follow it through delivery",
-    body: "Messages, files, approvals, payment, production status, and delivery updates stay together in your order hub.",
-  },
-];
-
-const assurances = [
-  {
-    title: "No charge before approval",
-    body: "A request costs nothing. Payment only happens after you have seen the specification and the price and accepted both.",
-  },
-  {
-    title: "Manufacturability checked first",
-    body: "Deep pockets, thin walls, undercuts, and very tight tolerances get flagged before production, not after.",
-  },
-  {
-    title: "One place for the whole order",
-    body: "Your files, messages, quote, payment, and status live on a single order page instead of scattered email threads.",
-  },
-];
-
-const faq = [
-  ["When do I pay?", "Only after the specification and the final price are agreed and you approve the quote."],
-  [
-    "What files can I send?",
-    "CAD (STL, STEP, IGES), drawings (DXF, DWG, SVG, PDF), and photographs or reference images. Up to 10 files, 50 MB each.",
-  ],
-  [
-    "What if you cannot make it?",
-    "We say so, and explain why. Some geometry, materials, sizes, and safety-critical uses fall outside what this shop should take on.",
-  ],
-  ["Can I see progress?", "Yes. Your order hub tracks review, quote, payment, production, and delivery as they happen."],
-];
 
 export default async function Home() {
-  const [products, projects] = await Promise.all([loadFeaturedProducts(), loadFeaturedProjects()]);
+  /*
+   * Two bounded queries, in parallel, both as the public.
+   *
+   * The old homepage read through the service-role client, which meant its
+   * filters were the only thing standing between a draft product or an
+   * unapproved write-up and the front page. Reading as `anon` puts row-level
+   * security behind every filter here, and has the side effect of making the
+   * homepage's real data path runnable outside production.
+   *
+   * Neither call can throw the page away: both resolve to an empty list on
+   * failure, and every section below renders or removes itself accordingly.
+   */
+  const [products, work] = await Promise.all([loadFeaturedProducts(6), loadRecentWork(3)]);
+  const media = allocateMedia(products);
 
   return (
     <>
-      <section className="home-hero">
-        <div className="home-hero-wash" aria-hidden="true" />
-        <div className="home-hero-inner">
-          <Reveal className="home-hero-copy">
-            <p className="ui-eyebrow">Custom routing &amp; light machining</p>
-            <h1 className="home-hero-title">
-              Parts made to your drawing, <span className="home-hero-accent">quoted before you pay.</span>
-            </h1>
-            <p className="home-hero-lede">
-              KeyMoura makes one-off parts, prototypes, fixtures, signage, and short runs. Start from a stocked product
-              or send your own idea — we review whether it can be made, agree the details, and only then ask for
-              payment.
-            </p>
-            <div className="home-hero-actions">
-              <Link href="/orders/new" className="ui-btn ui-btn-primary !px-6 !py-3">
-                Start a custom project
-              </Link>
-              <Link href="/catalog" className="ui-btn ui-btn-secondary !px-6 !py-3">
-                Browse products
-              </Link>
-            </div>
-            <p className="home-hero-note">
-              Not sure it is possible?{" "}
-              <Link href="/capabilities">Check what we can make</Link> or{" "}
-              <Link href="/support">ask a question first</Link>.
-            </p>
-          </Reveal>
+      <HomeHero
+        lead={media.heroLead}
+        support={media.heroSupport}
+        leadAlt={media.heroLead?.name ?? ""}
+        supportAlt={media.heroSupport?.name ?? ""}
+      />
 
-          <Reveal as="ul" className="home-hero-facts" delay={140}>
-            {assurances.map((item) => (
-              <li key={item.title}>
-                <p className="font-semibold text-brand-text">{item.title}</p>
-                <p className="mt-1 text-sm leading-6 text-brand-textMuted">{item.body}</p>
-              </li>
-            ))}
-          </Reveal>
-        </div>
-      </section>
-
-      <div className="home-sections">
-        <section className="home-section" aria-labelledby="home-capabilities">
-          <Reveal className="home-section-head">
-            <div>
-              <p className="ui-eyebrow">Capabilities</p>
-              <h2 id="home-capabilities" className="home-section-title">
-                What this shop works in
-              </h2>
-            </div>
-            <Link href="/capabilities" className="home-section-link">
-              Materials &amp; limits →
-            </Link>
-          </Reveal>
-          <Reveal stagger className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {capabilities.map((item) => (
-              <article key={item.title} className="ui-card ui-card-hover">
-                <h3 className="font-semibold text-brand-primary">{item.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-brand-textMuted">{item.body}</p>
-              </article>
-            ))}
-          </Reveal>
-        </section>
-
-        {products.length ? (
-          <section className="home-section" aria-labelledby="home-catalog">
-            <Reveal className="home-section-head">
-              <div>
-                <p className="ui-eyebrow">Products</p>
-                <h2 id="home-catalog" className="home-section-title">
-                  Ready to buy, or made to your drawing
-                </h2>
-              </div>
-              <Link href="/catalog" className="home-section-link">
-                All products →
-              </Link>
-            </Reveal>
-            <Reveal stagger className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {products.map((product, index) => (
-                <ProductCard key={product.id} product={product} showAvailability={false} priority={index === 0} />
-              ))}
-            </Reveal>
-          </section>
-        ) : null}
-
-        <section className="home-section" aria-labelledby="home-process">
-          <div className="home-process">
-            <Reveal className="home-process-intro">
-              <p className="ui-eyebrow">How custom work happens</p>
-              <h2 id="home-process" className="home-section-title">
-                Four steps, no surprises
-              </h2>
-              <p className="mt-4 leading-7 text-brand-textMuted">
-                The same sequence runs for a single bracket and for a short production run. You can see exactly where
-                your order is at any point.
-              </p>
-              <Link href="/orders/new" className="ui-btn ui-btn-primary mt-6 !px-5 !py-2.5">
-                Start a request
-              </Link>
-            </Reveal>
-
-            <Reveal as="ol" stagger className="home-process-steps">
-              {process.map((item) => (
-                <li key={item.step} className="home-process-step">
-                  <span className="home-process-number" aria-hidden="true">
-                    {item.step}
-                  </span>
-                  <div>
-                    <h3 className="text-lg font-semibold">{item.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-brand-textMuted">{item.body}</p>
-                  </div>
-                </li>
-              ))}
-            </Reveal>
-          </div>
-        </section>
-
-        {projects.length ? (
-          <section className="home-section" aria-labelledby="home-projects">
-            <Reveal className="home-section-head">
-              <div>
-                <p className="ui-eyebrow">Gallery</p>
-                <h2 id="home-projects" className="home-section-title">
-                  Recent work
-                </h2>
-              </div>
-              <Link href="/projects" className="home-section-link">
-                See the gallery →
-              </Link>
-            </Reveal>
-            <Reveal stagger className="mt-7 grid gap-4 md:grid-cols-3">
-              {projects.map((project) => (
-                <article key={project.id} className="content-grid-card">
-                  {project.category ? <p className="ui-eyebrow">{project.category}</p> : null}
-                  <h3 className="mt-2 text-lg font-semibold">
-                    <Link href={`/projects/${project.slug}`} className="hover:text-brand-primary">
-                      {project.title}
-                    </Link>
-                  </h3>
-                </article>
-              ))}
-            </Reveal>
-          </section>
-        ) : null}
-
-        <section className="home-section" aria-labelledby="home-cta">
-          <div className="home-cta">
-            <Reveal className="home-cta-primary">
-              <p className="ui-eyebrow">Have something in mind?</p>
-              <h2 id="home-cta" className="home-section-title">
-                Send the idea. We&rsquo;ll tell you what it takes.
-              </h2>
-              <p className="mt-4 leading-7 text-brand-textMuted">
-                A sketch on paper is enough to start. We will work out material, dimensions, finish, and a realistic
-                path to a finished part — and say so plainly if it is not something this shop should make.
-              </p>
-              <div className="ui-action-row mt-6">
-                <Link href="/orders/new" className="ui-btn ui-btn-primary !px-5 !py-2.5">
-                  Start a custom request
-                </Link>
-                <Link href="/support" className="ui-btn ui-btn-ghost !px-5 !py-2.5">
-                  Ask a question
-                </Link>
-              </div>
-            </Reveal>
-
-            <Reveal className="home-cta-faq" delay={120}>
-              <h3 className="text-lg font-semibold">Common questions</h3>
-              <div className="mt-3 divide-y divide-[var(--border)]">
-                {faq.map(([question, answer]) => (
-                  <details key={question} className="home-faq-item">
-                    <summary>{question}</summary>
-                    <p className="mt-2 text-sm leading-6 text-brand-textMuted">{answer}</p>
-                  </details>
-                ))}
-              </div>
-              <p className="mt-4 text-sm text-brand-textMuted">
-                More detail in the <Link href="/design-guide">design &amp; tolerance guide</Link>.
-              </p>
-            </Reveal>
-          </div>
-        </section>
-      </div>
+      <HomeCapabilities media={[media.panelA, media.panelB]} />
+      <HomeProductFocus product={media.focus} />
+      <HomeFeaturedProducts products={media.row} />
+      <HomeCustomProject />
+      <HomeProcess />
+      <HomeMaking />
+      <HomeRecentWork items={work} />
+      <HomeAssurances />
+      <HomeFinalCta />
     </>
   );
 }

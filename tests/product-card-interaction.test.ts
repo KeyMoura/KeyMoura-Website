@@ -199,9 +199,11 @@ test("a directly purchasable price is exact, a request price is a starting point
 test("every product grid renders the shared card rather than its own markup", () => {
   // The catalog grid has moved twice — into CatalogClient when /catalog became
   // a server component, and now into CatalogBrowser, which every category page
-  // shares. The requirement that every grid uses the one card did not move.
+  // shares. The homepage's row moved out of the route and into its sections in
+  // Homepage 3.0. The requirement that every grid uses the one card did not
+  // move with any of them.
   for (const path of [
-    "src/app/page.tsx",
+    "src/components/home/HomeSections.tsx",
     "src/components/catalog/CatalogBrowser.tsx",
     "src/app/catalog/[slug]/page.tsx",
   ]) {

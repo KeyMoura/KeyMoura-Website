@@ -3,13 +3,28 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-test("homepage exposes featured products and custom-work guidance", () => { const page = read("src/app/page.tsx"); assert.match(page, /loadFeaturedProducts/); assert.match(page, /Start a custom project/); assert.match(page, /Common questions/); });
-test("homepage covers what KeyMoura does, sells, and how custom work runs", () => {
+/*
+ * Homepage 3.0 moved the copy out of the route and into `src/lib/home/content`,
+ * and the markup into `src/components/home`. These two tests kept their
+ * subject — what the front page has to cover — and changed where they look for
+ * it. The route itself is now nine section elements and two loaders, so
+ * asserting sentences against it would only ever prove that the file is short.
+ */
+test("homepage exposes featured products and custom-work guidance", () => {
   const page = read("src/app/page.tsx");
-  // "Catalog" was the forum-era word for the shop. The homepage now says
-  // Products, and the primary call to action is a custom project.
-  for (const token of ["Capabilities", "Products", "How custom work happens", "Browse products", "Start a custom request"]) {
-    assert.ok(page.includes(token), `homepage is missing: ${token}`);
+  const sections = read("src/components/home/HomeSections.tsx");
+  const content = read("src/lib/home/content.ts");
+  assert.match(page, /loadFeaturedProducts/);
+  assert.match(content, /Start a custom project/);
+  assert.match(sections, /Common questions/);
+});
+
+test("homepage covers what KeyMoura does, sells, and how custom work runs", () => {
+  const content = read("src/lib/home/content.ts");
+  // "Catalog" was the forum-era word for the shop. The homepage says Products,
+  // and it offers both doors: shopping and a custom project.
+  for (const token of ["Shop products", "Start a custom project", "Browse the catalog", "How it works", "Materials & limits"]) {
+    assert.ok(content.includes(token), `homepage is missing: ${token}`);
   }
 });
 test("catalog supports discovery controls and clear empty states", () => {

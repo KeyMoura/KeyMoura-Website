@@ -327,3 +327,79 @@ export const orderHistoryFixtures: OrderHistoryOrder[] = [
     ],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Homepage
+// ---------------------------------------------------------------------------
+
+/**
+ * A stand-in photograph, as an inline SVG data URL.
+ *
+ * The homepage's frames behave differently with and without media — one path
+ * renders `ProductImage`, the other renders the drawn sheet — and a harness
+ * that could only show the empty path would leave the composition that actually
+ * ships unverified.
+ *
+ * A data URL rather than a file: it needs no network, it survives with no
+ * Supabase configured, and `normalizeImageUrl` accepts `data:image/` while
+ * `isOptimizableImageUrl` correctly refuses to send it to the optimizer, so
+ * the plain-`<img>` branch gets exercised too. Nothing here is presented as a
+ * real KeyMoura part; it is a shape at a known aspect ratio.
+ */
+function swatch(seed: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="hsl(${seed} 12% 26%)"/>
+      <stop offset="1" stop-color="hsl(${seed} 14% 12%)"/>
+    </linearGradient></defs>
+    <rect width="800" height="600" fill="url(#g)"/>
+    <circle cx="400" cy="300" r="150" fill="none" stroke="hsl(${seed} 20% 55%)" stroke-width="26"/>
+    <circle cx="400" cy="300" r="64" fill="hsl(${seed} 16% 20%)" stroke="hsl(${seed} 22% 60%)" stroke-width="10"/>
+    <rect x="150" y="470" width="500" height="14" fill="hsl(${seed} 18% 45%)"/>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Six products for the homepage surfaces, in the catalog's featured order.
+ *
+ * Two carry media and four do not, on purpose: that is the mix the drawn-sheet
+ * fallback has to survive, and it puts a real image and a placeholder next to
+ * each other in the same row where any mismatch in framing shows up.
+ */
+export const homeProductFixtures: ProductCardProduct[] = [
+  { ...productFixtures[0], id: "home-1", product_media: [{ url: swatch(28), kind: "image", sort_order: 0 }] },
+  { ...productFixtures[1], id: "home-2", product_media: [{ url: swatch(200), kind: "image", sort_order: 0 }] },
+  { ...productFixtures[2], id: "home-3" },
+  { ...productFixtures[3], id: "home-4" },
+  {
+    ...productFixtures[0],
+    id: "home-5",
+    name: "Knurled Aluminium Handle",
+    slug: "knurled-handle",
+    short_description: "Turned and knurled from bar stock, anodized clear.",
+    starting_price_cents: 5600,
+  },
+  {
+    ...productFixtures[2],
+    id: "home-6",
+    name: "Engraved Hardwood Sign",
+    slug: "engraved-sign",
+    short_description: "Routed from solid oak, oiled finish.",
+    category: "Signage",
+    starting_price_cents: 12000,
+  },
+];
+
+/** Public build write-ups, with the shapes the row has to survive. */
+export const recentWorkFixtures = [
+  { id: "work-1", title: "Rebuilding a seized indexer", slug: "rebuilding-a-seized-indexer", category: "CNC & Machining", updated_at: "2026-07-28T12:00:00.000Z" },
+  {
+    id: "work-2",
+    title: "A replacement bracket for a machine nobody sells parts for any more",
+    slug: "replacement-bracket",
+    category: "Product Design",
+    updated_at: "2026-07-11T12:00:00.000Z",
+  },
+  { id: "work-3", title: "Oak shop signage", slug: "oak-shop-signage", category: null, updated_at: null },
+];

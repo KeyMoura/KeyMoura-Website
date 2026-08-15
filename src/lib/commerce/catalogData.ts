@@ -95,3 +95,64 @@ export async function loadCatalogData(): Promise<CatalogData> {
 
   return { products, categories: (categoryResult.data ?? []) as CategoryRow[] };
 }
+
+/**
+ * The first few storefront products, in the catalog's own featured order.
+ *
+ * The homepage needs six products, not the catalog. `loadCatalogData` exists to
+ * serve a browser that filters, counts and sorts the whole published list in
+ * memory; asking it for a six-card row would fetch every product and every
+ * product's media to render six of them.
+ *
+ * So this is a second *query*, deliberately, but not a second *source*: the
+ * columns, the publication filter and the ordering are the ones above, and
+ * `sort_order` then newest is exactly what the catalog calls "Featured". A
+ * merchandiser who reorders the catalog reorders the homepage, which is the
+ * property that matters — the homepage must never be able to disagree with
+ * `/catalog` about which products lead.
+ *
+ * Failure is empty, not fatal. A product row is the one part of the homepage
+ * that is genuinely optional: the brand story, the custom-work path and every
+ * call to action stand on their own, so a catalog outage should cost the
+ * section and not the page.
+ */
+export async function loadFeaturedProducts(limit = 6): Promise<CatalogProductRow[]> {
+  try {
+    const supabase = supabasePublicServer();
+
+    const { data, error } = await supabase
+      .from("products")
+      .select(PRODUCT_COLUMNS)
+      .eq("is_published", true)
+      .is("archived_at", null)
+      .order("sort_order")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+
+    const products = (data ?? []) as CatalogProductRow[];
+    if (!products.length) return [];
+
+    // One media query for the whole row rather than one per card: six products
+    // must cost two round trips, not seven.
+    const { data: media, error: mediaError } = await supabase
+      .from("product_media")
+      .select("product_id,url,kind,sort_order")
+      .in(
+        "product_id",
+        products.map((product) => product.id)
+      )
+      .eq("kind", "image")
+      .order("sort_order");
+
+    if (mediaError) return products;
+
+    const byProduct = groupMediaByProduct(media ?? []);
+    for (const product of products) product.product_media = byProduct.get(product.id) ?? [];
+
+    return products;
+  } catch {
+    return [];
+  }
+}
