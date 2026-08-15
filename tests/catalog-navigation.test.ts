@@ -27,7 +27,9 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 const browser = read("src/components/catalog/CatalogBrowser.tsx");
 const drawer = read("src/components/catalog/CatalogBrowseDrawer.tsx");
+const categoryTree = read("src/components/catalog/CatalogCategoryTree.tsx");
 const view = read("src/components/catalog/CatalogPageView.tsx");
+const catalogData = read("src/lib/commerce/catalogData.ts");
 const catalogPage = read("src/app/catalog/page.tsx");
 const slugPage = read("src/app/catalog/[slug]/page.tsx");
 const subPage = read("src/app/catalog/[slug]/[subcategory]/page.tsx");
@@ -322,7 +324,7 @@ test("the mobile sheet is a real dialog, portalled, trapped and dismissible", ()
 test("the sheet closes by derivation when the customer navigates", () => {
   // A per-link onClick alone leaves the panel over the page the back button
   // just returned to.
-  assert.match(drawer, /const open = openedOn === pathname/);
+  assert.match(drawer, /const open = opened\?\.path === pathname/);
 });
 
 test("the sheet offers categories, filters, sorting and a reset", () => {
@@ -366,8 +368,9 @@ test("the rail gives way to the sheet below lg rather than squeezing the grid", 
 test("the rail states hierarchy structurally rather than as another row of pills", () => {
   // The reported problem was that categories read as filters. Children are
   // nested markup under their parent, not a second flat row.
-  assert.match(browser, /catalog-rail-sublist/);
-  assert.match(browser, /entry\.isCurrentBranch && entry\.children\?\.length/);
+  assert.match(browser, /CatalogCategoryTree menu=\{menu\} variant="rail"/);
+  assert.match(categoryTree, /catalog-rail-sublist/);
+  assert.match(categoryTree, /variant === "drawer" \|\| entry\.isCurrentBranch/);
   assert.match(css, /\.catalog-rail-sublist \{[^}]*border-left/, "children are ruled to their parent");
   assert.match(css, /\.catalog-rail-heading \{[^}]*text-transform: uppercase/, "sections carry real headings");
 
@@ -376,6 +379,43 @@ test("the rail states hierarchy structurally rather than as another row of pills
   assert.match(browser, /ariaLabel="Sort products"/);
   const toolbar = browser.slice(browser.indexOf("catalog-toolbar"));
   assert.doesNotMatch(toolbar, /ariaLabel="Availability"/, "availability belongs in the rail");
+});
+
+test("category navigation has no responsive breakpoint gap", () => {
+  // The compact controls are the default and are hidden at the exact width
+  // where the persistent rail appears. These representative widths cover the
+  // customer-reported laptop/tablet gap as well as both sides of it.
+  assert.match(css, /\.catalog-rail \{ display: none; \}/);
+  assert.match(css, /@media \(min-width: 1024px\)[\s\S]*?\.catalog-rail \{[\s\S]*?display: flex/);
+  assert.match(css, /@media \(min-width: 1024px\) \{\s*\.catalog-compact-controls \{ display: none; \}/);
+  assert.doesNotMatch(css, /@media \(min-width: 640px\) \{\s*\.catalog-drawer-trigger \{ display: none/);
+
+  for (const width of [375, 430, 640, 768, 820, 900, 1024, 1100, 1280, 1440]) {
+    const railReachable = width >= 1024;
+    const triggerReachable = width < 1024;
+    assert.ok(railReachable || triggerReachable, `category navigation missing at ${width}px`);
+  }
+});
+
+test("desktop and compact shells render one canonical category hierarchy", () => {
+  assert.match(browser, /CatalogCategoryTree menu=\{menu\} variant="rail"/);
+  assert.match(drawer, /CatalogCategoryTree menu=\{menu\} variant="drawer"/);
+  assert.equal((categoryTree.match(/menu\.categories\.map/g) ?? []).length, 1);
+  assert.match(categoryTree, /aria-current=\{child\.isActive \? "page"/);
+});
+
+test("catalog discovery and active filters remain visible outside a drawer", () => {
+  assert.match(view, /Shop by subcategory/);
+  assert.match(view, /Browse categories/);
+  assert.match(view, /categoryPath\(item, categories\)/);
+  assert.match(browser, /aria-label="Active filters"/);
+  assert.match(browser, /catalog-filter-chip/);
+});
+
+test("catalog query failures cannot masquerade as an empty result", () => {
+  assert.match(catalogData, /if \(productResult\.error \|\| categoryResult\.error\)/);
+  assert.match(catalogData, /throw new Error\("Unable to load the storefront catalog"\)/);
+  assert.match(catalogData, /if \(mediaError\) throw new Error/);
 });
 
 // ---------------------------------------------------------------------------

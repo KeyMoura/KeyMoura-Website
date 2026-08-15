@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import CatalogBrowser from "@/components/catalog/CatalogBrowser";
 import type { CategoryRow } from "@/lib/commerce/categories";
 import type { CatalogProductRow } from "@/lib/commerce/catalogData";
+import { categoryPath } from "@/lib/commerce/catalogBrowse";
 
 type CatalogPageViewProps = {
   allProducts: CatalogProductRow[];
@@ -41,6 +42,9 @@ export default function CatalogPageView({
     (category
       ? `${heading} from KeyMoura. Buy what is ready, or ask us to make a version that fits.`
       : "Ready designs you can buy outright, and made-to-order parts we quote against your specification. Nothing is charged on a custom project until the scope and price are agreed.");
+  const discovery = categories.filter((item) =>
+    item.is_active && !item.archived_at && (category ? item.parent_id === category.id : item.parent_id === null)
+  );
 
   return (
     <main className="page-container">
@@ -75,6 +79,26 @@ export default function CatalogPageView({
           </Link>
         </div>
       </header>
+
+      {discovery.length ? (
+        <section className="catalog-discovery" aria-labelledby="catalog-discovery-heading">
+          <div>
+            <p className="ui-eyebrow">{category ? "Explore this collection" : "Find your part"}</p>
+            <h2 id="catalog-discovery-heading" className="catalog-discovery-title">
+              {category ? "Shop by subcategory" : "Browse categories"}
+            </h2>
+          </div>
+          <div className="catalog-discovery-grid">
+            {discovery.map((item) => (
+              <Link key={item.id} href={categoryPath(item, categories)} className="catalog-discovery-card">
+                <span className="catalog-discovery-name">{item.name}</span>
+                {item.description ? <span className="catalog-discovery-description">{item.description}</span> : null}
+                <span className="catalog-discovery-action">Browse <span aria-hidden="true">→</span></span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <Suspense fallback={<div className="catalog-nav-placeholder" aria-hidden="true" />}>
         <CatalogBrowser
