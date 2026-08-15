@@ -3,7 +3,11 @@
 import ProductCard from "@/components/ProductCard";
 import { Badge, EmptyState, Field, MetricCard, Notice, Panel } from "@/components/ui/DesignSystem";
 
-import { productFixtures, staffCatalogFixtures } from "./fixtures";
+import CatalogPageView from "@/components/catalog/CatalogPageView";
+import type { CategoryRow } from "@/lib/commerce/categories";
+import type { CatalogProductRow } from "@/lib/commerce/catalogData";
+
+import { categoryFixtures, productFixtures, staffCatalogFixtures } from "./fixtures";
 import { StaffSurfaces } from "./surfaces";
 
 const money = (cents: number | null) => (cents == null ? "Quote only" : `$${(cents / 100).toFixed(2)}`);
@@ -141,6 +145,34 @@ export default function VisualHarness() {
           <Notice tone="success">Saved.</Notice>
         </div>
         <EmptyState data-harness="empty">No products match this view.</EmptyState>
+      </Group>
+
+      {/*
+        The real `/catalog` and `/catalog/interior` compositions, so the flow
+        into the browser can be seen rather than inferred from the diff.
+      */}
+      <Group id="catalog-root" title="Storefront /catalog" note="Intro, then straight into the browser — one category navigator.">
+        <div data-surface="catalog-root">
+          <CatalogPageView
+            allProducts={productFixtures as CatalogProductRow[]}
+            scopedProducts={productFixtures as CatalogProductRow[]}
+            categories={categoryFixtures as CategoryRow[]}
+            category={null}
+            parent={null}
+          />
+        </div>
+      </Group>
+
+      <Group id="catalog-category" title="Storefront /catalog/interior" note="A parent category keeps Shop by subcategory.">
+        <div data-surface="catalog-category">
+          <CatalogPageView
+            allProducts={productFixtures as CatalogProductRow[]}
+            scopedProducts={productFixtures.slice(0, 2) as CatalogProductRow[]}
+            categories={categoryFixtures as CategoryRow[]}
+            category={categoryFixtures[0] as CategoryRow}
+            parent={null}
+          />
+        </div>
       </Group>
 
       {/* The page-level surfaces: each route's actual composition. */}

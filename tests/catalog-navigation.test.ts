@@ -406,10 +406,36 @@ test("desktop and compact shells render one canonical category hierarchy", () =>
 
 test("catalog discovery and active filters remain visible outside a drawer", () => {
   assert.match(view, /Shop by subcategory/);
-  assert.match(view, /Browse categories/);
   assert.match(view, /categoryPath\(item, categories\)/);
   assert.match(browser, /aria-label="Active filters"/);
   assert.match(browser, /catalog-filter-chip/);
+});
+
+test("the catalog root has one category navigator, not two", () => {
+  /*
+   * `/catalog` used to open with a grid of large category cards headed "Find
+   * your part / Browse categories", immediately above `CatalogBrowser` — which
+   * begins with the category rail on desktop and the Categories drawer below
+   * 1024px. Two navigators for one question, and the canonical one was the one
+   * pushed under the fold.
+   *
+   * Inside a category the same block answers a different question — where you
+   * can go deeper — so it is scoped to that case rather than deleted.
+   */
+  assert.match(
+    view,
+    /const discovery = category\s*\n\s*\? categories\.filter/,
+    "subcategory discovery must be scoped to a category page"
+  );
+  assert.doesNotMatch(view, /Browse categories/, "the catalog root must not carry a second category navigator");
+  assert.doesNotMatch(view, /Find your part/);
+  assert.doesNotMatch(view, /item\.parent_id === null/, "the root must not list top-level categories as cards");
+
+  // The canonical navigation, the deeper-discovery case, and everything the
+  // browser owns all survive.
+  assert.match(view, /<CatalogBrowser/);
+  assert.match(view, /catalog-discovery-grid/);
+  assert.match(view, /aria-label="Breadcrumb"/);
 });
 
 test("catalog query failures cannot masquerade as an empty result", () => {

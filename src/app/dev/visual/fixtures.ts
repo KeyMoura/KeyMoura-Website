@@ -80,6 +80,15 @@ export const productFixtures: ProductCardProduct[] = [
   },
 ];
 
+/** Top-level categories plus one child, so both catalog shapes are renderable. */
+export const categoryFixtures = [
+  { id: "c1", name: "Interior", slug: "interior", description: "Shift knobs, trim and cabin hardware.", parent_id: null, image_url: null, display_order: 1, is_active: true, archived_at: null },
+  { id: "c2", name: "Kitchen", slug: "kitchen", description: "Boards, handles and fittings.", parent_id: null, image_url: null, display_order: 2, is_active: true, archived_at: null },
+  { id: "c3", name: "Chassis & Suspension Tooling", slug: "chassis", description: null, parent_id: null, image_url: null, display_order: 3, is_active: true, archived_at: null },
+  { id: "c1a", name: "Shift knobs", slug: "shift-knobs", description: "Billet and delrin.", parent_id: "c1", image_url: null, display_order: 1, is_active: true, archived_at: null },
+  { id: "c1b", name: "Trim", slug: "trim", description: null, parent_id: "c1", image_url: null, display_order: 2, is_active: true, archived_at: null },
+];
+
 export type StaffCatalogRowFixture = {
   id: string;
   name: string;
