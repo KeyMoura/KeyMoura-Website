@@ -42,9 +42,21 @@ export default function CatalogPageView({
     (category
       ? `${heading} from KeyMoura. Buy what is ready, or ask us to make a version that fits.`
       : "Ready designs you can buy outright, and made-to-order parts we quote against your specification. Nothing is charged on a custom project until the scope and price are agreed.");
-  const discovery = categories.filter((item) =>
-    item.is_active && !item.archived_at && (category ? item.parent_id === category.id : item.parent_id === null)
-  );
+  /*
+   * Subcategory discovery, and only inside a category.
+   *
+   * At the catalog root this used to list every top-level category as a large
+   * card — directly above `CatalogBrowser`, which opens with the category rail
+   * on desktop and the Categories drawer on narrower widths. Two category
+   * navigators, stacked, answering the same question in two different visual
+   * languages, and the canonical one was the one pushed below the fold.
+   *
+   * Inside a category it is doing something the rail does not: showing where
+   * you can go *deeper* from where you already are. So it stays there.
+   */
+  const discovery = category
+    ? categories.filter((item) => item.is_active && !item.archived_at && item.parent_id === category.id)
+    : [];
 
   return (
     <main className="page-container">
@@ -83,9 +95,9 @@ export default function CatalogPageView({
       {discovery.length ? (
         <section className="catalog-discovery" aria-labelledby="catalog-discovery-heading">
           <div>
-            <p className="ui-eyebrow">{category ? "Explore this collection" : "Find your part"}</p>
+            <p className="ui-eyebrow">Explore this collection</p>
             <h2 id="catalog-discovery-heading" className="catalog-discovery-title">
-              {category ? "Shop by subcategory" : "Browse categories"}
+              Shop by subcategory
             </h2>
           </div>
           <div className="catalog-discovery-grid">

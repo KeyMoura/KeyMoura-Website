@@ -70,6 +70,52 @@
 
     /* Focus */
     --focus: color-mix(in srgb, var(--brand-accent, #f59e0b) 60%, transparent);
+
+    /*
+     * The primary action role, resolved once.
+     *
+     * Three components used to hard-code this triple independently —
+     * `.ui-btn-primary`, `.catalog-action-primary`, and the product card's
+     * `.product-card-action` — and only the first two were ever taught about
+     * the Primary button *style* setting. So a shop set to "Outline" got
+     * outline buttons everywhere except the storefront's Buy now, which stayed
+     * solid gold: the one CTA a customer is most likely to look at was the one
+     * the Appearance editor could not move.
+     *
+     * Resolving the role here and having all three read it means a style can
+     * never again reach two of the three.
+     */
+    --primary-action-bg: var(--km-primary-button-bg, var(--brand-primary, #fbbf24));
+    --primary-action-border: var(--km-primary-button-border, var(--km-primary-button-bg, var(--brand-primary, #fbbf24)));
+    --primary-action-text: var(--km-primary-button-text, #09090b);
+  }
+
+  /*
+   * Non-solid primary styles put the label on the *page*, not on the brand
+   * fill — so it cannot keep using the on-fill text colour. It did, and the
+   * result measured 1.05:1: near-black #09090b text on a transparent button
+   * over a #0a0f10 page, invisible on every primary button on the site.
+   * "Framed" was the only variant that had already worked this out.
+   *
+   * The label therefore follows the primary brand colour on these three,
+   * which is the colour the page background is already validated against.
+   */
+  [data-primary-button-style="soft"] {
+    --primary-action-bg: var(--km-primary-button-bg, var(--brand-soft));
+    --primary-action-border: var(--km-primary-button-border, transparent);
+    --primary-action-text: var(--brand-primary);
+  }
+
+  [data-primary-button-style="outline"] {
+    --primary-action-bg: var(--km-primary-button-bg, transparent);
+    --primary-action-border: var(--km-primary-button-border, var(--brand-primary));
+    --primary-action-text: var(--brand-primary);
+  }
+
+  [data-primary-button-style="framed"] {
+    --primary-action-bg: var(--km-primary-button-bg, var(--brand-soft));
+    --primary-action-border: var(--km-primary-button-border, transparent);
+    --primary-action-text: var(--brand-primary);
   }
 
   html,
@@ -267,10 +313,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background-color: var(--brand-primary, #fbbf24);
-    border: 1px solid var(--brand-primary, #fbbf24);
+    background-color: var(--primary-action-bg);
+    border: 1px solid var(--primary-action-border);
     border-radius: var(--control-radius) !important;
-    color: var(--km-primary-button-text, #09090b);
+    color: var(--primary-action-text);
     font-weight: 700;
     transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
   }
@@ -402,22 +448,17 @@
   }
 
   .ui-btn-primary {
-    background: var(--brand-primary, #fbbf24);
-    border-color: var(--brand-primary, #fbbf24);
-    color: var(--km-primary-button-text, #09090b);
+    background: var(--primary-action-bg);
+    border-color: var(--primary-action-border);
+    color: var(--primary-action-text);
   }
 
   .ui-btn-primary:hover {
     filter: brightness(1.1);
   }
 
-  [data-primary-button-style="soft"] .ui-btn-primary,
-  [data-primary-button-style="soft"] .catalog-action-primary { background: color-mix(in srgb, var(--brand-primary) 20%, transparent); color: var(--km-primary-button-text); }
-  [data-primary-button-style="outline"] .ui-btn-primary,
-  [data-primary-button-style="outline"] .catalog-action-primary { background: transparent; color: var(--km-primary-button-text); }
-  [data-primary-button-style="framed"] .ui-btn-primary,
-  [data-primary-button-style="framed"] .catalog-action-primary {
-    background: var(--brand-soft); color: var(--brand-primary);
+  /* Only the underline is style-specific now; the colours come from the role. */
+  [data-primary-button-style="framed"] :where(.ui-btn-primary, .catalog-action-primary, .product-card-action) {
     box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--brand-primary) 80%, transparent);
   }
 
@@ -637,6 +678,33 @@
   .ui-btn-danger { background: color-mix(in srgb, #fb7185 10%, transparent); border-color: color-mix(in srgb, #fb7185 48%, var(--border)); color: #fecdd3; }
   .ui-btn-danger:hover { background: color-mix(in srgb, #fb7185 17%, transparent); }
   .ui-table-wrap { overflow-x: auto; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); }
+
+  /*
+   * The one table treatment.
+   *
+   * Four screen tables had four ideas about a header: the two inventory tables
+   * used `var(--border)`, the production queue used `white/10` over a `white/5`
+   * header, the account's session list used `zinc-800`, and the email delivery
+   * table drew no rule at all. Three of those ignore the Border appearance
+   * setting entirely, so an owner who lightened their borders got a production
+   * queue that did not move.
+   *
+   * Numeric columns opt in with `.is-numeric` rather than every page inventing
+   * `tabular-nums text-right` again.
+   */
+  .ui-table { width: 100%; border-collapse: collapse; text-align: left; font-size: .875rem; }
+  .ui-table thead th {
+    border-bottom: 1px solid var(--border);
+    padding: .625rem .75rem;
+    color: var(--muted);
+    font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .ui-table tbody td { border-top: 1px solid var(--border); padding: .75rem; color: var(--text); vertical-align: middle; }
+  /* The header already drew the line above the first row. */
+  .ui-table tbody tr:first-child td { border-top: 0; }
+  .ui-table tbody tr:hover { background: var(--panel-strong); }
+  .ui-table :where(th, td).is-numeric { text-align: right; font-variant-numeric: tabular-nums; }
   .theme-primary-glow { box-shadow: 0 0 18px color-mix(in srgb, var(--brand-primary) 32%, transparent); }
   .theme-accent-glow { box-shadow: 0 0 18px color-mix(in srgb, var(--brand-accent) 28%, transparent); }
   .theme-accent-glow:hover { box-shadow: 0 0 26px color-mix(in srgb, var(--brand-accent) 45%, transparent); }
@@ -693,23 +761,134 @@
      headings is the card-in-card look this framework exists to remove. */
   .staff-section > .ui-card > .staff-section-head:first-child { margin-bottom: .875rem; }
 
-  /* Rows: the one list surface. Replaces four hand-rolled divide-y lists. */
-  .staff-rows { overflow: hidden; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); }
-  .staff-row { display: grid; gap: .5rem 1rem; border-top: 1px solid var(--border); padding: .875rem 1rem; min-width: 0; }
+  /* ------------------------------------------------------------------
+     Rows: the one list surface. Replaces four hand-rolled divide-y lists.
+
+     Named grid areas rather than auto-placement, because auto-placement is
+     what broke `/staff/catalog`. That list passes three children — thumbnail,
+     identity, badges — into what was a two-track template, so the thumbnail
+     took the `1fr` track, the product name was crushed into the `auto` track
+     at the far right, and the badges wrapped onto a second grid line under
+     the image. Measured at a 900px container the tracks came out `740px
+     110px`: a 48px image in a 740px column beside a 110px product name.
+
+     Areas fix that by construction. A row states which slot each child
+     occupies, so adding one cannot silently re-flow the other two.
+
+     The width switch is a **container** query, not a media query, for the
+     reason `.staff-people` already documents: this list renders both in a
+     380px editor column at `xl` and full-width below it, so viewport width
+     has never been the question worth asking. Where `@container` is
+     unsupported the row stays stacked, which is the safe way to be wrong.
+     ------------------------------------------------------------------ */
+  .staff-rows {
+    container: staff-rows / inline-size;
+    overflow: hidden; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel);
+  }
+  .staff-row {
+    display: grid; gap: .5rem 1rem;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "main" "aside";
+    border-top: 1px solid var(--border); padding: .875rem 1rem; min-width: 0;
+  }
+  /*
+   * Every optional slot needs its own stacked template, not just the ones that
+   * happen to be in use. A `grid-area` naming an area the template does not
+   * declare does not fall back gracefully — it creates an implicit track and
+   * drifts to a corner of its own, which is the bug this whole block exists to
+   * remove. So all four combinations are spelled out.
+   */
+  .staff-row:has(.staff-row-figure) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "main main" "aside figure";
+  }
+  /* A row that carries a thumbnail gains a leading track and the image spans
+     both stacked lines, so identity and badges share one left edge. */
+  .staff-row:has(.staff-row-media) {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "media main" "media aside";
+  }
+  .staff-row:has(.staff-row-media):has(.staff-row-figure) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "media main main" "media aside figure";
+  }
   .staff-row:first-child { border-top: 0; }
   a.staff-row, button.staff-row { width: 100%; text-align: left; transition: background-color 120ms ease; }
   a.staff-row:hover, button.staff-row:hover { background: var(--panel-strong); }
   a.staff-row:focus-visible, button.staff-row:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -2px; }
-  .staff-row-main { min-width: 0; }
+  /* One thumbnail size for every list, so images line up down the page. */
+  .staff-row-media {
+    grid-area: media; position: relative; align-self: start;
+    width: 3rem; height: 3rem; flex: none; overflow: hidden;
+    border-radius: calc(var(--control-radius) * .75);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+  }
+  .staff-row-media img { width: 100%; height: 100%; object-fit: cover; }
+  .staff-row-main { grid-area: main; min-width: 0; }
   .staff-row-title { color: var(--text); font-size: .9375rem; font-weight: 600; line-height: 1.4; }
   .staff-row-detail { margin-top: .1875rem; color: var(--muted); font-size: .8125rem; line-height: 1.25rem; }
   .staff-row-meta { color: var(--muted); font-size: .75rem; line-height: 1.1rem; }
-  .staff-row-aside { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-  /* Two columns from `sm` up; stacked below, because a 3-column grid at
-     320px produces 60px columns and a wrapped word per line. */
-  @media (min-width: 640px) {
-    .staff-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .staff-row-aside { grid-area: aside; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  /* Numeric facts that deserve their own column once there is room for one. */
+  .staff-row-figure { grid-area: figure; color: var(--text); font-size: .875rem; font-variant-numeric: tabular-nums; }
+
+  /*
+   * A list entry whose control is a nested element rather than the row itself.
+   *
+   * The audit log expands in place, so its row is a wrapper holding a button
+   * and a disclosure panel — it cannot be an `a.staff-row`. It still needs the
+   * list's separator, which is all this carries. Previously it drew its own
+   * `border-zinc-800`, so the audit log was the one list in the staff area
+   * whose rules ignored the Border appearance setting.
+   */
+  .staff-row-plain { border-top: 1px solid var(--border); }
+  .staff-row-plain:first-child { border-top: 0; }
+
+  @container staff-rows (min-width: 34rem) {
+    .staff-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "main aside";
+      align-items: center;
+    }
+    .staff-row:has(.staff-row-media) {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas: "media main aside";
+    }
+    .staff-row:has(.staff-row-figure) {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-areas: "main figure aside";
+    }
+    .staff-row:has(.staff-row-media):has(.staff-row-figure) {
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      grid-template-areas: "media main figure aside";
+    }
+    .staff-row-media { align-self: center; }
     .staff-row-aside { justify-content: flex-end; }
+    .staff-row-figure { text-align: right; }
+  }
+
+  /*
+   * Past a comfortable reading measure, identity stops stretching.
+   *
+   * A `1fr` identity track is right for a 700px list and wrong for a 1400px
+   * one. Measured on the production board, the support inbox and the
+   * fulfillment queue at a 1440px viewport, the status badges sat between 795
+   * and 1024 pixels from the title they describe: still right-aligned, so
+   * still tidy down the page, but no longer *attached* to anything. That is
+   * the `/staff/catalog` complaint again — a badge is only a label if you can
+   * see what it labels.
+   *
+   * Capping the identity track and grouping the columns to the start keeps
+   * both properties: every status still lands on the same x down the page, and
+   * that x is now a couple of centimetres from the words rather than the far
+   * edge of the screen.
+   */
+  @container staff-rows (min-width: 46rem) {
+    .staff-row { grid-template-columns: minmax(0, 34rem) auto; justify-content: start; column-gap: 2rem; }
+    .staff-row:has(.staff-row-media) { grid-template-columns: auto minmax(0, 32rem) auto; }
+    .staff-row:has(.staff-row-figure) { grid-template-columns: minmax(0, 30rem) auto auto; }
+    .staff-row:has(.staff-row-media):has(.staff-row-figure) { grid-template-columns: auto minmax(0, 28rem) auto auto; }
   }
 
   /* Toolbar: the common controls stay out; the rest go behind Filters. */
@@ -809,8 +988,18 @@
 
   .staff-person-avatar { grid-area: avatar; align-self: start; }
   .staff-person-identity { grid-area: identity; min-width: 0; }
-  .staff-person-name { color: var(--text); font-size: .9375rem; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .staff-person-email { color: var(--muted); font-size: .8125rem; line-height: 1.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /*
+   * `display: block` is load-bearing, not tidiness.
+   *
+   * Both are `<span>`s, and `overflow`/`text-overflow` do not apply to a
+   * non-replaced *inline* box — so the truncation here silently did nothing. A
+   * long display name or a long email ran to its full width (measured 374px and
+   * 308px inside a 267px column at 375px) and was hard-clipped by the list's
+   * own `overflow: hidden`, cutting the text mid-character with no ellipsis to
+   * say it had been cut.
+   */
+  .staff-person-name { display: block; color: var(--text); font-size: .9375rem; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .staff-person-email { display: block; color: var(--muted); font-size: .8125rem; line-height: 1.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .staff-person-role { grid-area: badges; color: var(--muted); font-size: .8125rem; display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; }
   .staff-person-commerce { grid-area: meta; color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; }
   .staff-person-commerce strong { color: var(--text); font-weight: 600; }
@@ -2109,15 +2298,23 @@
     gap: .75rem;
   }
 
+  /*
+   * The storefront's Buy now / Customize call-to-action.
+   *
+   * It is the *primary* action role — semantically the same button as Add to
+   * cart — so it reads the same three role variables rather than restating
+   * the brand colour. Before this it hard-coded the solid treatment and was
+   * the only primary CTA that ignored the Primary button style setting.
+   */
   .product-card-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--control-radius);
-    border: 1px solid var(--brand-primary);
-    background: var(--brand-primary);
+    border: 1px solid var(--primary-action-border);
+    background: var(--primary-action-bg);
     padding: .5rem 1rem;
-    color: var(--km-primary-button-text);
+    color: var(--primary-action-text);
     font-size: .875rem;
     font-weight: 600;
     transition: filter 120ms ease;

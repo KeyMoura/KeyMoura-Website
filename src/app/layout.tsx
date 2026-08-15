@@ -84,6 +84,8 @@ export default async function RootLayout({
       "--km-badge-border": settings.theme.badgeBorder,
       "--km-secondary-button-bg": settings.theme.secondaryButtonBackground,
       "--km-secondary-button-border": settings.theme.secondaryButtonBorder,
+      "--km-primary-button-bg": settings.theme.primaryButtonBackground,
+      "--km-primary-button-border": settings.theme.primaryButtonBorder,
     }),
   } as CSSProperties;
 

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import { Badge, EmptyState, Notice } from "@/components/ui/DesignSystem";
+import { ErrorState, LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { AUDIT_AREAS, AUDIT_AREA_LABELS, actionLabel, actionsForArea, type AuditArea } from "@/lib/audit/actions";
 import { auditLinks } from "@/lib/audit/links";
 import {
@@ -109,9 +111,9 @@ export default function StaffAuditPage() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto w-full max-w-6xl p-4">
-          <div className="rounded-lg border border-zinc-800 bg-black/40 p-3 text-sm text-zinc-300">Loading…</div>
-        </div>
+        <StaffPage>
+          <div className="ui-empty-state" role="status">Loading…</div>
+        </StaffPage>
       }
     >
       <AuditLog />
@@ -206,36 +208,38 @@ function AuditLog() {
 
   if (accessLoading) {
     return (
-      <div className="mx-auto w-full max-w-6xl p-4">
-        <div className="rounded-lg border border-zinc-800 bg-black/40 p-3 text-sm text-zinc-300">Loading…</div>
-      </div>
+      <StaffPage>
+        <div className="ui-empty-state" role="status">Loading…</div>
+      </StaffPage>
     );
   }
 
   if (!canView) {
     return (
-      <div className="mx-auto w-full max-w-6xl p-4">
-        <h1 className="text-xl font-semibold text-brand-text">Audit log</h1>
-        <div className="mt-3 rounded-lg border border-zinc-800 bg-black/40 p-3 text-sm text-amber-200">
+      <StaffPage>
+        <PageHeader title="Audit log" />
+        <Notice tone="warning" role="alert">
           You do not have permission to view the audit log.
-        </div>
-      </div>
+        </Notice>
+      </StaffPage>
     );
   }
 
   const events = state.kind === "ready" ? state.events : [];
 
+  /*
+   * The shell already supplies `page-container-wide` and its gutters. This page
+   * used to add `mx-auto max-w-6xl p-4` inside that, so the audit log was 8rem
+   * narrower than every other staff page and carried a second ring of padding —
+   * and its heading was `text-xl` beside everyone else's `.staff-page-title`.
+   */
   return (
-    <div className="mx-auto w-full max-w-6xl p-4">
-      <header className="mb-4">
-        <p className="text-[11px] uppercase tracking-[0.15em] text-brand-textMuted">Staff</p>
-        <h1 className="text-xl font-semibold text-brand-text">Audit log</h1>
-        <p className="text-sm text-zinc-400">Recent activity across KeyMoura.</p>
-      </header>
+    <StaffPage>
+      <PageHeader title="Audit log" description="Recent activity across KeyMoura." />
 
       {/* Primary filters. Everything rarer is behind "More filters" so the
           common case — search, who, which area — is not buried. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="staff-toolbar">
         <form
           onSubmit={(submitEvent) => {
             submitEvent.preventDefault();
@@ -255,7 +259,7 @@ function AuditLog() {
           ariaLabel="Actor"
           value={filters.actor ?? "all"}
           onChange={(next) => apply({ actor: next === "all" ? null : next })}
-          className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/60 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400/70"
+          className="ui-select-trigger !min-h-8 w-auto !py-1 text-[12px]"
           options={[
             { value: "all", label: "Anyone" },
             ...actors.map((option) => ({ value: option.id, label: option.label })),
@@ -266,7 +270,7 @@ function AuditLog() {
           ariaLabel="Area"
           value={filters.area ?? "all"}
           onChange={(next) => apply({ area: next === "all" ? null : (next as AuditArea), action: null })}
-          className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/60 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400/70"
+          className="ui-select-trigger !min-h-8 w-auto !py-1 text-[12px]"
           options={[
             { value: "all", label: "All areas" },
             ...AUDIT_AREAS.map((area) => ({ value: area, label: AUDIT_AREA_LABELS[area] })),
@@ -280,7 +284,7 @@ function AuditLog() {
             ariaLabel="Action"
             value={filters.action ?? "all"}
             onChange={(next) => apply({ action: next === "all" ? null : next })}
-            className="flex h-8 items-center gap-2 rounded-md border border-zinc-700 bg-black/60 px-2 text-[11px] text-brand-text outline-none transition hover:border-amber-400/70"
+            className="ui-select-trigger !min-h-8 w-auto !py-1 text-[12px]"
             options={[{ value: "all", label: "All actions" }, ...actionOptions]}
           />
         ) : null}
@@ -302,7 +306,7 @@ function AuditLog() {
       </div>
 
       {showMoreFilters ? (
-        <div className="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-zinc-800 bg-black/30 p-3">
+        <div className="staff-filter-panel !flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-[11px] text-brand-textMuted">
             From
             <input
@@ -328,28 +332,25 @@ function AuditLog() {
             <FilterChip label="Production job" onClear={() => apply({ productionJobId: null })} />
           ) : null}
           {filters.productId ? <FilterChip label="Product" onClear={() => apply({ productId: null })} /> : null}
-          <p className="text-[11px] text-zinc-500">
+          <p className="staff-row-meta">
             Order, job and product filters are set by clicking “Only this” on an event.
           </p>
         </div>
       ) : null}
 
-      {state.kind === "error" ? (
-        <div className="mb-3 rounded-lg border border-zinc-800 bg-black/40 p-3 text-sm text-amber-200">
-          {state.message}
-        </div>
-      ) : null}
+      {/* A failure is not an empty log, and must not be dressed as one. */}
+      {state.kind === "error" ? <ErrorState>{state.message}</ErrorState> : null}
 
       {state.kind === "loading" ? (
-        <div className="rounded-lg border border-zinc-800 bg-black/40 p-3 text-sm text-zinc-300">Loading…</div>
+        <LoadingState>Loading the audit log…</LoadingState>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-zinc-800 bg-black/30">
+        <div className="staff-rows">
           {events.length === 0 ? (
-            <div className="px-3 py-6 text-sm text-zinc-400">
+            <EmptyState>
               {hasActiveFilters(filters)
                 ? "No events match these filters."
                 : "No activity recorded yet. Events appear here as staff and system changes happen."}
-            </div>
+            </EmptyState>
           ) : (
             events.map((event) => (
               <AuditRow
@@ -374,7 +375,7 @@ function AuditLog() {
           >
             Newest
           </button>
-          <span className="text-[11px] text-zinc-500">
+          <span className="staff-row-meta">
             {events.length} {events.length === 1 ? "event" : "events"} · {filters.pageSize} per page
           </span>
           <button
@@ -387,7 +388,7 @@ function AuditLog() {
           </button>
         </div>
       ) : null}
-    </div>
+    </StaffPage>
   );
 }
 
@@ -432,7 +433,7 @@ function AuditRow({
   const links = auditLinks(event);
 
   return (
-    <div className="border-t border-zinc-800 first:border-t-0">
+    <div className="staff-row-plain">
       {/* The whole row is the control. A "View" button in the last column means
           the obvious click target does nothing, which is how the previous page
           behaved. */}
@@ -440,36 +441,33 @@ function AuditRow({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="flex w-full flex-col gap-1 px-3 py-2.5 text-left transition hover:bg-white/5 sm:flex-row sm:items-center sm:gap-3"
+        className="flex w-full flex-col gap-1 px-3 py-2.5 text-left transition hover:bg-[var(--panel-strong)] sm:flex-row sm:items-center sm:gap-3"
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[13px] font-medium text-brand-text">{event.actorLabel}</span>
-            {badge ? (
-              <span className="rounded border border-zinc-700 px-1 text-[10px] uppercase tracking-wide text-zinc-400">
-                {badge}
-              </span>
-            ) : null}
-            <span className="text-[13px] text-zinc-300">{event.actionLabel}</span>
+            {/*
+              These two were hand-rolled pills — 4px radius, 10px type, 1px
+              padding — beside `.ui-badge`s everywhere else in the staff area.
+              Same information, a different shape on every other page.
+            */}
+            {badge ? <Badge>{badge}</Badge> : null}
+            <span className="text-[13px] text-[var(--text)]">{event.actionLabel}</span>
             {event.entityLabel ? (
-              <span className="font-mono text-[12px] text-amber-200">{event.entityLabel}</span>
+              <span className="font-mono text-[12px] text-brand-accent">{event.entityLabel}</span>
             ) : null}
-            {event.sensitive ? (
-              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 text-[10px] uppercase tracking-wide text-amber-300">
-                Security
-              </span>
-            ) : null}
+            {event.sensitive ? <Badge tone="warning">Security</Badge> : null}
           </div>
-          {event.summary ? <div className="mt-0.5 text-[12px] text-zinc-400">{event.summary}</div> : null}
+          {event.summary ? <div className="staff-row-detail">{event.summary}</div> : null}
         </div>
 
-        <time dateTime={event.occurredAt} className="shrink-0 text-[11px] text-zinc-500 sm:text-right">
+        <time dateTime={event.occurredAt} className="shrink-0 staff-row-meta sm:text-right">
           {formatWhen(event.occurredAt)}
         </time>
       </button>
 
       {expanded ? (
-        <div className="border-t border-zinc-800/60 bg-black/25 px-3 py-3">
+        <div className="border-t border-[var(--border)] bg-[var(--panel-strong)] px-3 py-3">
           <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-[12px] sm:grid-cols-2">
             <Detail term="Actor">
               {event.actorUserId ? (
@@ -479,28 +477,28 @@ function AuditRow({
               ) : (
                 event.actorLabel
               )}
-              {event.actorRole ? <span className="text-zinc-500"> · {event.actorRole}</span> : null}
+              {event.actorRole ? <span className="text-[var(--muted)]"> · {event.actorRole}</span> : null}
             </Detail>
             <Detail term="When">{formatFullWhen(event.occurredAt)}</Detail>
             <Detail term="Action">{event.actionLabel}</Detail>
             <Detail term="Affected">
               {event.entityLabel || event.entityId || "—"}
-              {event.entityType ? <span className="text-zinc-500"> · {event.entityType.replaceAll("_", " ")}</span> : null}
+              {event.entityType ? <span className="text-[var(--muted)]"> · {event.entityType.replaceAll("_", " ")}</span> : null}
             </Detail>
           </dl>
 
           {event.changes.length ? (
-            <div className="mt-3 rounded-lg border border-zinc-800 bg-black/40 p-3">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">Changes</div>
+            <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3">
+              <div className="staff-fact-label">Changes</div>
               <ul className="mt-2 space-y-1.5">
                 {event.changes.map((change) => (
                   <li key={change.field} className="text-[12px]">
-                    <div className="text-zinc-400">{change.label}</div>
+                    <div className="text-[var(--muted)]">{change.label}</div>
                     <div className="text-brand-text">
-                      <span className="text-zinc-400">{change.before}</span>
-                      <span className="mx-1.5 text-zinc-600">→</span>
+                      <span className="text-[var(--muted)]">{change.before}</span>
+                      <span className="mx-1.5 text-[var(--muted)] opacity-70">→</span>
                       <span>{change.after}</span>
-                      {change.summarized ? <span className="ml-2 text-[11px] text-zinc-500">(length only)</span> : null}
+                      {change.summarized ? <span className="ml-2 text-[11px] text-[var(--muted)]">(length only)</span> : null}
                     </div>
                   </li>
                 ))}
@@ -538,10 +536,10 @@ function AuditRow({
 
           {/* Raw values are available but are never the primary interface. */}
           <details className="mt-3">
-            <summary className="cursor-pointer text-[11px] uppercase tracking-[0.12em] text-zinc-500">
+            <summary className="staff-fact-label cursor-pointer">
               Advanced
             </summary>
-            <div className="mt-2 space-y-1 font-mono text-[11px] text-zinc-500">
+            <div className="mt-2 space-y-1 font-mono text-[11px] text-[var(--muted)]">
               <div>action: {event.action}</div>
               <div>event id: {event.id}</div>
               {event.entityId ? <div>entity id: {event.entityId}</div> : null}
@@ -549,7 +547,7 @@ function AuditRow({
               {event.correlationId ? <div>correlation: {event.correlationId}</div> : null}
             </div>
             {Object.keys(event.metadata).length ? (
-              <pre className="mt-2 max-h-64 overflow-auto rounded-md border border-zinc-800 bg-black/60 p-2 text-[11px] text-zinc-400">
+              <pre className="mt-2 max-h-64 overflow-auto rounded-md border border-[var(--border)] bg-[var(--panel)] p-2 text-[11px] text-[var(--muted)]">
                 {JSON.stringify(event.metadata, null, 2)}
               </pre>
             ) : null}
@@ -563,7 +561,7 @@ function AuditRow({
 function Detail({ term, children }: { term: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">{term}</dt>
+      <dt className="staff-fact-label">{term}</dt>
       <dd className="text-brand-text">{children}</dd>
     </div>
   );

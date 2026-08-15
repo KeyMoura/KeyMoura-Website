@@ -102,6 +102,13 @@ export function Field({
   );
 }
 
+/**
+ * The neutral tone *is* the base badge, so it adds no modifier.
+ *
+ * It used to append a neutral modifier class that no rule in `globals.css` has
+ * ever defined — harmless to render, but it made the plainest badge look as
+ * though it had a treatment of its own that somebody could go and find.
+ */
 export function Badge({ tone = "neutral", className, ...props }: BadgeProps) {
-  return <span className={cx("ui-badge", `ui-badge-${tone}`, className)} {...props} />;
+  return <span className={cx("ui-badge", tone !== "neutral" && `ui-badge-${tone}`, className)} {...props} />;
 }

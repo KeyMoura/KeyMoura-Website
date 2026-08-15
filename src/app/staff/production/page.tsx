@@ -384,30 +384,33 @@ function QueueContent() {
               </p>
             </EmptyState>
           ) : view === "list" ? (
-            <div className="overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full min-w-[940px] text-left text-sm">
-                <thead className="bg-white/5 text-xs uppercase tracking-wide text-brand-textMuted">
+            <div className="ui-table-wrap">
+              <table className="ui-table min-w-[940px]">
+                <caption className="sr-only">Production jobs, one row per job</caption>
+                <thead>
                   <tr>
-                    {["Job", "Order", "Item", "Status", "Priority", "Assignee", "Machine", "Due", "Progress", "Updated"].map((heading) => (
-                      <th key={heading} className="px-3 py-2 font-medium">{heading}</th>
+                    {["Job", "Order", "Item", "Status", "Priority", "Assignee", "Machine", "Due"].map((heading) => (
+                      <th key={heading} scope="col">{heading}</th>
                     ))}
+                    <th scope="col" className="is-numeric">Progress</th>
+                    <th scope="col">Updated</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody>
                   {jobs.map((job) => {
                     const progress = shown.taskProgress[job.id] ?? { done: 0, total: 0, qcOpen: 0 };
                     return (
-                      <tr key={job.id} className="hover:bg-white/[.03]">
-                        <td className="px-3 py-3"><Link className="font-mono text-brand-accent hover:underline" href={`/staff/production/${job.id}`}>{job.job_number}</Link></td>
-                        <td className="px-3 py-3">{job.order_id ? shown.orders[job.order_id]?.order_number ?? '—' : 'Stock'}</td>
-                        <td className="max-w-64 truncate px-3 py-3" title={job.title}>{shown.products[job.product_id ?? '']?.name ?? job.title}</td>
-                        <td className="px-3 py-3"><StatusBadge status={job.status} /></td>
-                        <td className="px-3 py-3"><PriorityBadge priority={job.priority} /></td>
-                        <td className="px-3 py-3">{job.assigned_to ? shown.people[job.assigned_to] ?? 'Unknown' : 'Unassigned'}</td>
-                        <td className="px-3 py-3 text-brand-textMuted">Not assigned</td>
-                        <td className="px-3 py-3"><DueDate job={job} now={now} /></td>
-                        <td className="px-3 py-3 tabular-nums">{progress.done} / {progress.total}{progress.qcOpen ? <span className="ml-1 text-amber-200">· QC</span> : null}</td>
-                        <td className="px-3 py-3 whitespace-nowrap text-brand-textMuted">{new Date(job.updated_at).toLocaleDateString()}</td>
+                      <tr key={job.id}>
+                        <td><Link className="font-mono text-brand-accent hover:underline" href={`/staff/production/${job.id}`}>{job.job_number}</Link></td>
+                        <td>{job.order_id ? shown.orders[job.order_id]?.order_number ?? '—' : 'Stock'}</td>
+                        <td className="max-w-64 truncate" title={job.title}>{shown.products[job.product_id ?? '']?.name ?? job.title}</td>
+                        <td><StatusBadge status={job.status} /></td>
+                        <td><PriorityBadge priority={job.priority} /></td>
+                        <td>{job.assigned_to ? shown.people[job.assigned_to] ?? 'Unknown' : 'Unassigned'}</td>
+                        <td className="text-brand-textMuted">Not assigned</td>
+                        <td><DueDate job={job} now={now} /></td>
+                        <td className="is-numeric">{progress.done} / {progress.total}{progress.qcOpen ? <span className="ml-1 text-amber-200">· QC</span> : null}</td>
+                        <td className="whitespace-nowrap text-brand-textMuted">{new Date(job.updated_at).toLocaleDateString()}</td>
                       </tr>
                     );
                   })}
