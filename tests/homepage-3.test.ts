@@ -497,6 +497,71 @@ test("the catalog list view cannot reach the homepage product row", () => {
   }
 });
 
+/**
+ * The failure this catches actually happened, and only in production.
+ *
+ * `HomeProductFocus` imported `priceLabel` from `ProductCard`, which is a
+ * `"use client"` module. A function exported from a client module is a client
+ * *reference*: the server receives a marshalling stub, and calling it throws
+ *
+ *     Attempted to call priceLabel() from the server but priceLabel is on the
+ *     client.
+ *
+ * Every local check passed, because the local build had no Supabase and so no
+ * products, so the focus section returned null before it reached the call. The
+ * deployed build had products and failed to prerender `/`.
+ *
+ * Type-checking cannot see this — the types are identical either side of the
+ * boundary — so it needs its own assertion.
+ */
+test("no server-rendered homepage section calls a function from a client module", () => {
+  const resolve = (spec: string): string | null => {
+    if (!spec.startsWith("@/")) return null;
+    const base = `src/${spec.slice(2)}`;
+    for (const ext of [".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+      try {
+        readFileSync(base + ext, "utf8");
+        return base + ext;
+      } catch {
+        /* try the next extension */
+      }
+    }
+    return null;
+  };
+
+  const files = {
+    "HomeHero.tsx": heroSource,
+    "HomeSections.tsx": sectionsSource,
+    "HomeMedia.tsx": mediaSource,
+  };
+
+  for (const [name, source] of Object.entries(files)) {
+    assert.doesNotMatch(source, /^\s*"use client"/m, `${name} must stay renderable on the server`);
+
+    // `import Default, { named }` as well as `import { named }` — the real
+    // failure arrived through the first form, and a regex that only matched the
+    // second is a guard that never fires.
+    for (const [, bindings, spec] of source.matchAll(
+      /import\s+(?:[\w$]+\s*,\s*)?\{([^}]+)\}\s*from\s*"([^"]+)"/g
+    )) {
+      const target = resolve(spec!);
+      if (!target) continue;
+      if (!/^\s*"use client"/m.test(readFileSync(target, "utf8").slice(0, 400))) continue;
+
+      for (const binding of bindings!.split(",")) {
+        const local = binding.split(" as ").pop()!.trim().replace(/^type\s+/, "");
+        // Types are erased, and components are rendered rather than called.
+        if (!local || /^[A-Z]/.test(local) || binding.includes("type ")) continue;
+        assert.doesNotMatch(
+          source,
+          new RegExp(`\\b${local}\\s*\\(`),
+          `${name} calls ${local}() imported from the client module ${spec} — move it to a neutral module`
+        );
+      }
+    }
+  }
+});
+
 test("the harness renders the same sections the route does", () => {
   const sections = [
     "HomeHero",

@@ -3,14 +3,14 @@
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import WishlistButton from "@/components/commerce/WishlistButton";
-import { moneyFromCents } from "@/lib/orderHub";
 import {
   availabilityLabel,
   productCanBeRequested,
   type CatalogProduct,
 } from "@/lib/commerceTypes";
 import type { ProductMediaRef } from "@/lib/productImages";
-import { normalizePurchaseMode, type PurchaseMode } from "@/lib/commerce/purchaseModes";
+import { cardAction, priceLabel } from "@/lib/commerce/productLabels";
+import { normalizePurchaseMode } from "@/lib/commerce/purchaseModes";
 
 export type ProductCardProduct = Pick<
   CatalogProduct,
@@ -24,32 +24,19 @@ export type ProductCardProduct = Pick<
     >
   > & { product_media?: ProductMediaRef[] | null };
 
-export function productPrice(cents: number | null | undefined): string {
-  return cents == null ? "Price after review" : `From ${moneyFromCents(cents)}`;
-}
-
 /**
- * A directly purchasable product has a real price, not a starting point, so
- * "From $40" would understate what the customer is actually committing to.
+ * The wording rules live in `@/lib/commerce/productLabels`, not here.
  *
- * Formatted through the same `moneyFromCents` the cart, the order pages and
- * every email use. `toFixed(2)` was doing the job and doing it *differently*:
- * a £1,299 fixture read "$1299.00" on its catalog card and "$1,299.00" on the
- * order confirming it, which is one product with two prices as far as anyone
- * reading quickly is concerned.
+ * This file is a client module, and a function exported from a client module is
+ * a client reference — the server cannot call it, only render it. The homepage's
+ * product-focus section is a server component that needs one product's price
+ * string, and importing it from here failed the production build with
+ * "Attempted to call priceLabel() from the server".
+ *
+ * Re-exported so every existing importer — the catalog, the tests — keeps
+ * working against the same names.
  */
-export function priceLabel(mode: PurchaseMode, cents: number | null | undefined): string {
-  if (cents == null) return "Price after review";
-  if (mode === "direct_purchase") return moneyFromCents(cents);
-  return `From ${moneyFromCents(cents)}`;
-}
-
-export function cardAction(mode: PurchaseMode, available: boolean): string {
-  if (!available) return "View";
-  if (mode === "direct_purchase") return "Buy now";
-  if (mode === "direct_or_request") return "Buy or customize";
-  return "Customize";
-}
+export { cardAction, priceLabel, productPrice } from "@/lib/commerce/productLabels";
 
 type ProductCardProps = {
   product: ProductCardProduct;

@@ -311,11 +311,42 @@ does.
 
 ## 12. Validation
 
+### The bug only the deployed build found
+
+The first preview deployment failed to prerender `/`:
+
+```
+Attempted to call priceLabel() from the server but priceLabel is on the client.
+```
+
+`HomeProductFocus` is a server component and imported `priceLabel` from
+`ProductCard`, which carries `"use client"`. A function exported from a client
+module is a client *reference* — the server gets a marshalling stub, not the
+function.
+
+Everything local passed, and passed for the wrong reason: the local build ran
+with placeholder Supabase credentials, so there were no products, so the focus
+section returned `null` before it ever reached the call. Type-checking cannot see
+this either — the types are identical on both sides of the boundary.
+
+Fixed by moving `productPrice`, `priceLabel` and `cardAction` into
+`src/lib/commerce/productLabels.ts`, a module with no directive, and re-exporting
+them from `ProductCard` so every existing importer is unaffected. Nothing in them
+was ever client-specific; living in a component file is what hid that.
+
+A test now walks the imports of every homepage section and fails if one calls a
+binding from a `"use client"` module. It was checked by reintroducing the bug:
+the guard fails with the right message, and passes once reverted. (Its first
+draft did *not* fire — the import regex only matched `import { named }` and the
+real failure arrived through `import Default, { named }`.)
+
+### Results
+
 | Check | Result |
 | --- | --- |
 | `npx tsc --noEmit` | clean |
-| `tests/homepage-3.test.ts` | 38 / 38 pass |
-| Full suite, this branch | 2190 tests, 2184 pass, **6 fail** |
+| `tests/homepage-3.test.ts` | 39 / 39 pass |
+| Full suite, this branch | 2191 tests, 2185 pass, **6 fail** |
 | Full suite, `main` (`14d46a4`) | 2152 tests, 2146 pass, **6 fail** |
 | `npx eslint src`, this branch | 277 problems (128 errors, 149 warnings) |
 | `npx eslint src`, `main` | 277 problems (128 errors, 149 warnings) — identical |

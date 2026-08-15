@@ -1,8 +1,11 @@
 import Link from "next/link";
 
 import HomeMedia from "@/components/home/HomeMedia";
-import ProductCard, { type ProductCardProduct, priceLabel } from "@/components/ProductCard";
+import ProductCard, { type ProductCardProduct } from "@/components/ProductCard";
 import Reveal from "@/components/Reveal";
+// From the shared module, never through ProductCard: that file is a client
+// module, and these sections render on the server. See `productLabels`.
+import { priceLabel } from "@/lib/commerce/productLabels";
 import { normalizePurchaseMode } from "@/lib/commerce/purchaseModes";
 import {
   assurances,
