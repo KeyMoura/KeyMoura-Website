@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { ORDER_HISTORY_SORTS, ORDER_HISTORY_SORT_OPTIONS, sortOrderHistory } from "../src/lib/commerce/orderHistory.ts";
 import { SORTS, emptyFilters } from "../src/lib/staff/orderFilters.ts";
 import { buildQueryPlan } from "../src/lib/staff/orderQueryPlan.ts";
 import { APPEARANCE_SETTINGS } from "../src/theme/appearanceMap.ts";
@@ -32,20 +33,52 @@ test("staff order queue supports useful independent sort modes", () => {
   }
 });
 
-test("customer order hub supports customer-safe sort modes", () => {
+test("customer order hub sorts by the date it prints, not by updated_at", () => {
+  /*
+   * Six sort modes became two in Commerce 3.0, and the one that mattered is the
+   * one that went: `updated_at` was the *default*.
+   *
+   * It is not a property of the order as far as the customer is concerned. A
+   * staff note or an internal status touch reshuffled the list under somebody
+   * who had done nothing, and the new position no longer agreed with the only
+   * date on the card. Sorting by the visible field is the whole rule, and the
+   * column is not even read any more.
+   */
   const page = read("src/app/orders/page.tsx");
-  for (const label of ["Recently updated", "Newest request", "Oldest request", "Needs attention first", "Price: high to low", "Price: low to high"]) {
-    assert.match(page, new RegExp(label));
-  }
+  assert.deepEqual([...ORDER_HISTORY_SORTS], ["newest", "oldest"]);
+  // The labels sit beside the values they belong to, so a control cannot offer
+  // a sort the sorter does not implement.
+  assert.deepEqual(
+    ORDER_HISTORY_SORT_OPTIONS.map((option) => option.label),
+    ["Newest first", "Oldest first"]
+  );
+  assert.deepEqual(
+    ORDER_HISTORY_SORT_OPTIONS.map((option) => option.value),
+    [...ORDER_HISTORY_SORTS]
+  );
+  assert.match(page, /ORDER_HISTORY_SORT_OPTIONS/);
   assert.doesNotMatch(page, /Highest priority/);
-  assert.match(page, /created_at,updated_at/);
+  assert.doesNotMatch(page, /updated_at/, "updated_at must not be read at all");
+  assert.match(page, /\.order\("created_at", \{ ascending: false \}\)/);
+
+  // Only `created_at` matters to the sorter; the rest of the row is not read.
+  const rows = [
+    { created_at: "2026-01-01T00:00:00Z" },
+    { created_at: "2026-08-01T00:00:00Z" },
+  ] as unknown as Parameters<typeof sortOrderHistory>[0];
+  assert.equal(sortOrderHistory(rows, "newest")[0].created_at, "2026-08-01T00:00:00Z");
+  assert.equal(sortOrderHistory(rows, "oldest")[0].created_at, "2026-01-01T00:00:00Z");
 });
 
 test("primary order and notification controls adapt for mobile", () => {
   const orders = read("src/app/orders/page.tsx");
   const notifications = read("src/app/notifications/page.tsx");
   assert.match(orders, /sm:w-auto/);
-  assert.match(orders, /min-w-0 flex-1/);
+  // The native `<select>` this used to pin became a MenuSelect, like every
+  // other dropdown on the site. The mobile requirement it stood for — a full
+  // width control that cannot overflow its row — moved to the segmented tabs.
+  assert.match(orders, /className="w-full sm:w-auto"/);
+  assert.doesNotMatch(orders, /<select/, "the order hub must use MenuSelect");
   assert.match(notifications, /aria-pressed=\{showUnreadOnly\}/);
   assert.match(notifications, /min-h-11/);
 });

@@ -104,7 +104,10 @@ export function OrderFulfillmentStatus({ order }: { order: FulfillmentOrder }) {
   const trackingUrl = order.tracking_url;
 
   return (
-    <section className="ui-card" aria-labelledby="order-fulfillment-heading">
+    // The `id` is the target of "Pickup details" on the order-history card, and
+    // `scroll-mt` clears the sticky header so the heading is not the thing that
+    // ends up underneath it.
+    <section id="fulfillment" className="ui-card scroll-mt-24" aria-labelledby="order-fulfillment-heading">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="ui-eyebrow">{isPickup ? "Collection" : "Delivery"}</p>

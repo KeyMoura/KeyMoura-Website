@@ -18,9 +18,14 @@ test("catalog supports discovery controls and clear empty states", () => {
   // "All categories" became a route rather than a dropdown value, so the
   // category list is asserted where it now lives: the browse menu.
   const client = read("src/components/catalog/CatalogBrowser.tsx");
-  for (const token of ["Search products", "No products match"]) {
-    assert.match(client, new RegExp(token));
-  }
+  assert.match(client, /No products match/);
+  // The search box became its own control in Commerce 3.0 — a labelled search
+  // landmark with an icon, a submit and a clear, rather than a bare input that
+  // looked like a staff table's filter field. Its wording lives there now.
+  const search = read("src/components/catalog/CommerceSearch.tsx");
+  assert.match(search, /Search products/);
+  assert.match(search, /role="search"/);
+  assert.match(client, /<CommerceSearch/);
   // Renamed with the rail in pass 14: the menu now carries filters as well as
   // categories, so "Browse products" describes what it is for.
   assert.match(client, /aria-label="Browse products"/, "the browse menu is its own labelled nav");

@@ -185,16 +185,16 @@ export default function CatalogBrowseDrawer({
                     <CatalogCategoryTree menu={menu} variant="drawer" onNavigate={close} />
                   </nav> : <div className="catalog-drawer-section">
                     <p className="catalog-drawer-heading">Filter</p>
-                    <label className="catalog-drawer-field">
-                      <span>Search</span>
-                      <input
-                        type="search"
-                        value={filters.query}
-                        onChange={(event) => onChange({ query: event.target.value })}
-                        placeholder="Search products…"
-                        className="ui-input"
-                      />
-                    </label>
+                    {/*
+                      No search box here.
+
+                      There used to be one, back when the toolbar's own field
+                      was hidden below `lg` and this sheet was the only way to
+                      reach it. Search is now the first thing on the results
+                      toolbar at every width, so a second input would be two
+                      controls writing one query parameter — and the one behind
+                      a button would be the one that looked authoritative.
+                    */}
                     <label className="catalog-drawer-field">
                       <span>Availability</span>
                       <MenuSelect

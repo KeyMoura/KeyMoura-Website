@@ -82,7 +82,18 @@ export const secondaryNav: readonly NavItem[] = [
 export const accountNav: readonly NavItem[] = [
   { href: "/account", label: "Account" },
   { href: "/orders", label: "Orders" },
-  { href: "/orders?view=requests", label: "Requests" },
+  /*
+   * "Requests" pointed at `/orders?view=requests` and no page ever read that
+   * parameter, so it was a second menu entry that opened the first one's page
+   * — while promising a filter. Custom requests and direct purchases are both
+   * orders and both live in the order history, which now filters by state
+   * rather than by how the order started.
+   *
+   * Support takes the slot. It is the destination a customer actually looks for
+   * in an account menu and the only one from `/account`'s own shortcut row that
+   * had no way in from the header.
+   */
+  { href: "/account/support", label: "Support" },
   { href: "/wishlist", label: "Wishlist" },
   { href: "/messages", label: "Messages" },
   { href: "/notifications", label: "Notifications" },

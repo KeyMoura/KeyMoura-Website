@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import ProductCard, { type ProductCardProduct } from "@/components/ProductCard";
 import CatalogBrowseDrawer from "@/components/catalog/CatalogBrowseDrawer";
 import CatalogCategoryTree from "@/components/catalog/CatalogCategoryTree";
-import CatalogDensityControl from "@/components/catalog/CatalogDensityControl";
+import CatalogViewControl from "@/components/catalog/CatalogViewControl";
+import CommerceSearch from "@/components/catalog/CommerceSearch";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import type { CategoryRow } from "@/lib/commerce/categories";
 import {
@@ -169,6 +170,31 @@ export default function CatalogBrowser({
     router.replace(pathname, { scroll: false });
   };
 
+  /** Just the search term, leaving the category and the refinements alone. */
+  const clearSearch = () => {
+    setTyped("");
+    setFilters({ query: "" });
+  };
+
+  /*
+   * Enter, or the Search button: commit now rather than in 350ms.
+   *
+   * The debounce exists so a keystroke does not cost an RSC round trip; a
+   * deliberate submit is not a keystroke, and waiting a third of a second after
+   * one is the kind of small unresponsiveness that makes a search box feel
+   * broken. `push` rather than `replace` here — a submitted search is a place
+   * the customer expects Back to return from, which is exactly the history
+   * entry the debounced path is careful *not* to create.
+   */
+  const submitSearch = (value: string) => {
+    const next = { ...filters, query: value.trim().slice(0, 80) };
+    router.push(`${pathname}${catalogFilterQuery(next)}`, { scroll: false });
+  };
+
+  const searchId = useId();
+  const term = effectiveFilters.query.trim();
+  const scopeName = menu.trail.length ? menu.trail[menu.trail.length - 1].name : null;
+
   return (
     <div className="catalog-layout">
       {/*
@@ -233,70 +259,84 @@ export default function CatalogBrowser({
       </nav>
 
       <div className="catalog-main">
-        <section aria-label="Search and sort products" className="catalog-toolbar">
-          <div className="catalog-search">
-            <label className="sr-only" htmlFor="catalog-search">
-              Search products
-            </label>
-            <input
-              id="catalog-search"
-              type="search"
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              placeholder="Search products…"
-              className="ui-input"
-            />
-          </div>
+        {/*
+          Search on its own row, then the result context.
 
-          <div className="catalog-filter-controls">
-            <MenuSelect
-              ariaLabel="Sort products"
-              className="ui-select-trigger"
-              value={filters.sort}
-              onChange={(value) => setFilters({ sort: value as CatalogFilters["sort"] }, "push")}
-              options={SORT_OPTIONS}
-            />
-            {/* Beside sorting, because both are "how am I looking at this list"
-                — and deliberately not in the rail with the category tree, which
-                is "what list am I looking at". */}
-            <CatalogDensityControl />
+          These used to share a row with sort, density and the drawer triggers,
+          which made the storefront's primary control one of five equal boxes —
+          the same silhouette a staff table's filter field has. Search is what a
+          customer came to do; how many results there are and how they are
+          arranged is a different question, and it belongs on a different line.
+        */}
+        <section aria-label="Search and arrange products" className="catalog-toolbar">
+          <CommerceSearch
+            inputId={searchId}
+            value={typed}
+            onChange={setTyped}
+            onSubmit={submitSearch}
+            onClear={clearSearch}
+          />
+
+          <div className="catalog-results-bar">
+            {/*
+              A real count of what is on screen, said as a sentence. No
+              "1,000+", no per-category estimate, nothing derived from anything
+              but this list — and, when there is a search, what it was a search
+              *for*, so nobody has to read the input back to find out.
+            */}
+            <p className="catalog-results-count" aria-live="polite">
+              <strong>{visible.length}</strong>{" "}
+              {term
+                ? `${visible.length === 1 ? "result" : "results"} for `
+                : visible.length === 1
+                  ? "product"
+                  : "products"}
+              {term ? <span className="catalog-results-term">“{term}”</span> : null}
+              {scopeName || (!isDefault && visible.length !== scopedProducts.length) ? (
+                <span className="catalog-results-scope">
+                  {scopeName ? `in ${scopeName}` : null}
+                  {scopeName && !isDefault && visible.length !== scopedProducts.length ? " · " : null}
+                  {!isDefault && visible.length !== scopedProducts.length
+                    ? `filtered from ${scopedProducts.length}`
+                    : null}
+                </span>
+              ) : null}
+            </p>
+
+            <div className="catalog-filter-controls">
+              <div className="catalog-toolbar-sort">
+                <MenuSelect
+                  ariaLabel="Sort products"
+                  className="ui-select-trigger"
+                  value={filters.sort}
+                  onChange={(value) => setFilters({ sort: value as CatalogFilters["sort"] }, "push")}
+                  options={SORT_OPTIONS}
+                />
+              </div>
+              {/* Beside sorting, because both are "how am I looking at this
+                  list" — and deliberately not in the rail with the category
+                  tree, which is "what list am I looking at". */}
+              <CatalogViewControl />
+            </div>
           </div>
 
           <CatalogBrowseDrawer
             menu={menu}
             filters={effectiveFilters}
             filterCount={filterCount}
-            onChange={(next, mode) => {
-              // The drawer's search box shares the debounce; its dropdowns do not.
-              if (typeof next.query === "string" && Object.keys(next).length === 1) setTyped(next.query);
-              else setFilters(next, mode);
-            }}
+            // The drawer holds dropdowns only — search lives on the toolbar at
+            // every width now — and a dropdown changes once per interaction, so
+            // each of those is a history entry worth having.
+            onChange={(next, mode) => setFilters(next, mode)}
             onClear={clear}
           />
         </section>
-
-        <div className="catalog-summary">
-          {/* A real count of what is on screen. No "1,000+", no per-category
-              estimate, nothing derived from anything but this list. */}
-          <p aria-live="polite">
-            {visible.length} {visible.length === 1 ? "product" : "products"}
-            {!isDefault && visible.length !== scopedProducts.length ? ` of ${scopedProducts.length}` : null}
-          </p>
-          <button
-            type="button"
-            onClick={clear}
-            disabled={isDefault}
-            className="ui-btn ui-btn-ghost !py-1.5 text-sm disabled:opacity-40"
-          >
-            Clear filters
-          </button>
-        </div>
 
         {!isDefault ? (
           <div className="catalog-active-filters" aria-label="Active filters">
             <span className="catalog-active-filters-label">Active filters</span>
             {effectiveFilters.query ? (
-              <button type="button" onClick={() => { setTyped(""); setFilters({ query: "" }); }} className="catalog-filter-chip">
+              <button type="button" onClick={clearSearch} className="catalog-filter-chip">
                 Search: {effectiveFilters.query} <span aria-hidden="true">×</span>
               </button>
             ) : null}
@@ -315,6 +355,9 @@ export default function CatalogBrowser({
                 {SORT_OPTIONS.find((item) => item.value === effectiveFilters.sort)?.label} <span aria-hidden="true">×</span>
               </button>
             ) : null}
+            <button type="button" onClick={clear} className="catalog-filter-chip catalog-filter-chip-clear">
+              Clear all
+            </button>
           </div>
         ) : null}
 
@@ -332,18 +375,39 @@ export default function CatalogBrowser({
             </div>
           </section>
         ) : (
+          /*
+           * Empty is not an error and it is not a bare zero.
+           *
+           * "0 products" is a fact the customer already knows by looking, and it
+           * does not say which of the four things they set is responsible.
+           * Naming the search term is the useful half: it is the thing most
+           * likely to be a typo, and it is the thing a Clear search button can
+           * fix in one press without throwing away the category they navigated
+           * to on the way here.
+           */
           <div className="ui-empty-state mt-6 !p-10">
             <h2 className="text-xl font-semibold text-brand-text">
-              {scopedProducts.length ? "No products match those filters." : "Nothing is listed here yet."}
+              {term
+                ? `No products match “${term}”.`
+                : scopedProducts.length
+                  ? "No products match those filters."
+                  : "Nothing is listed here yet."}
             </h2>
             <p className="mt-2">
-              {scopedProducts.length
-                ? "Try clearing a filter — or describe what you need and we will quote it."
-                : "Browse everything, or describe what you need and we will quote it."}
+              {term
+                ? "Try another search, or clear your filters."
+                : scopedProducts.length
+                  ? "Try clearing a filter — or describe what you need and we will quote it."
+                  : "Browse everything, or describe what you need and we will quote it."}
             </p>
             <div className="ui-action-row mt-5 justify-center">
+              {term ? (
+                <button type="button" onClick={clearSearch} className="ui-btn ui-btn-secondary">
+                  Clear search
+                </button>
+              ) : null}
               {scopedProducts.length ? (
-                <button type="button" onClick={clear} className="ui-btn ui-btn-secondary">
+                <button type="button" onClick={clear} disabled={isDefault} className="ui-btn ui-btn-secondary disabled:opacity-40">
                   Clear filters
                 </button>
               ) : (

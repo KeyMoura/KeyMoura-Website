@@ -45,7 +45,14 @@ test("the content column can actually take the width the rail gives up", () => {
   // growing back. `minmax(0, 1fr)` is what makes the 208px real.
   // Only the two-track declarations: `.staff-shell { grid-template-columns: 1fr }`
   // is the single-column phone layout, which has no sidebar to give width up.
-  const twoTrack = (css.match(/grid-template-columns:\s*(?:280px|4\.5rem)[^;]*;/g) ?? []);
+  //
+  // Scoped to `.staff-shell`. The bare track pattern matched anything in the
+  // stylesheet that happened to open with the same width — the order-history
+  // item row is `4.5rem minmax(0, 1fr)` — and a rule about the staff shell must
+  // not be decided by a customer-facing card somewhere else in the file.
+  const shellRules = css.match(/\.staff-shell\b[^{]*\{[^}]*\}/g) ?? [];
+  const twoTrack = shellRules
+    .flatMap((rule) => rule.match(/grid-template-columns:\s*(?:280px|4\.5rem)[^;]*;/g) ?? []);
   assert.equal(twoTrack.length, 2, "the expanded and collapsed columns should both be declared");
   for (const rule of twoTrack) {
     assert.match(rule, /minmax\(0,\s*1fr\)/, `a bare 1fr would absorb the gain: ${rule}`);

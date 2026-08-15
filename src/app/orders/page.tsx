@@ -1,133 +1,353 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { moneyFromCents, orderCustomerStatus, orderLabel, orderNeedsCustomerAction, orderNextStep } from "@/lib/orderHub";
-import { supabaseBrowser } from "@/lib/supabaseClient";
-import { Badge, EmptyState, MetricCard, Notice } from "@/components/ui/DesignSystem";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faMagnifyingGlass, faXmark } from "@fortawesome/free-solid-svg-icons";
+
+import { OrderHistoryCard } from "@/components/commerce/OrderHistoryCard";
+import { EmptyState, Notice } from "@/components/ui/DesignSystem";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { MenuSelect } from "@/components/ui/MenuSelect";
+import {
+  filterOrderHistoryTab,
+  orderHistoryTabOf,
+  ORDER_HISTORY_SORT_OPTIONS,
+  ORDER_HISTORY_TAB_LABELS,
+  ORDER_HISTORY_TABS,
+  searchOrderHistory,
+  sortOrderHistory,
+  type OrderHistoryOrder,
+  type OrderHistorySort,
+  type OrderHistoryTab,
+} from "@/lib/commerce/orderHistory";
+import { groupMediaByProduct, type ProductImageSource } from "@/lib/productImages";
+import { supabaseBrowser } from "@/lib/supabaseClient";
 
-type Order = {
-  id: string;
-  order_number: string | null;
-  product_name: string;
-  status: string;
-  agreed_price_cents: number | null;
-  payment_status: string;
-  fulfillment_method: "shipping" | "pickup";
-  tracking_number: string | null;
-  created_at: string;
-  updated_at: string;
-};
+/**
+ * A customer's order history.
+ *
+ * ## What this reads, and what it is not allowed to read
+ *
+ * One query for the orders and their line items, filtered by `customer_id` and
+ * backed by RLS — the filter is a convenience and the policy is the control, so
+ * a mistake here narrows the result rather than widening it. Knowing an order's
+ * UUID is not access, and a matching email address is not ownership: guest
+ * orders belong to the browser that checked out and are reached through their
+ * own signed route, never from here.
+ *
+ * Every column selected is one a customer may see. Staff notes, production
+ * jobs, costs, internal statuses and Stripe identifiers are not in the select
+ * list at all, which is a better guarantee than remembering not to render them.
+ *
+ * ## Two queries, never N+1
+ *
+ * The line items arrive nested with the orders. The product photographs are one
+ * further `in (…)` over the distinct product ids — not one query per card, and
+ * not one per line. Those images are the *current* listing, and the card treats
+ * them as illustrative for exactly that reason; names, options and prices come
+ * from the immutable snapshot written at purchase time.
+ *
+ * ## Bounded
+ *
+ * `PAGE_SIZE + 1` rows are requested so "there are more" can be told from
+ * "that is all", without a count query. Today's volumes fit in one page; the
+ * shape is here so paging is a button rather than a rewrite.
+ */
 
-type Filter = "active" | "complete" | "cancelled" | "all";
-type Sort = "updated" | "newest" | "oldest" | "attention" | "price_high" | "price_low";
+const PAGE_SIZE = 25;
+
+const ORDER_COLUMNS =
+  "id,order_number,product_name,quantity,status,payment_status,fulfillment_method,fulfillment_status," +
+  "cancellation_status,return_status,agreed_price_cents,amount_paid_cents,amount_refunded_cents," +
+  "tracking_url,tracking_number,shipping_carrier,shipping_address,pickup_location_snapshot," +
+  "created_at,ready_at,shipped_at,delivered_at,picked_up_at," +
+  "order_items(id,product_id,product_name,product_slug,quantity,unit_price_cents,line_subtotal_cents,selected_options)";
+
+type ViewState = "loading" | "ready" | "error" | "signed-out";
 
 export default function OrdersPage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [filter, setFilter] = useState<Filter>("active");
-  const [sort, setSort] = useState<Sort>("updated");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [state, setState] = useState<ViewState>("loading");
+  const [orders, setOrders] = useState<OrderHistoryOrder[]>([]);
+  const [images, setImages] = useState<Map<string, ProductImageSource>>(new Map());
+  const [truncated, setTruncated] = useState(false);
 
-  useEffect(() => {
-    void supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) {
-        setError("Sign in to view your requests.");
-        setLoading(false);
-        return;
-      }
-      const result = await supabase
-        .from("orders")
-        .select("id,order_number,product_name,status,agreed_price_cents,payment_status,fulfillment_method,tracking_number,created_at,updated_at")
-        .eq("customer_id", data.user.id)
-        .order("updated_at", { ascending: false });
-      setOrders((result.data ?? []) as Order[]);
-      setError(result.error?.message ?? "");
-      setLoading(false);
-    });
+  const [tab, setTab] = useState<OrderHistoryTab>("all");
+  const [sort, setSort] = useState<OrderHistorySort>("newest");
+  const [query, setQuery] = useState("");
+
+  const searchId = useId();
+
+  const load = useCallback(async () => {
+    setState("loading");
+    const auth = await supabase.auth.getUser();
+    if (!auth.data.user) {
+      setState("signed-out");
+      return;
+    }
+
+    const result = await supabase
+      .from("orders")
+      .select(ORDER_COLUMNS)
+      .eq("customer_id", auth.data.user.id)
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE + 1);
+
+    // A failed read is an error, never an empty history. "You have no orders"
+    // is a sentence a customer will believe, and believing it after an outage
+    // is how somebody concludes their purchase never went through.
+    if (result.error) {
+      setState("error");
+      return;
+    }
+
+    const rows = (result.data ?? []) as unknown as OrderHistoryOrder[];
+    setTruncated(rows.length > PAGE_SIZE);
+    const page = rows.slice(0, PAGE_SIZE);
+    setOrders(page);
+    setState("ready");
+
+    // Thumbnails, in one further query over the distinct products on this page.
+    // A failure here leaves the brand mark in every image box, which is the
+    // right outcome: a missing photograph must not cost the customer their
+    // order history.
+    const productIds = Array.from(
+      new Set(
+        page.flatMap((order) => (order.order_items ?? []).map((item) => item.product_id).filter(Boolean))
+      )
+    ) as string[];
+    if (!productIds.length) return;
+
+    const [productResult, mediaResult] = await Promise.all([
+      supabase.from("products").select("id,image_url").in("id", productIds),
+      supabase.from("product_media").select("product_id,url,kind,sort_order").in("product_id", productIds).eq("kind", "image").order("sort_order"),
+    ]);
+    if (productResult.error) return;
+
+    const byProduct = groupMediaByProduct(mediaResult.data ?? []);
+    const next = new Map<string, ProductImageSource>();
+    for (const row of (productResult.data ?? []) as { id: string; image_url: string | null }[]) {
+      next.set(row.id, { image_url: row.image_url, product_media: byProduct.get(row.id) ?? [] });
+    }
+    setImages(next);
   }, [supabase]);
 
-  const actionable = orders.filter(orderNeedsCustomerAction);
-  const active = orders.filter((order) => !["completed", "declined", "cancelled"].includes(order.status));
-  const completed = orders.filter((order) => ["completed", "declined", "cancelled"].includes(order.status));
-  const cancelled = orders.filter((order) => ["declined", "cancelled"].includes(order.status));
-  const finished = orders.filter((order) => order.status === "completed");
-  const filtered = filter === "active" ? active : filter === "complete" ? finished : filter === "cancelled" ? cancelled : orders;
-  const shown = [...filtered].sort((left, right) => {
-    if (sort === "newest") return Date.parse(right.created_at) - Date.parse(left.created_at);
-    if (sort === "oldest") return Date.parse(left.created_at) - Date.parse(right.created_at);
-    if (sort === "attention") {
-      const actionDifference = Number(orderNeedsCustomerAction(right)) - Number(orderNeedsCustomerAction(left));
-      return actionDifference || Date.parse(right.updated_at) - Date.parse(left.updated_at);
-    }
-    if (sort === "price_high" || sort === "price_low") {
-      if (left.agreed_price_cents == null) return 1;
-      if (right.agreed_price_cents == null) return -1;
-      const leftPrice = left.agreed_price_cents;
-      const rightPrice = right.agreed_price_cents;
-      return sort === "price_high" ? rightPrice - leftPrice : leftPrice - rightPrice;
-    }
-    return Date.parse(right.updated_at) - Date.parse(left.updated_at);
-  });
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const counts = useMemo(() => {
+    const tally = { active: 0, completed: 0, cancelled: 0, all: orders.length };
+    for (const order of orders) tally[orderHistoryTabOf(order)] += 1;
+    return tally;
+  }, [orders]);
+
+  const shown = useMemo(
+    () => sortOrderHistory(searchOrderHistory(filterOrderHistoryTab(orders, tab), query), sort),
+    [orders, tab, query, sort]
+  );
+
+  const term = query.trim();
+
+  if (state === "loading") {
+    return (
+      <main className="page-container page-stack">
+        <p role="status" className="text-brand-textMuted">
+          Loading your orders…
+        </p>
+      </main>
+    );
+  }
+
+  if (state === "signed-out") {
+    return (
+      <main className="page-container page-stack">
+        <div className="ui-card max-w-xl">
+          <h1 className="text-2xl font-semibold">Sign in to see your orders</h1>
+          <p className="mt-3 text-sm leading-6 text-brand-textMuted">
+            Your order history lives on your account. If you checked out as a guest, open the order with the
+            secure link in your confirmation email — guest orders are not attached to an account by email.
+          </p>
+          <div className="ui-action-row mt-5">
+            <Link href="/auth" className="ui-btn ui-btn-primary">
+              Sign in
+            </Link>
+            <Link href="/catalog" className="ui-btn ui-btn-secondary">
+              Browse catalog
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <main className="page-container page-stack">
+        <Notice tone="danger" role="alert">
+          <h1 className="text-lg font-semibold">Unable to load your orders</h1>
+          <p className="mt-2 text-sm">
+            This is a problem at our end. Your orders are safe and none of them has been counted as missing.
+          </p>
+          <button type="button" className="ui-btn ui-btn-secondary mt-4" onClick={() => void load()}>
+            Try again
+          </button>
+        </Notice>
+      </main>
+    );
+  }
 
   return (
     <main className="page-container page-stack">
-      <div className="flex flex-wrap items-end justify-between gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-5">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">Customer hub</p>
-          <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Your KeyMoura orders</h1>
-          <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">Track requests, reply to questions, pay securely, and follow delivery from one place.</p>
+          <p className="ui-eyebrow">Your account</p>
+          <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Your orders</h1>
+          <p className="mt-2 max-w-2xl text-sm text-brand-textMuted">
+            Everything you have ordered from KeyMoura, with where each one has got to.
+          </p>
         </div>
-        <Link href="/catalog" className="ui-btn ui-btn-primary w-full text-center text-sm sm:w-auto">Start a new request</Link>
-      </div>
+        <Link href="/catalog" className="ui-btn ui-btn-secondary w-full text-center text-sm sm:w-auto">
+          Browse catalog
+        </Link>
+      </header>
 
-      {!loading && !error && orders.length > 0 ? (
-        <section className="grid gap-3 sm:grid-cols-3">
-          <MetricCard label="Active orders" value={active.length} detail="Requests currently moving through KeyMoura" />
-          <MetricCard label="Need your attention" value={actionable.length} detail="Replies, approvals, or payment needed" tone={actionable.length ? "warning" : "default"} />
-          <MetricCard label="Finished" value={completed.length} detail="Completed, declined, or cancelled" />
+      {orders.length ? (
+        <section aria-label="Find an order" className="order-history-toolbar">
+          {/*
+            Order number or product name, matched over the page already loaded.
+            No round trip, no index, no ranking — a customer has tens of orders
+            and remembers either the number on the email or roughly what it was.
+          */}
+          <form
+            role="search"
+            aria-label="Search your orders"
+            className="commerce-search"
+            onSubmit={(event) => event.preventDefault()}
+          >
+            <div className="commerce-search-field">
+              <label className="sr-only" htmlFor={searchId}>
+                Search orders
+              </label>
+              <FontAwesomeIcon icon={faMagnifyingGlass} className="commerce-search-icon" aria-hidden="true" />
+              <input
+                id={searchId}
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search orders by number or product"
+                autoComplete="off"
+                className="commerce-search-input"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="commerce-search-clear"
+                  aria-label="Clear order search"
+                >
+                  <FontAwesomeIcon icon={faXmark} className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            <button type="submit" className="ui-btn ui-btn-primary commerce-search-submit">
+              <FontAwesomeIcon icon={faMagnifyingGlass} className="commerce-search-submit-icon" aria-hidden="true" />
+              <span className="commerce-search-submit-label">Search</span>
+            </button>
+          </form>
+
+          <div className="order-history-filters">
+            <SegmentedControl
+              className="w-full sm:w-auto"
+              value={tab}
+              onChange={setTab}
+              ariaLabel="Filter orders"
+              options={ORDER_HISTORY_TABS.map((value) => ({
+                value,
+                label: `${ORDER_HISTORY_TAB_LABELS[value]} (${counts[value]})`,
+              }))}
+            />
+            <MenuSelect
+              ariaLabel="Sort your orders"
+              className="ui-select-trigger"
+              value={sort}
+              onChange={(value) => setSort(value as OrderHistorySort)}
+              options={ORDER_HISTORY_SORT_OPTIONS}
+            />
+          </div>
+
+          <p className="order-history-count" aria-live="polite">
+            <strong>{shown.length}</strong>{" "}
+            {term ? (
+              <>
+                {shown.length === 1 ? "order matches" : "orders match"}{" "}
+                <span className="catalog-results-term">“{term}”</span>
+              </>
+            ) : shown.length === 1 ? (
+              "order"
+            ) : (
+              "orders"
+            )}
+          </p>
         </section>
       ) : null}
 
-      <div className="ui-filter-bar flex-col sm:flex-row sm:items-center sm:justify-between">
-        <SegmentedControl className="w-full sm:w-auto" value={filter} onChange={setFilter} ariaLabel="Filter orders" options={[{ value: "active", label: `Active (${active.length})` }, { value: "complete", label: `Completed (${finished.length})` }, { value: "cancelled", label: `Cancelled / refunded (${cancelled.length})` }, { value: "all", label: `All (${orders.length})` }]} />
-        <label className="flex w-full items-center gap-2 text-sm text-brand-textMuted sm:w-auto sm:shrink-0">
-          <span className="shrink-0">Sort by</span>
-          <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="ui-input min-w-0 flex-1 sm:w-auto sm:flex-none" aria-label="Sort your orders">
-            <option value="updated">Recently updated</option>
-            <option value="newest">Newest request</option>
-            <option value="oldest">Oldest request</option>
-            <option value="attention">Needs attention first</option>
-            <option value="price_high">Price: high to low</option>
-            <option value="price_low">Price: low to high</option>
-          </select>
-        </label>
-      </div>
-
-      {loading ? <EmptyState>Loading your orders…</EmptyState> : null}
-      {error ? <Notice tone="danger" role="alert">{error}</Notice> : null}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {shown.map((order) => {
-          const needsAction = orderNeedsCustomerAction(order);
-          return (
-            <Link key={order.id} href={`/orders/${order.id}`} className={`ui-card ui-card-hover group ${needsAction ? "!border-brand-primary/45" : ""}`}>
-              <div className="flex items-start justify-between gap-4">
-                <div><p className="text-xs text-brand-textMuted">{order.order_number || "Request pending review"}</p><h2 className="mt-1 text-lg font-semibold group-hover:text-brand-primary">{order.product_name}</h2></div>
-                <Badge>{orderCustomerStatus(order.status, null)}</Badge>
-              </div>
-              <div className={`mt-5 rounded-xl border p-3 text-sm ${needsAction ? "border-brand-primary/30 bg-brand-primary/10 text-brand-primary" : "border-zinc-800 text-brand-textMuted"}`}><span className="font-medium">Next:</span> {orderNextStep(order)}</div>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-brand-textMuted">
-                <span>{order.agreed_price_cents == null ? "Price pending" : `${moneyFromCents(order.agreed_price_cents)} · ${orderLabel(order.payment_status)}`}</span>
-                <span>Updated {new Date(order.updated_at).toLocaleDateString()}</span>
-              </div>
+      {shown.length ? (
+        <div className="order-history-list">
+          {shown.map((order, index) => (
+            <OrderHistoryCard key={order.id} order={order} images={images} priority={index === 0} />
+          ))}
+        </div>
+      ) : orders.length ? (
+        <EmptyState>
+          <h2 className="text-lg font-semibold text-brand-text">
+            {term ? `No orders match “${term}”.` : "Nothing in this view."}
+          </h2>
+          <p className="mt-2">
+            {term
+              ? "Try the order number from your confirmation email, or part of the product name."
+              : "Choose a different filter to see your other orders."}
+          </p>
+          <div className="ui-action-row mt-5 justify-center">
+            {term ? (
+              <button type="button" onClick={() => setQuery("")} className="ui-btn ui-btn-secondary">
+                Clear search
+              </button>
+            ) : null}
+            {tab !== "all" ? (
+              <button type="button" onClick={() => setTab("all")} className="ui-btn ui-btn-secondary">
+                Show all orders
+              </button>
+            ) : null}
+          </div>
+        </EmptyState>
+      ) : (
+        <EmptyState>
+          <h2 className="text-lg font-semibold text-brand-text">No orders yet</h2>
+          <p className="mt-2">Browse the catalog to find your first KeyMoura product.</p>
+          <div className="ui-action-row mt-5 justify-center">
+            <Link href="/catalog" className="ui-btn ui-btn-primary">
+              Browse catalog
             </Link>
-          );
-        })}
-      </div>
-      {!loading && !error && orders.length === 0 ? <EmptyState><h2 className="text-lg font-semibold text-brand-text">No requests yet</h2><p className="mt-2">Browse the catalog and tell us what you want made.</p><Link href="/catalog" className="ui-btn ui-btn-primary mt-5">Browse catalog</Link></EmptyState> : null}
-      {!loading && !error && orders.length > 0 && shown.length === 0 ? <EmptyState>Nothing in this view right now.</EmptyState> : null}
+            <Link href="/orders/new" className="ui-btn ui-btn-secondary">
+              Start a custom project
+            </Link>
+          </div>
+        </EmptyState>
+      )}
+
+      {truncated ? (
+        <p className="text-sm text-brand-textMuted">
+          Showing your {PAGE_SIZE} most recent orders. Ask support if you need something older.
+        </p>
+      ) : null}
+
+      <aside className="rounded-2xl border border-zinc-800 p-5 text-sm text-brand-textMuted">
+        <strong className="text-brand-text">Placed an order as a guest?</strong> Open it with the secure link and
+        verification details from your confirmation email. Matching an account email never attaches a guest order.
+      </aside>
     </main>
   );
 }

@@ -2249,11 +2249,54 @@
     border-color: color-mix(in srgb, var(--brand-primary) 60%, var(--border));
   }
 
+  /* No bottom padding: the footer below supplies the gap and the card's floor,
+     which is what keeps the spacing identical to when it lived inside here. */
   .product-card-body {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    padding: 1.25rem;
+    padding: 1.25rem 1.25rem 0;
+  }
+
+  /* ---- The card's own type scale ------------------------------------------
+     Extracted from utility classes on the elements so the list view can restate
+     one of them without restating all of them, and so the commerce hierarchy —
+     name, then price, then metadata — is stated in one place rather than spread
+     across three files. */
+  .product-card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .product-card-category { min-width: 0; overflow-wrap: anywhere; }
+  .product-card-title {
+    margin-top: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 650;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .product-card-description {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    line-height: 1.5rem;
+    color: var(--muted);
+    /* Two lines in the grid. The list view raises this; nothing else does. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .product-card-badges { margin-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .product-card-price {
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--brand-primary);
+    font-variant-numeric: tabular-nums;
   }
 
   .product-card-link { color: inherit; }
@@ -2289,10 +2332,19 @@
      they become unclickable. */
   .product-card-aside { position: absolute; right: .75rem; top: .75rem; z-index: 2; }
 
+  /*
+   * The purchase region: price and the call-to-action.
+   *
+   * A sibling of the body rather than its last child, so the list view can lift
+   * it into a column of its own without `display: contents` or a subgrid. In
+   * the stacked card it is still the last flex item and `margin-top: auto`
+   * still pins it to the bottom, so a short description and a long one produce
+   * cards whose buttons line up.
+   */
   .product-card-footer {
     display: flex;
     margin-top: auto;
-    padding-top: 1.25rem;
+    padding: 1.25rem;
     align-items: center;
     justify-content: space-between;
     gap: .75rem;
@@ -3682,37 +3734,134 @@
     color: var(--muted);
   }
 
-  /* Search and sort. Availability and purchase type moved into the rail, so
-     this row carries only what belongs beside the grid it acts on. */
+  /*
+   * ---- The commerce toolbar -----------------------------------------------
+   *
+   * Two rows, and the split is the point. Search, sort, view, the drawer
+   * triggers and the result count all used to share one row, where search was
+   * one control among five and looked like the filter field on a staff table.
+   *
+   * Row one is search and nothing else, at the full width of the results.
+   * Row two is the *result context* — how many, of what, and how it is arranged
+   * — which is a different question from "what am I looking for".
+   */
   .catalog-toolbar {
     margin-top: 0;
     display: grid;
-    gap: 0.75rem;
-    grid-template-columns: 1fr;
+    gap: 0.875rem;
+    grid-template-columns: minmax(0, 1fr);
     border-radius: var(--card-radius, 1rem);
     border: 1px solid var(--border);
     background: var(--panel);
     padding: 1rem;
   }
-  .catalog-filter-controls { display: none; gap: 0.75rem; }
-  @media (min-width: 640px) {
-    .catalog-toolbar { grid-template-columns: minmax(12rem, 1.6fr) auto; align-items: center; }
-    /* Flex rather than equal grid tracks: the sort dropdown and the density
-       control are different natural widths, and stretching the density group to
-       match the dropdown would leave three small buttons floating in an empty
-       box. Right-aligned so they stay anchored to the toolbar's edge as the
-       sort label changes length. */
-    .catalog-filter-controls { display: flex; align-items: center; justify-content: flex-end; }
+
+  /* ---- Search ---- */
+  .commerce-search {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    min-width: 0;
   }
-  .catalog-summary {
-    margin-top: 0.875rem;
+  .commerce-search-field {
+    position: relative;
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    font-size: 0.875rem;
+    min-width: 0;
+  }
+  .commerce-search-icon {
+    position: absolute;
+    left: 0.875rem;
+    height: 0.9375rem;
+    width: 0.9375rem;
     color: var(--muted);
+    pointer-events: none;
+  }
+  /*
+   * Deliberately taller and wider than `.ui-input`. This is the storefront's
+   * primary action, not a table filter, and 2.75rem is also the touch floor the
+   * rail links and drawer items already meet.
+   */
+  .commerce-search-input {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.875rem;
+    border-radius: var(--control-radius);
+    border: 1px solid var(--border);
+    background: var(--panel-strong);
+    color: var(--text);
+    font-size: 0.9375rem;
+    padding: 0.5rem 2.5rem 0.5rem 2.5rem;
+  }
+  [data-input-style="soft"] .commerce-search-input { background: color-mix(in srgb, var(--panel-strong) 58%, transparent); }
+  [data-input-style="outline"] .commerce-search-input { background: transparent; }
+  [data-input-style="filled"] .commerce-search-input { background: var(--panel-strong); border-color: transparent; }
+  .commerce-search-input::placeholder { color: var(--muted); }
+  .commerce-search-input:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 1px;
+    border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border));
+  }
+  /* The browser's own clear cross is unlabelled, invisible to a screen reader,
+     and lands exactly where the labelled button below goes. */
+  .commerce-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+  .commerce-search-clear {
+    position: absolute;
+    right: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.75rem;
+    width: 1.75rem;
+    border-radius: 9999px;
+    color: var(--muted);
+  }
+  .commerce-search-clear:hover { color: var(--text); background: var(--panel); }
+
+  .commerce-search-submit { flex: none; min-height: 2.875rem; padding-inline: 1.25rem; }
+  .commerce-search-submit-icon { display: none; height: 0.9375rem; width: 0.9375rem; }
+  @media (max-width: 419.98px) {
+    /* The word is the clearer label wherever it fits; below 420px the row would
+       wrap onto two lines to keep it, which costs more than it gains. */
+    .commerce-search-submit { padding-inline: 0.875rem; }
+    .commerce-search-submit-icon { display: inline-block; }
+    .commerce-search-submit-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+
+  /* ---- Result context row ---- */
+  .catalog-results-bar {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+  }
+  @media (min-width: 640px) {
+    .catalog-results-bar { grid-template-columns: minmax(0, 1fr) auto; }
+  }
+  /*
+   * "12 results for shift knob" — a sentence, not a floating number. The count
+   * is the answer to the search, so it sits with the search rather than in the
+   * metadata line under it, and it is a live region so a keyboard user hears it
+   * change without hunting for it.
+   */
+  .catalog-results-count { min-width: 0; font-size: 0.9375rem; color: var(--text); }
+  .catalog-results-count strong { font-weight: 650; }
+  .catalog-results-term { color: var(--muted); overflow-wrap: anywhere; }
+  .catalog-results-scope { display: block; margin-top: 0.125rem; font-size: 0.8125rem; color: var(--muted); }
+
+  /* Flex rather than equal grid tracks: the sort dropdown and the view control
+     are different natural widths, and stretching the view group to match the
+     dropdown would leave four small buttons floating in an empty box.
+     Right-aligned so they stay anchored to the toolbar's edge as the sort label
+     changes length. */
+  .catalog-filter-controls { display: flex; gap: 0.75rem; align-items: center; justify-content: flex-end; }
+  /* Sorting moves into the compact row below `sm`, where a dropdown and a
+     result sentence on one line leave neither enough room. The view control
+     does not: `List` is the choice that matters most on a phone. */
+  .catalog-toolbar-sort { display: none; }
+  @media (min-width: 640px) {
+    .catalog-toolbar-sort { display: block; }
   }
 
   /* ---- Browse & filter sheet (small screens) ---- */
@@ -3875,6 +4024,14 @@
     font-size: 0.8125rem;
   }
   .catalog-filter-chip:hover { border-color: var(--brand-primary); }
+  /* Removing everything is a different act from removing one thing, so it does
+     not wear the same × the individual chips do. */
+  .catalog-filter-chip-clear {
+    border-style: dashed;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .catalog-filter-chip-clear:hover { color: var(--text); }
 
   .catalog-discovery {
     margin-top: 2.5rem;
@@ -3933,7 +4090,7 @@
   }
 
   /* Set pre-paint by the catalog layout's inline script, and kept in step by
-     `CatalogDensityControl` afterwards. */
+     `CatalogViewControl` afterwards. */
   [data-catalog-density="2"] { --catalog-columns: 2; }
   [data-catalog-density="3"] { --catalog-columns: 3; }
   [data-catalog-density="4"] { --catalog-columns: 4; }
@@ -3948,59 +4105,349 @@
     [data-catalog-density="4"] { --catalog-columns: 3; }
   }
 
-  /* ---- Grid density control ---- */
-  /* Meaningless where the grid is one or two columns by necessity, so it is not
-     rendered there at all. A media query rather than a width check in script:
-     nothing to disagree with the layout, and no mount-time flash. */
-  .catalog-density { display: none; }
-  @media (min-width: 1024px) {
-    .catalog-density {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.125rem;
-      border-radius: var(--control-radius, 0.5rem);
-      border: 1px solid var(--border);
-      background: var(--panel);
-      padding: 0.1875rem;
-    }
-  }
-  /* The fourth option only exists where four columns is honoured. */
-  .catalog-density-option[data-columns="4"] { display: none; }
-  @media (min-width: 1280px) {
-    .catalog-density-option[data-columns="4"] { display: inline-flex; }
+  /* ---- List view ----------------------------------------------------------
+   *
+   * A horizontal result row, not a one-across card. The distinction is the
+   * whole point of the mode: `grid-template-columns: 1fr` on the stacked card
+   * gives a 4:3 photograph the width of the page with three lines of text under
+   * it, which is worse at every job than the three-column grid it replaced.
+   *
+   * The row is a real three-region layout — image, information, purchase — and
+   * it is built by re-laying-out the *same* card DOM. That is what lets the
+   * pre-paint attribute decide it: a second component chosen from React state
+   * could not run until hydration, so every visit would open on cards and jump.
+   *
+   * Scoped under `.catalog-grid` on purpose. The attribute lives on `<html>`
+   * and survives a client-side navigation off the catalog, so an unscoped rule
+   * would turn the homepage's featured products into list rows on the way past.
+   */
+  [data-catalog-density="list"] .catalog-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
   }
 
-  .catalog-density-option {
+  /*
+   * Below `sm` the row *is* a stacked card, deliberately. 375px has no room for
+   * an image column and a text column that are both usable, and the desktop
+   * geometry squeezed onto a phone is the thing this mode exists to avoid. The
+   * image is capped so the title, price and action stay above the fold.
+   */
+  [data-catalog-density="list"] .catalog-grid .product-image { aspect-ratio: 16 / 10; }
+
+  @media (min-width: 640px) {
+    [data-catalog-density="list"] .catalog-grid .product-card {
+      display: grid;
+      /* The image track is fixed rather than fractional so a long product name
+         cannot shrink the photograph, and `minmax(0, 1fr)` on the middle track
+         is what stops that name widening the row into horizontal overflow. */
+      grid-template-columns: 13rem minmax(0, 1fr);
+      grid-template-areas: "media body" "media footer";
+      align-items: start;
+    }
+    [data-catalog-density="list"] .catalog-grid .product-image {
+      grid-area: media;
+      /* Fills the row's full height rather than sitting at the top of a short
+         one, which is what makes the row read as one object. */
+      height: 100%;
+      aspect-ratio: auto;
+      min-height: 11rem;
+    }
+    [data-catalog-density="list"] .catalog-grid .product-card-body { grid-area: body; padding-bottom: 0; }
+    [data-catalog-density="list"] .catalog-grid .product-card-footer { grid-area: footer; }
+    /* The reason to be in list view: more of the description, without opening
+       the product. Four lines rather than the grid's two. */
+    [data-catalog-density="list"] .catalog-grid .product-card-description {
+      -webkit-line-clamp: 4;
+      line-clamp: 4;
+    }
+    [data-catalog-density="list"] .catalog-grid .product-card-title { font-size: 1.375rem; }
+  }
+
+  /*
+   * From `lg`, price and action get a column of their own — the purchase area
+   * a shopper's eye goes to when comparing rows. `max-content` on the middle
+   * track is refused: the purchase column is fixed and the description takes
+   * what is left, so rows with long and short names still line their buttons up.
+   */
+  @media (min-width: 1024px) {
+    [data-catalog-density="list"] .catalog-grid .product-card {
+      grid-template-columns: 15rem minmax(0, 1fr) minmax(10rem, 14rem);
+      grid-template-areas: "media body footer";
+    }
+    [data-catalog-density="list"] .catalog-grid .product-image { min-height: 12.5rem; }
+    [data-catalog-density="list"] .catalog-grid .product-card-footer {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      margin-top: 0;
+      padding-left: 0;
+      gap: 0.75rem;
+    }
+    [data-catalog-density="list"] .catalog-grid .product-card-price { font-size: 1.25rem; }
+    [data-catalog-density="list"] .catalog-grid .product-card-action {
+      width: 100%;
+      padding-block: 0.625rem;
+    }
+  }
+
+  /* ---- Result layout control ---- */
+  /*
+   * `List | 2 | 3 | 4`. Shown at every width, unlike the grid densities inside
+   * it: a phone has no use for a column count but a very real use for one
+   * readable result at a time, so `List` is the option that must survive down
+   * to 375px.
+   */
+  .catalog-view {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    border-radius: var(--control-radius, 0.5rem);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 0.1875rem;
+  }
+  /*
+   * A column count is meaningless where the grid has no choice about how many
+   * columns it has, so those options are not rendered there — `Grid` stands in
+   * as the other half of the switch instead, and swaps out from `lg`. A media
+   * query rather than a width check in script: nothing to disagree with the
+   * layout, and no mount-time flash. `display: none` also removes the hidden
+   * half from the accessibility tree, so exactly one radio is ever checked.
+   */
+  .catalog-view-option[data-view="2"],
+  .catalog-view-option[data-view="3"],
+  .catalog-view-option[data-view="4"] { display: none; }
+  @media (min-width: 1024px) {
+    .catalog-view-option[data-view="grid"] { display: none; }
+    .catalog-view-option[data-view="2"],
+    .catalog-view-option[data-view="3"] { display: inline-flex; }
+  }
+  /* The fourth option only exists where four columns is honoured. */
+  @media (min-width: 1280px) {
+    .catalog-view-option[data-view="4"] { display: inline-flex; }
+  }
+
+  .catalog-view-option {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.375rem;
     /* 36px: a real pointer target without making the toolbar taller than the
        sort control beside it. */
     height: 2.25rem;
-    width: 2.25rem;
+    min-width: 2.25rem;
+    padding-inline: 0.375rem;
     border-radius: calc(var(--control-radius, 0.5rem) - 0.125rem);
     border: 1px solid transparent;
+    font-size: 0.8125rem;
+    font-weight: 600;
     color: var(--muted);
   }
-  .catalog-density-option:hover { color: var(--text); background: var(--panel-strong); }
+  .catalog-view-option:hover { color: var(--text); background: var(--panel-strong); }
   /* Selected state is a fill *and* a border *and* `aria-checked` — never colour
      alone, which would leave the choice invisible to a monochrome display. */
-  .catalog-density-option.is-selected {
+  .catalog-view-option.is-selected {
     background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
     border-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
     color: var(--brand-primary);
   }
-  .catalog-density-icon {
+  .catalog-view-icon {
     display: grid;
     grid-auto-flow: column;
     gap: 2px;
     height: 0.875rem;
   }
-  .catalog-density-icon > span {
+  .catalog-view-icon > span {
     width: 3px;
     border-radius: 1px;
     background: currentColor;
   }
+  /* The list icon is stacked bars, so it reads as rows rather than columns. */
+  .catalog-view-option[data-view="list"] .catalog-view-icon {
+    grid-auto-flow: row;
+    align-content: center;
+    width: 0.875rem;
+  }
+  .catalog-view-option[data-view="list"] .catalog-view-icon > span { width: 100%; height: 3px; }
+  /* And the grid icon is a 2×2 block, which is neither of the above. */
+  .catalog-view-icon-grid {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, 1fr);
+    width: 0.875rem;
+  }
+  .catalog-view-icon-grid > span { width: 100%; height: 100%; border-radius: 1px; }
+  /* Visible, because "1" would be a lie about what this view is and an icon
+     alone cannot say "horizontal row with a description". */
+  .catalog-view-word { line-height: 1; }
+
+  /* ------------------------------------------------------------------------
+   * Order history
+   *
+   * A card per order — never a card per line item, which is what turns a
+   * two-product order into two orders on screen. One header, one status, the
+   * items grouped inside, and the actions where the eye lands after reading
+   * them.
+   * ---------------------------------------------------------------------- */
+  .order-history-toolbar {
+    display: grid;
+    gap: 0.875rem;
+    border-radius: var(--card-radius, 1rem);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 1rem;
+  }
+  .order-history-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .order-history-count { font-size: 0.9375rem; color: var(--text); }
+  .order-history-count strong { font-weight: 650; }
+
+  .order-history-list { display: grid; gap: 1.25rem; }
+
+  .order-card {
+    border-radius: var(--card-radius, 1rem);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    overflow: hidden;
+  }
+  [data-card-style="solid"] .order-card { background: var(--panel-strong); }
+  [data-card-style="outline"] .order-card { background: transparent; }
+  [data-card-style="elevated"] .order-card { background: var(--panel-strong); box-shadow: 0 18px 44px rgba(0,0,0,.28); }
+
+  /*
+   * The facts strip. A distinct surface rather than a nested card: the whole
+   * point is that it is *part of* this order and not another box inside it, and
+   * a card inside a card inside a card is how an order list stops reading as a
+   * list at all.
+   */
+  .order-card-header {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.875rem 1.25rem;
+    margin: 0;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
+  }
+  @media (min-width: 768px) {
+    .order-card-header { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  .order-card-fact { min-width: 0; }
+  .order-card-fact dt {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .order-card-fact dd {
+    margin: 0.25rem 0 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  /* The order number is an identifier, not a headline: visible, findable, and
+     deliberately not competing with the status below it. */
+  .order-card-fact-id dd { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+  @media (min-width: 768px) {
+    .order-card-fact-id { text-align: right; }
+  }
+
+  .order-card-body {
+    display: grid;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    align-items: start;
+  }
+  /* Items left, actions right — but only where a column of buttons beside the
+     items still leaves the items room to be read. */
+  @media (min-width: 900px) {
+    .order-card-body { grid-template-columns: minmax(0, 1fr) minmax(11rem, 13rem); gap: 2rem; }
+  }
+  .order-card-main { min-width: 0; }
+
+  /*
+   * The status, and the largest thing in the card after the product names.
+   * Colour is the *second* signal: the word says it, the dot agrees with it.
+   */
+  .order-card-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 650;
+    color: var(--text);
+  }
+  .order-card-status-dot {
+    flex: none;
+    height: 0.5rem;
+    width: 0.5rem;
+    border-radius: 9999px;
+    background: var(--order-tone, var(--muted));
+  }
+  .order-card-status-date { font-size: 0.875rem; font-weight: 500; color: var(--muted); }
+
+  /*
+   * Four tones, not fifteen. The distinction a customer needs is "moving",
+   * "wants me", "finished" and "stopped"; a colour per status is a legend
+   * nobody reads. Every one of them is also stated in words beside the dot.
+   */
+  .order-card[data-tone="progress"] { --order-tone: var(--brand-primary); }
+  .order-card[data-tone="attention"] { --order-tone: #f59e0b; }
+  .order-card[data-tone="complete"] { --order-tone: #34d399; }
+  .order-card[data-tone="stopped"] { --order-tone: var(--muted); }
+  /* Only the state that is actually asking for something gets a lit border. */
+  .order-card[data-tone="attention"] { border-color: color-mix(in srgb, #f59e0b 45%, var(--border)); }
+
+  .order-card-items { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: 0.875rem; }
+  .order-card-item { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 0.875rem; align-items: start; }
+  /* The same ProductImage as the catalog, sized for a line rather than a card,
+     so the two surfaces share one image treatment. */
+  .order-card-thumb {
+    width: 4.5rem;
+    height: 4.5rem;
+    aspect-ratio: 1 / 1;
+    border-radius: 0.625rem;
+    border: 1px solid var(--border);
+  }
+  .order-card-thumb .product-image-fallback { font-size: 1.125rem; }
+  .order-card-item-text { min-width: 0; }
+  .order-card-item-name { font-weight: 600; overflow-wrap: anywhere; }
+  .order-card-item-name a:hover { color: var(--brand-primary); }
+  .order-card-item-options { margin-top: 0.125rem; font-size: 0.875rem; color: var(--text); overflow-wrap: anywhere; }
+  .order-card-item-meta { margin-top: 0.125rem; font-size: 0.8125rem; color: var(--muted); }
+  .order-card-item-more { font-size: 0.875rem; }
+  .order-card-item-more a { color: var(--brand-primary); font-weight: 600; }
+
+  .order-card-money {
+    margin-top: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.9375rem;
+    color: var(--muted);
+  }
+  .order-card-money strong { color: var(--text); font-variant-numeric: tabular-nums; }
+  .order-card-money-due { color: #fbbf24; }
+  .order-card-money-due strong { color: #fbbf24; }
+
+  /*
+   * The actions. A column beside the items on a wide screen, a row under them
+   * below 900 — where a 13rem button column would take a third of the width
+   * from the thing it is about.
+   */
+  .order-card-actions { display: grid; gap: 0.5rem; align-content: start; }
+  @media (min-width: 480px) and (max-width: 899.98px) {
+    .order-card-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, max-content); justify-content: start; }
+  }
+  .order-card-actions .ui-btn { justify-content: center; text-align: center; }
 
   /* ---- Footer ---- */
   .site-footer {
