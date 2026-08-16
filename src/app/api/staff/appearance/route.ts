@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { normalizeSiteTheme } from "@/theme/runtime";
+import { announcementConfigPayload, normalizeAnnouncementConfig } from "@/theme/announcement";
+import { brandConfigPayload, normalizeBrandConfig } from "@/theme/brand";
+import { homepageConfigPayload, normalizeHomepageConfig } from "@/theme/homepage";
 import { buildChangeSet } from "@/lib/audit/diff";
 import { recordAuditChange, resolveActorLabel } from "@/lib/audit/events";
+import { productImageCandidates } from "@/lib/productImages";
 
 const clean = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
 
@@ -43,24 +47,73 @@ const safeAsset = (value: unknown) => {
   return !text || text.startsWith("/") || /^https:\/\//i.test(text) ? text : null;
 };
 
+type PinnedProduct = { id: string; name: string; slug: string; image: string | null; isPublished: boolean };
+
+/**
+ * Names and thumbnails for the homepage's pinned products.
+ *
+ * Read with the service client on purpose, which is the opposite of what the
+ * storefront does. The storefront resolves a pin against the *published* list so
+ * a draft can never reach the front page; the editor needs the other behaviour —
+ * if somebody unpublishes the featured product, the owner has to be told that,
+ * and a picker that silently showed an empty slot would be hiding the fact that
+ * the homepage has quietly fallen back to catalog order.
+ *
+ * So `isPublished` comes back with the row and the editor warns on it. The two
+ * readers disagree deliberately, and only one of them renders to customers.
+ */
+async function loadPinnedProducts(ids: readonly string[]): Promise<Record<string, PinnedProduct>> {
+  const wanted = [...new Set(ids.filter(Boolean))];
+  if (!wanted.length) return {};
+  const { data } = await routeServiceClient
+    .from("products")
+    .select("id,name,slug,image_url,is_published,archived_at,product_media(url,kind,sort_order)")
+    .in("id", wanted);
+
+  const out: Record<string, PinnedProduct> = {};
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const id = String(row.id);
+    out[id] = {
+      id,
+      name: String(row.name ?? ""),
+      slug: String(row.slug ?? ""),
+      image: productImageCandidates(row as never)[0] ?? null,
+      isPublished: Boolean(row.is_published) && !row.archived_at,
+    };
+  }
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   const actor = await requirePermission(req, "appearance.manage");
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { data, error } = await routeServiceClient.from("site_settings")
-    .select("site_name,description,public_url,logo_url,primary_color,accent_color,terminology,theme_config,branding_config").eq("singleton", true).maybeSingle();
+    .select("site_name,description,public_url,logo_url,primary_color,accent_color,theme_config,branding_config").eq("singleton", true).maybeSingle();
   if (error || !data) return NextResponse.json({ error: "Could not load appearance." }, { status: 500 });
   const branding = (data.branding_config ?? {}) as Record<string, unknown>;
+  /*
+   * One request populates the whole editor.
+   *
+   * Brand, announcement and homepage are branches of the same `branding_config`
+   * document this already reads, so adding three configurable areas added no
+   * round trips. The alternative — an endpoint each — is what turns a settings
+   * page into six spinners that finish at different times.
+   */
+  const homepage = normalizeHomepageConfig(branding);
+  const pinned = await loadPinnedProducts([homepage.featuredProductId, homepage.heroProductId]);
+
   return NextResponse.json({
     primaryColor: data.primary_color, accentColor: data.accent_color, theme: normalizeSiteTheme(data.theme_config),
+    brand: normalizeBrandConfig(branding, data.logo_url ?? ""),
+    announcement: normalizeAnnouncementConfig(branding),
+    homepage,
+    pinnedProducts: pinned,
     identity: {
       name: data.site_name ?? "KeyMoura", shortName: branding.shortName ?? data.site_name ?? "KeyMoura",
       tagline: branding.tagline ?? "", description: data.description ?? "", publicUrl: data.public_url ?? "",
       logoUrl: data.logo_url ?? "", wordmarkUrl: branding.wordmarkUrl ?? "", footerLogoUrl: branding.footerLogoUrl ?? "",
       faviconUrl: branding.faviconUrl ?? "/favicon.ico", appleIconUrl: branding.appleIconUrl ?? "/apple-icon.png",
       supportEmail: branding.supportEmail ?? "", copyrightText: branding.copyrightText ?? "All rights reserved.",
-      forumLabel: (data.terminology as Record<string, unknown> | null)?.forum ?? "Community",
-      knowledgeBaseLabel: (data.terminology as Record<string, unknown> | null)?.knowledgeBase ?? "Projects",
-      trustedVendorLabel: (data.terminology as Record<string, unknown> | null)?.trustedVendor ?? "Trusted Shop",
     }
   });
 }
@@ -88,15 +141,37 @@ export async function PATCH(req: NextRequest) {
   if (publicUrl && !/^https?:\/\//i.test(publicUrl)) return NextResponse.json({ error: "Public URL must begin with http:// or https://." }, { status: 400 });
   if ([logoUrl, wordmarkUrl, footerLogoUrl, faviconUrl, appleIconUrl].some(value => value === null)) return NextResponse.json({ error: "Image paths must start with / or https://." }, { status: 400 });
   if (supportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportEmail)) return NextResponse.json({ error: "Support email is not valid." }, { status: 400 });
+  /*
+   * Every new branch is normalized on the way in, by the same module the
+   * storefront normalizes with on the way out. A value that fails validation
+   * becomes its safe default here rather than being rejected: a mistyped promo
+   * end date must not be able to block a save that also renamed the business.
+   * The one exception is the announcement link, which is refused loudly below —
+   * it is the only field that becomes an `href` on every page of the site.
+   */
+  const brand = normalizeBrandConfig(body, logoUrl ?? "");
+  const announcement = normalizeAnnouncementConfig(body);
+  const homepage = normalizeHomepageConfig(body);
+
+  const requestedHref = (body.announcement as Record<string, unknown> | null)?.ctaHref;
+  if (typeof requestedHref === "string" && requestedHref.trim() && !announcement.ctaHref) {
+    return NextResponse.json(
+      { error: "The announcement link must be a path starting with / or an https:// address." },
+      { status: 400 }
+    );
+  }
+  if (announcement.startsAt && announcement.endsAt &&
+      Date.parse(announcement.endsAt) <= Date.parse(announcement.startsAt)) {
+    return NextResponse.json({ error: "The announcement's end time must be after its start time." }, { status: 400 });
+  }
+
   const brandingConfig = {
     shortName: clean(identity?.shortName, 30) || name,
     tagline: clean(identity?.tagline, 160), wordmarkUrl, footerLogoUrl, faviconUrl, appleIconUrl,
     supportEmail, copyrightText: clean(identity?.copyrightText, 160) || "All rights reserved.",
-  };
-  const terminology = {
-    forum: clean(identity?.forumLabel, 40) || "Community",
-    knowledgeBase: clean(identity?.knowledgeBaseLabel, 40) || "Projects",
-    trustedVendor: clean(identity?.trustedVendorLabel, 40) || "Trusted Shop",
+    brand: brandConfigPayload(brand),
+    announcement: announcementConfigPayload(announcement),
+    homepage: homepageConfigPayload(homepage),
   };
   /*
    * Read before the write, so one Save produces one event with a diff of
@@ -111,13 +186,22 @@ export async function PATCH(req: NextRequest) {
    */
   const { data: previous } = await routeServiceClient
     .from("site_settings")
-    .select("site_name,public_url,logo_url,primary_color,accent_color,theme_config")
+    .select("site_name,public_url,logo_url,primary_color,accent_color,theme_config,branding_config")
     .eq("singleton", true)
     .maybeSingle();
 
   const next = {
     site_name: name, description: clean(identity?.description, 300), public_url: publicUrl || null,
-    logo_url: logoUrl || null, branding_config: brandingConfig, terminology,
+    /*
+     * The legacy column follows the primary slot rather than a field of its own.
+     *
+     * `logo_url` is read by the installer, by `getSiteSettings`' fallback, and by
+     * anything that predates the brand editor. Writing it from the same value the
+     * editor sets means there is one primary logo, not two that drift — and
+     * `normalizeBrandConfig` seeds the slot *from* this column, so the round trip
+     * is stable for a site that has never opened the new editor.
+     */
+    logo_url: brand.primaryLogoUrl || null, branding_config: brandingConfig,
     primary_color: body.primaryColor.toLowerCase(), accent_color: body.accentColor.toLowerCase(),
     theme_config: theme, updated_at: new Date().toISOString(),
   };
@@ -140,6 +224,24 @@ export async function PATCH(req: NextRequest) {
   if (themeTokensChanged > 0) {
     changes.theme_config = { before: null, after: themeTokensChanged, summarized: false };
   }
+
+  /*
+   * The announcement is logged by value, unlike the theme.
+   *
+   * A colour change is a design decision and "17 tokens changed" is a fair
+   * summary of one. Putting a sentence on every page of the storefront is a
+   * publishing action, and the two questions afterwards are always "what did it
+   * say" and "when did it go up" — neither of which a count can answer.
+   */
+  const previousAnnouncement = normalizeAnnouncementConfig(
+    (previous as { branding_config?: unknown } | null)?.branding_config
+  );
+  const announcementChanges = buildChangeSet(
+    { announcement_enabled: previousAnnouncement.enabled, announcement_message: previousAnnouncement.message },
+    { announcement_enabled: announcement.enabled, announcement_message: announcement.message },
+    ["announcement_enabled", "announcement_message"]
+  );
+  Object.assign(changes, announcementChanges);
 
   await recordAuditChange({
     action: "settings.appearance_changed",

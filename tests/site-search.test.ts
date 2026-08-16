@@ -111,12 +111,12 @@ test("results link to canonical routes", () => {
 
 test("account destinations are withheld from signed-out visitors", () => {
   const signedOut = availableDestinations(false).map((item) => item.href);
-  for (const guarded of ["/orders", "/account", "/messages", "/notifications"]) {
+  for (const guarded of ["/account/orders", "/account", "/messages", "/account/notifications"]) {
     assert.ok(!signedOut.includes(guarded), `${guarded} must not be offered when signed out`);
   }
 
   const signedIn = availableDestinations(true).map((item) => item.href);
-  for (const guarded of ["/orders", "/account", "/messages", "/notifications"]) {
+  for (const guarded of ["/account/orders", "/account", "/messages", "/account/notifications"]) {
     assert.ok(signedIn.includes(guarded), `${guarded} should be reachable when signed in`);
   }
   assert.ok(signedOut.includes("/catalog") && signedOut.includes("/projects"));

@@ -48,7 +48,7 @@ export default function OrdersError({
           <button type="button" onClick={reset} className="ui-btn ui-btn-primary">
             Try again
           </button>
-          <Link href="/orders" className="ui-btn ui-btn-secondary">
+          <Link href="/account/orders" className="ui-btn ui-btn-secondary">
             Back to your orders
           </Link>
           <Link href="/support" className="ui-btn ui-btn-ghost">

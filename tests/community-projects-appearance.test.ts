@@ -30,23 +30,28 @@ test("community and projects share the customer content design system", () => {
   }
 });
 
-test("appearance has a dedicated classic navbar editor and expanded controls", () => {
+test("appearance has a dedicated navbar editor and expanded controls", () => {
   const appearance = read("src/app/staff/appearance/page.tsx");
   const runtime = read("src/theme/runtime.ts");
   const pdf = read("src/app/api/info/pdf/[slug]/route.ts");
 
-  // The navbar's shape controls stayed on the page; its colours moved into the
-  // token map, where each one also says what it changes. Asserting both halves
-  // is stronger than the old check, which only proved a label existed in JSX.
+  /*
+   * The navbar's shape controls and its colours are now in the same section.
+   * They used to be a section apart — shape under "Shapes & density", colour
+   * under "Colours" — which is why "make the header darker" meant visiting two
+   * places. `ColorSection`'s `only` prop is the split, and it is a filter over
+   * one list, so each colour still has exactly one control.
+   */
   const map = read("src/theme/appearanceMap.ts");
-  for (const label of ["Navigation bar", "Scroll behavior", "Surface shadows", "Border contrast"]) {
+  for (const label of ["Header shape and behaviour", "When scrolling", "Surface shadows", "Border contrast"]) {
     assert.match(appearance, new RegExp(label));
   }
   for (const label of ["Navbar background", "Current page link", "Navbar link text"]) {
     assert.match(map, new RegExp(label));
   }
-  assert.match(appearance, /publicNavigationStyle/, "the classic navbar choice is still editable");
-  assert.match(runtime, /publicNavigationStyle: "classic"/);
+  assert.match(appearance, /publicNavigationStyle/, "the navbar treatment is still editable");
+  assert.match(appearance, /only="navigation"/, "navbar colours live beside the navbar's shape");
+  assert.match(runtime, /publicNavigationStyle: "underline"/);
   assert.doesNotMatch(pdf, /schassis\.info/i);
   assert.match(pdf, /keymoura\.com\/projects/);
 });

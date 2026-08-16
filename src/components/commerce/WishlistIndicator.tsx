@@ -13,6 +13,11 @@ import { useWishlist } from "@/lib/hooks/useWishlist";
  * passing, and a second popover competing with the cart's would be noise. Uses
  * the dedicated navbar utility colors so Appearance keeps control of the navbar
  * and this control never drifts from the bell and cart beside it.
+ *
+ * The count bubble hangs from `site-nav-count-host`, which replaced a bare
+ * Tailwind `relative` here. The behaviour is identical; what changed is that the
+ * cart, the wishlist and the bell now say the same thing for the same reason
+ * instead of three of them happening to be positioned and one not.
  */
 
 export default function WishlistIndicator() {
@@ -22,7 +27,7 @@ export default function WishlistIndicator() {
   return (
     <Link
       href="/wishlist"
-      className={`relative inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm site-nav-utility${
+      className={`site-nav-count-host inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm site-nav-utility${
         itemCount > 0 ? " is-highlighted" : ""
       }`}
       aria-label={badgeLabel("Wishlist", itemCount)}

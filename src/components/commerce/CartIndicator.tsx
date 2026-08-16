@@ -28,10 +28,15 @@ import { useCart } from "@/lib/hooks/useCart";
  * `aria-haspopup="dialog"` and `aria-expanded` still describe it accurately: the
  * dialog it opens lives elsewhere in the DOM, which is exactly what those
  * attributes are for.
+ *
+ * `site-nav-count-host` is what the count bubble is positioned against, and its
+ * absence here is the whole of the misplaced-cart-badge defect: this button
+ * carried no `position`, so the bubble resolved against the sticky header and
+ * landed in the corner of the bar. See the class's own comment in globals.css.
  */
 
 const pillClass = (highlighted: boolean) =>
-  `inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm site-nav-utility${
+  `site-nav-count-host inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm site-nav-utility${
     highlighted ? " is-highlighted" : ""
   }`;
 

@@ -105,7 +105,35 @@ test("public navbar and expanded surface choices normalize independently", () =>
   assert.equal(theme.shadowStyle, "glow");
   assert.equal(theme.borderStrength, "strong");
 
-  assert.equal(normalizeSiteTheme({}).publicNavigationStyle, "classic");
+  assert.equal(normalizeSiteTheme({}).publicNavigationStyle, "underline");
+});
+
+/**
+ * Retiring the pill styles is what changes a live site, and this is the
+ * mechanism.
+ *
+ * `classic` and `soft` both drew a filled lozenge behind the current link.
+ * Removing them from the union means `oneOf` no longer recognises them, so a
+ * site whose `theme_config` still says `"classic"` normalizes to the default —
+ * and renders as `underline` from the next deploy without anybody writing to the
+ * database. The stored string is left exactly where it is.
+ *
+ * Pinned because it is easy to read the removal as cosmetic and "helpfully"
+ * re-add the old values to a list later, which would silently restore the pill
+ * on every site that never republished.
+ */
+test("a site still storing a retired navbar style renders as the underline default", () => {
+  for (const retired of ["classic", "soft"]) {
+    assert.equal(
+      normalizeSiteTheme({ publicNavigationStyle: retired }).publicNavigationStyle,
+      "underline",
+      `${retired} drew a pill and must not survive normalization`
+    );
+  }
+  // The three that remain are still honoured.
+  for (const live of ["underline", "framed", "minimal"]) {
+    assert.equal(normalizeSiteTheme({ publicNavigationStyle: live }).publicNavigationStyle, live);
+  }
 });
 
 test("navbar utility control colors normalize independently of the shared navbar palette", () => {

@@ -1,27 +1,25 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { SectionNav } from "@/components/ui/SectionNav";
+import { accountSectionNav } from "@/lib/navigation";
 
-const ITEMS = [
-  { href: "/account", label: "Overview", exact: true },
-  { href: "/orders", label: "Orders & projects" },
-  { href: "/account/support", label: "Support" },
-  { href: "/account/profile", label: "Profile & sign-in" },
-  { href: "/notifications", label: "Notifications" },
-] as const;
-
-/** One small, commerce-first navigation shared by every account page. */
+/**
+ * The account area's section tabs.
+ *
+ * Two things changed here, and they are the same change seen from either end.
+ *
+ * The destinations now come from `accountSectionNav` instead of a list private
+ * to this file, so the account menu in the header and the tabs inside the
+ * account agree about what an account section is — and every entry is genuinely
+ * under `/account`, which was not true while order history and notifications
+ * lived at the site root.
+ *
+ * The treatment now comes from `SectionNav`, so this reads as navigation rather
+ * than as a row of filters. It previously drew the current tab as a filled
+ * brand-coloured pill: the loudest control on the page, competing with the
+ * primary buttons under it, and identical in shape to the *filter* tabs on the
+ * order list directly below — two different jobs wearing the same clothes.
+ */
 export function AccountNav() {
-  const pathname = usePathname();
-  return (
-    <nav aria-label="Customer account" className="border-b border-[var(--border)] bg-[var(--panel)]">
-      <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 py-3 [scrollbar-width:none] sm:px-6">
-        {ITEMS.map((item) => {
-          const current = "exact" in item && item.exact ? pathname === item.href : pathname.startsWith(item.href);
-          return <Link key={item.href} href={item.href} aria-current={current ? "page" : undefined} className={`min-h-11 shrink-0 rounded-xl px-4 py-3 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-brand-primary ${current ? "bg-brand-primary/15 text-brand-primary" : "text-brand-textMuted hover:bg-[var(--panel-strong)] hover:text-brand-text"}`}>{item.label}</Link>;
-        })}
-      </div>
-    </nav>
-  );
+  return <SectionNav items={accountSectionNav} ariaLabel="Customer account" />;
 }

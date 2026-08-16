@@ -3,7 +3,7 @@ import test from "node:test";
 import { orderNeedsCustomerAction, orderNextStep, orderProgressIndex } from "../src/lib/orderHub.ts";
 import { readFileSync } from "node:fs";
 
-const ordersPage = readFileSync(new URL("../src/app/orders/page.tsx", import.meta.url), "utf8");
+const ordersPage = readFileSync(new URL("../src/app/account/orders/page.tsx", import.meta.url), "utf8");
 const orderDetailPage = readFileSync(new URL("../src/app/orders/[id]/page.tsx", import.meta.url), "utf8");
 
 test("flags payment, information, and review actions", () => {

@@ -22,9 +22,22 @@ test("overview distinguishes failures from empty activity", () => {
 });
 
 test("account navigation is compact and accessible", () => {
-  assert.match(navigation, /aria-label="Customer account"/);
-  assert.match(navigation, /aria-current/);
+  /*
+   * Both halves moved in pass 4.0. The destinations come from
+   * `accountSectionNav` so the header's account menu and these tabs agree, and
+   * the treatment comes from `SectionNav` so this reads as navigation rather
+   * than as the row of filters directly below it. `aria-label` and
+   * `aria-current` still have to be here — they moved into the shared
+   * component, so this now asserts they are passed to it.
+   */
+  assert.match(navigation, /ariaLabel="Customer account"/);
+  assert.match(navigation, /accountSectionNav/);
+  assert.match(navigation, /SectionNav/);
   assert.doesNotMatch(navigation, /Discord|Karma|Rank/);
+
+  const sectionNav = readFileSync("src/components/ui/SectionNav.tsx", "utf8");
+  assert.match(sectionNav, /aria-current=\{current \? "page" : undefined\}/);
+  assert.match(sectionNav, /aria-label=\{ariaLabel\}/);
 });
 
 test("guest email equality is explicitly not ownership", () => {

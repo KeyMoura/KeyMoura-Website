@@ -9,6 +9,8 @@ import { LastSeenUpdater } from "@/components/LastSeenUpdater";
 import SiteFooter from "@/components/SiteFooter";
 import GlobalLockdownGate from "@/components/GlobalLockdownGate";
 import SiteBroadcastBanner from "@/components/SiteBroadcastBanner";
+import AnnouncementBar from "@/components/AnnouncementBar";
+import { isAnnouncementVisible } from "@/theme/announcement";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { BlocksProvider } from "@/components/BlocksProvider";
@@ -50,6 +52,18 @@ export default async function RootLayout({
    * empty menu so Products stays a working link to /catalog regardless.
    */
   const [settings, productsNav] = await Promise.all([getSiteSettings(), loadStorefrontNav()]);
+  /*
+   * The scheduling window is evaluated here, on the server, so the browser is
+   * never handed a start and end time to compare against its own clock — a
+   * client-side check would disagree with the server-rendered markup on the
+   * first frame and would trust a clock the shop does not control.
+   *
+   * The cost is that the answer is only as fresh as the page's cache entry: on
+   * a route with `revalidate = 300` a promo can start up to five minutes late.
+   * For launch notices and weekend sales that is the right trade against making
+   * every storefront page dynamic.
+   */
+  const announcementVisible = isAnnouncementVisible(settings.announcement);
   const brandStyles = {
     "--brand-primary": settings.primaryColor,
     "--brand-accent": settings.accentColor,
@@ -132,6 +146,25 @@ export default async function RootLayout({
               <CartDrawerProvider>
                 <div className="flex min-h-screen flex-col">
                   <SiteHeader productsNav={productsNav} />
+                  {/*
+                    Two bars, in order of urgency, and both below the header
+                    rather than above it.
+
+                    Above would be the conventional place for a storefront
+                    announcement, and it is not available here: the header is
+                    `sticky top-0`, and `--km-header-height` is what the mobile
+                    drawer offsets by, the sticky purchase panel subtracts, and
+                    the staff rail sizes against. Anything inserted above the bar
+                    pushes it out of its own coordinate system and every one of
+                    those goes wrong together.
+
+                    The emergency banner is second because it is the louder of
+                    the two and, when it is showing at all, the one that should
+                    be closest to the page content. It reads the security table;
+                    the announcement reads Appearance. See `theme/announcement.ts`
+                    for why those stayed separate.
+                  */}
+                  {announcementVisible ? <AnnouncementBar config={settings.announcement} /> : null}
                   <SiteBroadcastBanner />
                   <CommandPalette />
                   <main id="main-content" className="flex-1" tabIndex={-1}>

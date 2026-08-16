@@ -326,7 +326,7 @@ export default function MobileNavDrawer({
                       item,
                       item.href === "/messages"
                         ? unreadMessages
-                        : item.href === "/notifications"
+                        : item.href === "/account/notifications"
                           ? unreadNotifications
                           : undefined
                     )}

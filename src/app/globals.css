@@ -646,6 +646,157 @@
   [data-tab-style="underline"] .ui-tabs { border-width: 0 0 1px; border-radius: 0; background: transparent; padding: 0; gap: 1rem; }
   [data-tab-style="underline"] .ui-tab { border-width: 0 0 2px; border-radius: 0; background: transparent; padding-inline: .25rem; }
   [data-tab-style="underline"] .ui-tab.is-active { border-color: var(--brand-primary); background: transparent; color: var(--brand-primary); }
+  /* ---- Storefront announcement bar --------------------------------------
+   *
+   * Compact and quiet. It sits directly under the header on every page of the
+   * shop, so anything with real weight here is weight taken from the thing the
+   * customer came for. 36px tall on a phone, one line of 13px text, and a tinted
+   * hairline instead of a filled alert panel.
+   *
+   * Three tones, all derived from tokens the owner already controls, so an
+   * announcement cannot end up the only element on the site in a colour nothing
+   * else uses. `accent` is the default; `brand` is louder, for a launch; the
+   * `neutral` tone is the quiet one for lead times and shipping notes. There is
+   * deliberately no red: an announcement that looks like an error is what this
+   * replaced, and a genuine incident has its own banner with its own semantics.
+   */
+  .announcement-bar {
+    --announcement-tint: var(--brand-accent);
+    border-bottom: 1px solid color-mix(in srgb, var(--announcement-tint) 28%, transparent);
+    background: color-mix(in srgb, var(--announcement-tint) 9%, var(--km-nav-bg, #09090b));
+    color: var(--text);
+  }
+  .announcement-bar[data-tone="brand"] { --announcement-tint: var(--brand-primary); }
+  .announcement-bar[data-tone="neutral"] {
+    --announcement-tint: var(--border);
+    background: color-mix(in srgb, var(--panel-strong) 60%, var(--km-nav-bg, #09090b));
+  }
+
+  /* Wraps rather than scrolls or truncates. A promo code the customer cannot
+     read is not a promo code, and `text-overflow: ellipsis` on the one element
+     whose entire job is to be read would be the wrong economy. The row is
+     `items-start` once wrapped so the label stays level with the first line. */
+  .announcement-bar-inner {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .375rem .625rem;
+    margin-inline: auto; max-width: 80rem;
+    padding: .5rem 1rem;
+    font-size: .8125rem; line-height: 1.4;
+  }
+
+  /* The optional pill: NEW, SALE, 15% OFF. Uppercase and tracked, so two or
+     three characters still read as a label rather than as a truncated word. */
+  .announcement-bar-label {
+    flex: none;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--announcement-tint) 22%, transparent);
+    padding: .125rem .5rem;
+    color: color-mix(in srgb, var(--announcement-tint) 72%, var(--heading));
+    font-size: .625rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  }
+
+  /* `min-width: 0` so the message is the element that gives when the row runs
+     out of space, rather than the label or the call to action. */
+  .announcement-bar-message { min-width: 0; flex: 1 1 auto; margin: 0; }
+
+  .announcement-bar-cta {
+    display: inline-flex; flex: none; align-items: center; gap: .3rem;
+    color: color-mix(in srgb, var(--announcement-tint) 80%, var(--heading));
+    font-weight: 650;
+    text-decoration: underline; text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, var(--announcement-tint) 45%, transparent);
+    transition: text-decoration-color 150ms ease-out;
+  }
+  .announcement-bar-cta:hover { text-decoration-color: currentColor; }
+
+  /* 28px, and the last thing in the row. The old control was a circled glyph
+     ringed in white at the far right of a centred layout, which read as the
+     most important thing in the bar. */
+  .announcement-bar-close {
+    display: inline-flex; flex: none; align-items: center; justify-content: center;
+    height: 1.75rem; width: 1.75rem; margin-inline-start: auto;
+    border-radius: 9999px;
+    color: var(--muted);
+    transition: background-color 150ms ease-out, color 150ms ease-out;
+  }
+  .announcement-bar-close:hover {
+    background: color-mix(in srgb, var(--announcement-tint) 16%, transparent);
+    color: var(--heading);
+  }
+
+  @media (max-width: 480px) {
+    /* The call to action takes its own line on a narrow phone rather than
+       squeezing the message to two words. `flex-basis: 100%` after a wrap is
+       what puts it there without a second breakpoint on the message. */
+    .announcement-bar-inner { padding-block: .4375rem; font-size: .78125rem; }
+    .announcement-bar-cta { flex-basis: 100%; }
+    .announcement-bar-close { margin-inline-start: 0; }
+  }
+
+  /* The security broadcast reuses the layout above and keeps its own severity
+     colours. These are the one set of colours on the site that must not be
+     themable: an operator who tints their palette green should not be able to
+     make a critical incident notice look like a promotion. */
+  .site-broadcast-bar[data-level="info"] { --announcement-tint: #38bdf8; }
+  .site-broadcast-bar[data-level="warning"] { --announcement-tint: #fbbf24; }
+  .site-broadcast-bar[data-level="critical"] {
+    --announcement-tint: #f87171;
+    /* Louder than the announcement's 9% tint, because this one is not
+       advertising anything. */
+    background: color-mix(in srgb, var(--announcement-tint) 16%, var(--km-nav-bg, #09090b));
+  }
+
+  /* ---- Primary section navigation ---------------------------------------
+   *
+   * Deliberately *not* `.ui-tabs`. Both are horizontal strips of short labels,
+   * and that is where the similarity is supposed to stop: `.ui-tabs` is an
+   * enclosed segmented control that switches the view of the page you are on,
+   * and this changes which page you are on. The account area had them the wrong
+   * way round — its section links were the loudest filled pills on the screen,
+   * sitting directly above the order filters, which are a genuine segmented
+   * control. Two different jobs in one costume.
+   *
+   * So this borrows the storefront navbar's language instead: plain text, an
+   * underline under the current one, no enclosure. `SectionNav.tsx` records the
+   * rule that keeps the two apart.
+   *
+   * The strip scrolls rather than wraps on a phone, and the 1px rule lives on
+   * the outer element so it spans the viewport instead of ending at the widest
+   * tab. `scrollbar-width: none` because the strip is short enough to swipe and
+   * a scrollbar under five words reads as a defect.
+   */
+  .ui-section-nav { border-bottom: 1px solid var(--border); background: var(--panel); }
+  .ui-section-nav-scroll {
+    display: flex; gap: .25rem; overflow-x: auto; scrollbar-width: none;
+    margin-inline: auto; max-width: 72rem; padding-inline: 1rem;
+  }
+  .ui-section-nav-scroll::-webkit-scrollbar { display: none; }
+  .ui-section-nav-link {
+    position: relative; flex: none;
+    /* 44px of height before padding: this is the primary way around the account
+       on a phone, and it is the one control here that has to be thumb-sized. */
+    display: inline-flex; align-items: center; min-height: 2.75rem;
+    padding: .75rem .625rem;
+    color: var(--muted); font-size: .875rem; font-weight: 500; white-space: nowrap;
+    transition: color 150ms ease-out;
+  }
+  .ui-section-nav-link:hover { color: var(--text); }
+  .ui-section-nav-link.is-active { color: var(--brand-primary); font-weight: 600; }
+  /* Same construction as the navbar's rule, and for the same reasons: a scaled
+     pseudo-element animates its width where a toggling border cannot, and it
+     stays out of layout so nothing shifts between states. */
+  .ui-section-nav-link::after {
+    content: ""; position: absolute; inset-inline: .375rem; bottom: 0;
+    height: 2px; border-radius: 999px; background: var(--brand-primary);
+    transform: scaleX(0); transform-origin: center; opacity: 0;
+    transition: transform 160ms ease-out, opacity 160ms ease-out;
+  }
+  .ui-section-nav-link:hover::after,
+  .ui-section-nav-link:focus-visible::after { transform: scaleX(1); opacity: .5; }
+  .ui-section-nav-link.is-active::after { transform: scaleX(1); opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-section-nav-link::after { transition: none; }
+  }
+
   .ui-filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: .875rem; }
   .ui-metric { border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: 1.25rem; }
   [data-card-style="solid"] .ui-metric { background: var(--panel-strong); }
@@ -1548,22 +1699,86 @@
 
   /* Primary customer links. Hover and active are separately themable — the
      Appearance panel previously offered an active colour but no hover, so a
-     light navbar had links that gave no feedback until you clicked one. */
+     light navbar had links that gave no feedback until you clicked one.
+     ----------------------------------------------------------------------
+     The pill is gone. This used to be a 9999px lozenge that filled on hover and
+     took a border and a background when active, which put four buttons where
+     four links belong and made the navigation compete with the utility controls
+     to its right — those are *actually* round, and they are the only things on
+     the bar a customer presses rather than follows.
+     `position: relative` is here for the underline pseudo-element below, and
+     the border survives at `transparent` so the enclosed variant can colour it
+     without any link changing width when the owner switches treatments. */
   .site-header-shell .site-nav-primary-link {
+    position: relative;
     display: inline-flex;
     align-items: center;
     height: 2.25rem;
-    padding-inline: 0.75rem;
+    padding-inline: 0.625rem;
     border: 1px solid transparent;
-    border-radius: 9999px;
+    border-radius: 0;
     font-size: 0.875rem;
     font-weight: 500;
     white-space: nowrap;
-    transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+    transition: color 150ms ease-out, border-color 150ms ease-out;
   }
+  /* Hover recolours the words. It no longer fills a shape behind them: with the
+     pill removed there is no shape to fill, and a background appearing only on
+     hover would reintroduce the thing this pass took out. */
   .site-header-shell .site-nav-primary-link:hover {
-    background-color: var(--km-nav-hover-bg, #18181b);
     color: var(--km-nav-hover-text, #ffffff) !important;
+  }
+  .site-header-shell .site-nav-primary-link.is-active {
+    /* Weight and colour, *as well as* the rule underneath. An underline alone
+       is a single visual signal, and one that a low-contrast accent or a
+       forced-colours mode can erase; the current page has to stay legible as
+       the current page when it does. `aria-current="page"` carries the same
+       fact to assistive technology. */
+    font-weight: 600;
+  }
+
+  /*
+   * The underline.
+   *
+   * A pseudo-element scaled on the X axis rather than a `border-bottom` that
+   * appears and disappears. Two reasons: a border toggling between transparent
+   * and coloured cannot animate its *width*, so hover would pop rather than
+   * draw; and a border participates in layout, so every link would shift by a
+   * pixel between states unless a transparent one were reserved on all four
+   * sides — which is exactly the fragile arrangement `minimal` used to need.
+   *
+   * 2px, inset slightly from the control box so it sits under the word rather
+   * than under the padding, and 0.3rem clear of the baseline. Thicker reads as
+   * a bar; a hairline disappears against the navbar background at the sizes
+   * this text is set in.
+   */
+  .site-header-shell .site-nav-primary-link::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0.375rem;
+    bottom: 0.3rem;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--km-nav-active, #f59e0b);
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform 160ms ease-out, opacity 160ms ease-out;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .site-header-shell .site-nav-primary-link:hover::after,
+  .site-header-shell .site-nav-primary-link:focus-visible::after {
+    transform: scaleX(1);
+    /* Quieter than the active rule, so hovering a sibling never looks like the
+       page has changed. */
+    opacity: 0.55;
+  }
+  .site-header-shell .site-nav-primary-link.is-active::after {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .site-header-shell .site-nav-primary-link::after { transition: none; }
   }
 
   /* Utility controls: search, wishlist, cart, notifications, account. */
@@ -1631,41 +1846,42 @@
   .site-header-nav { display: flex; min-width: 0; align-items: center; gap: 0.25rem; }
 
   /*
-   * Gallery and About below `xl`.
+   * `.site-nav-link-wide` and `.site-more-item-narrow` are gone.
    *
-   * `display: none` rather than `visibility` or opacity: the hidden copy has to
-   * leave the accessibility tree and the tab order, because the same
-   * destination is rendered a second time inside the More menu at these widths.
+   * They implemented the 4.1 handoff that moved Gallery and About into the More
+   * menu below `xl` by rendering each destination twice and hiding one copy.
+   * The hiding half never worked: `.site-more-item-narrow { display: none }`
+   * inside the 1280px media query was outranked on source order by
+   * `.nav-menu-item { display: flex }` ~450 lines further down — same
+   * specificity, later rule — so at desktop widths both copies rendered and the
+   * More menu duplicated the bar.
+   *
+   * Every primary destination now has one slot on the bar at every width, so
+   * there is no second copy and nothing to hide. `SiteHeader` records the
+   * reasoning; this note is here because a stylesheet is where somebody would
+   * look for the classes that used to be at this line.
    */
-  /* `.site-header-shell .site-nav-primary-link` sets `display` with two
-     classes of specificity, so a bare `.site-nav-link-wide` loses to it and the
-     links stayed visible at 1024. Matching the shell is what makes this win. */
-  .site-header-shell .site-nav-link-wide { display: none; }
-  .site-more-item-narrow { display: flex; }
-  @media (min-width: 1280px) {
-    .site-header-shell .site-nav-link-wide { display: inline-flex; }
-    .site-more-item-narrow { display: none; }
-  }
 
   /* ---- The Products link + menu ----
    *
-   * The outline belongs to `.products-menu-trigger`, not to the link inside it.
-   * The wrapper is rendered with the bar's own `site-nav-link
-   * site-nav-primary-link` classes, so it picks up the pill — height, radius,
-   * border, hover fill — and every Appearance navigation style, from the same
-   * rules that dress Custom Projects and Gallery. Both children then sit *inside*
-   * that outline, which is the whole point: Products and its chevron read as one
-   * control, the way `More` already did.
+   * The treatment belongs to `.products-menu-trigger`, not to the link inside
+   * it. The wrapper is rendered with the bar's own `site-nav-link
+   * site-nav-primary-link` classes, so it picks up the height, the states and
+   * the underline from the same rules that dress Custom Projects and Gallery.
+   * Both children then sit *inside* it, which is the whole point: Products and
+   * its chevron read as one control, the way `More` already did — and one
+   * underline spans both, rather than a rule under the word and a bare chevron
+   * beside it.
    *
    * Only the padding is restated here. The label side keeps the standard
-   * 0.75rem; the chevron side is tightened to 0.5rem because the chevron already
-   * carries its own width, and leaving both at 0.75rem made the pill visibly
+   * inline padding; the chevron side is tightened because the chevron already
+   * carries its own width, and leaving both equal made the control visibly
    * lopsided against its neighbours.
    */
   .products-menu { position: relative; display: flex; min-width: 0; align-items: center; }
   .site-header-shell .products-menu-trigger[data-has-menu="true"] {
     gap: 0.125rem;
-    padding-inline: 0.75rem 0.5rem;
+    padding-inline: 0.625rem 0.375rem;
   }
 
   /*
@@ -2578,6 +2794,32 @@
   }
 
   /*
+   * The control a count bubble hangs from.
+   *
+   * ## The defect this exists to make impossible
+   *
+   * `.site-nav-badge` is `position: absolute`, so it resolves against the
+   * nearest *positioned* ancestor. `CartIndicator` set no `position` at all:
+   * its class list was `site-nav-utility`, which only assigns colours. The
+   * nearest positioned ancestor was therefore the header itself — `sticky`,
+   * which establishes a containing block — so the cart count was laid out
+   * against the top-right corner of the whole bar, `0.25rem` outside it, tens
+   * of pixels from the icon it was counting and hard against the header edge.
+   *
+   * Every other control was fine by accident rather than by design: the bell
+   * and the account menu are handed `site-nav-control` (which is `relative`),
+   * and the wishlist carried a bare Tailwind `relative` in its class string.
+   * Three different reasons to be correct, and one of them missing, is not a
+   * system — it is four chances to get it wrong.
+   *
+   * So the containing block is now a named thing, declared beside the bubble it
+   * exists for. Anything rendering `.site-nav-badge` renders this on the
+   * element it should hang from, and `navbar-layout.test.ts` asserts that pair
+   * holds for every indicator rather than trusting each to remember.
+   */
+  .site-nav-count-host { position: relative; }
+
+  /*
    * The count bubble on a navbar utility control.
    *
    * Absolutely positioned, so the number arriving after the page has painted
@@ -2588,6 +2830,12 @@
    * text, not the silhouette, and `justify-content: center` keeps the shorter
    * values centred in the same box. Shared by cart, wishlist, messages, and
    * notifications so all four agree.
+   *
+   * The offsets are small on purpose. At `-0.25rem` the bubble overlaps its
+   * host's upper-right arc, which is what makes it read as *belonging* to that
+   * control; pushed further out it starts to look like a separate element
+   * sitting between two buttons, and on the mobile bar it would reach the
+   * header's edge — the failure this pass was fixing.
    */
   .site-nav-badge {
     position: absolute;
@@ -2608,14 +2856,43 @@
     pointer-events: none;
   }
 
-  [data-public-navigation-style="classic"] .site-header-shell .site-nav-link { border-radius: 9999px; background: transparent; }
-  [data-public-navigation-style="classic"] .site-header-shell .site-nav-link.is-active { border-color: color-mix(in srgb, var(--km-nav-active) 70%, transparent); background: color-mix(in srgb, var(--km-nav-bg) 84%, black); }
-  [data-public-navigation-style="soft"] .site-header-shell .site-nav-link { border-radius: var(--control-radius); background: color-mix(in srgb, var(--km-nav-text) 7%, transparent); }
-  [data-public-navigation-style="soft"] .site-header-shell .site-nav-link.is-active { border-color: color-mix(in srgb, var(--km-nav-active) 38%, transparent); background: color-mix(in srgb, var(--km-nav-active) 13%, transparent); }
-  [data-public-navigation-style="framed"] .site-header-shell .site-nav-link { border-radius: var(--control-radius); background: transparent; border-color: color-mix(in srgb, var(--km-nav-border) 72%, transparent); }
-  [data-public-navigation-style="framed"] .site-header-shell .site-nav-link.is-active { border-color: var(--km-nav-active); background: color-mix(in srgb, var(--km-nav-active) 10%, transparent); box-shadow: inset 0 -2px 0 var(--km-nav-active); }
-  [data-public-navigation-style="minimal"] .site-header-shell .site-nav-link { border-color: transparent !important; border-radius: 0; background: transparent !important; box-shadow: none !important; }
-  [data-public-navigation-style="minimal"] .site-header-shell .site-nav-link.is-active { border-bottom-color: var(--km-nav-active) !important; }
+  /* ---- Navbar link treatments ------------------------------------------
+   *
+   * `classic` and `soft` are gone; `runtime.ts` records why, and why removing
+   * them from the union is what changes an existing site without a database
+   * write. What is left is three ways of saying "you are here" that do not draw
+   * a filled pill behind a link.
+   *
+   * `underline` is the default and the one the shop ships. The rule is drawn by
+   * `.site-nav-underline::after` on the base control, so all three variants —
+   * and the Products trigger, which is a link with a menu bolted to it — share
+   * one implementation; the variants below only decide what *else* is drawn.
+   */
+  [data-public-navigation-style="underline"] .site-header-shell .site-nav-link {
+    border-color: transparent;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  /* An enclosed treatment for owners who want the sections to read as tabs.
+     The active fill is gone — an inset rule plus a border is enough, and the
+     tinted background was the last thing making this look like a pressed
+     button. */
+  [data-public-navigation-style="framed"] .site-header-shell .site-nav-link {
+    border-radius: var(--control-radius);
+    background: transparent;
+    border-color: color-mix(in srgb, var(--km-nav-border) 72%, transparent);
+  }
+  [data-public-navigation-style="framed"] .site-header-shell .site-nav-link.is-active {
+    border-color: var(--km-nav-active);
+  }
+
+  [data-public-navigation-style="minimal"] .site-header-shell .site-nav-link {
+    border-color: transparent !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
   /* Height now comes from `--km-header-height` on `.site-header-inner`, so the
      bar, the mobile drawer's offset and the sticky purchase panel all move
      together when the density changes. */

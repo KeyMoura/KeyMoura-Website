@@ -126,13 +126,17 @@ test("the Products outline encloses both the label and the chevron", () => {
   assert.match(css, /\.products-menu-toggle \{[^}]*border: 0;/);
 });
 
-test("the outlined wrapper is the one the Appearance navigation styles reach", () => {
-  // `site-nav-link` is what the four public navigation styles key on. Putting it
-  // on the wrapper is what stops Products needing a fifth case of its own.
+test("the wrapper is the one the Appearance navigation styles reach", () => {
+  // `site-nav-link` is what the public navigation styles key on. Putting it on
+  // the wrapper is what stops Products needing a case of its own — and in 4.0 it
+  // is also what gives Products a single underline spanning the label and the
+  // chevron, rather than a rule under the word and a bare chevron beside it.
   assert.match(header, /controlClassName=\{navLinkClass\("\/catalog"\)\}/);
   assert.match(header, /site-nav-link site-nav-primary-link/);
-  // Only the padding is restated; height, radius and border come from the pill.
-  assert.match(css, /\.products-menu-trigger\[data-has-menu="true"\] \{[^}]*padding-inline: 0\.75rem 0\.5rem;/);
+  // Only the padding is restated; height and states come from the shared rule.
+  // The values tightened with the pill's removal, so this pins the shape of the
+  // override rather than the two numbers in it.
+  assert.match(css, /\.products-menu-trigger\[data-has-menu="true"\] \{[^}]*padding-inline: [\d.]+rem [\d.]+rem;/);
 });
 
 test("Products still navigates, still opens, and is still two tab stops", () => {

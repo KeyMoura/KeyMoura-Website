@@ -38,7 +38,12 @@ test("Appearance exposes a dedicated navbar utility controls subsection", () => 
   // "Reset this section" derives from the map instead of a hand-maintained key
   // list, so a colour added to one and not the other can no longer survive a
   // reset. Asserting the derivation is what makes the 19-key list unnecessary.
-  assert.match(page, /if \(section === "colors"\)[\s\S]{0,400}APPEARANCE_SETTINGS/);
+  //
+  // Pass 4.0 split the colour list across Colours and Navigation, and the reset
+  // reads the same `group` field the two sections are filtered by — so "what a
+  // section shows" and "what it resets" still cannot drift.
+  assert.match(page, /section === "colors" \|\| section === "navigation"[\s\S]{0,600}APPEARANCE_SETTINGS/);
+  assert.match(page, /setting\.group === "navbar" \|\| setting\.group === "navbarMenus"/);
 
   // The live-preview CSS variable map must include the new tokens.
   for (const cssVar of UTILITY_CSS_VARS) {

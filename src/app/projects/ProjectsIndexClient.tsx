@@ -7,6 +7,8 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
 import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
 
 function InfoCtaButton({
   href,
@@ -940,7 +942,20 @@ export default function ProjectsIndexClient() {
                 el?.focus();
               }}
             >
-              <span className="mr-1 text-[13px] text-brand-textMuted">🔍</span>
+              {/*
+                The same icon the navbar's search field draws, from the same
+                source. This was the 🔍 emoji, which is not an icon at all: it
+                renders as whatever glyph the operating system ships — full
+                colour on macOS and Windows, a different angle on Android, and
+                at a size and baseline the surrounding text controls rather than
+                the design does. Beside a header whose search is a monochrome
+                Font Awesome glyph, the two never matched on any platform.
+              */}
+              <FontAwesomeIcon
+                icon={faMagnifyingGlass}
+                className="mr-1.5 h-3.5 w-3.5 shrink-0 text-brand-textMuted"
+                aria-hidden="true"
+              />
 
               {committedTerms.map((term) => (
                 <button

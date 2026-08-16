@@ -46,7 +46,23 @@ export type SiteTheme = {
   cardStyle: "soft" | "solid" | "outline" | "elevated";
   inputStyle: "soft" | "solid" | "outline" | "filled";
   navigationStyle: "soft" | "framed" | "minimal";
-  publicNavigationStyle: "classic" | "soft" | "framed" | "minimal";
+  /**
+   * The storefront header's link treatment.
+   *
+   * `classic` and `soft` are gone. Both drew a filled pill behind the current
+   * page — `classic` a black lozenge, `soft` a tinted one — and the pill is what
+   * this pass was asked to remove: it made four navigation links read as four
+   * buttons, it collided with the utility controls that are *actually* pills, and
+   * a storefront's current section is not a pressed control.
+   *
+   * They are removed from the union rather than left as options nobody should
+   * pick, which has a deliberate consequence: `normalizeSiteTheme` refuses a
+   * value it does not recognise and falls back to the default, so a site storing
+   * `"classic"` renders as `underline` from the next deploy without anybody
+   * editing the database. The stored string is untouched and still readable; only
+   * its interpretation moved.
+   */
+  publicNavigationStyle: "underline" | "framed" | "minimal";
   navigationBehavior: "sticky" | "auto-hide";
   navigationDensity: "compact" | "comfortable";
   navigationBackground: string; navigationText: string; navigationActiveText: string; navigationBorder: string;
@@ -72,7 +88,7 @@ export const defaultSiteTheme: SiteTheme = {
   radius: "rounded", density: "comfortable", font: "modern",
   primaryButtonStyle: "solid", secondaryButtonStyle: "outline",
   tabStyle: "framed", cardStyle: "soft", inputStyle: "solid",
-  navigationStyle: "soft", publicNavigationStyle: "classic", navigationBehavior: "auto-hide",
+  navigationStyle: "soft", publicNavigationStyle: "underline", navigationBehavior: "auto-hide",
   navigationDensity: "compact", navigationBackground: "#09090b", navigationText: "#d4d4d8",
   navigationActiveText: "#f59e0b", navigationBorder: "#3f3f46",
   navigationHoverBackground: "#18181b", navigationHoverText: "#ffffff",
@@ -152,7 +168,7 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     cardStyle: oneOf(input.cardStyle, ["soft", "solid", "outline", "elevated"] as const, defaultSiteTheme.cardStyle),
     inputStyle: oneOf(input.inputStyle, ["soft", "solid", "outline", "filled"] as const, defaultSiteTheme.inputStyle),
     navigationStyle: oneOf(input.navigationStyle, ["soft", "framed", "minimal"] as const, defaultSiteTheme.navigationStyle),
-    publicNavigationStyle: oneOf(input.publicNavigationStyle, ["classic", "soft", "framed", "minimal"] as const, defaultSiteTheme.publicNavigationStyle),
+    publicNavigationStyle: oneOf(input.publicNavigationStyle, ["underline", "framed", "minimal"] as const, defaultSiteTheme.publicNavigationStyle),
     navigationBehavior: oneOf(input.navigationBehavior, ["sticky", "auto-hide"] as const, defaultSiteTheme.navigationBehavior),
     navigationDensity: oneOf(input.navigationDensity, ["compact", "comfortable"] as const, defaultSiteTheme.navigationDensity),
     backgroundStyle: oneOf(input.backgroundStyle, ["gradient", "solid", "spotlight"] as const, defaultSiteTheme.backgroundStyle),
