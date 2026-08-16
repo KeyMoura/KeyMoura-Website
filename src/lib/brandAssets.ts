@@ -43,8 +43,21 @@
 
 export const BRAND_BUCKET = "product-assets";
 
-/** Every slot the header and footer can draw from. */
-export const BRAND_SLOTS = ["primary", "alternate"] as const;
+/**
+ * Every slot this site will store an owner-uploaded image into.
+ *
+ * `homepage-hero` joined the two logo slots rather than getting a pipeline of
+ * its own. The brief for this pass asked for homepage imagery that does not
+ * require pasting an external URL, and the property that makes *this* route safe
+ * — the storage key is built from a name off this list and an extension sniffed
+ * from the bytes, so nothing the request supplies reaches the path — is a
+ * property of the list, not of logos. A second upload endpoint would have been a
+ * second set of those decisions to keep in step.
+ *
+ * The slots differ only in what counts as a reasonable file, which is
+ * `SLOT_POLICY` below and not a separate code path.
+ */
+export const BRAND_SLOTS = ["primary", "alternate", "homepage-hero"] as const;
 export type BrandSlot = (typeof BRAND_SLOTS)[number];
 
 /**
@@ -70,6 +83,40 @@ export const BRAND_MAX_BYTES = 2 * 1024 * 1024;
 export const BRAND_MIN_DIMENSION = 32;
 /** Above this it is a photograph somebody has mistaken for a logo. */
 export const BRAND_MAX_DIMENSION = 4096;
+
+export type SlotPolicy = {
+  /** What the owner calls this slot, for messages and the audit log. */
+  label: string;
+  maxBytes: number;
+  minDimension: number;
+};
+
+/**
+ * What counts as a reasonable file for each slot.
+ *
+ * A logo and a hero photograph are the same kind of object to the storage layer
+ * and completely different objects to a person. A 900 KB mark is suspicious; a
+ * 900 KB hero is normal. A 64px mark is fine; a 64px hero is a thumbnail
+ * somebody grabbed by mistake, and accepting it means the homepage ships
+ * blurred and nobody is told why.
+ *
+ * So the limits are per slot and the *checks* are not: every slot goes through
+ * the same sniff, the same header read and the same refusals, which is the part
+ * that has to be identical.
+ */
+export const SLOT_POLICY: Readonly<Record<BrandSlot, SlotPolicy>> = {
+  primary: { label: "Primary logo", maxBytes: BRAND_MAX_BYTES, minDimension: BRAND_MIN_DIMENSION },
+  alternate: { label: "Alternate logo", maxBytes: BRAND_MAX_BYTES, minDimension: BRAND_MIN_DIMENSION },
+  "homepage-hero": {
+    label: "Homepage hero image",
+    // Four times the logo ceiling. This renders full-bleed above the fold, so it
+    // is the one image on the site where a photograph's own weight is the point.
+    maxBytes: 4 * 1024 * 1024,
+    // Narrower than this and it is upscaled across the hero frame on every
+    // laptop, which reads as a broken image rather than as a small one.
+    minDimension: 600,
+  },
+};
 
 const EXTENSIONS: Readonly<Record<BrandMimeType, string>> = {
   "image/png": "png",
@@ -210,18 +257,31 @@ export type BrandUploadCheck =
   | { ok: false; error: string };
 
 /**
- * Every check an uploaded brand mark has to pass, in one place.
+ * Every check an uploaded image has to pass, in one place.
  *
  * Ordered so the message names the first real problem: size before format,
  * because a 40 MB file that is also a GIF should be told it is too large rather
  * than sent away to convert it and hit the size limit on the second try.
+ *
+ * `slot` selects the limits and nothing else. The sniff, the header read and
+ * every refusal below are the same whichever slot is being written — a hero
+ * image is served from the same world-readable bucket on the same origin as the
+ * logo, so relaxing any of them for the larger file would relax them for the
+ * threat too.
  */
-export function checkBrandUpload(bytes: Uint8Array, declaredSize: number): BrandUploadCheck {
+export function checkBrandUpload(
+  bytes: Uint8Array,
+  declaredSize: number,
+  slot: BrandSlot = "primary"
+): BrandUploadCheck {
+  const policy = SLOT_POLICY[slot];
+
   if (declaredSize === 0 || bytes.length === 0) {
     return { ok: false, error: "That file is empty." };
   }
-  if (declaredSize > BRAND_MAX_BYTES || bytes.length > BRAND_MAX_BYTES) {
-    return { ok: false, error: "Logo is too large. Please use a file under 2 MB." };
+  if (declaredSize > policy.maxBytes || bytes.length > policy.maxBytes) {
+    const mb = Math.round(policy.maxBytes / (1024 * 1024));
+    return { ok: false, error: `That file is too large. Please use one under ${mb} MB.` };
   }
 
   const type = sniffBrandImageType(bytes);
@@ -236,10 +296,10 @@ export function checkBrandUpload(bytes: Uint8Array, declaredSize: number): Brand
   if (!dimensions || !dimensions.width || !dimensions.height) {
     return { ok: false, error: "That image could not be read. Try re-exporting it." };
   }
-  if (dimensions.width < BRAND_MIN_DIMENSION || dimensions.height < BRAND_MIN_DIMENSION) {
+  if (dimensions.width < policy.minDimension || dimensions.height < policy.minDimension) {
     return {
       ok: false,
-      error: `That image is ${dimensions.width}×${dimensions.height}. A logo needs to be at least ${BRAND_MIN_DIMENSION}px on each side.`,
+      error: `That image is ${dimensions.width}×${dimensions.height}. ${policy.label} needs to be at least ${policy.minDimension}px on each side.`,
     };
   }
   if (dimensions.width > BRAND_MAX_DIMENSION || dimensions.height > BRAND_MAX_DIMENSION) {

@@ -104,7 +104,7 @@ function renderHome({ products = [product, quoteOnly], items = work } = {}) {
     createElement(
       QueryClientProvider,
       { client },
-      createElement(HomeHero, { lead: products[0] ?? null, support: products[1] ?? null, leadAlt: products[0]?.name ?? "", supportAlt: products[1]?.name ?? "" }),
+      createElement(HomeHero, { lead: products[0] ?? null, support: products[1] ?? null, leadAlt: products[0]?.name ?? "", supportAlt: products[1]?.name ?? "", copy: content.hero }),
       createElement(HomeCapabilities, { media: [products[0] ?? null, products[1] ?? null] }),
       createElement(HomeProductFocus, { product: products[0] ?? null }),
       createElement(HomeFeaturedProducts, { products }),

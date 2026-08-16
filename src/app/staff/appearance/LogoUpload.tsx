@@ -2,7 +2,9 @@
 
 import { useId, useRef, useState } from "react";
 
-import { BRAND_MAX_BYTES, type BrandSlot } from "@/lib/brandAssets";
+import { SLOT_POLICY, type BrandSlot } from "@/lib/brandAssets";
+
+import { anchorId } from "./EditorChrome";
 
 /**
  * Upload, replace, or clear one brand mark.
@@ -26,25 +28,47 @@ import { BRAND_MAX_BYTES, type BrandSlot } from "@/lib/brandAssets";
  * Nearly every rejection here is a real, correctable mistake — wrong format, too
  * large, the wrong image — and the sentence has to say which.
  */
+
+/** A logo is judged on the near-black navbar and on a raised panel. */
+const DEFAULT_SURFACES = [
+  { name: "On the navbar", background: "var(--km-nav-bg)" },
+  { name: "On a panel", background: "var(--km-surface-strong)" },
+] as const;
 export function LogoUpload({
   slot,
+  anchor,
   label,
   description,
   value,
+  surfaces,
   onChange,
   onNotice,
 }: {
   slot: BrandSlot;
+  /** The search index's id for this control, so a result can land on it. */
+  anchor: string;
   label: string;
   description: string;
   /** The current stored URL, or "" when the slot is empty. */
   value: string;
+  /**
+   * The backgrounds to judge the image against.
+   *
+   * A logo is judged on the navbar and on a panel — a white mark uploaded as the
+   * alternate looks like an empty box on one of them, and an owner who only ever
+   * sees it on the other will not find out until a customer does. A hero
+   * photograph has one background and a shape, so it gets a single wide frame
+   * instead of two squares.
+   */
+  surfaces?: readonly { name: string; background: string }[];
   onChange: (url: string) => void;
   onNotice: (message: string) => void;
 }) {
   const inputId = useId();
   const errorId = `${inputId}-error`;
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const policy = SLOT_POLICY[slot];
+  const maxMb = Math.round(policy.maxBytes / (1024 * 1024));
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -57,8 +81,8 @@ export function LogoUpload({
     // A first pass in the browser, so the obvious mistake does not cost a round
     // trip. It is not the check that matters: the route re-reads the bytes and
     // does not trust the type the browser reported. See `brandAssets.ts`.
-    if (file.size > BRAND_MAX_BYTES) {
-      setError("That file is over 2 MB. Please use a smaller image.");
+    if (file.size > policy.maxBytes) {
+      setError(`That file is over ${maxMb} MB. Please use a smaller image.`);
       setBusy(false);
       return;
     }
@@ -102,7 +126,9 @@ export function LogoUpload({
 
   return (
     <div
-      className={`ui-card ${dragging ? "!border-brand-primary" : ""}`}
+      id={anchorId(anchor)}
+      tabIndex={-1}
+      className={`ui-card scroll-mt-4 ${dragging ? "!border-brand-primary" : ""}`}
       onDragOver={(event) => {
         event.preventDefault();
         setDragging(true);
@@ -118,20 +144,9 @@ export function LogoUpload({
       <p className="text-sm font-semibold">{label}</p>
       <p className="mt-1 text-xs text-brand-textMuted">{description}</p>
 
-      {/*
-        Two backgrounds behind the same mark.
-
-        A logo is judged against what it will actually sit on, and this site has
-        two: the navbar, which is near-black, and the page's raised surfaces. A
-        white mark uploaded as the alternate looks like an empty box on one of
-        them, and an owner who only ever sees it on the other will not find out
-        until a customer does.
-      */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {[
-          { name: "On the navbar", background: "var(--km-nav-bg)" },
-          { name: "On a panel", background: "var(--km-surface-strong)" },
-        ].map((surface) => (
+      {/* The backgrounds this image has to survive. See the `surfaces` prop. */}
+      <div className={`mt-3 grid gap-2 ${(surfaces ?? DEFAULT_SURFACES).length > 1 ? "grid-cols-2" : ""}`}>
+        {(surfaces ?? DEFAULT_SURFACES).map((surface) => (
           <div
             key={surface.name}
             className="rounded-[var(--control-radius)] border border-brand-border p-3"
@@ -171,7 +186,8 @@ export function LogoUpload({
         className="ui-input file:mr-3 file:rounded-full file:border-0 file:bg-brand-primary/15 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-brand-primary"
       />
       <p className="mt-1 text-xs text-brand-textMuted">
-        PNG, JPEG or WebP, under 2 MB. You can also drop a file on this card. SVG is not accepted.
+        PNG, JPEG or WebP, under {maxMb} MB, at least {policy.minDimension}px on each side. You can also drop a
+        file on this card. SVG is not accepted.
       </p>
 
       {/* `role="status"` rather than `alert`: the message follows an action the

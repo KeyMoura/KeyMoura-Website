@@ -14,10 +14,15 @@ import {
 } from "@/components/home/HomeSections";
 import type { ProductCardProduct } from "@/components/ProductCard";
 import { loadFeaturedProducts } from "@/lib/commerce/catalogData";
-import { meta } from "@/lib/home/content";
+import { hero, meta } from "@/lib/home/content";
 import { loadRecentWork } from "@/lib/home/recentWork";
 import { getSiteSettings } from "@/lib/siteSettings";
-import { pinFeatured, type HomepageConfig } from "@/theme/homepage";
+import {
+  isHomepageSectionVisible,
+  pinFeatured,
+  resolveHomepageHero,
+  type HomepageConfig,
+} from "@/theme/homepage";
 
 export const revalidate = 300;
 
@@ -116,25 +121,58 @@ export default async function Home() {
     // beyond the call the layout is making anyway.
     getSiteSettings(),
   ]);
-  const media = allocateMedia(products, settings.homepage);
+  const { homepage } = settings;
+  const media = allocateMedia(products, homepage);
+
+  /*
+   * An uploaded hero image wins the lead frame, and does so by being handed to
+   * the same pipeline the product photographs use.
+   *
+   * `HomeMedia` takes a `ProductImageSource`, which is `{ image_url,
+   * product_media }` — so a one-field object is a legitimate source, not a
+   * workaround. It goes through the same candidate ordering, the same
+   * fall-forward past a broken URL and the same optimizer decision as every
+   * other picture on the site. A second image path here would be a second place
+   * for a broken hero to be handled differently.
+   *
+   * The alt text is empty on purpose: the uploaded artwork is decorative beside
+   * the headline it sits next to, and the product photograph it replaces was
+   * named because *it* carried information — which product this is — that a
+   * brand image does not.
+   */
+  const heroCopy = resolveHomepageHero(homepage, hero);
+  const heroLead = homepage.heroImageUrl ? { image_url: homepage.heroImageUrl } : media.heroLead;
+  const heroLeadAlt = homepage.heroImageUrl ? "" : (media.heroLead?.name ?? "");
+
+  const shows = (id: Parameters<typeof isHomepageSectionVisible>[1]) =>
+    isHomepageSectionVisible(homepage, id);
 
   return (
     <>
       <HomeHero
-        lead={media.heroLead}
+        lead={heroLead}
         support={media.heroSupport}
-        leadAlt={media.heroLead?.name ?? ""}
+        leadAlt={heroLeadAlt}
         supportAlt={media.heroSupport?.name ?? ""}
+        copy={heroCopy}
       />
 
+      {/*
+        The five optional bands are the ones `SECTION_TOGGLES` lists, and the
+        gaps between them are the ones it deliberately does not: capabilities,
+        the product row, the custom-project band and the closing call to action
+        have no toggle because a homepage without them has stopped making the
+        shop's offer. That reasoning lives on the constant, not here, so the
+        editor and the page cannot disagree about which bands are optional.
+      */}
       <HomeCapabilities media={[media.panelA, media.panelB]} />
-      <HomeProductFocus product={media.focus} />
+      {shows("productFocus") ? <HomeProductFocus product={media.focus} /> : null}
       <HomeFeaturedProducts products={media.row} />
       <HomeCustomProject />
-      <HomeProcess />
-      <HomeMaking />
-      <HomeRecentWork items={work} />
-      <HomeAssurances />
+      {shows("process") ? <HomeProcess /> : null}
+      {shows("making") ? <HomeMaking /> : null}
+      {shows("recentWork") ? <HomeRecentWork items={work} /> : null}
+      {shows("assurances") ? <HomeAssurances /> : null}
       <HomeFinalCta />
     </>
   );

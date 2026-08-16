@@ -204,9 +204,22 @@ test("every task says what it is, in a sentence", () => {
 });
 
 test("inheritance is offered as following the brand accent, never as “unset”", () => {
-  // The word the owner sees for an optional colour. "Unset" describes the
-  // storage; "Use brand accent" describes what happens.
-  assert.ok(page.includes("Use brand accent"), "the simple view must offer this in words");
-  const visible = page.match(/>[^<>{}]*\bunset\b[^<>{}]*</gi) ?? [];
-  assert.deepEqual(visible, [], `"unset" must not reach the screen: ${visible.join(" | ")}`);
+  /*
+   * The words the owner sees for an optional colour. "Unset" and "clear"
+   * describe the storage — an empty string, and a CSS variable that is not
+   * emitted at all. What they are actually deciding is whether this thing has
+   * its own colour or follows the brand, and that is what the control says.
+   *
+   * 5.0 moved the control into `ColorControls.tsx` and made it a button pair
+   * whose label is read from the map, so a field that follows the *primary*
+   * no longer offers to make it follow the accent.
+   */
+  const controls = readFileSync("src/app/staff/appearance/ColorControls.tsx", "utf8");
+  assert.ok(controls.includes("Give it its own colour"), "opting out must be offered in words");
+  assert.ok(controls.includes("Follow "), "opting back in must name what it follows");
+  assert.match(controls, /setting\.optional\.inheritsFrom/, "the wording comes from the map, never a hard-coded accent");
+  for (const source of [page, controls]) {
+    const visible = source.match(/>[^<>{}]*\bunset\b[^<>{}]*</gi) ?? [];
+    assert.deepEqual(visible, [], `"unset" must not reach the screen: ${visible.join(" | ")}`);
+  }
 });

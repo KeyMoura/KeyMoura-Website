@@ -154,18 +154,30 @@ test("every optional colour declares what it actually follows", () => {
 
 test("the editor resolves each automatic colour rather than assuming the accent", () => {
   const page = readFileSync(new URL("../src/app/staff/appearance/page.tsx", import.meta.url), "utf8");
+  const controls = readFileSync(new URL("../src/app/staff/appearance/ColorControls.tsx", import.meta.url), "utf8");
   assert.match(page, /case "primaryColor":\s*\n\s*return form\.primaryColor;/, "a primary-following field must show the primary");
   assert.match(
     page,
     /case "primaryButtonBackground":\s*\n\s*return form\.theme\.primaryButtonBackground \|\| form\.primaryColor;/,
     "the border must follow the fill, falling back to the primary"
   );
-  // Opting out must seed the field with what was already rendering.
-  assert.match(page, /onChange\(event\.target\.checked \? "" : fallback\)/);
-  assert.doesNotMatch(page, /onChange\(event\.target\.checked \? "" : accent\)/, "the accent must not be written into a primary-following field");
-  // And the toggle must name the right colour.
-  assert.match(page, /"Use brand primary"/);
-  assert.match(page, /"Use button background"/);
+  /*
+   * Opting out must seed the field with what was already rendering, so that
+   * giving a colour its own value never changes what is on screen — it only
+   * stops it tracking future palette changes.
+   *
+   * 5.0 replaced the checkbox with a button pair. The two states are not
+   * symmetrical — "following the accent" is a statement about where the value
+   * comes from and "custom #E5A000" is a value — and one checkbox label had to
+   * describe both, which is how it ended up saying "Use brand accent" on the
+   * three fields that follow the primary.
+   */
+  assert.match(controls, /onChange\(following \? fallback : ""\)/);
+  assert.doesNotMatch(controls, /onChange\(following \? accent : ""\)/, "the accent must not be written into a primary-following field");
+  // And the control must name the colour this particular field follows, which
+  // it takes from the map rather than assuming.
+  assert.match(controls, /setting\.optional\.inheritsFrom/);
+  assert.match(controls, /Following <b[^>]*>\{setting\.optional\?\.inheritsFrom\}/);
 });
 
 test("the contrast warning checks the fill that actually renders", () => {
@@ -191,8 +203,17 @@ test("the contrast warning checks the fill that actually renders", () => {
 
 test("the appearance preview shows the real Buy now component, not an approximation", () => {
   const page = readFileSync(new URL("../src/app/staff/appearance/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /className="product-card-action"/, "the preview must render the real CTA class");
-  assert.match(page, /Buy now/, "the preview must show the words the storefront shows");
+  const stage = readFileSync(new URL("../src/app/staff/appearance/PreviewStage.tsx", import.meta.url), "utf8");
+  /*
+   * Stronger than it was. The preview used to render `.product-card-action`
+   * itself — the real class, but hand-written markup around it. It now mounts
+   * `ProductCard`, the component the catalog mounts, in `.catalog-grid`, the
+   * container the catalog uses, in both of the real view modes. There is no
+   * approximation left to drift.
+   */
+  assert.match(stage, /import ProductCard/, "the preview must mount the real card");
+  assert.match(stage, /<ProductCard /);
+  assert.match(stage, /className="catalog-grid"/);
   assert.match(page, /"--km-primary-button-bg": form\.theme\.primaryButtonBackground/, "the preview must emit the new fill");
   assert.match(page, /"--km-primary-button-border": form\.theme\.primaryButtonBorder/, "the preview must emit the new edge");
 });
@@ -220,10 +241,13 @@ test("status colours stay literal, and the editor says so rather than implying c
     const rule = ruleFor(selector);
     assert.match(rule, /#(4ade80|fb7185)/, `${selector} is intentionally fixed and must stay literal`);
   }
-  const previewPage = readFileSync(new URL("../src/app/staff/appearance/page.tsx", import.meta.url), "utf8");
+  const panels = readFileSync(new URL("../src/app/staff/appearance/panels.tsx", import.meta.url), "utf8");
   assert.match(
-    previewPage,
+    panels,
     /deliberately fixed green and red/,
-    "the preview must tell the truth about which statuses it cannot theme"
+    "the editor must tell the truth about which statuses it cannot theme"
   );
+  // And it must say why, beside the badges themselves, in the section where a
+  // shop owner would look for them.
+  assert.match(panels, /Sold out badge in your accent green/);
 });

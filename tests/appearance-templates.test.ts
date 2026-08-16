@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { APPEARANCE_SECTIONS } from "../src/theme/appearanceSections.ts";
 import { defaultSiteTheme } from "../src/theme/runtime.ts";
 import {
   BUILT_IN_PRESETS,
@@ -161,24 +162,32 @@ test("template changes are audited", () => {
 test("the Appearance page has its own saved-looks section", () => {
   // Renamed from "Templates": the word describes a file format rather than what
   // the section holds, which is a saved appearance you can try before publishing.
-  assert.match(page, /templates: \{ label: "Saved looks"/);
+  // Renamed from "Templates" in 4.0, and declared in `appearanceSections.ts`
+  // since 5.0 — one declaration read by the rail, the workspace and the search.
+  const saved = APPEARANCE_SECTIONS.find((section) => section.id === "templates");
+  assert.ok(saved, "saved looks must be a section");
+  assert.equal(saved.label, "Saved looks");
+
   /*
-   * The section union, restructured in pass 4.0 around owner tasks. Asserted as
-   * a set rather than as one literal string, so reordering the list for a better
-   * reading order does not fail a test that is about *which* sections exist.
+   * The section union. Asserted as a set rather than as one literal string, so
+   * reordering the list for a better reading order does not fail a test that is
+   * about *which* sections exist.
    */
-  for (const section of ["brand", "navigation", "announcement", "homepage", "colors", "components", "business", "templates"]) {
-    assert.match(page, new RegExp(`\\|?\\s*"${section}"`), `the ${section} section must exist`);
+  const ids = new Set(APPEARANCE_SECTIONS.map((section) => section.id));
+  for (const section of ["brand", "navigation", "announcement", "homepage", "colours", "components", "business", "templates"]) {
+    assert.ok(ids.has(section as never), `the ${section} section must exist`);
   }
-  // The two retired ones: "assets" folded into Brand and Business details, and
+  // The retired ones: "assets" folded into Brand and Business details, and
   // "wording" held three controls that rendered nowhere on the site.
-  assert.doesNotMatch(page, /"assets"/);
-  assert.doesNotMatch(page, /"wording"/);
+  assert.ok(!ids.has("assets" as never));
+  assert.ok(!ids.has("wording" as never));
 });
 
 test("save, list, apply, rename, and delete are all wired up", () => {
   assert.match(page, /Save as template/);
-  assert.match(page, /Apply to preview/);
+  // "Apply to preview" became "Apply": the editor *is* the preview now, and the
+  // notice beside the button is what says publishing is still a separate step.
+  assert.match(page, /Applied “\$\{name\}” to the editor\. Publish to make it live\./);
   assert.match(page, /Rename/);
   assert.match(page, /Delete/);
   assert.match(page, /method: "POST"/);
@@ -207,20 +216,35 @@ test("applying a template leaves business identity alone", () => {
 });
 
 test("the existing publish workflow is preserved", () => {
-  for (const control of ["Discard changes", "Publish appearance", "Reset this section", "You have unpublished appearance changes."]) {
-    assert.ok(page.includes(control), `missing existing control: ${control}`);
+  const chrome = read("src/app/staff/appearance/EditorChrome.tsx");
+  for (const control of ["Discard changes", "Publish appearance"]) {
+    assert.ok(chrome.includes(control), `missing existing control: ${control}`);
   }
-  assert.match(page, /const dirty = JSON\.stringify\(form\) !== JSON\.stringify\(saved\)/);
+  // Per-section reset, named after the section it resets.
+  assert.match(page, /Reset \{currentSection\.label\.toLowerCase\(\)\}/);
+  /*
+   * Dirtiness became a count rather than a boolean. "You have unpublished
+   * changes" answers a question nobody asked — the owner knows they changed
+   * something; what they cannot see four sections later is how much.
+   */
+  assert.match(page, /const changed = countChanges\(form, saved\)/);
+  assert.match(page, /const dirty = changed > 0/);
   assert.match(page, /needs more contrast/, "contrast warnings still run");
 });
 
 test("deleting asks for confirmation first", () => {
   assert.match(page, /setConfirmDelete\(template\)/);
-  assert.match(page, /aria-labelledby="delete-template-title"/);
-  assert.match(page, /Delete “\{confirmDelete\.name\}”\?/);
+  // One dialog component serves every destructive action on the page. Three
+  // hand-rolled ones is how one of them ends up without `aria-modal` or without
+  // focus landing on the safe button.
+  assert.match(page, /aria-labelledby="appearance-confirm-title"/);
+  assert.match(page, /aria-modal="true"/);
+  assert.match(page, /title=\{`Delete “\$\{confirmDelete\.name\}”\?`\}/);
   assert.match(page, /Keep it/);
+  // Discarding a session's worth of work is confirmed too, proportionally.
+  assert.match(page, /changed > 3 \? setConfirmDiscard\(true\) : setForm\(saved\)/);
   // The destructive action is only reachable from the confirmation dialog.
-  assert.match(page, /onClick=\{\(\) => void deleteTemplate\(\)\}/);
+  assert.match(page, /onConfirm=\{\(\) => void deleteTemplate\(\)\}/);
   assert.match(page, /if \(!confirmDelete\) return;/);
 });
 
@@ -240,5 +264,9 @@ test("built-in presets are distinguished from saved templates", () => {
 test("a blank or duplicate name cannot be submitted from the UI", () => {
   assert.match(page, /const canSaveTemplate = Boolean\(normalizeTemplateName\(templateName\)\) && !savedNameConflict/);
   assert.match(page, /disabled=\{!canSaveTemplate\}/);
-  assert.match(page, /aria-describedby=\{templateName && savedNameConflict \? "template-name-error" : undefined\}/);
+  // The name field is the shared `Field`, which ties its error to the input with
+  // `aria-describedby` rather than each caller wiring that up again.
+  assert.match(page, /error=\{templateName && savedNameConflict \? savedNameConflict : undefined\}/);
+  const sections = read("src/app/staff/appearance/sections.tsx");
+  assert.match(sections, /"aria-describedby": error \? errorId : undefined/);
 });

@@ -628,6 +628,87 @@
   .ui-select-option.is-active { border-color: color-mix(in srgb, var(--brand-accent) 50%, transparent); background: color-mix(in srgb, var(--brand-accent) 14%, transparent); color: var(--brand-accent); }
   .ui-preview { background: var(--km-bg); color: var(--km-text); border-color: var(--km-border); }
   .ui-preview a { color: var(--km-link); }
+
+  /*
+   * The Storefront Control Center's shell.
+   *
+   * ## The defect this exists to fix
+   *
+   * The old editor was `grid-cols-[230px_1fr_minmax(320px,.7fr)]` in the normal
+   * document flow, with the publish controls in a `position: fixed` bar across
+   * the bottom of the viewport and `pb-24` on the page to compensate. Three
+   * things followed from that, and all three were reported.
+   *
+   * A permanent third column meant the editor itself got roughly 40% of an
+   * already-narrowed content area — the staff rail takes 280px before this page
+   * sees anything, so a 1366px laptop left about 400px for the controls, and a
+   * colour row with a swatch, a hex field and a checkbox does not fit in 400px.
+   *
+   * The fixed bar covered whatever was under it. `pb-24` only reserves space at
+   * the *end* of the document; everything scrolling past the bottom edge passed
+   * beneath it, so on a 768px-tall screen the bar sat on top of live controls
+   * for the entire scroll.
+   *
+   * And the page was one long scroll, so reaching Publish from the middle of
+   * Colours meant scrolling to find out whether anything had changed.
+   *
+   * ## What this does instead
+   *
+   * The shell is a fixed-height flex column, sized to the space under the site
+   * header exactly as `.staff-shell-rail` is — the two agree because they are
+   * computed from the same expression. The head and the action bar are `flex:
+   * none`, so they are always on screen and always outside the scrolling
+   * region; the rail and the workspace share the remaining height and each
+   * scrolls itself.
+   *
+   * The action bar therefore cannot cover a control: it is a sibling *below* the
+   * scroll container, not a layer above it. Nothing is fixed, nothing is
+   * `z-index`ed over content, and Publish is reachable from anywhere in the
+   * editor without scrolling.
+   *
+   * `min-height: 640px` on the media query is the guard. Below that the fixed
+   * height would be shorter than the smallest workable workspace, so the whole
+   * thing falls back to ordinary document flow and the page scrolls — which is
+   * the right behaviour for a short window and the layout phones get anyway.
+   */
+  .appearance-shell { display: flex; flex-direction: column; gap: .75rem; }
+  .appearance-head { flex: none; }
+  .appearance-body { display: grid; gap: .75rem; min-height: 0; }
+  .appearance-rail { min-height: 0; }
+  .appearance-workspace { min-height: 0; }
+  .appearance-actions { flex: none; }
+
+  @media (min-width: 1024px) and (min-height: 640px) {
+    .appearance-shell {
+      height: calc(100dvh - var(--km-header-height) - 2rem);
+    }
+    .appearance-body { flex: 1 1 auto; grid-template-columns: 13.5rem minmax(0, 1fr); }
+    /* `overflow-y: auto` needs the `min-height: 0` above to mean anything: a
+       flex/grid item defaults to `min-height: auto`, which refuses to shrink
+       below its content and pushes the overflow back out of the box. */
+    .appearance-rail { overflow-y: auto; overscroll-behavior: contain; }
+    .appearance-workspace { overflow-y: auto; overscroll-behavior: contain; }
+  }
+
+  /*
+   * The preview stage.
+   *
+   * Full width and horizontal, not a column — a navbar needs 900px to show
+   * Products, Custom Projects, Gallery, About, More, search and the account
+   * cluster without clipping, and the old 320px column could show about a third
+   * of it. It is also *off* by default, so the editor's normal state is the
+   * whole workspace.
+   *
+   * The height cap is what keeps it from becoming the same problem in the other
+   * axis. On a 768px laptop an uncapped stage would push every control below the
+   * fold; at 45vh it takes a little over a third of the workspace and the
+   * controls it is previewing stay visible underneath.
+   */
+  .appearance-stage { max-height: 45vh; overflow: auto; overscroll-behavior: contain; }
+  .appearance-stage-wide { overflow-x: auto; }
+  /* Previews of a full-width surface get real width to be judged at, and scroll
+     horizontally inside their own box rather than widening the page. */
+  .appearance-stage-wide > * { min-width: 56rem; }
   .ui-notice { border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: .75rem 1rem; font-size: .875rem; }
   .ui-notice-info { border-color: color-mix(in srgb, var(--brand-accent) 38%, var(--border)); }
   .ui-notice-warning { border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border)); background: color-mix(in srgb, var(--brand-primary) 10%, var(--panel)); color: var(--text); }

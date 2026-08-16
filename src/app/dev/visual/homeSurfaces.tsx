@@ -1,4 +1,5 @@
 import HomeHero from "@/components/home/HomeHero";
+import { hero } from "@/lib/home/content";
 import {
   HomeAssurances,
   HomeCapabilities,
@@ -58,6 +59,7 @@ export function HomeSurfaces() {
           support={products[0] ?? null}
           leadAlt={products[1]?.name ?? ""}
           supportAlt={products[0]?.name ?? ""}
+          copy={hero}
         />
         <HomeCapabilities media={[products[0] ?? null, products[1] ?? null]} />
         <HomeProductFocus product={products[0] ?? null} />
@@ -83,7 +85,7 @@ export function HomeSurfaces() {
       </section>
 
       <div id="home-bare" data-surface="home-bare">
-        <HomeHero lead={null} support={null} leadAlt="" supportAlt="" />
+        <HomeHero lead={null} support={null} leadAlt="" supportAlt="" copy={hero} />
         <HomeCapabilities media={[null, null]} />
         <HomeProductFocus product={null} />
         <HomeFeaturedProducts products={[]} />

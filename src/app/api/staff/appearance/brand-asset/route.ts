@@ -7,6 +7,7 @@ import {
   checkBrandUpload,
   isBrandSlot,
   isManagedBrandAsset,
+  SLOT_POLICY,
   versionedBrandUrl,
 } from "@/lib/brandAssets";
 import { recordAuditChange, resolveActorLabel } from "@/lib/audit/events";
@@ -38,8 +39,6 @@ import { recordAuditChange, resolveActorLabel } from "@/lib/audit/events";
  * can change every colour on the site cannot change the mark above them.
  */
 
-const SLOT_LABEL = { primary: "Primary logo", alternate: "Alternate logo" } as const;
-
 export async function POST(req: NextRequest) {
   const actor = await requirePermission(req, "appearance.manage");
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -53,7 +52,7 @@ export async function POST(req: NextRequest) {
 
   const slot = form.get("slot");
   if (!isBrandSlot(slot)) {
-    return NextResponse.json({ error: "Unknown logo slot." }, { status: 400 });
+    return NextResponse.json({ error: "Unknown image slot." }, { status: 400 });
   }
 
   const file = form.get("file");
@@ -62,7 +61,9 @@ export async function POST(req: NextRequest) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const check = checkBrandUpload(bytes, file.size);
+  // The slot chooses the size and dimension limits. It does not choose which
+  // checks run — see `checkBrandUpload`.
+  const check = checkBrandUpload(bytes, file.size, slot);
   if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
 
   // The extension comes from the sniffed type, so a `.png` holding a JPEG is
@@ -119,8 +120,8 @@ export async function POST(req: NextRequest) {
       label: await resolveActorLabel(actor.userId),
     },
     entity: { type: "setting", id: "appearance", label: "Appearance" },
-    changes: { [`brand_${slot}_logo`]: { before: null, after: objectPath, summarized: false } },
-    summary: `${SLOT_LABEL[slot]} uploaded (${check.dimensions.width}×${check.dimensions.height})`,
+    changes: { [`brand_${slot}_image`]: { before: null, after: objectPath, summarized: false } },
+    summary: `${SLOT_POLICY[slot].label} uploaded (${check.dimensions.width}×${check.dimensions.height})`,
     source: "staff_ui",
   });
 
@@ -149,7 +150,7 @@ export async function DELETE(req: NextRequest) {
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const slot = body?.slot;
-  if (!isBrandSlot(slot)) return NextResponse.json({ error: "Unknown logo slot." }, { status: 400 });
+  if (!isBrandSlot(slot)) return NextResponse.json({ error: "Unknown image slot." }, { status: 400 });
 
   const url = typeof body?.url === "string" ? body.url : "";
   if (url && !isManagedBrandAsset(url)) {
