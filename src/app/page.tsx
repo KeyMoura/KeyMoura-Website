@@ -17,6 +17,7 @@ import { loadFeaturedProducts } from "@/lib/commerce/catalogData";
 import { meta } from "@/lib/home/content";
 import { loadRecentWork } from "@/lib/home/recentWork";
 import { getSiteSettings } from "@/lib/siteSettings";
+import { pinFeatured, type HomepageConfig } from "@/theme/homepage";
 
 export const revalidate = 300;
 
@@ -58,15 +59,36 @@ export async function generateMetadata(): Promise<Metadata> {
  * Every frame degrades to a drawn panel rather than a gap, so a catalog with no
  * photographs at all still renders a complete page. See `HomeMedia`.
  */
-function allocateMedia(products: ProductCardProduct[]) {
-  const focus = products[0] ?? null;
-  const row = products.slice(1, 4);
+function allocateMedia(products: ProductCardProduct[], homepage: HomepageConfig) {
+  /*
+   * The owner's two pins are applied by reordering the published list, before
+   * anything else here reads it.
+   *
+   * That is the whole mechanism, and it is deliberately not a lookup: the list
+   * handed in is what the *public* catalog query returned, so a pinned product
+   * that has since been unpublished, archived or deleted is simply not in it,
+   * `pinFeatured` finds nothing, and the allocation falls back to catalog order.
+   * Featuring a draft on the front page is therefore not a case that has to be
+   * remembered — it cannot be expressed.
+   *
+   * The two pins are applied to *different* lists, in sequence, rather than both
+   * to the whole catalog. The focus pin claims the first slot; the hero pin then
+   * chooses from what is left. Pinning one product to both slots therefore gives
+   * it the focus section and leaves the hero to pick something else, instead of
+   * showing the same photograph twice above the fold.
+   *
+   * With neither pin set this reduces exactly to the previous allocation.
+   */
+  const withFocus = pinFeatured(products, homepage.featuredProductId);
+  const focus = withFocus[0] ?? null;
+  const rest = pinFeatured(withFocus.slice(1), homepage.heroProductId);
 
-  const pool = products.slice(1);
+  const row = rest.slice(0, 3);
+
   let cursor = 0;
   const next = (): ProductCardProduct | null => {
-    if (!pool.length) return products[0] ?? null;
-    const item = pool[cursor % pool.length];
+    if (!rest.length) return focus;
+    const item = rest[cursor % rest.length];
     cursor += 1;
     return item ?? null;
   };
@@ -87,8 +109,14 @@ export default async function Home() {
    * Neither call can throw the page away: both resolve to an empty list on
    * failure, and every section below renders or removes itself accordingly.
    */
-  const [products, work] = await Promise.all([loadFeaturedProducts(6), loadRecentWork(3)]);
-  const media = allocateMedia(products);
+  const [products, work, settings] = await Promise.all([
+    loadFeaturedProducts(6),
+    loadRecentWork(3),
+    // Already cached per request by `getSiteSettings`, so this costs nothing
+    // beyond the call the layout is making anyway.
+    getSiteSettings(),
+  ]);
+  const media = allocateMedia(products, settings.homepage);
 
   return (
     <>

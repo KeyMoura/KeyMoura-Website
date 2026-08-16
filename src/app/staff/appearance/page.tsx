@@ -5,7 +5,13 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 
 import { Badge, MetricCard, Notice, cx } from "@/components/ui/DesignSystem";
 import { defaultSiteTheme, optionalVars, type SiteTheme } from "@/theme/runtime";
+import { defaultAnnouncementConfig, type AnnouncementConfig } from "@/theme/announcement";
+import { defaultBrandConfig, type BrandConfig } from "@/theme/brand";
+import { defaultHomepageConfig, type HomepageConfig } from "@/theme/homepage";
 import { APPEARANCE_SETTINGS, type AppearanceSetting } from "@/theme/appearanceMap";
+import { primaryNav } from "@/lib/navigation";
+import { AnnouncementSection, BrandSection, Field, Group, HomepageSection, OptionRow } from "./sections";
+import type { PickedProduct } from "./ProductPicker";
 import {
   APPEARANCE_TASK_SECTIONS,
   searchAppearanceTasks,
@@ -36,9 +42,6 @@ type Identity = {
   appleIconUrl: string;
   supportEmail: string;
   copyrightText: string;
-  forumLabel: string;
-  knowledgeBaseLabel: string;
-  trustedVendorLabel: string;
 };
 
 type Appearance = {
@@ -46,9 +49,20 @@ type Appearance = {
   accentColor: string;
   theme: SiteTheme;
   identity: Identity;
+  brand: BrandConfig;
+  announcement: AnnouncementConfig;
+  homepage: HomepageConfig;
 };
 
-type Section = "colors" | "styles" | "brand" | "assets" | "wording" | "templates";
+type Section =
+  | "brand"
+  | "navigation"
+  | "announcement"
+  | "homepage"
+  | "colors"
+  | "components"
+  | "business"
+  | "templates";
 
 const defaultIdentity: Identity = {
   name: "KeyMoura",
@@ -63,9 +77,6 @@ const defaultIdentity: Identity = {
   appleIconUrl: "/apple-icon.png",
   supportEmail: "support@keymoura.com",
   copyrightText: "All rights reserved.",
-  forumLabel: "Community",
-  knowledgeBaseLabel: "Projects",
-  trustedVendorLabel: "Trusted Shop",
 };
 
 const defaults: Appearance = {
@@ -73,34 +84,70 @@ const defaults: Appearance = {
   accentColor: "#f59e0b",
   theme: defaultSiteTheme,
   identity: defaultIdentity,
+  brand: defaultBrandConfig,
+  announcement: defaultAnnouncementConfig,
+  homepage: defaultHomepageConfig,
 };
 
 /**
- * Section order is the order somebody actually works in: colours first, because
- * that is what every reported confusion was about, then shape, then the
- * identity fields that are set once during setup.
+ * The sections, in the order an owner actually works.
  *
- * "Colors & controls" and "Navbar" used to be separate sections holding 11 and
- * 17 colours respectively, so half the palette was in a section named after a
- * component. Every colour now lives in one searchable place, grouped by what it
- * touches.
+ * ## What this replaced, and why
+ *
+ * The previous six were Colours, Shapes & density, Business details, Logos &
+ * icons, **Labels & wording**, and Saved looks. Two problems.
+ *
+ * First, the page was organised around *kinds of setting* rather than around
+ * anything an owner sets out to do. "Change the announcement bar" and "put the
+ * white logo on interior pages" had no home at all, and "make the navbar
+ * cleaner" meant finding a navbar shape control filed under Shapes and navbar
+ * colours filed under Colours.
+ *
+ * Second, **Labels & wording did nothing.** Its three controls — Community
+ * label, Projects label, Trusted vendor label — wrote to `site_settings.
+ * terminology`, which `getSiteSettings()` faithfully read, returned on
+ * `RuntimeSiteSettings.terminology`, and which **no component anywhere on the
+ * site ever rendered**. Three inputs, a round trip, a saved value, and no
+ * observable effect. That is the section the owner called useless, and it was.
+ * It is gone from this page and from the runtime settings type; the database
+ * column and its contents are untouched, and the installer still writes it, so
+ * nothing was destroyed — what was removed is a control that promised an effect
+ * it did not have. The full reasoning is in the pass notes.
+ *
+ * The first four sections below are the things this pass was asked about, in
+ * the order somebody sets a shop up. Colours and Components are the older,
+ * larger editors, unchanged in substance and moved below the tasks. Business
+ * details is the once-at-setup material, which is why it is second to last.
  */
 const sectionCopy: Record<Section, { label: string; description: string }> = {
+  brand: { label: "Brand", description: "Your logo files, which one each page uses, and whether the site name sits beside it." },
+  navigation: { label: "Navigation", description: "The header customers see on every page — its shape, how it behaves, and its colours." },
+  announcement: { label: "Announcement bar", description: "The message strip across the top of the storefront: launches, promotions, lead times." },
+  homepage: { label: "Homepage", description: "Which products lead the front page." },
   colors: { label: "Colours", description: "Every colour on the site, grouped by what it changes. Search if you know what you are looking for." },
-  styles: { label: "Shapes & density", description: "Corner rounding, spacing, typography and the shape of buttons, cards and inputs." },
-  brand: { label: "Business details", description: "Business name, public details, metadata, and support information." },
-  assets: { label: "Logos & icons", description: "Header, footer, browser, and mobile brand artwork." },
-  wording: { label: "Labels & wording", description: "Names customers see for the major areas of the site." },
+  components: { label: "Buttons & components", description: "Corner rounding, spacing, typography and the shape of buttons, cards, tabs and inputs." },
+  business: { label: "Business details", description: "Name, public URL, support address, favicon and the footer's small print." },
   templates: { label: "Saved looks", description: "Save a complete look, try saved looks before publishing, and manage them." },
 };
 
-/*
- * `SCOPE_LABEL` used to live here, badging each colour group Storefront / Staff
- * area / Storefront & staff. It went with the token groups: a task is named
- * after a thing on the screen ("Customizable badge", "Navbar"), and where that
- * thing lives is already obvious from what it is called. A badge saying
- * "Storefront" over a group called Navbar was restating the heading.
+/** Sections whose settings live outside the theme object, for the reset button. */
+const IDENTITY_SECTION_KEYS: Partial<Record<Section, readonly (keyof Identity)[]>> = {
+  business: ["name", "shortName", "tagline", "description", "publicUrl", "supportEmail", "copyrightText", "faviconUrl", "appleIconUrl", "footerLogoUrl", "wordmarkUrl"],
+};
+
+/**
+ * The theme keys the Navigation section owns rather than Components.
+ *
+ * Listed once and used by both the renderer and the reset, so "what Navigation
+ * shows" and "what Navigation resets" cannot disagree. The navbar's *colours*
+ * are not here — those are partitioned off `APPEARANCE_SETTINGS.group`, which is
+ * already the source of truth for which colour belongs where.
  */
+const NAVIGATION_SHAPE_KEYS = [
+  "publicNavigationStyle",
+  "navigationBehavior",
+  "navigationDensity",
+] as const satisfies readonly (keyof SiteTheme)[];
 
 /** The part of the form a template captures. */
 function templateConfigFrom(form: Appearance): AppearanceTemplateConfig {
@@ -176,9 +223,20 @@ function contrast(first: string, second: string) {
 export default function AppearancePage() {
   const [form, setForm] = useState<Appearance>(defaults);
   const [saved, setSaved] = useState<Appearance>(defaults);
-  const [section, setSection] = useState<Section>("colors");
+  const [section, setSection] = useState<Section>("brand");
   const [state, setState] = useState("Loading appearance…");
   const [colorQuery, setColorQuery] = useState("");
+
+  /*
+   * Names and thumbnails for the two homepage pins, kept beside the form rather
+   * than inside it.
+   *
+   * What gets *saved* is a pair of ids; this is only what those ids are called.
+   * Keeping it out of `form` matters because dirtiness is a deep comparison of
+   * `form` against `saved` — folding display data in would mark the page dirty
+   * the moment a product was renamed somewhere else.
+   */
+  const [pinned, setPinned] = useState<Record<string, PickedProduct>>({});
 
   const [templates, setTemplates] = useState<AppearanceTemplate[]>([]);
   const [templatesError, setTemplatesError] = useState("");
@@ -193,9 +251,17 @@ export default function AppearancePage() {
       .then(async (response) => ({ ok: response.ok, body: await response.json() }))
       .then(({ ok, body }) => {
         if (!ok) throw new Error(body.error);
-        const loaded = { ...defaults, ...body, identity: { ...defaultIdentity, ...body.identity } };
+        // `pinnedProducts` is display data, not settings, so it is lifted out
+        // before the rest becomes the form. See the `pinned` state above.
+        const { pinnedProducts, ...settings } = body as Record<string, unknown>;
+        const loaded = {
+          ...defaults,
+          ...settings,
+          identity: { ...defaultIdentity, ...(settings.identity as object) },
+        } as Appearance;
         setForm(loaded);
         setSaved(loaded);
+        setPinned((pinnedProducts as Record<string, PickedProduct>) ?? {});
         setState("");
       })
       .catch((error: Error) => setState(error.message || "Could not load appearance."));
@@ -366,18 +432,43 @@ export default function AppearancePage() {
   const setIdentity = (key: keyof Identity, value: string) =>
     setForm((current) => ({ ...current, identity: { ...current.identity, [key]: value } }));
 
+  /** Writes one colour, wherever on the form that colour actually lives. */
+  const applyColor = (setting: AppearanceSetting, value: string) => {
+    if (setting.key === "primaryColor") setForm((current) => ({ ...current, primaryColor: value }));
+    else if (setting.key === "accentColor") setForm((current) => ({ ...current, accentColor: value }));
+    else setTheme(setting.key as keyof SiteTheme, value as never);
+  };
+
   /**
    * Reset only what the open section edits.
    *
-   * The two colour-bearing sections are derived from `APPEARANCE_SETTINGS`
-   * rather than a hand-written key list. The previous version listed 19 navbar
-   * keys by hand beside a section that reset the whole theme, so a colour added
-   * to one list and not the other would silently survive a reset.
+   * "Reset" here means "back to what is published", not "back to the factory
+   * palette" — the owner pressing it has made a mess of one thing and wants that
+   * one thing undone, and a button that also reverted the four other sections
+   * they had just finished would be the worst possible reading of the word.
+   *
+   * The colour-bearing branches are derived from `APPEARANCE_SETTINGS` rather
+   * than a hand-written key list. An earlier version listed 19 navbar keys by
+   * hand beside a section that reset the whole theme, so a colour added to one
+   * list and not the other would silently survive a reset.
    */
   const resetSection = () => setForm((current) => {
-    if (section === "colors") {
+    if (section === "templates") return current;
+
+    // The three branches whose settings are a self-contained object.
+    if (section === "brand") return { ...current, brand: saved.brand };
+    if (section === "announcement") return { ...current, announcement: saved.announcement };
+    if (section === "homepage") return { ...current, homepage: saved.homepage };
+
+    if (section === "colors" || section === "navigation") {
+      // Colours owns every group except the navbar's; Navigation owns exactly
+      // the navbar's. The partition is read off the same map both sections
+      // render from, so neither can drift from what it displays.
+      const wantsNav = section === "navigation";
       const next = { ...current, theme: { ...current.theme } };
       for (const setting of APPEARANCE_SETTINGS) {
+        const isNav = setting.group === "navbar" || setting.group === "navbarMenus";
+        if (isNav !== wantsNav) continue;
         if (setting.key === "primaryColor") next.primaryColor = saved.primaryColor;
         else if (setting.key === "accentColor") next.accentColor = saved.accentColor;
         else {
@@ -385,23 +476,27 @@ export default function AppearancePage() {
           (next.theme as Record<string, unknown>)[key] = saved.theme[key];
         }
       }
-      return next;
-    }
-    if (section === "styles") {
-      // Everything on the theme that is not a colour: the choice-valued keys.
-      const colorKeys = new Set<string>(APPEARANCE_SETTINGS.map((setting) => setting.key));
-      const next = { ...current, theme: { ...current.theme } };
-      for (const key of Object.keys(saved.theme) as (keyof SiteTheme)[]) {
-        if (!colorKeys.has(key)) (next.theme as Record<string, unknown>)[key] = saved.theme[key];
+      if (wantsNav) {
+        for (const key of NAVIGATION_SHAPE_KEYS) {
+          (next.theme as Record<string, unknown>)[key] = saved.theme[key];
+        }
       }
       return next;
     }
-    if (section === "templates") return current;
-    const keys: Array<keyof Identity> = section === "brand"
-      ? ["name", "shortName", "tagline", "description", "publicUrl", "supportEmail", "copyrightText"]
-      : section === "assets"
-        ? ["logoUrl", "wordmarkUrl", "footerLogoUrl", "faviconUrl", "appleIconUrl"]
-        : ["forumLabel", "knowledgeBaseLabel", "trustedVendorLabel"];
+
+    if (section === "components") {
+      // Everything on the theme that is neither a colour nor a navbar shape:
+      // the remaining choice-valued keys.
+      const colorKeys = new Set<string>(APPEARANCE_SETTINGS.map((setting) => setting.key));
+      const next = { ...current, theme: { ...current.theme } };
+      for (const key of Object.keys(saved.theme) as (keyof SiteTheme)[]) {
+        if (colorKeys.has(key) || (NAVIGATION_SHAPE_KEYS as readonly string[]).includes(key)) continue;
+        (next.theme as Record<string, unknown>)[key] = saved.theme[key];
+      }
+      return next;
+    }
+
+    const keys = IDENTITY_SECTION_KEYS[section] ?? [];
     return { ...current, identity: { ...current.identity, ...Object.fromEntries(keys.map((key) => [key, saved.identity[key]])) } };
   });
 
@@ -451,8 +546,23 @@ export default function AppearancePage() {
       {state ? <Notice role="status">{state}</Notice> : null}
       {warning ? <Notice tone="warning">{warning}</Notice> : null}
 
+      {/*
+        Three columns on a wide screen, one on anything narrower.
+
+        The section list is a `<nav>` of buttons rather than a scroll-spy or a
+        tab strip. The page is eight distinct editors, several of which are long,
+        and the thing the owner needs is to *leave* one and arrive at another —
+        which is a jump, not a scroll. On a laptop the whole list is visible
+        without moving, so "where is the announcement bar" is answered by looking
+        rather than by hunting.
+
+        Below `xl` the columns stack: the list, then the editor, then the
+        preview. Nothing is hidden at any width and nothing overflows
+        horizontally — the preview column is `minmax(320px, …)` on wide screens
+        only, so it cannot force a horizontal scrollbar on a laptop.
+      */}
       <div className="grid gap-5 xl:grid-cols-[230px_minmax(0,1fr)_minmax(320px,.7fr)]">
-        <nav className="ui-card h-fit space-y-2" aria-label="Appearance sections">
+        <nav className="ui-card h-fit space-y-2 xl:sticky xl:top-5" aria-label="Appearance sections">
           {(Object.keys(sectionCopy) as Section[]).map((key) => (
             <button
               key={key}
@@ -470,22 +580,133 @@ export default function AppearancePage() {
           <section className="ui-card space-y-5">
             <SectionTitle title={sectionCopy[section].label} text={sectionCopy[section].description} />
 
-            {section === "brand" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Site name" value={form.identity.name} onChange={(value) => setIdentity("name", value)} /><TextField label="Short name" value={form.identity.shortName} onChange={(value) => setIdentity("shortName", value)} /><TextField label="Tagline" value={form.identity.tagline} onChange={(value) => setIdentity("tagline", value)} wide /><TextField label="SEO / site description" value={form.identity.description} onChange={(value) => setIdentity("description", value)} wide /><TextField label="Public site URL" value={form.identity.publicUrl} onChange={(value) => setIdentity("publicUrl", value)} /><TextField label="Support email" value={form.identity.supportEmail} onChange={(value) => setIdentity("supportEmail", value)} /><TextField label="Copyright text" value={form.identity.copyrightText} onChange={(value) => setIdentity("copyrightText", value)} wide /></div> : null}
-            {section === "assets" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Header logo" value={form.identity.logoUrl} onChange={(value) => setIdentity("logoUrl", value)} /><TextField label="Wordmark (optional)" value={form.identity.wordmarkUrl} onChange={(value) => setIdentity("wordmarkUrl", value)} /><TextField label="Footer logo" value={form.identity.footerLogoUrl} onChange={(value) => setIdentity("footerLogoUrl", value)} /><TextField label="Browser favicon" value={form.identity.faviconUrl} onChange={(value) => setIdentity("faviconUrl", value)} /><TextField label="Apple / mobile icon" value={form.identity.appleIconUrl} onChange={(value) => setIdentity("appleIconUrl", value)} /></div> : null}
-            {section === "wording" ? <div className="grid gap-4 sm:grid-cols-2"><TextField label="Community label" value={form.identity.forumLabel} onChange={(value) => setIdentity("forumLabel", value)} /><TextField label="Projects label" value={form.identity.knowledgeBaseLabel} onChange={(value) => setIdentity("knowledgeBaseLabel", value)} /><TextField label="Trusted vendor label" value={form.identity.trustedVendorLabel} onChange={(value) => setIdentity("trustedVendorLabel", value)} /></div> : null}
+            {section === "brand" ? (
+              <BrandSection
+                brand={form.brand}
+                siteName={form.identity.name}
+                onChange={(brand) => setForm((current) => ({ ...current, brand }))}
+                onNotice={setState}
+              />
+            ) : null}
+
+            {section === "announcement" ? (
+              <AnnouncementSection
+                announcement={form.announcement}
+                onChange={(announcement) => setForm((current) => ({ ...current, announcement }))}
+              />
+            ) : null}
+
+            {section === "homepage" ? (
+              <HomepageSection
+                homepage={form.homepage}
+                featured={pinned[form.homepage.featuredProductId] ?? null}
+                hero={pinned[form.homepage.heroProductId] ?? null}
+                onChange={(homepage) => setForm((current) => ({ ...current, homepage }))}
+                onPick={(_slot, product) => {
+                  // The picker returns the display data alongside the id, so a
+                  // freshly chosen product renders immediately instead of
+                  // waiting for a reload to learn its own name.
+                  if (product) setPinned((current) => ({ ...current, [product.id]: product }));
+                }}
+              />
+            ) : null}
+
+            {section === "navigation" ? (
+              <>
+                <Group
+                  title="Header shape and behaviour"
+                  description="Storefront only. None of these touch the staff sidebar, which is under Buttons & components."
+                >
+                  <OptionRow
+                    label="Current page marker"
+                    hint="How the header shows which section a customer is in."
+                    value={form.theme.publicNavigationStyle}
+                    options={[
+                      { value: "underline" as const, label: "Underline", help: "A rule under the current link. The KeyMoura default." },
+                      { value: "framed" as const, label: "Enclosed", help: "Each link in its own outline, like tabs" },
+                      { value: "minimal" as const, label: "Minimal", help: "Colour and weight only, no rule" },
+                    ]}
+                    onChange={(value) => setTheme("publicNavigationStyle", value)}
+                  />
+                  <OptionRow
+                    label="When scrolling"
+                    value={form.theme.navigationBehavior}
+                    options={[
+                      { value: "auto-hide" as const, label: "Slide away", help: "Hides going down, returns going up" },
+                      { value: "sticky" as const, label: "Always visible", help: "Stays put the whole way down" },
+                    ]}
+                    onChange={(value) => setTheme("navigationBehavior", value)}
+                  />
+                  <OptionRow
+                    label="Header height"
+                    value={form.theme.navigationDensity}
+                    options={[
+                      { value: "compact" as const, label: "Compact", help: "60px" },
+                      { value: "comfortable" as const, label: "Comfortable", help: "68px" },
+                    ]}
+                    onChange={(value) => setTheme("navigationDensity", value)}
+                  />
+                  <NavbarPreview form={form} />
+                </Group>
+
+                {/*
+                  The navbar's colours live here rather than under Colours.
+                  Every other colour on the site is site-wide; these thirteen
+                  are the only ones that belong to a single component, and
+                  splitting "make the header darker" across two sections is
+                  what sent people hunting. `ColorSection` excludes the same
+                  group, so each colour still has exactly one control.
+                */}
+                <ColorSection
+                  form={form}
+                  query={colorQuery}
+                  onQueryChange={setColorQuery}
+                  only="navigation"
+                  onChange={applyColor}
+                />
+              </>
+            ) : null}
+
+            {section === "business" ? (
+              <>
+                <Group title="Business details" description="Used in page titles, search results, and the footer's small print.">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Site name" value={form.identity.name} onChange={(value) => setIdentity("name", value)} />
+                    <Field label="Short name" hint="Used where space is tight." value={form.identity.shortName} onChange={(value) => setIdentity("shortName", value)} />
+                    <Field label="Tagline" value={form.identity.tagline} onChange={(value) => setIdentity("tagline", value)} />
+                    <Field label="Public site URL" value={form.identity.publicUrl} onChange={(value) => setIdentity("publicUrl", value)} />
+                    <Field label="Support email" value={form.identity.supportEmail} onChange={(value) => setIdentity("supportEmail", value)} />
+                    <Field label="Copyright text" value={form.identity.copyrightText} onChange={(value) => setIdentity("copyrightText", value)} />
+                  </div>
+                  <Field label="Search-engine description" hint="One or two sentences, shown under your name in search results." value={form.identity.description} onChange={(value) => setIdentity("description", value)} />
+                </Group>
+
+                {/*
+                  These four kept their URL fields on purpose. A favicon and an
+                  Apple touch icon are build-time files with fixed names that the
+                  browser fetches directly, not brand marks the header composes,
+                  and the footer logo and wordmark are set once and rarely
+                  changed. Putting them behind the same upload flow as the header
+                  logo would imply the site manages a favicon it does not.
+                */}
+                <Group title="Icons and secondary artwork" description="Set once during setup. The header's logo is under Brand.">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Footer logo" value={form.identity.footerLogoUrl} onChange={(value) => setIdentity("footerLogoUrl", value)} />
+                    <Field label="Wordmark image (optional)" hint="Replaces the site name text beside the header logo." value={form.identity.wordmarkUrl} onChange={(value) => setIdentity("wordmarkUrl", value)} />
+                    <Field label="Browser favicon" value={form.identity.faviconUrl} onChange={(value) => setIdentity("faviconUrl", value)} />
+                    <Field label="Apple / mobile icon" value={form.identity.appleIconUrl} onChange={(value) => setIdentity("appleIconUrl", value)} />
+                  </div>
+                </Group>
+              </>
+            ) : null}
 
             {section === "colors" ? (
               <ColorSection
                 form={form}
                 query={colorQuery}
                 onQueryChange={setColorQuery}
-                onChange={(setting, value) =>
-                  setting.key === "primaryColor"
-                    ? setForm((current) => ({ ...current, primaryColor: value }))
-                    : setting.key === "accentColor"
-                      ? setForm((current) => ({ ...current, accentColor: value }))
-                      : setTheme(setting.key as keyof SiteTheme, value as never)
-                }
+                only="site"
+                onChange={applyColor}
               />
             ) : null}
 
@@ -579,7 +800,7 @@ export default function AppearancePage() {
               </AppearanceGroup>
             </> : null}
 
-            {section === "styles" ? <>
+            {section === "components" ? <>
               <AppearanceGroup title="Starting point" description="Apply a coordinated palette, then tune anything below. Save your own under Saved looks.">
                 <div className="grid gap-3 sm:grid-cols-3">{Object.entries(BUILT_IN_PRESETS).map(([name, preset]) => <button key={name} type="button" onClick={() => applyTemplate(name, preset)} className="ui-card ui-card-hover text-left"><TemplateSwatch primary={preset.primaryColor} accent={preset.accentColor} /><span className="mt-3 block text-sm font-semibold">{name}</span><span className="mt-1 block text-xs text-brand-textMuted">Apply palette</span></button>)}</div>
               </AppearanceGroup>
@@ -595,24 +816,24 @@ export default function AppearancePage() {
               <AppearanceGroup title="Control shapes" description="Storefront and staff. The shape of each control; its colours are under Colours.">
                 <Choice label="Primary buttons" value={form.theme.primaryButtonStyle} values={["solid", "soft", "outline", "framed"]} onChange={(value) => setTheme("primaryButtonStyle", value as SiteTheme["primaryButtonStyle"])} />
                 <Choice label="Secondary buttons" value={form.theme.secondaryButtonStyle} values={["solid", "soft", "outline", "ghost", "framed"]} onChange={(value) => setTheme("secondaryButtonStyle", value as SiteTheme["secondaryButtonStyle"])} />
-                <Choice label="Tabs" value={form.theme.tabStyle} values={["soft", "framed", "underline"]} onChange={(value) => setTheme("tabStyle", value as SiteTheme["tabStyle"])} />
+                {/* This is the *segmented* tab control — the order filters, the
+                    staff view switchers. Primary section navigation is not
+                    themed here: it follows the storefront header's language by
+                    design, so that moving between areas of the site looks the
+                    same wherever you do it. See `SectionNav`. */}
+                <Choice label="Segmented tabs" value={form.theme.tabStyle} values={["soft", "framed", "underline"]} onChange={(value) => setTheme("tabStyle", value as SiteTheme["tabStyle"])} />
                 <Choice label="Cards & panels" value={form.theme.cardStyle} values={["soft", "solid", "outline", "elevated"]} onChange={(value) => setTheme("cardStyle", value as SiteTheme["cardStyle"])} />
                 <Choice label="Inputs" value={form.theme.inputStyle} values={["soft", "solid", "outline", "filled"]} onChange={(value) => setTheme("inputStyle", value as SiteTheme["inputStyle"])} />
                 <Choice label="Surface shadows" value={form.theme.shadowStyle} values={["none", "soft", "glow"]} onChange={(value) => setTheme("shadowStyle", value as SiteTheme["shadowStyle"])} />
                 <Choice label="Border contrast" value={form.theme.borderStrength} values={["subtle", "standard", "strong"]} onChange={(value) => setTheme("borderStrength", value as SiteTheme["borderStrength"])} />
               </AppearanceGroup>
 
-              {/* The navbar's own shape controls live beside the navbar, not in a
-                  list of general component styles. "Navbar style" sitting between
-                  "Inputs" and "Surface shadows" was how a storefront-only control
-                  ended up reading as a site-wide one. */}
-              <AppearanceGroup title="Navigation bar — storefront only" description="Classic restores the original KeyMoura header. None of these touch the staff sidebar.">
-                <Choice label="Navbar style" value={form.theme.publicNavigationStyle} values={["classic", "soft", "framed", "minimal"]} onChange={(value) => setTheme("publicNavigationStyle", value as SiteTheme["publicNavigationStyle"])} />
-                <Choice label="Scroll behavior" value={form.theme.navigationBehavior} values={["auto-hide", "sticky"]} onChange={(value) => setTheme("navigationBehavior", value as SiteTheme["navigationBehavior"])} />
-                <Choice label="Navbar spacing" value={form.theme.navigationDensity} values={["compact", "comfortable"]} onChange={(value) => setTheme("navigationDensity", value as SiteTheme["navigationDensity"])} />
-                <NavbarPreview form={form} />
-              </AppearanceGroup>
-
+              {/* The storefront navbar's controls moved out of this list
+                  entirely and into their own section, together with the navbar's
+                  colours. "Navbar style" sitting between "Inputs" and "Surface
+                  shadows" was how a storefront-only control ended up reading as
+                  a site-wide one, and its colours being a section away was the
+                  other half of the same problem. */}
               <AppearanceGroup title="Staff area only" description="Changes these admin screens. Customers never see it.">
                 <Choice label="Staff sidebar" value={form.theme.navigationStyle} values={["soft", "framed", "minimal"]} onChange={(value) => setTheme("navigationStyle", value as SiteTheme["navigationStyle"])} />
               </AppearanceGroup>
@@ -638,7 +859,13 @@ export default function AppearancePage() {
         <AppearancePreview
           form={form}
           onJump={(taskId) => {
-            setSection("colors");
+            // The colour list is split across two sections now, so the jump has
+            // to open the one that actually holds the control. Asking the task
+            // which side it is on keeps this correct if a task is ever
+            // reclassified — a hard-coded "colors" would scroll to an element
+            // that is not rendered and fail silently.
+            const task = taskById(taskId);
+            setSection(task && isNavigationTask(task) ? "navigation" : "colors");
             setColorQuery("");
             window.setTimeout(() => jumpToAppearanceTask(taskId), 0);
           }}
@@ -668,6 +895,27 @@ export default function AppearancePage() {
 }
 
 /**
+ * Whether a task's colours belong to the navbar rather than to the site.
+ *
+ * Decided from the *settings* each field writes, not from the task's own
+ * section, because the five navbar tasks under "Advanced" — hover states,
+ * utility buttons, count badges, menu panels — are filed by rarity rather than
+ * by subject and would otherwise be split from the navbar they belong to.
+ *
+ * This is the same partition `resetSection` uses, read off the same `group`
+ * field, so what a section shows and what it resets cannot drift apart. A
+ * pointer task has no fields and stays with the site list, where the thing it
+ * points at lives.
+ */
+function isNavigationTask(task: AppearanceTask): boolean {
+  if (!task.fields.length) return false;
+  return task.fields.every((field) => {
+    const group = settingFor(field.key).group;
+    return group === "navbar" || group === "navbarMenus";
+  });
+}
+
+/**
  * The colour editor: one searchable list, grouped by what each colour touches.
  *
  * Every reported confusion on this page was the same shape — "I can see the
@@ -681,13 +929,27 @@ function ColorSection({
   query,
   onQueryChange,
   onChange,
+  only,
 }: {
   form: Appearance;
   query: string;
   onQueryChange: (value: string) => void;
   onChange: (setting: AppearanceSetting, value: string) => void;
+  /**
+   * Which half of the colour list to render.
+   *
+   * The navbar's thirteen colours moved to the Navigation section, so "make the
+   * header darker" is one place rather than a shape control in one section and
+   * its colours in another. Everything else stays here. The split is a filter
+   * over one list rather than two lists, so every colour still has exactly one
+   * control — the rule `appearanceTasks.ts` exists to hold.
+   */
+  only: "site" | "navigation";
 }) {
-  const matches = searchAppearanceTasks(query);
+  const wantsNav = only === "navigation";
+  const matches = searchAppearanceTasks(query).filter(
+    (task) => isNavigationTask(task) === wantsNav
+  );
   const searching = Boolean(query.trim());
 
   const valueOf = (setting: AppearanceSetting) =>
@@ -1226,8 +1488,82 @@ function AppearancePreview({ form, onJump }: { form: Appearance; onJump: (taskId
   );
 }
 
+/**
+ * The header, as the storefront actually builds it.
+ *
+ * ## What it used to show
+ *
+ * `About · Projects · Catalog · Community` on the left and `Search · Messages ·
+ * Notifications · Account · Staff` on the right — the navigation from *two*
+ * passes ago. Community left the customer navigation entirely, Messages and
+ * Staff moved inside the account menu, Catalog became a Products menu, and
+ * search became a field on the bar rather than an icon. An owner tuning navbar
+ * colours was matching them against a header that no longer existed, and the
+ * two controls they would most want to see — the current-page marker and the
+ * cart count — were not in it at all.
+ *
+ * ## What it shows now
+ *
+ * The real links, read from `primaryNav` so this cannot drift again, and the
+ * real utility cluster in its real order. The classes are the storefront's own —
+ * `site-header-shell`, `site-nav-primary-link`, `site-nav-utility`,
+ * `site-nav-count-host`, `site-nav-badge` — so the underline, the hover
+ * treatment, the utility ring and the count bubble are painted by the same rules
+ * that paint the shop. An approximation here would be confidently wrong about
+ * the exact thing the section exists to adjust.
+ *
+ * The count bubble is shown deliberately: this pass fixed it being positioned
+ * against the header instead of the cart, and a preview that omits it is a
+ * preview that could not have caught that.
+ */
 function NavbarPreview({ form }: { form: Appearance }) {
-  return <section className="space-y-3"><div><h3 className="text-sm font-semibold">Navbar preview</h3><p className="mt-1 text-xs text-brand-textMuted">Desktop link treatment, the independent navbar palette, and the utility controls on the right.</p></div><div className="site-header-shell rounded-[var(--control-radius)] border px-3 py-2"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap items-center gap-2"><span className="mr-2 font-semibold text-[var(--km-nav-active)]">{(form.identity.shortName || "KM").slice(0, 2).toUpperCase()}</span>{["About", "Projects", "Catalog", "Community"].map((label) => <span key={label} className={cx("site-nav-link inline-flex items-center border px-3 py-1.5 text-xs font-medium", label === "Projects" && "is-active")}>{label}</span>)}</div><div className="flex flex-wrap items-center gap-2">{["Search", "Messages", "Notifications", "Account", "Staff"].map((label, index) => <span key={label} className={cx("site-nav-utility inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium", index === 2 && "is-highlighted")}>{label}</span>)}</div></div></div></section>;
+  return (
+    <section className="space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold">Header preview</h3>
+        <p className="mt-1 text-xs text-brand-textMuted">
+          The real header markup and the real navbar colours. Products is shown as the current page.
+        </p>
+      </div>
+      <div className="site-header-shell overflow-x-auto rounded-[var(--control-radius)] border px-3 py-2">
+        <div className="flex min-w-max items-center gap-4">
+          <span className="flex items-center gap-2">
+            {form.brand.primaryLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={form.brand.primaryLogoUrl} alt="" className="h-7 w-7 object-contain" />
+            ) : null}
+            {form.brand.showBrandName ? (
+              <span className="site-header-wordmark">{form.identity.shortName || form.identity.name}</span>
+            ) : null}
+          </span>
+
+          <span className="flex items-center gap-1">
+            {primaryNav.map((item, index) => (
+              <span
+                key={item.href}
+                className={cx("site-nav-link site-nav-primary-link !h-8 text-xs", index === 0 && "is-active")}
+              >
+                {item.label}
+              </span>
+            ))}
+            <span className="site-nav-link site-nav-primary-link !h-8 text-xs">More</span>
+          </span>
+
+          <span className="ml-auto flex items-center gap-2">
+            {/* Wishlist and cart, with the cart carrying a count — the pair
+                whose badge placement this pass repaired. */}
+            <span className="site-nav-count-host site-nav-utility inline-flex h-8 w-8 items-center justify-center rounded-full border text-[11px]">
+              ♥
+            </span>
+            <span className="site-nav-count-host site-nav-utility inline-flex h-8 w-8 items-center justify-center rounded-full border text-[11px]">
+              ▢
+              <span className="site-nav-utility-badge site-nav-badge">3</span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function SectionTitle({ title, text }: { title: string; text: string }) {
@@ -1254,9 +1590,13 @@ function AppearanceGroup({ title, description, scope, children }: { title: strin
   );
 }
 
-function TextField({ label, value, onChange, wide = false }: { label: string; value: string; onChange: (value: string) => void; wide?: boolean }) {
-  return <label className={wide ? "block sm:col-span-2" : "block"}><span className="ui-label">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="ui-input" /></label>;
-}
+/*
+ * `TextField` was removed. Every text input on this page now uses `Field` from
+ * `./sections`, which does the two things this one did not: it associates its
+ * label with its input by id rather than by wrapping, and it can carry a
+ * validation message tied to the field with `aria-describedby`. Two text-input
+ * components on one form is how half the fields end up without error handling.
+ */
 
 function Choice({ label, value, values, onChange }: { label: string; value: string; values: string[]; onChange: (value: string) => void }) {
   return <div><p className="ui-label">{label}</p><div className="grid gap-2 sm:grid-cols-2">{values.map((item) => <button key={item} type="button" aria-pressed={value === item} onClick={() => onChange(item)} className={cx("ui-card ui-card-hover !p-3 text-left", value === item && "!border-brand-primary !bg-brand-primary/10")}><span className={cx("block text-sm font-semibold capitalize", value === item && "text-brand-primary")}>{item}</span><span className="mt-1 block text-xs text-brand-textMuted">{choiceHelp[item] || "Shared site treatment"}</span></button>)}</div></div>;

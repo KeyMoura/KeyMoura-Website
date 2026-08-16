@@ -4,6 +4,9 @@ import { cache } from "react";
 import { installerAdmin } from "@/lib/installer/server";
 import { siteConfig } from "@/site.config";
 import { defaultSiteTheme, normalizeSiteTheme, type SiteTheme } from "@/theme/runtime";
+import { defaultAnnouncementConfig, normalizeAnnouncementConfig, type AnnouncementConfig } from "@/theme/announcement";
+import { defaultBrandConfig, normalizeBrandConfig, type BrandConfig } from "@/theme/brand";
+import { defaultHomepageConfig, normalizeHomepageConfig, type HomepageConfig } from "@/theme/homepage";
 
 export type RuntimeSiteSettings = {
   name: string;
@@ -21,11 +24,12 @@ export type RuntimeSiteSettings = {
   primaryColor: string;
   accentColor: string;
   theme: SiteTheme;
-  terminology: {
-    forum: string;
-    knowledgeBase: string;
-    trustedVendor: string;
-  };
+  /** Logo slots, and the one rule deciding which the navbar draws. */
+  brand: BrandConfig;
+  /** The storefront announcement bar. Not the security broadcast banner. */
+  announcement: AnnouncementConfig;
+  /** Which products the homepage's two pinnable frames lead with. */
+  homepage: HomepageConfig;
 };
 
 
@@ -48,11 +52,9 @@ const fallback: RuntimeSiteSettings = {
   primaryColor: "#fbbf24",
   accentColor: "#f59e0b",
   theme: defaultSiteTheme,
-  terminology: {
-    forum: siteConfig.terminology.forum,
-    knowledgeBase: siteConfig.terminology.knowledgeBase,
-    trustedVendor: siteConfig.terminology.trustedVendor,
-  },
+  brand: { ...defaultBrandConfig, primaryLogoUrl: siteConfig.identity.logo.src },
+  announcement: defaultAnnouncementConfig,
+  homepage: defaultHomepageConfig,
 };
 
 function shortName(name: string) {
@@ -63,13 +65,12 @@ export const getSiteSettings = cache(async (): Promise<RuntimeSiteSettings> => {
   try {
     const { data, error } = await installerAdmin()
       .from("site_settings")
-      .select("site_name,description,public_url,logo_url,primary_color,accent_color,terminology,theme_config,branding_config")
+      .select("site_name,description,public_url,logo_url,primary_color,accent_color,theme_config,branding_config")
       .eq("singleton", true)
       .maybeSingle();
 
     if (error || !data) return fallback;
     const name = data.site_name?.trim() || fallback.name;
-    const terms = data.terminology as Record<string, unknown> | null;
     const branding = data.branding_config as Record<string, unknown> | null;
     const brandingString = (key: string, fallbackValue: string) =>
       typeof branding?.[key] === "string" ? String(branding[key]).trim() || fallbackValue : fallbackValue;
@@ -90,17 +91,14 @@ export const getSiteSettings = cache(async (): Promise<RuntimeSiteSettings> => {
       primaryColor: data.primary_color || fallback.primaryColor,
       accentColor: data.accent_color || fallback.accentColor,
       theme: normalizeSiteTheme(data.theme_config),
-      terminology: {
-        forum: typeof terms?.forum === "string" ? terms.forum : fallback.terminology.forum,
-        knowledgeBase:
-          typeof terms?.knowledgeBase === "string"
-            ? terms.knowledgeBase
-            : fallback.terminology.knowledgeBase,
-        trustedVendor:
-          typeof terms?.trustedVendor === "string"
-            ? terms.trustedVendor
-            : fallback.terminology.trustedVendor,
-      },
+      /*
+       * `logo_url` seeds the primary slot, so a site that has never opened the
+       * new brand editor keeps drawing exactly the mark it drew before. The
+       * column is still the one the installer writes and is not being retired.
+       */
+      brand: normalizeBrandConfig(branding, data.logo_url || fallback.logoUrl),
+      announcement: normalizeAnnouncementConfig(branding),
+      homepage: normalizeHomepageConfig(branding),
     };
   } catch {
     return fallback;

@@ -2,6 +2,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faXmark } from "@fortawesome/free-solid-svg-icons";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 
 type BannerLevel = "info" | "warning" | "critical";
@@ -65,45 +67,45 @@ export default function SiteBroadcastBanner() {
 
   if (!enabled || !text.trim() || dismissed) return null;
 
-  // Color styles based on level
-  let colorClasses =
-    "border-b border-sky-400/70 bg-sky-500/15 text-sky-100"; // info
-  if (level === "warning") {
-    colorClasses =
-      "border-b border-amber-400/80 bg-amber-500/15 text-amber-50";
-  } else if (level === "critical") {
-    colorClasses =
-      "border-b border-red-500/80 bg-red-600/20 text-red-50";
-  }
-
-  const label =
-    level === "critical"
-      ? "CRITICAL"
-      : level === "warning"
-      ? "WARNING"
-      : "INFO";
+  const label = level === "critical" ? "Critical" : level === "warning" ? "Warning" : "Notice";
 
   return (
-    <div className={`w-full ${colorClasses}`}>
-      <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2 text-[12px]">
-        {/* Severity pill */}
-        <span className="inline-flex flex-shrink-0 items-center rounded-full border border-white/40 px-2 py-[2px] text-[10px] font-semibold uppercase tracking-[0.15em]">
-          {label}
-        </span>
-
-        {/* Centered text */}
-        <p className="flex-1 text-center leading-snug">{text}</p>
-
-        {/* Close button */}
+    /*
+     * Rebuilt on the announcement bar's layout, and deliberately not merged with
+     * it. This is the *security* broadcast: it is written on /staff/security
+     * beside the lockdown password, it carries a severity, and it exists to say
+     * "we are aware, we are working on it" on every page at once.
+     *
+     * What changed is only how it looks. It kept its own severity colours —
+     * those are the one place on this site where red means red — but it no
+     * longer draws a centred sentence between a boxed `INFO` chip and a ringed
+     * `×`, because that was the shape the shop had been using to advertise a
+     * launch date. With a real announcement bar above it, this can go back to
+     * looking like what it is.
+     *
+     * `role="status"` rather than `alert`: an operator enabling this while
+     * somebody is mid-checkout should not interrupt their screen reader, and the
+     * banner is present on the next page they load either way.
+     */
+    <aside
+      className="announcement-bar site-broadcast-bar"
+      data-level={level}
+      role="status"
+      aria-label="Site notice"
+      data-testid="site-broadcast-banner"
+    >
+      <div className="announcement-bar-inner">
+        <span className="announcement-bar-label">{label}</span>
+        <p className="announcement-bar-message">{text}</p>
         <button
           type="button"
           onClick={handleClose}
-          aria-label="Dismiss banner"
-          className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-white/30 text-[11px] font-semibold hover:bg-white/15"
+          aria-label="Dismiss notice"
+          className="announcement-bar-close"
         >
-          ×
+          <FontAwesomeIcon icon={faXmark} className="h-3 w-3" aria-hidden="true" />
         </button>
       </div>
-    </div>
+    </aside>
   );
 }
