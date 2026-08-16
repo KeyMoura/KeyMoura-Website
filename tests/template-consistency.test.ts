@@ -12,7 +12,7 @@ test("shared product surfaces use deployment identity configuration", () => {
   const clientSurfaces = [
     "src/components/GlobalLockdownGate.tsx",
     "src/components/SiteHeader.tsx",
-    "src/app/notifications/page.tsx",
+    "src/app/account/notifications/page.tsx",
   ];
   const serverSurfaces = [
     "src/app/privacy/page.tsx",
@@ -28,7 +28,12 @@ test("shared product surfaces use deployment identity configuration", () => {
 
   const settings = read("src/lib/siteSettings.ts");
   assert.match(settings, /\.from\("site_settings"\)/);
-  assert.match(settings, /site_name,description,public_url,logo_url,primary_color,accent_color,terminology/);
+  // `terminology` left this select in pass 4.0. It was read, normalized, and
+  // returned on every request, and nothing on the site rendered it — so the
+  // column is still there and still holds its data, but the runtime stopped
+  // paying to load it. See the Labels decision in account-appearance-orders.
+  assert.match(settings, /site_name,description,public_url,logo_url,primary_color,accent_color,theme_config,branding_config/);
+  assert.doesNotMatch(settings, /terminology/);
 
   const header = read("src/components/SiteHeader.tsx");
   assert.doesNotMatch(header, /\/brand\/sca-logo(?:-dull)?\.svg/);

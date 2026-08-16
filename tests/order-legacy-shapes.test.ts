@@ -433,5 +433,7 @@ test("the order pages have a boundary narrower than the whole document", () => {
   const boundary = read("src/app/orders/error.tsx");
   assert.match(boundary, /"use client"/);
   assert.match(boundary, /captureException/, "a contained failure must still be reported");
-  assert.match(boundary, /href="\/orders"/, "the customer keeps a route out of the failure");
+  // Order history moved to /account/orders in pass 4.0; the escape hatch follows
+  // it, so the failure page does not send the customer through a redirect.
+  assert.match(boundary, /href="\/account\/orders"/, "the customer keeps a route out of the failure");
 });

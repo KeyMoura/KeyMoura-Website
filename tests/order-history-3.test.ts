@@ -37,7 +37,7 @@ import {
  */
 
 const read = (path: string) => readFileSync(path, "utf8");
-const page = read("src/app/orders/page.tsx");
+const page = read("src/app/account/orders/page.tsx");
 const card = read("src/components/commerce/OrderHistoryCard.tsx");
 const globalsCss = read("src/app/globals.css");
 

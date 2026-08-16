@@ -10,6 +10,17 @@ import { ownedKeys } from "../src/theme/appearanceTasks.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
+/**
+ * Source with its comments removed.
+ *
+ * For assertions of the form "X must not appear": a file that explains why X was
+ * removed has to be able to say the word X. Matching the raw source makes the
+ * explanation itself the failure, which teaches the next person to delete the
+ * explanation.
+ */
+const code = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
 test("staff order queue supports useful independent sort modes", () => {
   const page = read("src/app/staff/orders/page.tsx");
   for (const label of ["Recently updated", "Newest orders", "Oldest orders", "Highest priority", "Target date", "Highest price"]) {
@@ -44,7 +55,7 @@ test("customer order hub sorts by the date it prints, not by updated_at", () => 
    * date on the card. Sorting by the visible field is the whole rule, and the
    * column is not even read any more.
    */
-  const page = read("src/app/orders/page.tsx");
+  const page = read("src/app/account/orders/page.tsx");
   assert.deepEqual([...ORDER_HISTORY_SORTS], ["newest", "oldest"]);
   // The labels sit beside the values they belong to, so a control cannot offer
   // a sort the sorter does not implement.
@@ -71,8 +82,8 @@ test("customer order hub sorts by the date it prints, not by updated_at", () => 
 });
 
 test("primary order and notification controls adapt for mobile", () => {
-  const orders = read("src/app/orders/page.tsx");
-  const notifications = read("src/app/notifications/page.tsx");
+  const orders = read("src/app/account/orders/page.tsx");
+  const notifications = read("src/app/account/notifications/page.tsx");
   assert.match(orders, /sm:w-auto/);
   // The native `<select>` this used to pin became a MenuSelect, like every
   // other dropdown on the site. The mobile requirement it stood for — a full
@@ -97,22 +108,63 @@ test("account security exposes safe Supabase identity linking", () => {
   assert.match(page, /`Connect \$\{label\}`/);
 });
 
-test("appearance is organized into focused sections with explicit publishing", () => {
+test("appearance is organized around owner tasks, not kinds of setting", () => {
   const page = read("src/app/staff/appearance/page.tsx");
-  // Section names now describe the subject rather than the editor: "Colours"
-  // instead of "Colors & controls", "Business details" instead of "Brand &
-  // business". Every colour lives in one searchable section instead of being
-  // split between "Colors & controls" and "Navbar".
-  for (const label of ["Colours", "Shapes & density", "Business details", "Logos & icons", "Labels & wording"]) {
+  /*
+   * Pass 4.0 reorganised these. The previous six were named after *kinds of
+   * setting* — Colours, Shapes & density, Logos & icons — and the four things
+   * this pass was asked about had no home among them: the logo could only be a
+   * URL, the announcement bar was the security banner, homepage merchandising
+   * was code, and the navbar's shape and its colours were two sections apart.
+   */
+  for (const label of ["Brand", "Navigation", "Announcement bar", "Homepage", "Colours", "Buttons & components", "Business details"]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /Reset this section/);
   assert.match(page, /Publish appearance/);
   assert.match(page, /You have unpublished appearance changes/);
-  for (const label of ["Layout & type", "Control shapes", "Tabs", "Cards & panels", "Inputs", "Content width"]) {
+  for (const label of ["Layout & type", "Control shapes", "Segmented tabs", "Cards & panels", "Inputs", "Content width"]) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /"framed"/);
+});
+
+/**
+ * The "Labels" decision, pinned so it cannot quietly come back.
+ *
+ * "Labels & wording" held three controls — Community label, Projects label,
+ * Trusted vendor label — writing `site_settings.terminology`. `getSiteSettings`
+ * read the column and returned it on `RuntimeSiteSettings.terminology`, and no
+ * component on the site ever rendered any of it. The section was not badly
+ * named; it did nothing.
+ *
+ * Both halves are asserted. The controls are gone from the editor *and* the dead
+ * field is gone from the runtime settings type — leaving the type would keep a
+ * loaded, typed, plausible-looking value that a future component might start
+ * reading, which is how a dead setting comes back to life by accident.
+ *
+ * What is deliberately *not* asserted: anything about the database. The column
+ * still exists, still holds its data, and the installer still writes it. Nothing
+ * was destroyed.
+ */
+test("the dead terminology controls are gone from the editor and the runtime", () => {
+  /*
+   * Comments are stripped before matching. Both files explain the removal at
+   * some length and name what was removed while doing it, which is exactly what
+   * they should do — the assertion is about code, not about whether the reasoning
+   * is allowed to mention the thing it is reasoning about.
+   */
+  const page = code(read("src/app/staff/appearance/page.tsx"));
+  const settings = code(read("src/lib/siteSettings.ts"));
+
+  for (const dead of ["forumLabel", "knowledgeBaseLabel", "trustedVendorLabel", "Labels & wording"]) {
+    assert.doesNotMatch(page, new RegExp(dead), `${dead} wrote a value nothing rendered`);
+  }
+  assert.doesNotMatch(
+    settings,
+    /terminology/,
+    "RuntimeSiteSettings must not carry a field no surface reads"
+  );
 });
 
 /**

@@ -579,11 +579,37 @@ test("mobile puts search on its own row rather than in the icon strip", () => {
   assert.match(css, /\.site-header-mobile-row/);
 });
 
-test("the 1024 band hands two links to More instead of shrinking search", () => {
-  assert.match(header, /site-nav-link-wide/);
-  assert.match(header, /site-more-item-narrow/);
-  // Specificity has to beat `.site-header-shell .site-nav-primary-link`.
-  assert.match(css, /\.site-header-shell \.site-nav-link-wide \{ display: none/);
+/**
+ * The 1024 handoff was removed in pass 4.0, because it never worked.
+ *
+ * Pass 4.1 rendered Gallery and About twice — on the bar from `xl`, and inside
+ * More below it — and hid whichever copy did not apply. The hiding half was
+ * `@media (min-width: 1280px) { .site-more-item-narrow { display: none } }`,
+ * which loses on source order to `.nav-menu-item { display: flex }` declared
+ * ~450 lines later in the same stylesheet: same specificity, later rule. So at
+ * every desktop width both copies rendered, and the More menu duplicated the
+ * bar — the duplication the shop owner reported.
+ *
+ * The replacement is not a stronger selector. Every primary destination has one
+ * slot on the bar at every width, so there is no second copy to hide and no
+ * rule whose correctness depends on where it sits in the file. This asserts the
+ * mechanism is gone rather than merely that the classes are unused.
+ */
+test("primary destinations are rendered once, not rendered twice and hidden", () => {
+  // Comments stripped: both files explain the removal and name the classes
+  // while doing it, and the assertion is about markup and rules, not prose.
+  const headerCode = header.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  for (const dead of ["site-nav-link-wide", "site-more-item-narrow"]) {
+    assert.doesNotMatch(headerCode, new RegExp(dead), `${dead} rendered a second copy of a live link`);
+    assert.doesNotMatch(cssRules, new RegExp(`\\.${dead}`), `${dead} should have no rule left`);
+  }
+
+  // More holds secondary destinations only. Gallery and About are on the bar.
+  const moreMenu = headerCode.slice(headerCode.indexOf("menuLabel=\"More destinations\""));
+  assert.doesNotMatch(moreMenu, /narrowMoreItems/);
+  assert.match(moreMenu, /secondaryNav\.map/);
 });
 
 // ---------------------------------------------------------------------------

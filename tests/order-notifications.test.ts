@@ -19,7 +19,7 @@ test("customer status changes use specific order notifications", () => {
 });
 
 test("notification center presents customer order updates as KeyMoura activity", () => {
-  const page = readFileSync("src/app/notifications/page.tsx", "utf8");
+  const page = readFileSync("src/app/account/notifications/page.tsx", "utf8");
   assert.match(page, /Order updates, messages, and activity across KeyMoura/);
   assert.match(page, /isCustomerOrderUpdate/);
 });

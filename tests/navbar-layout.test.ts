@@ -123,7 +123,7 @@ test("desktop and mobile navigation cannot drift apart", () => {
 test("the mobile drawer reaches everything a phone user needs", () => {
   // The mobile bar deliberately carries only logo, search, cart and menu, so
   // every other destination has to be inside the drawer.
-  for (const expected of ["/wishlist", "/orders", "/account", "/messages"]) {
+  for (const expected of ["/wishlist", "/account/orders", "/account", "/messages"]) {
     assert.ok(
       accountNav.some((item) => item.href === expected) || drawer.includes(`"${expected}"`),
       `${expected} must be reachable from the drawer`

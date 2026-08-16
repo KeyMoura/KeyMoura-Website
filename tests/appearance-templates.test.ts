@@ -162,9 +162,18 @@ test("the Appearance page has its own saved-looks section", () => {
   // Renamed from "Templates": the word describes a file format rather than what
   // the section holds, which is a saved appearance you can try before publishing.
   assert.match(page, /templates: \{ label: "Saved looks"/);
-  // The two colour sections collapsed into one searchable "colors", and the
-  // choice controls moved to "styles".
-  assert.match(page, /"colors" \| "styles" \| "brand" \| "assets" \| "wording" \| "templates"/);
+  /*
+   * The section union, restructured in pass 4.0 around owner tasks. Asserted as
+   * a set rather than as one literal string, so reordering the list for a better
+   * reading order does not fail a test that is about *which* sections exist.
+   */
+  for (const section of ["brand", "navigation", "announcement", "homepage", "colors", "components", "business", "templates"]) {
+    assert.match(page, new RegExp(`\\|?\\s*"${section}"`), `the ${section} section must exist`);
+  }
+  // The two retired ones: "assets" folded into Brand and Business details, and
+  // "wording" held three controls that rendered nowhere on the site.
+  assert.doesNotMatch(page, /"assets"/);
+  assert.doesNotMatch(page, /"wording"/);
 });
 
 test("save, list, apply, rename, and delete are all wired up", () => {
@@ -191,7 +200,7 @@ test("applying a template edits the form and does not publish", () => {
 test("applying a template leaves business identity alone", () => {
   const start = page.indexOf("function applyTemplateToForm");
   const body = page.slice(start, page.indexOf("\n}", start));
-  for (const field of ["name", "publicUrl", "supportEmail", "description", "copyrightText", "forumLabel"]) {
+  for (const field of ["name", "publicUrl", "supportEmail", "description", "copyrightText"]) {
     assert.ok(!new RegExp(`\\b${field}:`).test(body), `applying a template must not change identity.${field}`);
   }
   assert.match(body, /identity: \{ \.\.\.form\.identity, \.\.\.normalized\.assets \}/);
