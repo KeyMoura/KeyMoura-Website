@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useCartMutations } from "@/lib/hooks/useCart";
+import { useCartDrawer } from "@/components/commerce/CartDrawerProvider";
 import { allowsDirectPurchase, allowsRequest, type PurchaseMode } from "@/lib/commerce/purchaseModes";
 
 /**
@@ -17,6 +18,12 @@ import { allowsDirectPurchase, allowsRequest, type PurchaseMode } from "@/lib/co
  * This is a convenience, not a control. The server re-checks the mode when the
  * item is added, when the cart is displayed, and again at checkout, so hiding
  * or showing a button here cannot change what is actually purchasable.
+ *
+ * A successful add opens the cart drawer, the same as the catalog's quick-add,
+ * so the confirmation is the cart itself rather than a sentence claiming
+ * something happened. The `request_only` and "request a custom version" paths
+ * are links and never touch the cart, so they never open it — a request is not a
+ * purchase and must not be made to look like one.
  */
 
 type AddToCartButtonProps = {
@@ -40,7 +47,9 @@ export default function AddToCartButton({
   quantity = 1,
 }: AddToCartButtonProps) {
   const { add } = useCartMutations();
+  const { openCart } = useCartDrawer();
   const [message, setMessage] = useState("");
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
 
   const canBuy = allowsDirectPurchase(purchaseMode) && startingPriceCents != null && available;
   const canRequest = allowsRequest(purchaseMode);
@@ -50,7 +59,12 @@ export default function AddToCartButton({
     add.mutate(
       { productId, quantity, selectedOptions },
       {
-        onSuccess: () => setMessage("Added to your cart."),
+        onSuccess: () => {
+          setMessage("Added to your cart.");
+          // Only here — after the server has returned the re-priced cart. A
+          // refused add falls through to `onError` and the drawer stays shut.
+          openCart(buttonRef.current);
+        },
         // The server's refusal is the useful message here — it explains which
         // option or which stock level blocked the line.
         onError: (error) => setMessage(error.message),
@@ -71,6 +85,7 @@ export default function AddToCartButton({
       <div className="ui-action-row">
         {canBuy ? (
           <button
+            ref={buttonRef}
             type="button"
             onClick={addToCart}
             disabled={add.isPending}

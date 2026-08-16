@@ -2306,6 +2306,250 @@
     .mobile-nav-backdrop { animation: none; }
   }
 
+  /* ==== Cart drawer ========================================================
+   *
+   * A sheet from the right edge, replacing the 380px popover that used to hang
+   * off the cart button. See `CartDrawer.tsx` for why; the short version is that
+   * the popover's checkout button scrolled out of the panel on a cart of four
+   * items, because the footer was a sibling of the scroll region rather than a
+   * pinned row outside it.
+   *
+   * ## Tokens
+   *
+   * This surface reads the *content* roles — `--panel-strong`, `--border`,
+   * `--heading`, `--text`, `--muted` — and not the `--km-nav-*` family the
+   * header uses. It is a panel of shop content that happens to be opened from
+   * the bar, not a piece of the bar, and dressing it in navigation colours is
+   * what would make it drift the moment an operator restyles the navbar. Its two
+   * actions are `.ui-btn-primary` and a quiet button, so the Appearance button
+   * styles reach them like any other pair.
+   */
+  .cart-drawer-root { position: fixed; inset: 0; z-index: 80; }
+
+  .cart-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(2px);
+    animation: cart-drawer-fade-in 160ms ease-out;
+  }
+  @keyframes cart-drawer-fade-in { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes cart-drawer-slide-in { from { transform: translateX(100%) } to { transform: translateX(0) } }
+
+  /*
+   * `grid-template-rows: auto minmax(0, 1fr) auto` is the whole fixed-header /
+   * fixed-footer contract.
+   *
+   * `minmax(0, 1fr)` and not `1fr`: an `auto`-floored track takes its
+   * min-content height, which for a list of cart items is the entire list. The
+   * middle row would refuse to shrink, the panel would grow past the viewport,
+   * and the footer would leave the screen — which is exactly the bug being
+   * fixed, reproduced one layer up.
+   *
+   * 26rem is 416px, inside the 400–440px the design calls for, and `min()`
+   * hands the whole width to a phone minus a sliver of backdrop, so it is always
+   * obvious there is a page behind it and always possible to dismiss by tapping.
+   */
+  .cart-drawer-panel {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    width: min(26rem, 100vw - 2rem);
+    max-height: 100dvh;
+    background: var(--panel-strong);
+    color: var(--text);
+    border-left: 1px solid var(--border);
+    box-shadow: -24px 0 64px rgb(0 0 0 / 0.45);
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: cart-drawer-slide-in 200ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  /*
+   * Below 480 the sliver goes and the sheet takes the width.
+   *
+   * `100vw - 2rem` at 375px leaves a 343px panel, which is enough to be usable
+   * and not enough to stop the quantity stepper, the price and the Remove link
+   * competing on one row. The backdrop tap is lost; Close and Escape are not,
+   * and Continue shopping is pinned in the footer.
+   */
+  @media (max-width: 479.98px) {
+    .cart-drawer-panel { width: 100vw; border-left: 0; }
+  }
+
+  /* Transform-based, short, and no bounce — the easing above is a decelerate
+     curve, not a spring. Reduced motion drops the slide entirely and keeps a
+     fade, so the panel still reads as arriving rather than teleporting. */
+  @media (prefers-reduced-motion: reduce) {
+    .cart-drawer-panel { animation: cart-drawer-fade-in 120ms ease-out; }
+    .cart-drawer-backdrop { animation: none; }
+  }
+
+  .cart-drawer-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .cart-drawer-title { font-size: 1.0625rem; font-weight: 650; color: var(--heading); }
+  .cart-drawer-count { margin-top: 0.125rem; font-size: 0.8125rem; color: var(--muted); }
+
+  .cart-drawer-close {
+    display: inline-flex;
+    flex: none;
+    /* 44px, the WCAG 2.2 AA target, and the same size as the mobile drawer's
+       close button so the two dismissals feel like one gesture. */
+    height: 2.75rem;
+    width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    color: var(--text);
+    transition: background-color 120ms ease-out, border-color 120ms ease-out;
+  }
+  .cart-drawer-close:hover { background: var(--panel); border-color: var(--text); }
+  .cart-drawer-close:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
+
+  /* The only scrolling region in the sheet. `overscroll-behavior: contain` stops
+     a flick at the end of the list from scrolling the locked page behind it. */
+  .cart-drawer-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.75rem 1.25rem 1rem;
+  }
+
+  .cart-drawer-message { padding-block: 1.5rem; text-align: center; font-size: 0.875rem; color: var(--muted); }
+  .cart-drawer-error,
+  .cart-drawer-notice { margin-top: 0.75rem; font-size: 0.75rem; }
+
+  .cart-drawer-items { display: grid; gap: 0.25rem; }
+  .cart-drawer-item {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.75rem;
+    padding-block: 0.875rem;
+  }
+  .cart-drawer-item + .cart-drawer-item { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+
+  .cart-drawer-thumb { display: block; width: 4rem; }
+  .cart-drawer-item-body { min-width: 0; }
+  .cart-drawer-item-name {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .cart-drawer-item-name:hover { color: var(--brand-accent); }
+  /*
+   * The configuration summary, clamped rather than truncated to one line: a
+   * two-option product ("Wood: Walnut · Finish: Satin") is the common case and
+   * an ellipsis after the first option hides the half a customer is checking.
+   */
+  .cart-drawer-item-options {
+    margin-top: 0.1875rem;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: var(--muted);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .cart-drawer-item-unit { margin-top: 0.1875rem; font-size: 0.75rem; color: var(--muted); }
+
+  .cart-drawer-item-controls {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+  }
+  .cart-drawer-remove {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 120ms ease-out;
+  }
+  .cart-drawer-remove:hover:not(:disabled) { color: var(--text); }
+  /* Not colour alone: the control also stops responding to the pointer, and its
+     label is unchanged, so "busy" is legible without seeing the shade. */
+  .cart-drawer-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+  .cart-drawer-remove:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; border-radius: 0.25rem; }
+
+  .cart-drawer-item-price {
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ---- Empty state ---- */
+  .cart-drawer-empty { padding: 2.5rem 0.5rem; text-align: center; }
+  .cart-drawer-empty-title { font-size: 1rem; font-weight: 650; color: var(--heading); }
+  .cart-drawer-empty-body {
+    margin: 0.5rem auto 0;
+    max-width: 20rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .cart-drawer-empty-action { margin-top: 1.25rem; width: 100%; }
+  .cart-drawer-empty-link {
+    display: inline-block;
+    margin-top: 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .cart-drawer-empty-link:hover { color: var(--text); }
+
+  /* ---- Footer: pinned, whatever the list does ---- */
+  .cart-drawer-footer {
+    border-top: 1px solid var(--border);
+    background: var(--panel-strong);
+    padding: 1rem 1.25rem;
+  }
+  .cart-drawer-total { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .cart-drawer-total + .cart-drawer-total { margin-top: 0.25rem; }
+  .cart-drawer-total-label { font-size: 0.875rem; color: var(--muted); }
+  .cart-drawer-total-value {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--heading);
+    font-variant-numeric: tabular-nums;
+  }
+  .cart-drawer-total-discount .cart-drawer-total-value { font-size: 0.9375rem; color: var(--brand-accent); }
+  .cart-drawer-fineprint { margin-top: 0.375rem; font-size: 0.75rem; color: var(--muted); }
+  .cart-drawer-checkout { margin-top: 0.875rem; width: 100%; }
+
+  .cart-drawer-continue {
+    margin-top: 0.625rem;
+    width: 100%;
+    padding-block: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--muted);
+    transition: color 120ms ease-out;
+  }
+  .cart-drawer-continue:hover { color: var(--text); }
+  .cart-drawer-continue:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; border-radius: var(--control-radius); }
+
   /* Navbar utility controls (search, messages, notifications, account, staff) intentionally use
      their own dedicated tokens instead of the shared secondary/accent color, so changing the
      site's primary action color never recolors them. Declared after .site-nav-link so it wins
@@ -4056,10 +4300,12 @@
 
   .cart-thumb .product-image-fallback { font-size: .9rem; }
 
-  /* The drawer is narrower than the page, and at 320px the row still has to fit
-     a name, options, a quantity field and a price. */
-  .cart-thumb-sm { width: 3.25rem; }
-  .cart-thumb-sm .product-image-fallback { font-size: .75rem; }
+  /* `.cart-thumb-sm` (3.25rem) lived here for the old cart popover, which was
+     380px wide and had to fit a name, options, a quantity field and a price
+     beside the picture. The sheet that replaced it is 416px and pins its own
+     4rem track in `.cart-drawer-item`, so the narrow variant had no callers
+     left. The drawer and the cart page now show the same size thumbnail, which
+     is what they should have been doing all along. */
 
   /* A thumbnail that links to the product keeps the card's hover language
      without becoming a second visual button. */

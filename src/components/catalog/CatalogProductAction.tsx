@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck } from "@fortawesome/free-solid-svg-icons";
 import { useCartMutations } from "@/lib/hooks/useCart";
+import { useCartDrawer } from "@/components/commerce/CartDrawerProvider";
 import { catalogAction, type ActionableProduct } from "@/lib/commerce/catalogActions";
 
 /**
@@ -39,6 +40,20 @@ import { catalogAction, type ActionableProduct } from "@/lib/commerce/catalogAct
  * would otherwise flash a number that then walks backwards, and the refusals
  * this shop can produce (out of stock, a newly required option, a cart line
  * ceiling) are exactly the ones a customer needs to believe.
+ *
+ * ## Why the drawer opens, and only on the way the drawer *should* open
+ *
+ * `onSuccess` fires after the mutation has resolved with the server's
+ * re-priced cart already written into the query cache, so by the time the sheet
+ * slides in it is rendering the real line, the real count and the real subtotal.
+ * Nothing about the drawer is predicted: an add that fails takes the `onError`
+ * path, which leaves the drawer shut and prints the server's sentence under the
+ * button — a sheet that opened to show a cart the customer's item is *not* in
+ * would be a worse lie than no feedback at all.
+ *
+ * Only this branch opens it. "Choose options", "Request a quote" and "View
+ * details" are links to the product page, and a cart drawer over a navigation
+ * the customer just asked for is a panel in the way of the thing they wanted.
  */
 
 type CatalogProductActionProps = {
@@ -53,9 +68,11 @@ const CONFIRM_MS = 2600;
 export default function CatalogProductAction({ product, href }: CatalogProductActionProps) {
   const decision = catalogAction(product);
   const { add } = useCartMutations();
+  const { openCart } = useCartDrawer();
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
   const timerRef = useRef<number | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(
     () => () => {
@@ -85,6 +102,11 @@ export default function CatalogProductAction({ product, href }: CatalogProductAc
           setConfirmed(true);
           if (timerRef.current !== null) window.clearTimeout(timerRef.current);
           timerRef.current = window.setTimeout(() => setConfirmed(false), CONFIRM_MS);
+          // Handing the drawer this button is what sends focus back into the
+          // middle of the product grid on close, rather than to the top of the
+          // document — which on a catalog of a dozen results is the difference
+          // between carrying on shopping and finding your place again.
+          openCart(buttonRef.current);
         },
         // The server's refusal is the useful message: it names the option or
         // the stock level that stopped the line.
@@ -99,6 +121,7 @@ export default function CatalogProductAction({ product, href }: CatalogProductAc
   return (
     <div className="product-card-cta-wrap">
       <button
+        ref={buttonRef}
         type="button"
         onClick={addToCart}
         disabled={add.isPending}
