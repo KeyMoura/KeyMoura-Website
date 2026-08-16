@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark, faMagnifyingGlass, faChevronDown } from "@fortawesome/free-solid-svg-icons";
@@ -308,16 +308,31 @@ export default function MobileNavDrawer({
             <p className="mobile-nav-heading">Your account</p>
             {signedIn ? (
               <>
-                {accountNav.map((item) =>
-                  renderLink(
-                    item,
-                    item.href === "/messages"
-                      ? unreadMessages
-                      : item.href === "/notifications"
-                        ? unreadNotifications
-                        : undefined
-                  )
-                )}
+                {/*
+                  Cart follows Wishlist here, the way it does on the desktop bar.
+                  It was missing from the signed-in list and present in the guest
+                  one below, so signing in silently removed a destination — and
+                  it broke the Account → Wishlist → Cart relationship the header
+                  states everywhere else.
+
+                  Injected at render rather than added to `accountNav`, because
+                  that list is also the desktop account *menu*, and a Cart entry
+                  inside a dropdown that sits two controls away from the cart
+                  button is a second answer to a question already answered.
+                */}
+                {accountNav.map((item) => (
+                  <Fragment key={item.href}>
+                    {renderLink(
+                      item,
+                      item.href === "/messages"
+                        ? unreadMessages
+                        : item.href === "/notifications"
+                          ? unreadNotifications
+                          : undefined
+                    )}
+                    {item.href === "/wishlist" ? renderLink({ href: "/cart", label: "Cart" }) : null}
+                  </Fragment>
+                ))}
                 {accountSecondaryNav.map((item) => renderLink(item))}
               </>
             ) : (

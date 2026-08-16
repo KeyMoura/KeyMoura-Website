@@ -23,6 +23,28 @@ import type { StorefrontNav } from "@/lib/commerce/storefrontNavModel";
  * opens the panel — but it is what makes the menu reachable and announceable
  * without a pointer, and it is what a screen reader describes.
  *
+ * ## Why the outline is on the wrapper and not on the link
+ *
+ * Two controls is the right *semantic* answer and it produced the wrong picture.
+ * The pill — border, radius, padding, hover fill — used to be carried by the
+ * `<a>` itself, so the chevron beside it sat outside the outline and Products
+ * read as a button with a loose arrow next to it, while `More` (a single
+ * button containing its own chevron) read as one control. Two adjacent things
+ * doing the same job looked like two different kinds of thing.
+ *
+ * The pill therefore moved up one level, onto `.products-menu-trigger`, and the
+ * two children became transparent. The wrapper is a `<span>`, so nothing about
+ * the semantics changed: there is still exactly one link and one button, still
+ * two tab stops, still no nested interactive elements. What changed is which box
+ * paints the border — and because the wrapper now carries the same
+ * `site-nav-link site-nav-primary-link` classes the other bar links carry, all
+ * four Appearance navigation styles (classic, soft, framed, minimal) reach it
+ * unchanged rather than needing a fifth case written for Products alone.
+ *
+ * Each child keeps its own `:focus-visible` ring, because they are still two
+ * separate destinations; a single ring around the pair would tell a keyboard
+ * user the wrong thing about where Enter is going to take them.
+ *
  * ## Hover intent
  *
  * Opening on `mouseenter` with no delay makes the panel flash open every time
@@ -52,13 +74,17 @@ type ProductsMenuProps = {
   nav: StorefrontNav;
   /** Marks the trigger as the current section. */
   isActive: boolean;
-  linkClassName: string;
+  /**
+   * The bar's own link classes. Applied to the *wrapper*, which is what paints
+   * the outline around the label and the chevron together — see the note above.
+   */
+  controlClassName: string;
 };
 
 const OPEN_DELAY_MS = 110;
 const CLOSE_DELAY_MS = 220;
 
-export default function ProductsMenu({ nav, isActive, linkClassName }: ProductsMenuProps) {
+export default function ProductsMenu({ nav, isActive, controlClassName }: ProductsMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -187,10 +213,19 @@ export default function ProductsMenu({ nav, isActive, linkClassName }: ProductsM
       onMouseEnter={() => schedule(true, OPEN_DELAY_MS)}
       onMouseLeave={() => schedule(false, CLOSE_DELAY_MS)}
     >
-      <span className="products-menu-trigger">
+      {/*
+        The one outlined control. `data-has-menu` is what lets the CSS give the
+        chevron side less padding than the label side without guessing whether a
+        chevron is there — a catalog with no categories renders the pill evenly.
+      */}
+      <span
+        className={`products-menu-trigger ${controlClassName}`}
+        data-has-menu={hasCategories ? "true" : undefined}
+        data-testid="products-menu-trigger"
+      >
         <Link
           href="/catalog"
-          className={linkClassName}
+          className="products-menu-link"
           aria-current={isActive ? "page" : undefined}
           onKeyDown={onLinkKeyDown}
           onClick={() => close()}

@@ -1647,22 +1647,67 @@
     .site-more-item-narrow { display: none; }
   }
 
-  /* ---- The Products link + menu ---- */
+  /* ---- The Products link + menu ----
+   *
+   * The outline belongs to `.products-menu-trigger`, not to the link inside it.
+   * The wrapper is rendered with the bar's own `site-nav-link
+   * site-nav-primary-link` classes, so it picks up the pill — height, radius,
+   * border, hover fill — and every Appearance navigation style, from the same
+   * rules that dress Custom Projects and Gallery. Both children then sit *inside*
+   * that outline, which is the whole point: Products and its chevron read as one
+   * control, the way `More` already did.
+   *
+   * Only the padding is restated here. The label side keeps the standard
+   * 0.75rem; the chevron side is tightened to 0.5rem because the chevron already
+   * carries its own width, and leaving both at 0.75rem made the pill visibly
+   * lopsided against its neighbours.
+   */
   .products-menu { position: relative; display: flex; min-width: 0; align-items: center; }
-  .products-menu-trigger { display: inline-flex; align-items: center; gap: 0.125rem; }
+  .site-header-shell .products-menu-trigger[data-has-menu="true"] {
+    gap: 0.125rem;
+    padding-inline: 0.75rem 0.5rem;
+  }
+
+  /*
+   * The link is now transparent: no border, no background, no radius of its own.
+   * It stretches to the pill's full height so the whole left half of the control
+   * is its hit target rather than just the text's line box.
+   */
+  .products-menu-link {
+    display: inline-flex;
+    align-items: center;
+    align-self: stretch;
+    color: inherit;
+    white-space: nowrap;
+  }
 
   .products-menu-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* Small, but never below the pointer target a chevron needs to be usable. */
-    height: 1.75rem;
-    width: 1.5rem;
-    border-radius: 0.5rem;
-    color: var(--km-nav-text, #d4d4d8);
+    align-self: stretch;
+    /* Narrow, because the padding around it belongs to the pill now. The
+       full-height stretch is what keeps it a usable pointer target. */
+    width: 1.25rem;
+    color: inherit;
+    background: transparent;
+    border: 0;
   }
-  .products-menu-toggle:hover { color: var(--km-nav-active, #f59e0b); }
-  .products-menu-toggle:focus-visible { outline: 2px solid var(--km-nav-active, #f59e0b); outline-offset: 2px; }
+
+  /*
+   * Two rings, not one.
+   *
+   * They are still two destinations — Enter on the link opens /catalog, Enter on
+   * the button opens the panel — so a keyboard user has to be able to see which
+   * one they are on. A single ring drawn around the pill would say "this whole
+   * thing is focused", which is the one thing that is never true here.
+   */
+  .products-menu-link:focus-visible,
+  .products-menu-toggle:focus-visible {
+    outline: 2px solid var(--km-nav-active, #f59e0b);
+    outline-offset: 2px;
+    border-radius: 9999px;
+  }
 
   /*
    * The panel.

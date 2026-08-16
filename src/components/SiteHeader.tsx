@@ -57,11 +57,15 @@ type SimpleProfile = {
  *    Community keeps every route it had; it is reachable from More, the account
  *    menu's neighbourhood in the mobile drawer, and the footer.
  *
- * 3. **Utilities are Search, Wishlist, Cart, Notifications, Account.** Messages
+ * 3. **Utilities are Search, Notifications, Account, Wishlist, Cart.** Messages
  *    and staff access moved inside the account menu. Both are still one click
  *    away and the account trigger carries an unread dot, so nothing became
  *    undiscoverable — but neither competes with the cart for a customer's
  *    attention any more.
+ *
+ *    The order within that cluster was revised in 4.1: the commerce pair moved
+ *    to the end so the bar terminates on the cart, which is the action the shop
+ *    exists for. See the comment on the cluster itself.
  *
  * Every destination is read from `@/lib/navigation`, which the mobile drawer
  * reads too. The old header hard-coded the mobile list separately and the two
@@ -270,7 +274,7 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
             <ProductsMenu
               nav={productsNav}
               isActive={isNavItemActive({ href: "/catalog" }, pathname)}
-              linkClassName={navLinkClass("/catalog")}
+              controlClassName={navLinkClass("/catalog")}
             />
 
             {/*
@@ -346,16 +350,30 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
           {/* The storefront's search, on the bar rather than behind an icon. */}
           <StorefrontSearch className="site-header-search" />
 
+          {/*
+            Search → Notifications → Account → Wishlist → Cart.
+
+            The order was Wishlist, Cart, Notifications, Account, which put the
+            two things a customer is *carrying* in the middle of the cluster and
+            ended the bar on a profile avatar. A storefront header should read
+            left to right as find it → who am I → what have I saved → what am I
+            buying, and it should end on the buying.
+
+            So the personal controls come first and the commerce pair is the
+            terminus, with Cart last. Wishlist sits immediately before it because
+            the two are the same gesture at different levels of commitment — a
+            customer moving items between them should not have to cross the
+            account menu to do it.
+
+            Notifications keep their slot rather than being folded away for
+            symmetry: they are the only control here that can be *new*, and
+            burying an unread badge is how it stops being read.
+          */}
           <div className="flex shrink-0 items-center justify-end gap-2" data-testid="header-utilities">
             {/* The magnifier used to live here and is gone on purpose: the bar
                 now carries a real search field, and a second control opening a
                 modal search beside it is two answers to one question. Ctrl+K
                 still opens the site-wide palette for anyone who knows it. */}
-
-            {/* Guests build carts and wishlists too; hiding these from them
-                loses what they just filled. */}
-            <WishlistIndicator />
-            <CartIndicator />
 
             {user ? (
               <>
@@ -378,6 +396,13 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
                 Log in
               </Link>
             )}
+
+            {/* Guests build carts and wishlists too; hiding these from them
+                loses what they just filled. Which is also why they stay *after*
+                the account slot rather than inside it — a guest has no account
+                menu, and these two must not move when they sign in. */}
+            <WishlistIndicator />
+            <CartIndicator />
           </div>
         </div>
 
