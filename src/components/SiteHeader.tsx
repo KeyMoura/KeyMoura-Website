@@ -16,6 +16,7 @@ import MobileNavDrawer from "@/components/nav/MobileNavDrawer";
 import ProductsMenu from "@/components/nav/ProductsMenu";
 import StorefrontSearch from "@/components/nav/StorefrontSearch";
 import { isNavItemActive, primaryNav, secondaryNav } from "@/lib/navigation";
+import { resolveNavLogo } from "@/theme/brand";
 import { EMPTY_STOREFRONT_NAV, type StorefrontNav } from "@/lib/commerce/storefrontNavModel";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faBars, faChevronDown } from "@fortawesome/free-solid-svg-icons";
@@ -52,10 +53,14 @@ type SimpleProfile = {
  *    part with a More menu to give into.
  *
  * 2. **Four customer links, in shopping order.** Products, Custom Projects,
- *    Gallery, About. Capabilities, the design guide, Contact and Community moved
- *    into More — they are pages a customer reads once, not places they shop.
- *    Community keeps every route it had; it is reachable from More, the account
- *    menu's neighbourhood in the mobile drawer, and the footer.
+ *    Gallery, About — all four on the bar, at every width. Capabilities, the
+ *    design guide, Contact and Community moved into More; they are pages a
+ *    customer reads once, not places they shop. Community keeps every route it
+ *    had; it is reachable from More, the account menu's neighbourhood in the
+ *    mobile drawer, and the footer.
+ *
+ *    Pass 4.0 additionally removed the duplicate rendering that put Gallery and
+ *    About in *both* places — see `deskLinks` for what was actually happening.
  *
  * 3. **Utilities are Search, Notifications, Account, Wishlist, Cart.** Messages
  *    and staff access moved inside the account menu. Both are still one click
@@ -205,23 +210,47 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
   const utilityClass = "site-nav-utility site-nav-control";
 
   /*
-   * Which primary links get a slot on the bar, and which move into More.
+   * Which primary links get a slot on the bar.
    *
    * `primaryNav` is still the one source; this only decides where each entry is
    * *rendered*. Products is handled separately by `ProductsMenu` because it is
-   * a link with a menu attached, so it is filtered out of both lists here.
+   * a link with a menu attached, so it is filtered out here.
+   *
+   * ## Gallery and About are no longer rendered twice
+   *
+   * Pass 4.1 put them on the bar from `xl` and into More below it, rendered in
+   * both places with CSS hiding whichever copy did not apply. Its comment said
+   * "exactly one visible at a time". That is not what shipped: the More copy
+   * carries `.nav-menu-item { display: flex }`, declared ~450 lines *after*
+   * `@media (min-width: 1280px) { .site-more-item-narrow { display: none } }`.
+   * Both selectors are one class, so the later one wins, and the hidden copy
+   * was never hidden — a desktop customer got Gallery and About on the bar and
+   * again inside More, which is the duplication the owner reported.
+   *
+   * Rather than repair the override and keep a mechanism whose correctness rests
+   * on the source order of two unrelated rules, the duplicate is gone: these are
+   * primary destinations and they live on the bar at every width. More holds
+   * `secondaryNav` and nothing else, so a destination is in exactly one place
+   * and no rule has to hide anything.
+   *
+   * The width this buys back at 1024–1279 comes from the link treatment: with
+   * the pill removed, the links no longer carry a border and a lozenge's worth
+   * of horizontal padding.
    */
   const deskLinks = useMemo(() => primaryNav.filter((item) => item.href !== "/catalog"), []);
-  const narrowMoreItems = useMemo(
-    () => primaryNav.filter((item) => item.href !== "/catalog" && item.href !== "/orders/new"),
-    []
-  );
 
   const moreContainsCurrent = useMemo(
-    () =>
-      [...secondaryNav, ...narrowMoreItems].some((item) => isNavItemActive(item, pathname)),
-    [pathname, narrowMoreItems]
+    () => secondaryNav.some((item) => isNavItemActive(item, pathname)),
+    [pathname]
   );
+
+  /*
+   * One decision about which mark the bar draws, and whether the name sits
+   * beside it. Both header rows read this — the alternative was two components
+   * each testing the pathname, which is how two surfaces start disagreeing about
+   * what counts as the homepage.
+   */
+  const navLogo = resolveNavLogo(siteSettings.brand, { isHome, siteName: siteSettings.name });
 
   const headerStyle = { borderColor: "var(--km-nav-border)" };
 
@@ -245,29 +274,44 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
           className="site-header-desktop hidden min-w-0 items-center gap-4 lg:grid"
           data-testid="desktop-header"
         >
+          {/*
+            `aria-label` on the link, `alt=""` on the image.
+
+            The mark is decorative *because the link is named* — with the name
+            beside it, an `alt` would have a screen reader say "KeyMoura
+            KeyMoura, link". With the name turned off there is nothing beside it,
+            and the label is the only thing standing between a customer and a
+            link announced as "image". So the accessible name never comes from
+            what is drawn; it is always on the link, and turning the wordmark off
+            is a purely visual choice. `resolveNavLogo` supplies it.
+          */}
           <Link
             href="/"
-            aria-label={`${siteSettings.name} home`}
+            aria-label={navLogo.label}
             className={`site-header-brand ${isHome ? "" : "hover:opacity-90"}`}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={siteSettings.logoUrl}
-              alt=""
-              width={40}
-              height={40}
-              className="h-10 w-10 shrink-0 object-contain"
-            />
-            {siteSettings.wordmarkUrl ? (
+            {navLogo.src ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={siteSettings.wordmarkUrl}
-                alt={siteSettings.name}
-                className="hidden h-6 max-w-32 object-contain xl:block"
+                src={navLogo.src}
+                alt=""
+                width={40}
+                height={40}
+                className="h-10 w-10 shrink-0 object-contain"
               />
-            ) : (
-              <span className="site-header-wordmark hidden xl:inline">{siteSettings.name}</span>
-            )}
+            ) : null}
+            {navLogo.showName ? (
+              siteSettings.wordmarkUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={siteSettings.wordmarkUrl}
+                  alt=""
+                  className="hidden h-6 max-w-32 object-contain xl:block"
+                />
+              ) : (
+                <span className="site-header-wordmark hidden xl:inline">{siteSettings.name}</span>
+              )
+            ) : null}
           </Link>
 
           <nav className="site-header-nav" aria-label="Primary" data-testid="primary-navigation-group">
@@ -293,7 +337,7 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
               <Link
                 key={item.href}
                 href={item.href}
-                className={`${navLinkClass(item.href)}${item.href === "/orders/new" ? "" : " site-nav-link-wide"}`}
+                className={navLinkClass(item.href)}
                 aria-current={isNavItemActive(item, pathname) ? "page" : undefined}
               >
                 {item.label}
@@ -314,21 +358,6 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
                 </>
               }
             >
-              {narrowMoreItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  role="menuitem"
-                  tabIndex={-1}
-                  aria-current={isNavItemActive(item, pathname) ? "page" : undefined}
-                  className="nav-menu-item nav-menu-item-stacked site-more-item-narrow"
-                >
-                  <span className="font-medium">{item.label}</span>
-                  {item.description ? (
-                    <span className="nav-menu-item-description">{item.description}</span>
-                  ) : null}
-                </Link>
-              ))}
               {secondaryNav.map((item) => (
                 <Link
                   key={item.href}
@@ -411,15 +440,21 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
             320px bar is how the badges started clipping each other. */}
         <div className="site-header-mobile lg:hidden">
           <div className="site-header-mobile-row">
-          <Link href="/" aria-label={`${siteSettings.name} home`} className="site-header-brand">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={siteSettings.logoUrl}
-              alt=""
-              width={36}
-              height={36}
-              className="h-9 w-9 shrink-0 object-contain"
-            />
+          {/* Same logo decision as the desktop bar, and the same accessible
+              name. The phone bar has never drawn the wordmark — there is no room
+              — so `showName` is not consulted here; the label carries identity
+              either way. */}
+          <Link href="/" aria-label={navLogo.label} className="site-header-brand">
+            {navLogo.src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={navLogo.src}
+                alt=""
+                width={36}
+                height={36}
+                className="h-9 w-9 shrink-0 object-contain"
+              />
+            ) : null}
           </Link>
 
           <div className="flex shrink-0 items-center gap-1.5">
@@ -429,7 +464,7 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
               ref={mobileTriggerRef}
               type="button"
               onClick={toggleMobile}
-              className={`${utilityClass} relative`}
+              className={`${utilityClass} site-nav-count-host`}
               aria-label={isMobileOpen ? "Close menu" : "Open menu"}
               aria-expanded={isMobileOpen}
               aria-haspopup="dialog"

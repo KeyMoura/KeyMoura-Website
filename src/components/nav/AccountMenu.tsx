@@ -67,7 +67,7 @@ export default function AccountMenu({
     : `Account menu for ${label}`;
 
   const countFor = (href: string) =>
-    href === "/messages" ? unreadMessages : href === "/notifications" ? unreadNotifications : 0;
+    href === "/messages" ? unreadMessages : href === "/account/notifications" ? unreadNotifications : 0;
 
   return (
     <NavMenu
@@ -79,7 +79,10 @@ export default function AccountMenu({
       panelClassName="w-64 overflow-hidden rounded-2xl border p-1.5 shadow-2xl"
       trigger={
         <>
-          <span className="relative inline-flex shrink-0">
+          {/* The dot belongs to the avatar, not to the whole trigger, so the
+              host is this wrapper rather than the button — an unread mark
+              floating off the end of a name is not a mark on anything. */}
+          <span className="site-nav-count-host inline-flex shrink-0">
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img

@@ -202,7 +202,7 @@ export default function NotificationBell({
   desktopPillBase: string;
 }) {
   const pathname = usePathname();
-  const isNotificationsRoute = pathname.startsWith("/notifications");
+  const isNotificationsRoute = pathname.startsWith("/account/notifications");
   const [open, setOpen] = useState(false);
   const popRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -227,7 +227,7 @@ export default function NotificationBell({
 
   useOutsideClick(popRef, () => setOpen(false));
 
-  const bellClass = `${desktopPillBase} justify-center w-9 px-0 site-nav-utility${
+  const bellClass = `${desktopPillBase} site-nav-count-host justify-center w-9 px-0 site-nav-utility${
     isNotificationsRoute || unreadCount > 0 ? " is-highlighted" : ""
   }`;
 
@@ -507,7 +507,7 @@ export default function NotificationBell({
               )}
 
               <Link
-                href="/notifications"
+                href="/account/notifications"
                 className="nav-menu-chip"
                 onClick={() => setOpen(false)}
               >
@@ -550,7 +550,7 @@ export default function NotificationBell({
                 const parsedPayload = parsePayload(n.payload);
                 const payloadHref = safeString(parsedPayload["href"]);
 
-                const base = fromPayload?.base ?? mappedBase ?? "/notifications";
+                const base = fromPayload?.base ?? mappedBase ?? "/account/notifications";
                 const href =
                   payloadHref ||
                   (postId && base.startsWith("/community/")
