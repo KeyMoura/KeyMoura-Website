@@ -100,9 +100,40 @@ test("the cart indicator is reachable on mobile as well as desktop", () => {
 });
 
 test("the cart drawer is a dialog that returns focus and closes on Escape", () => {
+  /*
+   * The panel moved out of the indicator in 4.1. The button is rendered twice —
+   * desktop bar and mobile bar — so while it owned the panel there were two
+   * dialogs in the document, each with its own focus trap and each trying to
+   * lock `<body>` scrolling. The sheet is now mounted once by the provider, and
+   * the three responsibilities split accordingly: the button describes what it
+   * opens, the drawer is the dialog, the provider restores focus.
+   */
   const indicator = readFileSync(new URL("../src/components/commerce/CartIndicator.tsx", import.meta.url), "utf8");
-  assert.match(indicator, /role="dialog"/);
+  const drawer = readFileSync(new URL("../src/components/commerce/CartDrawer.tsx", import.meta.url), "utf8");
+  const provider = readFileSync(new URL("../src/components/commerce/CartDrawerProvider.tsx", import.meta.url), "utf8");
+
   assert.match(indicator, /aria-expanded=\{open\}/);
-  assert.match(indicator, /event\.key === "Escape"/);
-  assert.match(indicator, /buttonRef\.current\?\.focus\(\)/);
+  assert.match(indicator, /aria-haspopup="dialog"/);
+  assert.match(indicator, /openCart\(buttonRef\.current\)/, "the button must hand over its own node");
+  assert.doesNotMatch(indicator, /role="dialog"/, "the panel is no longer duplicated per button");
+
+  assert.match(drawer, /role="dialog"/);
+  assert.match(drawer, /aria-modal="true"/, "a sheet over the page must take the page out of the tab order");
+  assert.match(drawer, /event\.key === "Escape"/);
+
+  assert.match(provider, /trigger\?\.isConnected/, "a detached trigger must not silently drop focus to <body>");
+  assert.match(provider, /trigger\.focus\(\)/);
+});
+
+test("exactly one cart drawer is mounted, above everything that opens it", () => {
+  const layout = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+  assert.match(layout, /import CartDrawerProvider from "@\/components\/commerce\/CartDrawerProvider"/);
+  assert.equal((layout.match(/<CartDrawerProvider>/g) ?? []).length, 1);
+  // Above the header that opens it and above the pages that open it after an
+  // add — the provider has to wrap both or one of them silently no-ops.
+  const provider = layout.indexOf("<CartDrawerProvider>");
+  assert.ok(provider > 0 && provider < layout.indexOf("<SiteHeader"));
+  assert.ok(provider < layout.indexOf("{children}"));
+  // Inside the query provider, or the drawer has no cart to read.
+  assert.ok(layout.indexOf("<ReactQueryProvider>") < provider);
 });

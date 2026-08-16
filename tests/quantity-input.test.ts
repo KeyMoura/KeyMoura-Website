@@ -26,7 +26,7 @@ const code = (source: string) =>
 const field = read("src/components/commerce/QuantityField.tsx");
 const panel = read("src/components/product/ProductPurchasePanel.tsx");
 const cartPage = read("src/app/cart/page.tsx");
-const cartDrawer = read("src/components/commerce/CartIndicator.tsx");
+const cartDrawer = read("src/components/commerce/CartDrawer.tsx");
 const requestForm = read("src/components/product/ProductRequestForm.tsx");
 const customRequestPage = read("src/app/orders/new/page.tsx");
 const css = read("src/app/globals.css");
