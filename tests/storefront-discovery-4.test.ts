@@ -648,17 +648,24 @@ test("a query failure is an error, never a convincing empty shop", () => {
 // Discovery state and view modes
 // ---------------------------------------------------------------------------
 
-test("List / 2 / 3 / 4 survive this pass, defaulting to three", () => {
+test("List / 2 / 3 / 4 survive this pass", () => {
   const view = read("src/lib/commerce/catalogView.ts");
   assert.match(view, /CATALOG_VIEWS = \["list", 2, 3, 4\]/);
-  assert.match(view, /DEFAULT_CATALOG_VIEW: CatalogView = 3/);
-  assert.match(css, /\[data-catalog-density="list"\] \.catalog-grid/);
+  // 4.1 moved the default from 3 to list; the four options and the storage key
+  // are what this pass owns, and both are unchanged. `catalog-view-modes` holds
+  // the assertions about which one is the default.
+  assert.match(view, /DEFAULT_CATALOG_VIEW: CatalogView = "list"/);
+  assert.match(view, /CATALOG_VIEW_KEY = "km\.catalog\.density"/);
+  assert.match(css, /\[data-catalog-density="list"\], :root:not\(\[data-catalog-density\]\)\) \.catalog-grid/);
 });
 
 test("the list row lays out the media well, not the bare image", () => {
   // The well wraps the image, the hover image and the wishlist toggle; laying
   // out the inner image would leave the well at its intrinsic height.
-  assert.match(css, /\[data-catalog-density="list"\] \.catalog-grid \.product-card-media \{\s*grid-area: media/);
+  assert.match(
+    css,
+    /:where\(\[data-catalog-density="list"\], :root:not\(\[data-catalog-density\]\)\) \.catalog-grid \.product-card-media \{\s*grid-area: media/
+  );
 });
 
 test("discovery state lives in the URL so Back restores it", () => {

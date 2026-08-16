@@ -10,7 +10,7 @@ const cartService = read("src/lib/commerce/cartService.ts");
 const productDisplay = read("src/lib/commerce/productDisplay.ts");
 const wishlistService = read("src/lib/commerce/wishlistService.ts");
 const sharedCartService = read("src/lib/commerce/sharedCartService.ts");
-const drawer = read("src/components/commerce/CartIndicator.tsx");
+const drawer = read("src/components/commerce/CartDrawer.tsx");
 const cartPage = read("src/app/cart/page.tsx");
 const css = read("src/app/globals.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -124,9 +124,11 @@ test("cart thumbnails carry empty alt text because the name links beside them", 
 
 test("the thumbnail link is hidden from assistive tech and from the tab order", () => {
   for (const [name, source] of [["drawer", drawer], ["cart page", cartPage]] as const) {
-    const link = source.match(/className="cart-thumb-link"/);
+    // The drawer adds its own width class alongside the shared one, so the
+    // class attribute is matched by prefix rather than by equality.
+    const link = source.match(/className="cart-thumb-link[ "]/);
     assert.ok(link, `${name} must wrap the thumbnail in the shared link class`);
-    const block = source.slice(0, source.indexOf('className="cart-thumb-link"'));
+    const block = source.slice(0, source.indexOf('className="cart-thumb-link'));
     assert.match(block.slice(-220), /tabIndex=\{-1\}/, `${name} must not add a second tab stop`);
     assert.match(block.slice(-220), /aria-hidden="true"/, `${name} must not duplicate the product announcement`);
   }
@@ -136,7 +138,6 @@ test("thumbnails reserve their box so a loading image cannot shift the controls"
   assert.match(css, /\.cart-thumb\s*\{[^}]*aspect-ratio:\s*1\s*\/\s*1/);
   assert.match(css, /\.cart-thumb\s*\{[^}]*width:\s*4rem/);
   assert.match(css, /\.cart-thumb\s*\{[^}]*flex:\s*0 0 auto/, "the thumbnail must never flex-shrink into a sliver");
-  assert.match(css, /\.cart-thumb-sm\s*\{[^}]*width:\s*3\.25rem/, "the drawer needs a narrower box than the page");
   // object-fit lives on .product-image-media, shared with every other surface.
   assert.match(css, /\.product-image-media\s*\{[^}]*object-fit:\s*cover/);
 });
@@ -146,7 +147,16 @@ test("the cart row keeps the thumbnail beside the text at 320px", () => {
   // wrapped and left the image stranded on a line of its own. Measured in the
   // browser at 320, 375 and up.
   assert.match(cartPage, /className="min-w-0 flex-1 basis-40"/, "the text column must fit beside the thumbnail");
-  assert.match(drawer, /className="min-w-0 flex-1"/);
+
+  /*
+   * The drawer states the same thing as a grid rather than as a flex row, since
+   * it became a sheet: a fixed thumbnail track, a text track that may shrink,
+   * and a price track sized to its own content. `minmax(0, 1fr)` is the part
+   * that matters — a bare `1fr` floors at min-content, which for an unbroken
+   * product name is the whole name, and the price would be pushed off the row.
+   */
+  assert.match(css, /\.cart-drawer-item\s*\{[^}]*grid-template-columns:\s*4rem minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.cart-drawer-item-body\s*\{[^}]*min-width:\s*0/);
 });
 
 test("the shared-cart page renders the same canonical image", () => {

@@ -11,6 +11,7 @@ import {
   catalogViewAttribute,
   catalogViewScript,
   DEFAULT_CATALOG_VIEW,
+  DEFAULT_GRID_DENSITY,
   FOUR_COLUMN_MIN_WIDTH,
   isCatalogDensity,
   isCatalogView,
@@ -43,9 +44,37 @@ const card = read("src/components/ProductCard.tsx");
 // The stored preference
 // ---------------------------------------------------------------------------
 
-test("desktop defaults to three columns", () => {
-  assert.equal(DEFAULT_CATALOG_VIEW, 3);
+/**
+ * How a list-view rule is written in the stylesheet now.
+ *
+ * List became the canonical default in 4.1, so "no attribute at all" — a browser
+ * with scripting off, or one whose `localStorage` threw before the pre-paint
+ * script could stamp anything — has to mean list too. Every list rule therefore
+ * matches both cases through one zero-specificity `:where()`.
+ */
+const LIST = String.raw`:where\(\[data-catalog-density="list"\], :root:not\(\[data-catalog-density\]\)\)`;
+const listRule = (selector: string, body: string) =>
+  new RegExp(`${LIST} \\.catalog-grid ${selector} \\{[^}]*${body}`);
+
+test("the default is List for anyone who has not chosen", () => {
+  // Was 3. A row carries the description, the material, the lead time and the
+  // price at once, which is what someone deciding *whether* to buy needs; a
+  // three-across grid is a browse mode for a catalog big enough to need
+  // browsing. Nothing about this rewrites a stored value — see below.
+  assert.equal(DEFAULT_CATALOG_VIEW, "list");
+
+  // The grid fallback is a separate constant precisely so it can stay a density.
+  assert.equal(DEFAULT_GRID_DENSITY, 3);
+  assert.ok(isCatalogDensity(DEFAULT_GRID_DENSITY));
   assert.match(globalsCss, /\.catalog-grid \{ grid-template-columns: repeat\(var\(--catalog-columns, 3\)/);
+});
+
+test("no-attribute renders List too, so the default holds without scripting", () => {
+  // The canonical default must be stated once. If CSS still fell through to a
+  // three-column grid when the attribute was absent, `DEFAULT_CATALOG_VIEW`
+  // would be a claim the stylesheet quietly contradicted.
+  assert.match(globalsCss, listRule("\\.product-card", "display: grid;"));
+  assert.match(globalsCss, new RegExp(`${LIST} \\.catalog-grid \\{`));
 });
 
 test("the offered views are List, 2, 3 and 4 — in that order", () => {
@@ -108,11 +137,28 @@ test("the preference is applied before first paint, not after hydration", () => 
   assert.match(layout, /dangerouslySetInnerHTML=\{\{ __html: catalogViewScript \}\}/);
   assert.ok(catalogViewScript.includes(CATALOG_VIEW_KEY));
   assert.ok(catalogViewScript.startsWith("try{"), "a throw here must not take the catalog down");
-  assert.ok(catalogViewScript.includes("catch(e){}"));
+  assert.ok(catalogViewScript.includes("catch(e)"), "a throw here must not take the catalog down");
   // It only ever writes one of the four known values.
-  assert.ok(catalogViewScript.includes("v==='list'||v==='2'||v==='3'||v==='4'"));
+  assert.ok(catalogViewScript.includes("v!=='list'&&v!=='2'&&v!=='3'&&v!=='4'"));
   assert.equal(catalogViewAttribute("list"), "list");
   assert.equal(catalogViewAttribute(4), "4");
+});
+
+test("the script stamps the default too, not only a stored value", () => {
+  /*
+   * It used to write nothing when the slot was empty and let CSS decide. That
+   * was fine while both said "three" and became two places to state one answer
+   * the moment they diverged. Now it always stamps, and the `catch` stamps as
+   * well — Safari's private mode can throw on `getItem`, and a first-time
+   * visitor there was the one case that would otherwise still miss the default.
+   */
+  assert.ok(catalogViewScript.includes(`v=${JSON.stringify(String(DEFAULT_CATALOG_VIEW))}`));
+  assert.equal(
+    (catalogViewScript.match(/document\.documentElement\.dataset\.catalogDensity=/g) ?? []).length,
+    2,
+    "the success path and the catch path must both stamp"
+  );
+  assert.ok(!/if\(v\)\{/.test(catalogViewScript), "an empty slot must not skip the write");
 });
 
 test("the layout never reads React state for its shape", () => {
@@ -176,7 +222,25 @@ test("below lg the group is a two-way switch that can be turned off again", () =
   assert.ok(!(CATALOG_VIEWS as readonly unknown[]).includes("grid"));
   assert.equal(parseCatalogView("grid"), DEFAULT_CATALOG_VIEW);
   // Pressing it when a density is already stored keeps that density.
-  assert.match(control, /onClick=\{\(\) => setView\(isGrid \? view : DEFAULT_CATALOG_VIEW\)\}/);
+  assert.match(control, /onClick=\{\(\) => setView\(isGrid \? view : DEFAULT_GRID_DENSITY\)\}/);
+});
+
+test("Grid lands on a density, never on the canonical default", () => {
+  /*
+   * The regression this exists to prevent: `DEFAULT_CATALOG_VIEW` became
+   * `list` in 4.1, and both of this control's "go to the default" paths were
+   * wired to it. Left alone, the one button whose entire job is to leave the
+   * list would have re-selected the list — a dead switch, which is the exact
+   * defect the Grid button was added to fix.
+   */
+  assert.notEqual(DEFAULT_GRID_DENSITY, DEFAULT_CATALOG_VIEW);
+  assert.ok(isCatalogDensity(DEFAULT_GRID_DENSITY));
+  // Both paths: the click, and the arrow key that lands on it.
+  assert.match(control, /setView\(value === "grid" \? DEFAULT_GRID_DENSITY : parseCatalogView\(value\)\)/);
+  assert.ok(
+    !/DEFAULT_CATALOG_VIEW\)\}/.test(control),
+    "no control path may send a customer to the canonical default as if it were a grid"
+  );
 });
 
 test("it is a radio group with one tab stop and arrow-key movement", () => {
@@ -239,20 +303,20 @@ test("the card is three sibling regions, so one DOM can be two layouts", () => {
 test("list mode is a horizontal layout, not a one-column grid", () => {
   // `grid-template-columns: 1fr` on the stacked card is the thing this mode
   // exists instead of: a 4:3 photograph the width of the page.
-  assert.match(
-    globalsCss,
-    /\[data-catalog-density="list"\] \.catalog-grid \.product-card \{\s*display: grid;/
-  );
+  assert.match(globalsCss, listRule("\\.product-card", "display: grid;"));
   assert.match(globalsCss, /grid-template-areas: "media body" "media footer";/);
   // And three real regions from lg, with the purchase column its own track.
-  assert.match(globalsCss, /grid-template-columns: 15rem minmax\(0, 1fr\) minmax\(10rem, 14rem\);/);
+  // Trimmed in 4.1 from `15rem … minmax(10rem, 14rem)`: at 1024 those two fixed
+  // tracks left the information column about 300px between a 240px photograph
+  // and a 224px button, on a page whose browsing rail is already taking 15rem.
+  assert.match(globalsCss, /grid-template-columns: 14rem minmax\(0, 1fr\) minmax\(9\.5rem, 12\.5rem\);/);
   assert.match(globalsCss, /grid-template-areas: "media body footer";/);
 });
 
 test("list mode collapses to a stacked card below sm", () => {
   // 375px has no room for an image column and a text column that are both
   // usable, so the horizontal rules start at 640 and not before.
-  const listRules = globalsCss.slice(globalsCss.indexOf('[data-catalog-density="list"] .catalog-grid {'));
+  const listRules = globalsCss.slice(globalsCss.indexOf("/* ---- List view ---"));
   const horizontal = listRules.indexOf("grid-template-areas");
   const mediaQuery = listRules.indexOf("@media (min-width: 640px)");
   assert.ok(mediaQuery > 0 && mediaQuery < horizontal, "the horizontal layout must be gated at 640");
@@ -262,19 +326,64 @@ test("list mode is scoped to the catalog results", () => {
   // The attribute lives on <html> and survives a client-side navigation off the
   // catalog, so an unscoped rule would turn the homepage's featured products
   // into list rows on the way past.
-  const rules = globalsCss.match(/\[data-catalog-density="list"\][^{]*\{/g) ?? [];
+  //
+  // This matters more since 4.1, not less: the rules now also fire on the
+  // *absence* of the attribute, which is every page a first-time visitor opens.
+  // `.catalog-grid` is what keeps that from reaching anything but the catalog.
+  const rules = globalsCss.match(/:where\(\[data-catalog-density="list"\][^{]*\{/g) ?? [];
   assert.ok(rules.length > 0);
   for (const rule of rules) {
     assert.ok(rule.includes(".catalog-grid"), `unscoped list rule: ${rule}`);
   }
+  // And no list rule may be left keyed on the bare attribute, which would apply
+  // to a stored `list` and silently skip the default case.
+  assert.ok(
+    !/(^|[^:(])\[data-catalog-density="list"\]/m.test(globalsCss),
+    "every list rule must go through the shared :where() prelude"
+  );
 });
 
 test("the description is the thing list mode shows more of", () => {
   assert.match(globalsCss, /\.product-card-description \{[^}]*line-clamp: 2;/);
-  assert.match(
-    globalsCss,
-    /\[data-catalog-density="list"\] \.catalog-grid \.product-card-description \{\s*-webkit-line-clamp: 4;\s*line-clamp: 4;\s*\}/
+  assert.match(globalsCss, listRule("\\.product-card-description", "-webkit-line-clamp: 4;\\s*line-clamp: 4;"));
+});
+
+// ---------------------------------------------------------------------------
+// The status row's anchor (4.1)
+// ---------------------------------------------------------------------------
+
+test("the status row anchors to the floor of the information column", () => {
+  /*
+   * List view used to *undo* the card's `margin-top: auto`, on the theory that a
+   * middle column with nothing below it would strand the row at the bottom of a
+   * tall row. What it actually produced was the grid's old defect: availability,
+   * lead time and Customizable landed wherever the description happened to stop,
+   * so two adjacent results put their status rows at visibly different heights.
+   */
+  assert.match(globalsCss, listRule("\\.product-card-status", "margin-top: auto;"));
+  assert.ok(
+    !new RegExp(`${LIST} \\.catalog-grid \\.product-card-status \\{[^}]*margin-top: 0\\.875rem`).test(globalsCss),
+    "the anchor must not be undone at any width"
   );
+  // A minimum separation survives, so a column whose text fills it still has air
+  // above the status line rather than the row butting into the material.
+  assert.match(globalsCss, listRule("\\.product-card-status", "padding-top: 0\\.875rem;"));
+});
+
+test("the information column stretches, or the anchor has nothing to anchor to", () => {
+  // `margin-top: auto` consumes free space. With `align-items: start` the body
+  // box is only as tall as its own text, there is no free space, and the anchor
+  // silently does nothing — which is how the row drifted in the first place.
+  assert.match(globalsCss, listRule("\\.product-card", "align-items: stretch;"));
+});
+
+test("a long material string wraps instead of pushing the row wide", () => {
+  // "Walnut/Poplar/African Mahogany Hardwoods" is one unbreakable token as far
+  // as line-breaking is concerned, so it sets the column's min-content width and
+  // shoves the purchase column off the row unless all three of these hold.
+  assert.match(globalsCss, /\.product-card-spec \{[^}]*overflow-wrap: anywhere;/);
+  assert.match(globalsCss, /\.product-card-spec-value \{[^}]*min-width: 0/);
+  assert.match(globalsCss, listRule("\\.product-card-spec", "flex-wrap: wrap;"));
 });
 
 test("responsive fallbacks below the rail", () => {

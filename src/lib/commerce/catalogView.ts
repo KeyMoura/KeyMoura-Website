@@ -36,6 +36,21 @@
  * collide. The stored preference is *kept* (widen the window and it comes back)
  * and clamped in CSS for the width where it does not fit, rather than being
  * rewritten, which would silently lose the choice.
+ *
+ * ## Why the default is now `list`
+ *
+ * Three across was chosen when the grid was the only layout and the question was
+ * only how many. Now that a real list view exists, the question is which layout
+ * a customer who has expressed no opinion should meet first — and for a shop
+ * with a handful of made-to-order products, that is the row: it carries the
+ * description, the material, the lead time and the price at once, which is what
+ * someone deciding *whether* to buy needs. A three-across grid is a browse mode
+ * for a catalog large enough to need browsing.
+ *
+ * Changing the canonical default deliberately does **not** touch anyone's stored
+ * value. `DEFAULT_CATALOG_VIEW` is only consulted when the slot is empty or
+ * unreadable, so a customer who pressed 2, 3, 4 — or List — keeps exactly what
+ * they pressed.
  */
 
 /**
@@ -52,8 +67,23 @@ export type CatalogDensity = (typeof CATALOG_DENSITIES)[number];
 export const CATALOG_VIEWS = ["list", 2, 3, 4] as const;
 export type CatalogView = (typeof CATALOG_VIEWS)[number];
 
-/** Three across on a desktop. Two was the effective default and read as sparse. */
-export const DEFAULT_CATALOG_VIEW: CatalogView = 3;
+/**
+ * What a customer with no stored preference gets. See the note above: the row
+ * shows the whole product, and this catalog is small enough that comparing
+ * beats browsing.
+ */
+export const DEFAULT_CATALOG_VIEW: CatalogView = "list";
+
+/**
+ * Where the narrow-width *Grid* button lands, and the column count the CSS
+ * falls back to.
+ *
+ * Separate from `DEFAULT_CATALOG_VIEW` on purpose. That button's whole job is to
+ * leave the list, so it cannot be wired to a default that *is* the list — before
+ * this split, pointing the canonical default at `list` would have turned Grid
+ * into a no-op that re-selected the mode the customer was trying to escape.
+ */
+export const DEFAULT_GRID_DENSITY: CatalogDensity = 3;
 
 /**
  * Spoken labels. "3" alone is not a control name a screen reader can use, and
@@ -108,10 +138,23 @@ export function parseCatalogView(raw: string): CatalogView {
 
 /**
  * Runs before first paint, so the grid's very first layout is already the
- * customer's. Written as a string rather than a function so it can be inlined
- * by the layout; it is deliberately total — any failure leaves the attribute
- * absent and the CSS default (three) applies.
+ * customer's.
+ *
+ * It now stamps the attribute *unconditionally* — the stored value when there is
+ * a readable one, `list` when there is not. Previously a first-time visitor was
+ * left with no attribute at all and fell through to the CSS default, which was
+ * fine while that default matched the canonical one and became a second place to
+ * state it the moment they diverged. One writer, one answer.
+ *
+ * Written as a string rather than a function so it can be inlined by the layout,
+ * and deliberately total: if `localStorage` throws — Safari's private mode, a
+ * blocked third-party context — the `catch` still stamps the default rather than
+ * leaving the page to guess.
  */
 export const catalogViewScript = `try{var v=localStorage.getItem(${JSON.stringify(
   CATALOG_VIEW_KEY
-)});if(v){v=v.replace(/"/g,'').trim();if(v==='list'||v==='2'||v==='3'||v==='4'){document.documentElement.dataset.catalogDensity=v}}}catch(e){}`;
+)});v=v?v.replace(/"/g,'').trim():'';if(v!=='list'&&v!=='2'&&v!=='3'&&v!=='4'){v=${JSON.stringify(
+  String(DEFAULT_CATALOG_VIEW)
+)}}document.documentElement.dataset.catalogDensity=v}catch(e){try{document.documentElement.dataset.catalogDensity=${JSON.stringify(
+  String(DEFAULT_CATALOG_VIEW)
+)}}catch(e2){}}`;

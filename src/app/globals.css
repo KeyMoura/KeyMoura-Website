@@ -1647,22 +1647,67 @@
     .site-more-item-narrow { display: none; }
   }
 
-  /* ---- The Products link + menu ---- */
+  /* ---- The Products link + menu ----
+   *
+   * The outline belongs to `.products-menu-trigger`, not to the link inside it.
+   * The wrapper is rendered with the bar's own `site-nav-link
+   * site-nav-primary-link` classes, so it picks up the pill — height, radius,
+   * border, hover fill — and every Appearance navigation style, from the same
+   * rules that dress Custom Projects and Gallery. Both children then sit *inside*
+   * that outline, which is the whole point: Products and its chevron read as one
+   * control, the way `More` already did.
+   *
+   * Only the padding is restated here. The label side keeps the standard
+   * 0.75rem; the chevron side is tightened to 0.5rem because the chevron already
+   * carries its own width, and leaving both at 0.75rem made the pill visibly
+   * lopsided against its neighbours.
+   */
   .products-menu { position: relative; display: flex; min-width: 0; align-items: center; }
-  .products-menu-trigger { display: inline-flex; align-items: center; gap: 0.125rem; }
+  .site-header-shell .products-menu-trigger[data-has-menu="true"] {
+    gap: 0.125rem;
+    padding-inline: 0.75rem 0.5rem;
+  }
+
+  /*
+   * The link is now transparent: no border, no background, no radius of its own.
+   * It stretches to the pill's full height so the whole left half of the control
+   * is its hit target rather than just the text's line box.
+   */
+  .products-menu-link {
+    display: inline-flex;
+    align-items: center;
+    align-self: stretch;
+    color: inherit;
+    white-space: nowrap;
+  }
 
   .products-menu-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* Small, but never below the pointer target a chevron needs to be usable. */
-    height: 1.75rem;
-    width: 1.5rem;
-    border-radius: 0.5rem;
-    color: var(--km-nav-text, #d4d4d8);
+    align-self: stretch;
+    /* Narrow, because the padding around it belongs to the pill now. The
+       full-height stretch is what keeps it a usable pointer target. */
+    width: 1.25rem;
+    color: inherit;
+    background: transparent;
+    border: 0;
   }
-  .products-menu-toggle:hover { color: var(--km-nav-active, #f59e0b); }
-  .products-menu-toggle:focus-visible { outline: 2px solid var(--km-nav-active, #f59e0b); outline-offset: 2px; }
+
+  /*
+   * Two rings, not one.
+   *
+   * They are still two destinations — Enter on the link opens /catalog, Enter on
+   * the button opens the panel — so a keyboard user has to be able to see which
+   * one they are on. A single ring drawn around the pill would say "this whole
+   * thing is focused", which is the one thing that is never true here.
+   */
+  .products-menu-link:focus-visible,
+  .products-menu-toggle:focus-visible {
+    outline: 2px solid var(--km-nav-active, #f59e0b);
+    outline-offset: 2px;
+    border-radius: 9999px;
+  }
 
   /*
    * The panel.
@@ -2260,6 +2305,250 @@
     .mobile-nav-panel,
     .mobile-nav-backdrop { animation: none; }
   }
+
+  /* ==== Cart drawer ========================================================
+   *
+   * A sheet from the right edge, replacing the 380px popover that used to hang
+   * off the cart button. See `CartDrawer.tsx` for why; the short version is that
+   * the popover's checkout button scrolled out of the panel on a cart of four
+   * items, because the footer was a sibling of the scroll region rather than a
+   * pinned row outside it.
+   *
+   * ## Tokens
+   *
+   * This surface reads the *content* roles — `--panel-strong`, `--border`,
+   * `--heading`, `--text`, `--muted` — and not the `--km-nav-*` family the
+   * header uses. It is a panel of shop content that happens to be opened from
+   * the bar, not a piece of the bar, and dressing it in navigation colours is
+   * what would make it drift the moment an operator restyles the navbar. Its two
+   * actions are `.ui-btn-primary` and a quiet button, so the Appearance button
+   * styles reach them like any other pair.
+   */
+  .cart-drawer-root { position: fixed; inset: 0; z-index: 80; }
+
+  .cart-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(2px);
+    animation: cart-drawer-fade-in 160ms ease-out;
+  }
+  @keyframes cart-drawer-fade-in { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes cart-drawer-slide-in { from { transform: translateX(100%) } to { transform: translateX(0) } }
+
+  /*
+   * `grid-template-rows: auto minmax(0, 1fr) auto` is the whole fixed-header /
+   * fixed-footer contract.
+   *
+   * `minmax(0, 1fr)` and not `1fr`: an `auto`-floored track takes its
+   * min-content height, which for a list of cart items is the entire list. The
+   * middle row would refuse to shrink, the panel would grow past the viewport,
+   * and the footer would leave the screen — which is exactly the bug being
+   * fixed, reproduced one layer up.
+   *
+   * 26rem is 416px, inside the 400–440px the design calls for, and `min()`
+   * hands the whole width to a phone minus a sliver of backdrop, so it is always
+   * obvious there is a page behind it and always possible to dismiss by tapping.
+   */
+  .cart-drawer-panel {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    width: min(26rem, 100vw - 2rem);
+    max-height: 100dvh;
+    background: var(--panel-strong);
+    color: var(--text);
+    border-left: 1px solid var(--border);
+    box-shadow: -24px 0 64px rgb(0 0 0 / 0.45);
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: cart-drawer-slide-in 200ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  /*
+   * Below 480 the sliver goes and the sheet takes the width.
+   *
+   * `100vw - 2rem` at 375px leaves a 343px panel, which is enough to be usable
+   * and not enough to stop the quantity stepper, the price and the Remove link
+   * competing on one row. The backdrop tap is lost; Close and Escape are not,
+   * and Continue shopping is pinned in the footer.
+   */
+  @media (max-width: 479.98px) {
+    .cart-drawer-panel { width: 100vw; border-left: 0; }
+  }
+
+  /* Transform-based, short, and no bounce — the easing above is a decelerate
+     curve, not a spring. Reduced motion drops the slide entirely and keeps a
+     fade, so the panel still reads as arriving rather than teleporting. */
+  @media (prefers-reduced-motion: reduce) {
+    .cart-drawer-panel { animation: cart-drawer-fade-in 120ms ease-out; }
+    .cart-drawer-backdrop { animation: none; }
+  }
+
+  .cart-drawer-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .cart-drawer-title { font-size: 1.0625rem; font-weight: 650; color: var(--heading); }
+  .cart-drawer-count { margin-top: 0.125rem; font-size: 0.8125rem; color: var(--muted); }
+
+  .cart-drawer-close {
+    display: inline-flex;
+    flex: none;
+    /* 44px, the WCAG 2.2 AA target, and the same size as the mobile drawer's
+       close button so the two dismissals feel like one gesture. */
+    height: 2.75rem;
+    width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    color: var(--text);
+    transition: background-color 120ms ease-out, border-color 120ms ease-out;
+  }
+  .cart-drawer-close:hover { background: var(--panel); border-color: var(--text); }
+  .cart-drawer-close:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
+
+  /* The only scrolling region in the sheet. `overscroll-behavior: contain` stops
+     a flick at the end of the list from scrolling the locked page behind it. */
+  .cart-drawer-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.75rem 1.25rem 1rem;
+  }
+
+  .cart-drawer-message { padding-block: 1.5rem; text-align: center; font-size: 0.875rem; color: var(--muted); }
+  .cart-drawer-error,
+  .cart-drawer-notice { margin-top: 0.75rem; font-size: 0.75rem; }
+
+  .cart-drawer-items { display: grid; gap: 0.25rem; }
+  .cart-drawer-item {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.75rem;
+    padding-block: 0.875rem;
+  }
+  .cart-drawer-item + .cart-drawer-item { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+
+  .cart-drawer-thumb { display: block; width: 4rem; }
+  .cart-drawer-item-body { min-width: 0; }
+  .cart-drawer-item-name {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .cart-drawer-item-name:hover { color: var(--brand-accent); }
+  /*
+   * The configuration summary, clamped rather than truncated to one line: a
+   * two-option product ("Wood: Walnut · Finish: Satin") is the common case and
+   * an ellipsis after the first option hides the half a customer is checking.
+   */
+  .cart-drawer-item-options {
+    margin-top: 0.1875rem;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: var(--muted);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .cart-drawer-item-unit { margin-top: 0.1875rem; font-size: 0.75rem; color: var(--muted); }
+
+  .cart-drawer-item-controls {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+  }
+  .cart-drawer-remove {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 120ms ease-out;
+  }
+  .cart-drawer-remove:hover:not(:disabled) { color: var(--text); }
+  /* Not colour alone: the control also stops responding to the pointer, and its
+     label is unchanged, so "busy" is legible without seeing the shade. */
+  .cart-drawer-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+  .cart-drawer-remove:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; border-radius: 0.25rem; }
+
+  .cart-drawer-item-price {
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ---- Empty state ---- */
+  .cart-drawer-empty { padding: 2.5rem 0.5rem; text-align: center; }
+  .cart-drawer-empty-title { font-size: 1rem; font-weight: 650; color: var(--heading); }
+  .cart-drawer-empty-body {
+    margin: 0.5rem auto 0;
+    max-width: 20rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .cart-drawer-empty-action { margin-top: 1.25rem; width: 100%; }
+  .cart-drawer-empty-link {
+    display: inline-block;
+    margin-top: 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .cart-drawer-empty-link:hover { color: var(--text); }
+
+  /* ---- Footer: pinned, whatever the list does ---- */
+  .cart-drawer-footer {
+    border-top: 1px solid var(--border);
+    background: var(--panel-strong);
+    padding: 1rem 1.25rem;
+  }
+  .cart-drawer-total { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .cart-drawer-total + .cart-drawer-total { margin-top: 0.25rem; }
+  .cart-drawer-total-label { font-size: 0.875rem; color: var(--muted); }
+  .cart-drawer-total-value {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--heading);
+    font-variant-numeric: tabular-nums;
+  }
+  .cart-drawer-total-discount .cart-drawer-total-value { font-size: 0.9375rem; color: var(--brand-accent); }
+  .cart-drawer-fineprint { margin-top: 0.375rem; font-size: 0.75rem; color: var(--muted); }
+  .cart-drawer-checkout { margin-top: 0.875rem; width: 100%; }
+
+  .cart-drawer-continue {
+    margin-top: 0.625rem;
+    width: 100%;
+    padding-block: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--muted);
+    transition: color 120ms ease-out;
+  }
+  .cart-drawer-continue:hover { color: var(--text); }
+  .cart-drawer-continue:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; border-radius: var(--control-radius); }
 
   /* Navbar utility controls (search, messages, notifications, account, staff) intentionally use
      their own dedicated tokens instead of the shared secondary/accent color, so changing the
@@ -3670,12 +3959,17 @@
     text-transform: uppercase;
     opacity: 0.75;
   }
-  .product-card-spec-value { color: var(--text); }
+  /* `min-width: 0` so the value may shrink below the min-content width its own
+     unbroken "Walnut/Poplar/African Mahogany" sets, which is what lets
+     `overflow-wrap` break it instead of the row overflowing. */
+  .product-card-spec-value { color: var(--text); min-width: 0; }
   @media (min-width: 1024px) {
     [data-catalog-density="2"] .catalog-grid .product-card-spec { display: flex; }
   }
   @media (min-width: 640px) {
-    [data-catalog-density="list"] .catalog-grid .product-card-spec { display: flex; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-spec {
+      display: flex;
+    }
   }
 
   /*
@@ -4006,10 +4300,12 @@
 
   .cart-thumb .product-image-fallback { font-size: .9rem; }
 
-  /* The drawer is narrower than the page, and at 320px the row still has to fit
-     a name, options, a quantity field and a price. */
-  .cart-thumb-sm { width: 3.25rem; }
-  .cart-thumb-sm .product-image-fallback { font-size: .75rem; }
+  /* `.cart-thumb-sm` (3.25rem) lived here for the old cart popover, which was
+     380px wide and had to fit a name, options, a quantity field and a price
+     beside the picture. The sheet that replaced it is 416px and pins its own
+     4rem track in `.cart-drawer-item`, so the narrow variant had no callers
+     left. The drawer and the cart page now show the same size thumbnail, which
+     is what they should have been doing all along. */
 
   /* A thumbnail that links to the product keeps the card's hover language
      without becoming a second visual button. */
@@ -5660,8 +5956,19 @@
    * Scoped under `.catalog-grid` on purpose. The attribute lives on `<html>`
    * and survives a client-side navigation off the catalog, so an unscoped rule
    * would turn the homepage's featured products into list rows on the way past.
+   *
+   * ## Why every rule below also matches "no attribute at all"
+   *
+   * List is the canonical default now, so the *absence* of a stored preference
+   * has to mean list too — otherwise a browser with scripting off, or one whose
+   * `localStorage` throws before the pre-paint script can stamp anything, would
+   * silently get the old three-across grid while `DEFAULT_CATALOG_VIEW` claimed
+   * otherwise. `:root:not([data-catalog-density])` is that case, and it is
+   * wrapped in `:where()` so adding it costs the selector no specificity: these
+   * rules still beat the plain `.catalog-grid` defaults above by their class
+   * count alone, exactly as they did when the attribute was the only way in.
    */
-  [data-catalog-density="list"] .catalog-grid {
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
   }
@@ -5672,39 +5979,61 @@
    * geometry squeezed onto a phone is the thing this mode exists to avoid. The
    * image is capped so the title, price and action stay above the fold.
    */
-  [data-catalog-density="list"] .catalog-grid .product-image { aspect-ratio: 16 / 10; }
-  [data-catalog-density="list"] .catalog-grid .product-card-media { border-radius: var(--card-radius, 1rem); }
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-image {
+    aspect-ratio: 16 / 10;
+  }
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-media {
+    border-radius: var(--card-radius, 1rem);
+  }
 
   @media (min-width: 640px) {
-    [data-catalog-density="list"] .catalog-grid .product-card {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card {
       display: grid;
       /* The image track is fixed rather than fractional so a long product name
          cannot shrink the photograph, and `minmax(0, 1fr)` on the middle track
          is what stops that name widening the row into horizontal overflow. */
       grid-template-columns: 13rem minmax(0, 1fr);
       grid-template-areas: "media body" "media footer";
-      align-items: start;
+      /*
+       * `stretch`, not `start`.
+       *
+       * This is what gives the information column a floor to anchor against.
+       * With `start`, the body box was only as tall as its own text, so
+       * `margin-top: auto` inside it had no free space to consume and the status
+       * row simply followed the last line of description — which is the drift
+       * this pass set out to remove. Stretching the body to the row's full
+       * height turns that `auto` back into a real anchor.
+       */
+      align-items: stretch;
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-media {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-media {
       grid-area: media;
       /* Fills the row's full height rather than sitting at the top of a short
          one, which is what makes the row read as one object. */
       height: 100%;
       min-height: 11rem;
     }
-    [data-catalog-density="list"] .catalog-grid .product-image {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-image {
       height: 100%;
       aspect-ratio: auto;
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-body { grid-area: body; padding: 0 0 0 1.25rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-footer { grid-area: footer; padding: 0.75rem 0 0 1.25rem; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-body {
+      grid-area: body;
+      padding: 0 0 0 1.25rem;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-footer {
+      grid-area: footer;
+      padding: 0.75rem 0 0 1.25rem;
+    }
     /* The reason to be in list view: more of the description, without opening
        the product. Four lines rather than the grid's two. */
-    [data-catalog-density="list"] .catalog-grid .product-card-description {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-description {
       -webkit-line-clamp: 4;
       line-clamp: 4;
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-title { font-size: 1.375rem; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-title {
+      font-size: 1.375rem;
+    }
   }
 
   /*
@@ -5712,14 +6041,33 @@
    * a shopper's eye goes to when comparing rows. `max-content` on the middle
    * track is refused: the purchase column is fixed and the description takes
    * what is left, so rows with long and short names still line their buttons up.
+   *
+   * ## The three track widths, and why they moved
+   *
+   * Media was 15rem and the purchase column `minmax(10rem, 14rem)`, which at
+   * 1024 left the information column — the one carrying the name, the sentence,
+   * the material and the status row — about 300px between a 240px photograph and
+   * a 224px button. The row was image-led to the point of being image-*dominated*
+   * at exactly the width where the browsing rail is already taking 15rem out of
+   * the page.
+   *
+   * Media is now 14rem (224px, a 6.7% trim) and the purchase column
+   * `minmax(9.5rem, 12.5rem)`, which returns roughly 60px to the middle at 1024
+   * and more above it. The photograph is still the widest fixed thing in the row
+   * and still the first thing the eye lands on; it has simply stopped crowding
+   * the text it is meant to be introducing. The call to action keeps its full
+   * width, its weight and its colour — 12.5rem is a 200px button, which is not a
+   * weakened CTA, it is a CTA that is no longer wider than it is useful.
    */
   @media (min-width: 1024px) {
-    [data-catalog-density="list"] .catalog-grid .product-card {
-      grid-template-columns: 15rem minmax(0, 1fr) minmax(10rem, 14rem);
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card {
+      grid-template-columns: 14rem minmax(0, 1fr) minmax(9.5rem, 12.5rem);
       grid-template-areas: "media body footer";
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-media { min-height: 12.5rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-footer {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-media {
+      min-height: 12.5rem;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-footer {
       flex-direction: column;
       align-items: stretch;
       justify-content: flex-start;
@@ -5728,18 +6076,72 @@
     }
     /* The purchase column reads top-down, so the button spans it rather than
        hugging the right edge of a column that has no right edge to hug. */
-    [data-catalog-density="list"] .catalog-grid .product-card-cta-wrap { align-items: stretch; }
-    [data-catalog-density="list"] .catalog-grid .product-card-cta { width: 100%; padding-block: 0.625rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-cta-error { text-align: left; }
-    [data-catalog-density="list"] .catalog-grid .product-card-price { font-size: 1.25rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-action {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-cta-wrap {
+      align-items: stretch;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-cta {
       width: 100%;
       padding-block: 0.625rem;
     }
-    /* The status row stops being the body's floor once the body is a middle
-       column of its own: pinning it to the bottom of a tall row would strand it
-       far below the description it belongs to. */
-    [data-catalog-density="list"] .catalog-grid .product-card-status { margin-top: 0.875rem; padding-top: 0; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-cta-error {
+      text-align: left;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-price {
+      font-size: 1.25rem;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-action {
+      width: 100%;
+      padding-block: 0.625rem;
+    }
+  }
+
+  /*
+   * ---- The status row's anchor in list view -------------------------------
+   *
+   * The base card already puts `margin-top: auto` on `.product-card-status`, so
+   * status, price and action sit on the card floor as one block. List view used
+   * to *undo* that (`margin-top: 0.875rem; padding-top: 0`) on the theory that a
+   * middle column with nothing below it would strand the row at the bottom of a
+   * tall row. What actually happened is what the grid used to do: availability,
+   * lead time and Customizable landed wherever the description happened to stop,
+   * so two adjacent results — one with a two-line name, one with a material line
+   * — put their status rows at visibly different heights.
+   *
+   * The anchor is restored, and it is a real anchor now that the body stretches
+   * (see `align-items: stretch` above). The information column reads
+   * category → title → description → material → [flexible space] → status, and
+   * the flexible space is what absorbs the difference between a long product and
+   * a short one.
+   *
+   * The two guards that keep it from becoming a giant blank gap:
+   *
+   *   - `padding-top` survives as a *minimum* separation, so a row whose text
+   *     fills the column still has air above the status line.
+   *   - The row's height is set by the media well's `min-height` (12.5rem), not
+   *     by an artificial `min-height` on the text column. The most slack this can
+   *     open is the difference between four lines of description and none — about
+   *     70px — which is the row's own photograph height doing the work, not a
+   *     spacer inserted to force equality.
+   */
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-status {
+    margin-top: auto;
+    padding-top: 0.875rem;
+  }
+
+  /*
+   * Material, in the one layout wide enough to print it in full.
+   *
+   * "Walnut/Poplar/African Mahogany Hardwoods" is 40 characters with no spaces
+   * around its slashes, which is the shape that breaks a flex row: the value is
+   * one unbreakable word as far as line-breaking is concerned, so without help
+   * it sets the column's min-content width and pushes the purchase column off
+   * the row. `flex-wrap` lets the value drop below its "MATERIAL" key rather
+   * than fighting it for the line, `min-width: 0` lets it shrink below that
+   * min-content width, and `overflow-wrap: anywhere` — inherited from the base
+   * rule — is what finally allows the break inside the slashes.
+   */
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-spec {
+    flex-wrap: wrap;
   }
 
   /* ==== Catalog chrome 4.0 ================================================

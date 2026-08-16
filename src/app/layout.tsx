@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import ReactQueryProvider from "./ReactQueryProvider";
 import SiteHeader from "@/components/SiteHeader";
+import CartDrawerProvider from "@/components/commerce/CartDrawerProvider";
 import CommandPalette from "@/components/CommandPalette";
 import { LastSeenUpdater } from "@/components/LastSeenUpdater";
 import SiteFooter from "@/components/SiteFooter";
@@ -120,17 +121,27 @@ export default async function RootLayout({
         <ReactQueryProvider>
           <BlocksProvider>
             <GlobalLockdownGate>
-              <div className="flex min-h-screen flex-col">
-                <SiteHeader productsNav={productsNav} />
-                <SiteBroadcastBanner />
-                <CommandPalette />
-                <main id="main-content" className="flex-1" tabIndex={-1}>
-                  {children}
-                </main>
-                <SiteFooter />
-                <SpeedInsights />
-                <Analytics />
-              </div>
+              {/*
+                The cart drawer is mounted here, above both the header that opens
+                it and the catalog pages that open it after an add — which is the
+                only place that is above both. Inside the lockdown gate, so a
+                locked site does not carry a cart dialog behind its password
+                screen; inside the query provider, because the drawer reads the
+                same canonical cart the header's badge reads.
+              */}
+              <CartDrawerProvider>
+                <div className="flex min-h-screen flex-col">
+                  <SiteHeader productsNav={productsNav} />
+                  <SiteBroadcastBanner />
+                  <CommandPalette />
+                  <main id="main-content" className="flex-1" tabIndex={-1}>
+                    {children}
+                  </main>
+                  <SiteFooter />
+                  <SpeedInsights />
+                  <Analytics />
+                </div>
+              </CartDrawerProvider>
             </GlobalLockdownGate>
           </BlocksProvider>
         </ReactQueryProvider>
