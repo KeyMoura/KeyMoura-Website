@@ -458,7 +458,7 @@
   }
 
   /* Only the underline is style-specific now; the colours come from the role. */
-  [data-primary-button-style="framed"] :where(.ui-btn-primary, .catalog-action-primary, .product-card-action) {
+  [data-primary-button-style="framed"] :where(.ui-btn-primary, .catalog-action-primary, .product-card-action, .product-card-cta-primary) {
     box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--brand-primary) 80%, transparent);
   }
 
@@ -479,12 +479,16 @@
 
   .ui-btn-secondary:hover { background: var(--km-secondary-button-bg, var(--accent-soft)); }
   [data-secondary-button-style="solid"] .ui-btn-secondary,
+  [data-secondary-button-style="solid"] .product-card-cta-secondary,
   [data-secondary-button-style="solid"] .catalog-action-secondary { background: var(--km-secondary-button-bg, var(--brand-accent)); border-color: var(--km-secondary-button-border, var(--brand-accent)); }
   [data-secondary-button-style="soft"] .ui-btn-secondary,
+  [data-secondary-button-style="soft"] .product-card-cta-secondary,
   [data-secondary-button-style="soft"] .catalog-action-secondary { background: var(--km-secondary-button-bg, var(--accent-soft)); border-color: var(--km-secondary-button-border, color-mix(in srgb, var(--brand-accent) 55%, transparent)); }
   [data-secondary-button-style="ghost"] .ui-btn-secondary,
+  [data-secondary-button-style="ghost"] .product-card-cta-secondary,
   [data-secondary-button-style="ghost"] .catalog-action-secondary { background: var(--km-secondary-button-bg, transparent); border-color: var(--km-secondary-button-border, transparent); }
   [data-secondary-button-style="framed"] .ui-btn-secondary,
+  [data-secondary-button-style="framed"] .product-card-cta-secondary,
   [data-secondary-button-style="framed"] .catalog-action-secondary {
     background: var(--km-secondary-button-bg, var(--accent-soft)); color: var(--km-secondary-button-text, var(--brand-accent));
     box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--brand-accent) 80%, transparent);
@@ -1603,6 +1607,421 @@
   /* The unread dot on the account trigger and the mobile menu button. Purely
      an ornament — the real counts are in the accessible name and printed
      beside each destination inside the menu. */
+  /* ==== Storefront navigation 4.0 =========================================
+   *
+   * The bar's desktop grid, the Products dropdown, the global search field and
+   * the mobile category tree. Everything here reads the same `--km-nav-*`
+   * variables the rest of the header does, so the Appearance editor moves it
+   * along with the bar it sits in.
+   */
+
+  /*
+   * `auto minmax(0,1fr) minmax(0,auto) auto` — brand, navigation, search,
+   * utilities.
+   *
+   * Search is its own track rather than a flex child of the navigation, so its
+   * width is negotiated against the bar rather than against whatever the link
+   * labels happen to add up to. `minmax(0, …)` on both flexible tracks is what
+   * keeps a long label from pushing the row into overflow.
+   */
+  .site-header-desktop {
+    grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
+  }
+
+  .site-header-nav { display: flex; min-width: 0; align-items: center; gap: 0.25rem; }
+
+  /*
+   * Gallery and About below `xl`.
+   *
+   * `display: none` rather than `visibility` or opacity: the hidden copy has to
+   * leave the accessibility tree and the tab order, because the same
+   * destination is rendered a second time inside the More menu at these widths.
+   */
+  /* `.site-header-shell .site-nav-primary-link` sets `display` with two
+     classes of specificity, so a bare `.site-nav-link-wide` loses to it and the
+     links stayed visible at 1024. Matching the shell is what makes this win. */
+  .site-header-shell .site-nav-link-wide { display: none; }
+  .site-more-item-narrow { display: flex; }
+  @media (min-width: 1280px) {
+    .site-header-shell .site-nav-link-wide { display: inline-flex; }
+    .site-more-item-narrow { display: none; }
+  }
+
+  /* ---- The Products link + menu ---- */
+  .products-menu { position: relative; display: flex; min-width: 0; align-items: center; }
+  .products-menu-trigger { display: inline-flex; align-items: center; gap: 0.125rem; }
+
+  .products-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Small, but never below the pointer target a chevron needs to be usable. */
+    height: 1.75rem;
+    width: 1.5rem;
+    border-radius: 0.5rem;
+    color: var(--km-nav-text, #d4d4d8);
+  }
+  .products-menu-toggle:hover { color: var(--km-nav-active, #f59e0b); }
+  .products-menu-toggle:focus-visible { outline: 2px solid var(--km-nav-active, #f59e0b); outline-offset: 2px; }
+
+  /*
+   * The panel.
+   *
+   * `absolute`, not `fixed`. The header carries `transition-transform` for its
+   * auto-hide behaviour and a transformed ancestor becomes the containing block
+   * for fixed descendants, so a fixed panel here would resolve against the
+   * 60px-tall bar and render clipped — the failure the mobile drawer had to be
+   * portalled out of the header to escape. An absolutely positioned panel
+   * anchored to `.products-menu` is unaffected and needs no portal.
+   *
+   * The 0.5rem gap between the trigger and the panel is bridged by the shared
+   * wrapper's hover handlers, so crossing it never starts the closing timer.
+   */
+  .products-menu-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 50;
+    margin-top: 0.5rem;
+    min-width: 34rem;
+    max-width: min(46rem, calc(100vw - 2rem));
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid var(--km-nav-border, #3f3f46);
+    background: var(--km-nav-mobile-bg, var(--panel-strong, #18181b));
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    animation: nav-menu-in 120ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .products-menu-panel { animation: none; }
+  }
+
+  .products-menu-columns { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+  .products-menu-tree { padding: 0.75rem; }
+
+  .products-menu-all,
+  .products-menu-parent,
+  .products-menu-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    /* 44px: a touch laptop is a desktop viewport with fingers on it. */
+    min-height: 2.75rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 0.5rem;
+    color: var(--km-nav-mobile-text, #f4f4f5);
+    font-size: 0.875rem;
+  }
+  .products-menu-all { font-weight: 650; }
+  .products-menu-parent { font-weight: 600; }
+  .products-menu-child { font-weight: 450; font-size: 0.8125rem; opacity: 0.82; }
+
+  .products-menu-all:hover,
+  .products-menu-parent:hover,
+  .products-menu-child:hover,
+  .products-menu-all:focus-visible,
+  .products-menu-parent:focus-visible,
+  .products-menu-child:focus-visible {
+    background: var(--km-nav-hover-bg, #18181b);
+    color: var(--km-nav-active, #f59e0b);
+    outline: none;
+  }
+  .products-menu-all:focus-visible,
+  .products-menu-parent:focus-visible,
+  .products-menu-child:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--km-nav-active, #f59e0b);
+  }
+
+  .products-menu-list, .products-menu-sublist { list-style: none; margin: 0; padding: 0; }
+  .products-menu-list { margin-top: 0.25rem; }
+  /* Children are ruled and indented rather than boxed: the line carries the
+     "belongs to" relationship at a fraction of a card's visual weight. */
+  .products-menu-sublist {
+    margin: 0.125rem 0 0.375rem 0.75rem;
+    padding-left: 0.625rem;
+    border-left: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+  }
+  .products-menu-label { min-width: 0; overflow-wrap: anywhere; }
+  .products-menu-count {
+    flex: none;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.6;
+  }
+
+  .products-menu-feature {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 1.25rem;
+    border-left: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+    background: color-mix(in srgb, var(--brand-primary) 7%, transparent);
+  }
+  .products-menu-feature-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--km-nav-active, #f59e0b);
+  }
+  .products-menu-feature-title { font-size: 1.0625rem; font-weight: 650; color: var(--km-nav-mobile-text, #f4f4f5); }
+  .products-menu-feature-body {
+    font-size: 0.8125rem;
+    line-height: 1.35rem;
+    color: color-mix(in srgb, var(--km-nav-mobile-text, #f4f4f5) 72%, transparent);
+  }
+  .products-menu-feature-link {
+    margin-top: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding-top: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 650;
+    color: var(--km-nav-active, #f59e0b);
+  }
+  .products-menu-feature-link:hover { text-decoration: underline; }
+  .products-menu-feature-link:focus-visible { outline: 2px solid var(--km-nav-active, #f59e0b); outline-offset: 2px; }
+
+  /* ---- The global storefront search ---- */
+  .storefront-search { position: relative; min-width: 0; }
+  /*
+   * Capped rather than greedy. Left to fill the track it stretched to ~600px at
+   * 1440 and stopped reading as a control — a search field the width of half
+   * the page reads as a layout accident. 30rem is enough for a full product
+   * name and its suggestions.
+   */
+  .site-header-search { justify-self: end; width: 100%; max-width: 30rem; }
+
+  .storefront-search-form {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    border-radius: var(--control-radius);
+    border: 1px solid var(--km-nav-util-border, var(--border));
+    background: var(--km-nav-util-bg, var(--panel-strong));
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .storefront-search-form:focus-within {
+    border-color: color-mix(in srgb, var(--km-nav-active, var(--brand-primary)) 60%, var(--border));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--km-nav-active, var(--brand-primary)) 28%, transparent);
+  }
+
+  .storefront-search-icon {
+    position: absolute;
+    left: 0.75rem;
+    height: 0.875rem;
+    width: 0.875rem;
+    color: var(--km-nav-util-text, var(--muted));
+    pointer-events: none;
+  }
+
+  .storefront-search-input {
+    width: 100%;
+    min-width: 0;
+    /* 40px on the bar, 44px in the drawer. Both clear the touch floor once the
+       form's own border is counted. */
+    min-height: 2.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--km-nav-util-text, var(--text));
+    font-size: 0.875rem;
+    padding: 0.375rem 0.5rem 0.375rem 2.25rem;
+    outline: none;
+  }
+  .storefront-search-input::placeholder { color: color-mix(in srgb, var(--km-nav-util-text, var(--muted)) 70%, transparent); }
+  /* The browser's own clear cross is unlabelled, invisible to a screen reader,
+     and lands exactly where the labelled button below goes. */
+  .storefront-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+  .storefront-search-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.5rem;
+    width: 1.5rem;
+    flex: none;
+    border-radius: 9999px;
+    color: var(--km-nav-util-text, var(--muted));
+  }
+  .storefront-search-clear:hover { color: var(--km-nav-active, var(--text)); background: var(--km-nav-hover-bg, var(--panel)); }
+  .storefront-search-clear:focus-visible { outline: 2px solid var(--km-nav-active, var(--brand-primary)); outline-offset: 1px; }
+
+  .storefront-search-submit {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.375rem;
+    align-self: stretch;
+    margin: 0.1875rem;
+    padding-inline: 0.625rem;
+    border-radius: calc(var(--control-radius) - 0.125rem);
+    background: color-mix(in srgb, var(--km-nav-active, var(--brand-primary)) 16%, transparent);
+    color: var(--km-nav-active, var(--brand-primary));
+    font-size: 0.75rem;
+    font-weight: 650;
+  }
+  .storefront-search-submit:hover { background: color-mix(in srgb, var(--km-nav-active, var(--brand-primary)) 26%, transparent); }
+  .storefront-search-submit:focus-visible { outline: 2px solid var(--km-nav-active, var(--brand-primary)); outline-offset: 1px; }
+  /* The word wherever it fits; the icon alone where it does not. */
+  .storefront-search-submit-label { display: none; }
+  @media (min-width: 1280px) {
+    .storefront-search-submit-label { display: inline; }
+  }
+
+  /* ---- Suggestions ---- */
+  .storefront-search-panel {
+    position: absolute;
+    top: calc(100% + 0.375rem);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    overflow: hidden;
+    border-radius: 0.875rem;
+    border: 1px solid var(--km-nav-border, var(--border));
+    background: var(--km-nav-mobile-bg, var(--panel-strong));
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+  .storefront-search-list { list-style: none; margin: 0; padding: 0.375rem; max-height: 60vh; overflow-y: auto; }
+
+  .storefront-search-option {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-height: 3rem;
+    padding: 0.375rem 0.5rem;
+    border-radius: 0.625rem;
+    cursor: pointer;
+  }
+  /* Hover and keyboard selection are the same state on purpose: with
+     `aria-activedescendant` the caret never leaves the input, so there is no
+     second highlight for the two to disagree about. */
+  .storefront-search-option.is-active { background: var(--km-nav-hover-bg, var(--panel)); }
+
+  .storefront-search-thumb {
+    display: grid;
+    place-items: center;
+    height: 2.5rem;
+    width: 2.5rem;
+    flex: none;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--km-nav-border, var(--border)) 70%, transparent);
+    background: var(--panel);
+  }
+  .storefront-search-thumb img { height: 100%; width: 100%; object-fit: cover; }
+  .storefront-search-thumb-fallback {
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--brand-primary) 65%, transparent);
+  }
+  .storefront-search-option.is-category .storefront-search-option-text { padding-left: 0.25rem; }
+
+  .storefront-search-option-text { display: flex; min-width: 0; flex-direction: column; gap: 0.0625rem; flex: 1 1 auto; }
+  .storefront-search-option-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--km-nav-mobile-text, var(--text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .storefront-search-option-meta {
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--km-nav-mobile-text, var(--muted)) 62%, transparent);
+  }
+  .storefront-search-option-price {
+    flex: none;
+    font-size: 0.8125rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    color: var(--km-nav-mobile-text, var(--text));
+  }
+
+  .storefront-search-empty {
+    padding: 0.75rem 0.875rem;
+    font-size: 0.8125rem;
+    color: color-mix(in srgb, var(--km-nav-mobile-text, var(--muted)) 70%, transparent);
+  }
+
+  .storefront-search-all {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.875rem;
+    border-top: 1px solid color-mix(in srgb, var(--km-nav-border, var(--border)) 70%, transparent);
+    background: transparent;
+    color: var(--km-nav-active, var(--brand-primary));
+    font-size: 0.8125rem;
+    font-weight: 650;
+    text-align: left;
+  }
+  .storefront-search-all:hover { background: var(--km-nav-hover-bg, var(--panel)); }
+  .storefront-search-all:focus-visible { outline: 2px solid var(--km-nav-active, var(--brand-primary)); outline-offset: -2px; }
+
+  /* ---- The mobile bar's two rows ---- */
+  .site-header-mobile { display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding-block: 0.5rem; }
+  .site-header-mobile-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .site-header-mobile-search .storefront-search-input { min-height: 2.75rem; font-size: 1rem; }
+  .site-header-mobile-search .storefront-search-submit-label { display: none; }
+
+  /*
+   * The mobile bar is two rows tall, so it cannot keep the one-row height the
+   * desktop bar sets. Left as `auto` the rows would be clipped by the fixed
+   * `--km-header-height`.
+   */
+  .site-header-shell .site-header-mobile { height: auto; min-height: var(--km-header-height); }
+
+  /* ---- The drawer's search and category tree ---- */
+  .mobile-nav-search-field .storefront-search-input { min-height: 2.75rem; font-size: 1rem; }
+
+  .mobile-nav-branch { display: flex; align-items: stretch; gap: 0.25rem; }
+  .mobile-nav-item-branch { flex: 1 1 auto; min-width: 0; }
+  .mobile-nav-branch-toggle {
+    display: grid;
+    place-items: center;
+    /* 44px square: this is the control a thumb actually aims at. */
+    width: 2.75rem;
+    flex: none;
+    border-radius: var(--control-radius);
+    border: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+    color: var(--km-nav-mobile-text, #f4f4f5);
+  }
+  .mobile-nav-branch-toggle:hover { background: var(--km-nav-hover-bg, #18181b); }
+  .mobile-nav-branch-toggle:focus-visible { outline: 2px solid var(--km-nav-active, #f59e0b); outline-offset: 2px; }
+
+  .mobile-nav-categories {
+    margin: 0.25rem 0 0.5rem 0.75rem;
+    padding-left: 0.625rem;
+    border-left: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 70%, transparent);
+  }
+  .mobile-nav-category {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 2.75rem;
+    padding-inline: 0.625rem;
+    border-radius: var(--control-radius);
+    color: var(--km-nav-mobile-text, #f4f4f5);
+    font-size: 0.9375rem;
+  }
+  .mobile-nav-category.is-child { padding-left: 1.5rem; font-size: 0.875rem; opacity: 0.8; }
+  .mobile-nav-category:hover { background: var(--km-nav-hover-bg, #18181b); }
+  .mobile-nav-category-count { flex: none; font-size: 0.75rem; font-variant-numeric: tabular-nums; opacity: 0.6; }
+
+  /* A drawer row that is a button rather than a link still has to look like a
+     row, or the palette entry reads as a stray control. */
+  .mobile-nav-item-button { width: 100%; text-align: left; }
+
   .site-nav-dot {
     position: absolute;
     right: -0.125rem;
@@ -3032,38 +3451,98 @@
     .home-focus { gap: 4.5rem; }
   }
 
-  /* Product cards: one shared silhouette for the homepage and the catalog. */
+  /* ---- Product cards ------------------------------------------------------
+   *
+   * One shared silhouette for the homepage row, the catalog grid and the
+   * catalog's list rows.
+   *
+   * ## Products over chrome
+   *
+   * The old card was a bordered, filled box: a rounded rectangle inside a
+   * bordered toolbar section beside a bordered rail, with a 4:3 photograph
+   * occupying about a third of it. Every product looked like a record in a
+   * table of records. The default treatment is now *flat* — the photograph
+   * carries the surface and the type sits on the page — so what separates one
+   * product from the next is space, and what draws the eye is the thing being
+   * sold. The four Appearance card styles still apply: `soft` is this flat
+   * default, and an operator who wants frames or shadows still gets them.
+   */
   .product-card {
     position: relative;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    border-radius: var(--control-radius);
-    border: 1px solid var(--border);
-    background: var(--panel);
+    border-radius: var(--card-radius, 1rem);
+    border: 1px solid transparent;
+    background: transparent;
     transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
   }
 
-  [data-card-style="solid"] .product-card { background: var(--panel-strong); }
-  [data-card-style="outline"] .product-card { background: transparent; }
-  [data-card-style="elevated"] .product-card { background: var(--panel-strong); box-shadow: 0 18px 44px rgba(0,0,0,.28); }
+  [data-card-style="solid"] .product-card { background: var(--panel); border-color: var(--border); overflow: hidden; }
+  [data-card-style="outline"] .product-card { background: transparent; border-color: var(--border); overflow: hidden; }
+  [data-card-style="elevated"] .product-card { background: var(--panel-strong); border-color: var(--border); overflow: hidden; box-shadow: 0 18px 44px rgba(0,0,0,.28); }
 
-  .product-card:hover {
+  /* The flat default has no frame to light up, so the hover cue moves to the
+     photograph and the title. The lift is kept for the framed styles, where it
+     is the frame that lifts. */
+  :where([data-card-style="solid"], [data-card-style="outline"], [data-card-style="elevated"]) .product-card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
-    background: var(--panel-strong);
   }
-
-  .product-card:focus-within {
+  :where([data-card-style="solid"], [data-card-style="outline"], [data-card-style="elevated"]) .product-card:focus-within {
     border-color: color-mix(in srgb, var(--brand-primary) 60%, var(--border));
   }
 
-  /* No bottom padding: the footer below supplies the gap and the card's floor,
-     which is what keeps the spacing identical to when it lived inside here. */
+  /*
+   * The media well.
+   *
+   * A wrapper around `.product-image` rather than styling it directly, because
+   * the hover image and the wishlist toggle are its siblings and all three have
+   * to share one rounded, clipped box. `isolation: isolate` keeps the hover
+   * image's fade from creating a stacking context that escapes the well.
+   */
+  .product-card-media {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: var(--card-radius, 1rem);
+    background: var(--panel-strong);
+  }
+  :where([data-card-style="solid"], [data-card-style="outline"], [data-card-style="elevated"]) .product-card-media {
+    border-radius: 0;
+  }
+
+  /*
+   * The alternate angle.
+   *
+   * Opacity only — no transform, no layout participation — so revealing it can
+   * never shift the card. `pointer-events: none` keeps it out of the card's hit
+   * testing entirely, and it is only reached from `sm` upwards where a real
+   * pointer exists; a touch device never enters `:hover` and loses nothing,
+   * because the primary image is complete on its own.
+   */
+  .product-card-hover-image {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    width: 100%;
+    object-fit: cover;
+    object-position: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 260ms ease;
+  }
+  @media (hover: hover) and (min-width: 640px) {
+    .product-card:hover .product-card-hover-image,
+    .product-card:focus-within .product-card-hover-image { opacity: 1; }
+  }
+
   .product-card-body {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
+    padding: 1rem 0 0;
+  }
+  :where([data-card-style="solid"], [data-card-style="outline"], [data-card-style="elevated"]) .product-card-body {
     padding: 1.25rem 1.25rem 0;
   }
 
@@ -3072,22 +3551,54 @@
      one of them without restating all of them, and so the commerce hierarchy —
      name, then price, then metadata — is stated in one place rather than spread
      across three files. */
-  .product-card-meta {
+
+  /*
+   * "INTERIOR / SHIFT KNOBS".
+   *
+   * Deliberately small, spaced and muted: category is orientation, not
+   * identity, and it must not compete with the product name. It previously sat
+   * on a row it shared with a badge at the same size as its neighbours, which
+   * is what made it read as a second title.
+   */
+  .product-card-eyebrow {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--muted);
-  }
-  .product-card-category { min-width: 0; overflow-wrap: anywhere; }
-  .product-card-title {
-    margin-top: 0.5rem;
-    font-size: 1.25rem;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.375rem;
+    min-width: 0;
+    font-size: 0.6875rem;
     font-weight: 650;
-    line-height: 1.3;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
     overflow-wrap: anywhere;
   }
+  .product-card-eyebrow-sep { margin-right: 0.375rem; opacity: 0.55; }
+
+  .product-card-title {
+    margin-top: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 650;
+    line-height: 1.35;
+    color: var(--text);
+    overflow-wrap: anywhere;
+    /*
+     * Two lines, then an ellipsis. A four-line product name pushed everything
+     * below it down and was the single largest contributor to the badge drift
+     * this pass measured. Two lines at this size holds roughly 55 characters,
+     * which covers every name in the catalog and truncates the pathological
+     * ones without hiding the identifying words at the front.
+     */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  @media (min-width: 1024px) {
+    [data-catalog-density="2"] .catalog-grid .product-card-title { font-size: 1.375rem; }
+  }
+
   .product-card-description {
     margin-top: 0.5rem;
     font-size: 0.875rem;
@@ -3100,12 +3611,150 @@
     line-clamp: 2;
     overflow: hidden;
   }
-  .product-card-badges { margin-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-  .product-card-price {
-    font-size: 0.875rem;
+  /* Four across is a browse mode: the name, the price and the action are what
+     a shopper is scanning, and a truncated sentence between them is noise. */
+  @media (min-width: 1280px) {
+    [data-catalog-density="4"] .catalog-grid .product-card-description { display: none; }
+  }
+
+  /*
+   * A real specification line, shown only where there is room for it.
+   *
+   * Hidden in the three- and four-across modes rather than clamped: half a
+   * material name is worse than none.
+   */
+  .product-card-spec {
+    margin-top: 0.5rem;
+    display: none;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .product-card-spec-key {
+    flex: none;
+    font-size: 0.6875rem;
     font-weight: 650;
-    color: var(--brand-primary);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.75;
+  }
+  .product-card-spec-value { color: var(--text); }
+  @media (min-width: 1024px) {
+    [data-catalog-density="2"] .catalog-grid .product-card-spec { display: flex; }
+  }
+  @media (min-width: 640px) {
+    [data-catalog-density="list"] .catalog-grid .product-card-spec { display: flex; }
+  }
+
+  /*
+   * ---- The status row: the card's stable anchor --------------------------
+   *
+   * `margin-top: auto` lives here, not on the footer.
+   *
+   * That one move is the whole of the badge-alignment fix. With the anchor on
+   * the footer, only price and button were pinned to the card floor and the
+   * status pills rode on whatever content happened to be above them: measured
+   * across one row of three equal-height (493px) cards, the pills began at
+   * 390px, 314px and 344px from the top — a 76px spread produced by nothing but
+   * a two-line title and a one-line description — and the gap down to the
+   * purchase region varied from 0px to 55px, so on one card they touched.
+   *
+   * Anchoring here welds status, price and action into one purchase block on
+   * the floor of every card. The slack a short description creates now opens up
+   * *above* the status row, where nothing is being compared across columns.
+   *
+   * `min-height` reserves the row even when a product has one signal rather
+   * than two, so a card with no lead time does not sit 6px taller than its
+   * neighbour.
+   */
+  .product-card-status {
+    margin-top: auto;
+    padding-top: 0.875rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 1.75rem;
+  }
+
+  /*
+   * Availability leads; everything else is quieter than it.
+   *
+   * Three equal pills is how "Usually 3 days" ended up shouting as loudly as
+   * "Currently unavailable". Availability keeps a filled chip and carries the
+   * tone; lead time is plain text, because it is a detail *of* the availability
+   * rather than a competing fact; the customization signal is an outline.
+   *
+   * Tone is never the only cue — each state has its own words, and the chip
+   * carries a dot — so this reads correctly in monochrome and to anyone who
+   * cannot separate the hues.
+   */
+  .product-status-availability {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 650;
+    line-height: 1.25rem;
+    white-space: nowrap;
+  }
+  .product-status-availability::before {
+    content: "";
+    height: 0.375rem;
+    width: 0.375rem;
+    border-radius: 9999px;
+    background: currentColor;
+  }
+  .product-status-availability[data-tone="ready"] {
+    background: color-mix(in srgb, #34d399 16%, transparent);
+    color: color-mix(in srgb, #34d399 78%, var(--text));
+  }
+  .product-status-availability[data-tone="made"] {
+    background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+    color: color-mix(in srgb, var(--brand-primary) 82%, var(--text));
+  }
+  .product-status-availability[data-tone="blocked"] {
+    background: color-mix(in srgb, #f87171 16%, transparent);
+    color: color-mix(in srgb, #f87171 80%, var(--text));
+  }
+
+  .product-status-detail { font-size: 0.75rem; color: var(--muted); overflow-wrap: anywhere; }
+
+  /*
+   * Customizable, and its stricter cousin.
+   *
+   * These must never look the same: "Customizable" says more is available if
+   * you want it, "Choose options" says this cannot be bought until you decide
+   * something. Showing the softer word for the stricter case is how a customer
+   * reaches a checkout that refuses them.
+   */
+  .product-status-custom {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 550;
+    line-height: 1.25rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .product-status-custom[data-signal="choose_options"] {
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+    color: color-mix(in srgb, var(--brand-primary) 78%, var(--text));
+    font-weight: 650;
+  }
+
+  .product-card-price {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--text);
     font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
   }
 
   .product-card-link { color: inherit; }
@@ -3118,12 +3767,13 @@
    * context, and one with `z-index: auto` then paints alongside positioned
    * boxes in *tree order* — so any such descendant sitting after this anchor in
    * the DOM covers the overlay and silently swallows the click. That is exactly
-   * what the hover `filter` on `.product-card-action` did: the card worked
+   * what a hover `filter` on the old call-to-action did: the card worked
    * everywhere except its own call-to-action, and only while hovered, because
    * hovering is what created the stacking context.
    *
-   * Everything decorative now stays below this layer; only genuinely
-   * independent controls (`.product-card-aside`) are lifted above it.
+   * Everything decorative stays below this layer; the two genuinely independent
+   * controls — `.product-card-aside` and `.product-card-cta` — are lifted above
+   * it and are the only things allowed to be.
    */
   .product-card-link::after { content: ""; position: absolute; inset: 0; z-index: 1; }
   .product-card:hover .product-card-link { color: var(--brand-primary); }
@@ -3134,7 +3784,7 @@
   .product-card-link:focus-visible::after {
     outline: 2px solid var(--brand-primary);
     outline-offset: -2px;
-    border-radius: var(--control-radius);
+    border-radius: var(--card-radius, 1rem);
   }
 
   /* Independent controls — wishlist and friends — must clear the overlay or
@@ -3145,27 +3795,91 @@
    * The purchase region: price and the call-to-action.
    *
    * A sibling of the body rather than its last child, so the list view can lift
-   * it into a column of its own without `display: contents` or a subgrid. In
-   * the stacked card it is still the last flex item and `margin-top: auto`
-   * still pins it to the bottom, so a short description and a long one produce
-   * cards whose buttons line up.
+   * it into a column of its own without `display: contents` or a subgrid. It no
+   * longer carries `margin-top: auto` — the status row above it owns the anchor
+   * now, and having both compete for the slack is what let the gap between them
+   * vary from card to card.
    */
   .product-card-footer {
     display: flex;
-    margin-top: auto;
-    padding: 1.25rem;
+    padding: 0.75rem 0 0;
     align-items: center;
     justify-content: space-between;
     gap: .75rem;
+    flex-wrap: wrap;
+  }
+  :where([data-card-style="solid"], [data-card-style="outline"], [data-card-style="elevated"]) .product-card-footer {
+    padding: 0.875rem 1.25rem 1.25rem;
   }
 
   /*
-   * The storefront's Buy now / Customize call-to-action.
+   * The quick-add control, and the only thing in the card that is a second
+   * destination.
    *
-   * It is the *primary* action role — semantically the same button as Add to
-   * cart — so it reads the same three role variables rather than restating
-   * the brand colour. Before this it hard-coded the solid treatment and was
-   * the only primary CTA that ignored the Primary button style setting.
+   * `position: relative` plus `z-index: 2` is what makes it pressable at all:
+   * without it the stretched link's overlay covers it and every click opens the
+   * product page instead of adding to the cart.
+   *
+   * It reads the primary action role rather than restating the brand colour, so
+   * Appearance's Primary button style applies to it exactly as it applies to
+   * every other primary button on the site. That was the defect the old
+   * decorative span reintroduced; naming the role here is what stops it coming
+   * back under a new label.
+   */
+  .product-card-cta-wrap { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: flex-end; gap: .375rem; min-width: 0; }
+
+  .product-card-cta {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .375rem;
+    min-height: 2.375rem;
+    border-radius: var(--control-radius);
+    padding: .5rem .875rem;
+    font-size: .8125rem;
+    font-weight: 650;
+    white-space: nowrap;
+    transition: filter 120ms ease, background-color 120ms ease, border-color 120ms ease;
+  }
+  .product-card-cta-primary {
+    border: 1px solid var(--primary-action-border);
+    background: var(--primary-action-bg);
+    color: var(--primary-action-text);
+  }
+  /* The same three variables `.ui-btn-secondary` reads, and the same four
+     style selectors below, so "Choose options" and "Request a quote" move with
+     the Secondary button style instead of being a fourth hard-coded look. */
+  .product-card-cta-secondary {
+    border: 1px solid var(--km-secondary-button-border, var(--brand-accent));
+    background: var(--km-secondary-button-bg, transparent);
+    color: var(--km-secondary-button-text, var(--text));
+  }
+  .product-card-cta:hover:not(:disabled) { filter: brightness(1.08); }
+  .product-card-cta:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+  .product-card-cta:disabled { opacity: .6; }
+  /* The confirmation is a state of the same button, not a toast that covers the
+     next card. It keeps the button's own box, so nothing reflows. */
+  .product-card-cta[data-state="added"] {
+    background: color-mix(in srgb, #34d399 20%, transparent);
+    border-color: color-mix(in srgb, #34d399 55%, var(--border));
+    color: color-mix(in srgb, #34d399 80%, var(--text));
+  }
+  .product-card-cta-error {
+    max-width: 100%;
+    font-size: .75rem;
+    line-height: 1.1rem;
+    text-align: right;
+    color: color-mix(in srgb, #fbbf24 80%, var(--text));
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * The decorative specimen action, used only by the design guide.
+   *
+   * Still `pointer-events: none`, still below the overlay: it is a picture of a
+   * button, and the card's one anchor owns every click inside it.
    */
   .product-card-action {
     display: inline-flex;
@@ -3178,21 +3892,8 @@
     color: var(--primary-action-text);
     font-size: .875rem;
     font-weight: 600;
-    transition: filter 120ms ease;
-    /*
-     * Decorative. The card exposes exactly one anchor and its overlay owns
-     * every click, so this call-to-action must never become a second hit
-     * target. Without this the hover `filter` below lifts the span into its own
-     * stacking context above the overlay and the button turns into a dead zone.
-     * Belt and braces with the overlay's z-index: either alone fixes the bug,
-     * and together no future style on this element can reopen it.
-     */
     pointer-events: none;
   }
-
-  /* Driven by the card's hover, not the span's own, so it still lights up while
-     the span itself is inert to the pointer. */
-  .product-card:hover .product-card-action { filter: brightness(1.1); }
 
   /*
    * Reserve the image box before the image arrives so a slow, missing, or
@@ -4554,15 +5255,20 @@
    * Row two is the *result context* — how many, of what, and how it is arranged
    * — which is a different question from "what am I looking for".
    */
+  /*
+   * No frame, no fill, no padding.
+   *
+   * The panel around this row was one of five nested surfaces a customer met
+   * before reaching a product, and it was the one that made search look like a
+   * filter field on an admin table. The two rows still read as a group because
+   * they are close together and the results are not; that is enough.
+   */
   .catalog-toolbar {
     margin-top: 0;
     display: grid;
     gap: 0.875rem;
     grid-template-columns: minmax(0, 1fr);
-    border-radius: var(--card-radius, 1rem);
-    border: 1px solid var(--border);
-    background: var(--panel);
-    padding: 1rem;
+    padding: 0;
   }
 
   /* ---- Search ---- */
@@ -4823,55 +5529,36 @@
     gap: 0.5rem;
   }
   .catalog-active-filters-label { font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+  /* A removable refinement, not a tag. The × is part of the control rather
+     than a second thing beside it, and the brand tint says "you set this". */
   .catalog-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
     min-height: 2.25rem;
-    padding: 0.35rem 0.7rem;
-    border: 1px solid var(--border);
+    padding: 0.35rem 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 35%, var(--border));
     border-radius: 9999px;
-    background: var(--panel);
+    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
     color: var(--text);
     font-size: 0.8125rem;
+    font-weight: 550;
   }
-  .catalog-filter-chip:hover { border-color: var(--brand-primary); }
+  .catalog-filter-chip span[aria-hidden] { opacity: 0.7; font-size: 0.9375rem; line-height: 1; }
+  .catalog-filter-chip:hover { border-color: var(--brand-primary); background: color-mix(in srgb, var(--brand-primary) 18%, transparent); }
+  .catalog-filter-chip:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
   /* Removing everything is a different act from removing one thing, so it does
      not wear the same × the individual chips do. */
   .catalog-filter-chip-clear {
-    border-style: dashed;
+    border-color: transparent;
+    background: transparent;
     color: var(--muted);
     font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
   .catalog-filter-chip-clear:hover { color: var(--text); }
 
-  .catalog-discovery {
-    margin-top: 2.5rem;
-    padding-block: 1.5rem;
-    border-block: 1px solid var(--border);
-  }
-  .catalog-discovery-title { margin-top: 0.25rem; font-size: 1.5rem; font-weight: 650; color: var(--text); }
-  .catalog-discovery-grid {
-    margin-top: 1rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.75rem;
-  }
-  @media (min-width: 540px) { .catalog-discovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (min-width: 900px) { .catalog-discovery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  .catalog-discovery-card {
-    display: flex;
-    min-width: 0;
-    min-height: 7rem;
-    flex-direction: column;
-    padding: 1rem;
-    border: 1px solid var(--border);
-    border-radius: var(--card-radius, 1rem);
-    background: color-mix(in srgb, var(--panel) 86%, transparent);
-    transition: border-color 120ms ease, background 120ms ease;
-  }
-  .catalog-discovery-card:hover { border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border)); background: var(--panel); }
-  .catalog-discovery-card:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 3px; }
-  .catalog-discovery-name { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
-  .catalog-discovery-description { margin-top: 0.35rem; color: var(--muted); font-size: 0.8125rem; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .catalog-discovery-action { margin-top: auto; padding-top: 0.75rem; color: var(--brand-primary); font-size: 0.8125rem; font-weight: 650; }
   /*
    * The product grid.
    *
@@ -4942,6 +5629,7 @@
    * image is capped so the title, price and action stay above the fold.
    */
   [data-catalog-density="list"] .catalog-grid .product-image { aspect-ratio: 16 / 10; }
+  [data-catalog-density="list"] .catalog-grid .product-card-media { border-radius: var(--card-radius, 1rem); }
 
   @media (min-width: 640px) {
     [data-catalog-density="list"] .catalog-grid .product-card {
@@ -4953,16 +5641,19 @@
       grid-template-areas: "media body" "media footer";
       align-items: start;
     }
-    [data-catalog-density="list"] .catalog-grid .product-image {
+    [data-catalog-density="list"] .catalog-grid .product-card-media {
       grid-area: media;
       /* Fills the row's full height rather than sitting at the top of a short
          one, which is what makes the row read as one object. */
       height: 100%;
-      aspect-ratio: auto;
       min-height: 11rem;
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-body { grid-area: body; padding-bottom: 0; }
-    [data-catalog-density="list"] .catalog-grid .product-card-footer { grid-area: footer; }
+    [data-catalog-density="list"] .catalog-grid .product-image {
+      height: 100%;
+      aspect-ratio: auto;
+    }
+    [data-catalog-density="list"] .catalog-grid .product-card-body { grid-area: body; padding: 0 0 0 1.25rem; }
+    [data-catalog-density="list"] .catalog-grid .product-card-footer { grid-area: footer; padding: 0.75rem 0 0 1.25rem; }
     /* The reason to be in list view: more of the description, without opening
        the product. Four lines rather than the grid's two. */
     [data-catalog-density="list"] .catalog-grid .product-card-description {
@@ -4983,20 +5674,274 @@
       grid-template-columns: 15rem minmax(0, 1fr) minmax(10rem, 14rem);
       grid-template-areas: "media body footer";
     }
-    [data-catalog-density="list"] .catalog-grid .product-image { min-height: 12.5rem; }
+    [data-catalog-density="list"] .catalog-grid .product-card-media { min-height: 12.5rem; }
     [data-catalog-density="list"] .catalog-grid .product-card-footer {
       flex-direction: column;
-      align-items: flex-start;
+      align-items: stretch;
       justify-content: flex-start;
-      margin-top: 0;
-      padding-left: 0;
+      padding: 0 0 0 1.25rem;
       gap: 0.75rem;
     }
+    /* The purchase column reads top-down, so the button spans it rather than
+       hugging the right edge of a column that has no right edge to hug. */
+    [data-catalog-density="list"] .catalog-grid .product-card-cta-wrap { align-items: stretch; }
+    [data-catalog-density="list"] .catalog-grid .product-card-cta { width: 100%; padding-block: 0.625rem; }
+    [data-catalog-density="list"] .catalog-grid .product-card-cta-error { text-align: left; }
     [data-catalog-density="list"] .catalog-grid .product-card-price { font-size: 1.25rem; }
     [data-catalog-density="list"] .catalog-grid .product-card-action {
       width: 100%;
       padding-block: 0.625rem;
     }
+    /* The status row stops being the body's floor once the body is a middle
+       column of its own: pinning it to the bottom of a tall row would strand it
+       far below the description it belongs to. */
+    [data-catalog-density="list"] .catalog-grid .product-card-status { margin-top: 0.875rem; padding-top: 0; }
+  }
+
+  /* ==== Catalog chrome 4.0 ================================================
+   *
+   * The reduction pass. The catalog previously rendered a rounded card inside a
+   * bordered toolbar section beside a bordered rail under a bordered discovery
+   * strip — five framed surfaces before a customer reached a product. Frames do
+   * not come back here; hierarchy is carried by space, type and one hairline
+   * rule where a genuine division exists.
+   */
+
+  .catalog-intro { max-width: 44rem; }
+  .catalog-intro-title {
+    margin-top: 0.5rem;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .catalog-intro-body { margin-top: 1rem; line-height: 1.75rem; color: var(--muted); }
+
+  /* ---- Subcategory signposts ---- */
+  .catalog-subnav { margin-top: 1.75rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; }
+  .catalog-subnav-heading {
+    flex: none;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .catalog-subnav-list { display: flex; flex-wrap: wrap; gap: 0.375rem 0.5rem; list-style: none; margin: 0; padding: 0; }
+  .catalog-subnav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    font-size: 0.875rem;
+    font-weight: 550;
+    color: var(--text);
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .catalog-subnav-link:hover {
+    border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border));
+    background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+  }
+  .catalog-subnav-link:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+
+  /* ---- The refinement group in the rail ---- */
+  /* One rule, not three boxes: categories are what you are looking at,
+     refinements are how, and that is the only division the rail has. */
+  .catalog-rail-refine {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+  }
+  .catalog-rail-clear {
+    align-self: flex-start;
+    min-height: 2.25rem;
+    padding: 0.25rem 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, var(--muted) 45%, transparent);
+  }
+  .catalog-rail-clear:hover:not(:disabled) { color: var(--text); }
+  .catalog-rail-clear:disabled { opacity: 0.4; text-decoration: none; }
+  .catalog-rail-clear:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+
+  /* ---- Empty and recovery ---- */
+  .catalog-empty { margin-top: 2.5rem; max-width: 40rem; }
+  .catalog-empty-title { font-size: 1.375rem; font-weight: 650; color: var(--text); overflow-wrap: anywhere; }
+  .catalog-empty-body { margin-top: 0.5rem; color: var(--muted); line-height: 1.6rem; }
+  .catalog-empty-actions { margin-top: 1.25rem; display: flex; flex-wrap: wrap; gap: 0.625rem; }
+
+  .catalog-recovery.is-empty {
+    margin-top: 2rem;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .catalog-recovery-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--brand-primary);
+  }
+  .catalog-recovery-title { font-size: 1.25rem; font-weight: 650; color: var(--text); }
+  .catalog-recovery-body { color: var(--muted); line-height: 1.6rem; max-width: 42rem; }
+  .catalog-recovery.is-empty .ui-btn { margin-top: 0.75rem; }
+
+  /* The footer variant is a rule and a sentence, not a promotional panel: it is
+     addressed to the customer who already read every result. */
+  .catalog-recovery.is-footer {
+    margin-top: 3.5rem;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .catalog-recovery.is-footer .catalog-recovery-title { font-size: 1.0625rem; }
+  .catalog-recovery.is-footer .catalog-recovery-body { margin-top: 0.25rem; font-size: 0.875rem; }
+  .catalog-recovery-link {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding-inline: 1rem;
+    border-radius: var(--control-radius);
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--brand-primary);
+  }
+  .catalog-recovery-link:hover { background: color-mix(in srgb, var(--brand-primary) 10%, transparent); }
+  .catalog-recovery-link:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+
+  /* ---- Recently viewed ---- */
+  .recently-viewed { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+  .recently-viewed-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .recently-viewed-title {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .recently-viewed-clear {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .recently-viewed-clear:hover { color: var(--text); }
+  .recently-viewed-clear:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+
+  /*
+   * A scrolling row rather than a wrapping grid. Six items must never become a
+   * second product grid competing with the real one above it, and on a phone a
+   * horizontal shelf is the familiar shape for "things you already saw".
+   */
+  .recently-viewed-row {
+    margin-top: 0.875rem;
+    display: flex;
+    gap: 0.75rem;
+    list-style: none;
+    padding: 0 0 0.25rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+  .recently-viewed-row > li { flex: 0 0 auto; scroll-snap-align: start; }
+  .recently-viewed-item {
+    display: flex;
+    width: 9.5rem;
+    flex-direction: column;
+    gap: 0.375rem;
+    border-radius: 0.75rem;
+    padding: 0.375rem;
+  }
+  .recently-viewed-item:hover { background: var(--panel); }
+  .recently-viewed-item:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+  .recently-viewed-thumb {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    background: var(--panel-strong);
+  }
+  .recently-viewed-thumb img { height: 100%; width: 100%; object-fit: cover; }
+  .recently-viewed-thumb-fallback {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--brand-primary) 65%, transparent);
+  }
+  .recently-viewed-name {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .recently-viewed-price { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ---- Terms notices ------------------------------------------------------
+   *
+   * Conspicuous means legible, not loud. These sit at the size the surrounding
+   * fine print uses but at full contrast against it, with real underlined links
+   * — muted grey text on a dark panel is how a notice becomes decoration.
+   */
+  .terms-notice {
+    font-size: 0.75rem;
+    line-height: 1.15rem;
+    color: color-mix(in srgb, var(--text) 78%, transparent);
+  }
+  .terms-notice-link {
+    color: var(--brand-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .terms-notice-link:hover { text-decoration: none; }
+  .terms-notice-link:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+
+  .terms-agreement {
+    margin-top: 1.25rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+  }
+  .terms-agreement-box {
+    /* 20px and its own hit area: a 13px checkbox on a contract is a dark
+       pattern by geometry even when the wording is fair. */
+    height: 1.25rem;
+    width: 1.25rem;
+    flex: none;
+    margin-top: 0.0625rem;
+    accent-color: var(--brand-primary);
+    cursor: pointer;
+  }
+  .terms-agreement-box:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+  .terms-agreement-label {
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    color: var(--text);
+    cursor: pointer;
   }
 
   /* ---- Result layout control ---- */

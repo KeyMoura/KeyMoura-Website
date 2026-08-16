@@ -10,6 +10,9 @@ import ProductPurchasePanel from "@/components/product/ProductPurchasePanel";
 import ProductSections from "@/components/product/ProductSections";
 import ProductRequestForm from "@/components/product/ProductRequestForm";
 import ProductCard, { type ProductCardProduct } from "@/components/ProductCard";
+import RecentlyViewed from "@/components/catalog/RecentlyViewed";
+import CatalogRecovery from "@/components/catalog/CatalogRecovery";
+import { catalogPriceLabel } from "@/lib/commerce/catalogActions";
 import { supabasePublicServer } from "@/lib/supabasePublicServer";
 import { getSiteSettings } from "@/lib/siteSettings";
 import { groupMediaByProduct, normalizeImageUrl, primaryProductImage } from "@/lib/productImages";
@@ -435,6 +438,28 @@ export default async function CatalogSlugPage({ params }: { params: Promise<{ sl
           </div>
         </section>
       ) : null}
+
+      {/*
+        Renders nothing. Its job is to write this product into the browser's own
+        recently-viewed list, which is read by the strip below and by the
+        catalog. Nothing about the visit reaches the server — see
+        `lib/commerce/recentlyViewed.ts` for why that is deliberate.
+      */}
+      <RecentlyViewed
+        mode="record"
+        product={{
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+          image: primaryProductImage(product) ?? null,
+          price: catalogPriceLabel(product),
+        }}
+      />
+
+      {/* The customer is already looking at one product, so this excludes it. */}
+      <RecentlyViewed mode="list" excludeId={product.id} />
+
+      <CatalogRecovery variant="footer" />
     </main>
   );
 }

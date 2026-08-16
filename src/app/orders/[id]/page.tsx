@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CustomOrderAgreement } from "@/components/legal/TermsNotice";
+import { TERMS_VERSION } from "@/lib/legal/terms";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
@@ -86,6 +88,15 @@ export default function OrderDetailPage() {
   const [updatesAvailable, setUpdatesAvailable] = useState(true);
   const [revisionNote, setRevisionNote] = useState("");
   const [proposalDeclineReason, setProposalDeclineReason] = useState("");
+  /*
+   * The custom-order clickwrap.
+   *
+   * Unticked on every load, deliberately: an agreement that is pre-ticked, or
+   * that survives a reload, is not an agreement the customer made on this
+   * visit. The server refuses the approval without it regardless, so this
+   * state only decides whether the button is offered.
+   */
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const load = useCallback(async () => {
     const auth = await supabase.auth.getUser();
     setUserId(auth.data.user?.id ?? "");
@@ -198,7 +209,16 @@ export default function OrderDetailPage() {
   async function approveQuote() {
     setBusy(true); setError("");
     const { data } = await supabase.auth.getSession();
-    const response = await fetch(`/api/orders/${id}/quote`, { method:"POST", headers:data.session?.access_token ? { Authorization:`Bearer ${data.session.access_token}` } : {} });
+    const response = await fetch(`/api/orders/${id}/quote`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {}),
+      },
+      // The version travels with the agreement so the server can refuse a stale
+      // tab that is still showing last month's Terms.
+      body: JSON.stringify({ agreedToTerms: true, termsVersion: TERMS_VERSION }),
+    });
     const result = await response.json();
     if (!response.ok) setError(result.error || "Could not approve quote."); else await load();
     setBusy(false);
@@ -260,7 +280,7 @@ export default function OrderDetailPage() {
       <CustomerOrderOverview order={order} items={order.order_items ?? []} paymentAvailable={paymentAvailable} />
       <div id="customer-action" className="scroll-mt-24">
       {isPendingProposal ? <section className="ui-card !border-brand-primary/50 !bg-brand-primary/10"><p className="ui-eyebrow">Order proposal</p><h2 className="mt-2 text-xl font-semibold">Accept, decline, or ask a question</h2><p className="mt-2 text-sm text-brand-textMuted">KeyMoura is offering {order.quantity > 1 ? `${order.quantity} × ` : ""}{order.product_name} for {order.agreed_price_cents != null ? moneyFromCents(order.agreed_price_cents) : "a price to be confirmed"}. Accepting moves it into secure payment and the normal production workflow.</p>{order.customer_notes ? <div className="ui-card mt-4 whitespace-pre-wrap text-sm">{order.customer_notes}</div> : null}<div className="ui-card mt-5"><label className="block text-sm font-medium">Decline reason<textarea value={proposalDeclineReason} onChange={event=>setProposalDeclineReason(event.target.value)} maxLength={1000} placeholder="Tell KeyMoura why this proposal does not work for you…" className="ui-input mt-2 min-h-20" /></label></div><div className="ui-action-row mt-4"><button type="button" disabled={busy || proposalDeclineReason.trim().length < 3} onClick={()=>void decideProposal("decline")} className="ui-btn ui-btn-danger disabled:opacity-40">Decline proposal</button><button type="button" disabled={busy} onClick={()=>void decideProposal("accept")} className="ui-btn ui-btn-primary disabled:opacity-50">{busy ? "Saving…" : "Accept proposal"}</button><a href="#order-conversation" className="ui-btn ui-btn-secondary">Message KeyMoura</a></div></section> : null}
-      {order.status === "customer_review" && !order.quote_accepted_at && order.agreed_price_cents ? <section className={`ui-card ${quoteExpired ? "!border-amber-500/50 !bg-amber-500/10" : "!border-brand-primary/50 !bg-brand-primary/10"}`}><p className="ui-eyebrow">Quote revision {order.quote_revision}</p><h2 className="mt-2 text-xl font-semibold">{quoteExpired ? "This quote has expired" : `Review and approve ${moneyFromCents(order.agreed_price_cents)}`}</h2><p className="mt-2 text-sm text-brand-textMuted">{quoteExpired ? "Send a message below to request an updated price and schedule." : <>Approve this quote to unlock secure payment. {order.deposit_amount_cents ? `${moneyFromCents(order.deposit_amount_cents)} is due first; the remaining balance is collected later.` : "The full amount will be due."}{order.quote_expires_at ? ` Valid through ${new Date(order.quote_expires_at).toLocaleDateString()}.` : ""}</>}</p>{!quoteExpired ? <button type="button" disabled={busy} onClick={()=>void approveQuote()} className="ui-btn ui-btn-primary mt-4 disabled:opacity-50">{busy?"Approving…":"Approve quote"}</button> : null}</section> : null}
+      {order.status === "customer_review" && !order.quote_accepted_at && order.agreed_price_cents ? <section className={`ui-card ${quoteExpired ? "!border-amber-500/50 !bg-amber-500/10" : "!border-brand-primary/50 !bg-brand-primary/10"}`}><p className="ui-eyebrow">Quote revision {order.quote_revision}</p><h2 className="mt-2 text-xl font-semibold">{quoteExpired ? "This quote has expired" : `Review and approve ${moneyFromCents(order.agreed_price_cents)}`}</h2><p className="mt-2 text-sm text-brand-textMuted">{quoteExpired ? "Send a message below to request an updated price and schedule." : <>Approve this quote to unlock secure payment. {order.deposit_amount_cents ? `${moneyFromCents(order.deposit_amount_cents)} is due first; the remaining balance is collected later.` : "The full amount will be due."}{order.quote_expires_at ? ` Valid through ${new Date(order.quote_expires_at).toLocaleDateString()}.` : ""}</>}</p>{!quoteExpired ? <><CustomOrderAgreement checked={agreedToTerms} onChange={setAgreedToTerms} disabled={busy} /><button type="button" disabled={busy || !agreedToTerms} onClick={()=>void approveQuote()} className="ui-btn ui-btn-primary mt-4 disabled:opacity-50">{busy?"Approving…":"Approve quote"}</button></> : null}</section> : null}
       {order.status === "final_review" ? <section className="mt-4 rounded-2xl border border-brand-accent/50 bg-brand-accent/10 p-5"><p className="text-xs font-semibold uppercase tracking-[.16em] text-brand-accent">Finished-product review</p><h2 className="mt-2 text-xl font-semibold">Your order is ready for approval</h2>{order.final_review_note ? <p className="mt-3 whitespace-pre-wrap text-sm text-brand-textMuted">{order.final_review_note}</p> : <p className="mt-2 text-sm text-brand-textMuted">Review the finished work below. Approving confirms it and sends the order to fulfillment.</p>}<OrderReviewGallery paths={order.final_review_asset_paths || []} /><div className="mt-5 rounded-xl border border-zinc-700 bg-black/25 p-4"><label className="block text-sm font-medium">Need something changed?<textarea value={revisionNote} onChange={event=>setRevisionNote(event.target.value)} maxLength={2000} placeholder="Explain exactly what needs to be revised…" className="mt-2 min-h-24 w-full rounded-xl border border-zinc-700 bg-black/40 p-3 outline-none focus:border-brand-accent" /></label><p className="mt-2 text-xs text-brand-textMuted">Your note will be sent to KeyMoura and the order will return to production.</p></div><div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={busy || revisionNote.trim().length < 3} onClick={()=>void requestRevisions()} className="rounded-xl border border-rose-400/60 px-5 py-2.5 font-semibold text-rose-200 disabled:opacity-40">{busy?"Sending…":"Needs revisions"}</button><button type="button" disabled={busy} onClick={()=>void approveFinishedOrder()} className="rounded-xl border border-brand-accent/70 bg-zinc-950 px-5 py-2.5 font-semibold text-brand-accent disabled:opacity-50">{busy?"Approving…":"Approve finished order"}</button></div></section> : null}
       {order.status === "cancelled" ? <section className="mt-4 rounded-2xl border border-zinc-700 bg-zinc-900/40 p-5"><h2 className="font-semibold">Order cancelled</h2><p className="mt-1 text-sm text-brand-textMuted">{order.cancellation_reason || "Contact KeyMoura through order chat if you have questions."}</p>{order.amount_paid_cents > (order.amount_refunded_cents || 0) ? <p className="mt-2 text-sm text-amber-200">Cancellation does not automatically mean a refund. Any approved refund will appear in the payment summary.</p> : null}</section> : null}
       {order.agreed_price_cents && checkoutAmount >= 50 &&

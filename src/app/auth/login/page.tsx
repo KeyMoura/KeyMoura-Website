@@ -1,6 +1,7 @@
 "use client";
 
 import { supabaseBrowser } from "@/lib/supabaseClient";
+import { TermsInlineNotice } from "@/components/legal/TermsNotice";
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 
@@ -204,6 +205,20 @@ export default function LoginPage() {
             {error && (
               <p className="mt-3 text-[11px] text-red-400">{error}</p>
             )}
+
+            {/*
+              Account creation happens through every control above this line:
+              OAuth with Google or Facebook creates an account on first use, and
+              so does the emailed login link. There is no separate "Sign up"
+              form to hang a notice on, so the notice belongs to the whole
+              panel — which is also the honest placement, because a customer
+              cannot tell in advance which of these buttons will be the one that
+              creates their account.
+
+              No checkbox: an account is not a purchase, and a consent gate on
+              signing in would be friction that buys nothing.
+            */}
+            <TermsInlineNotice variant="signup" className="mt-4" />
           </>
         )}
       </div>

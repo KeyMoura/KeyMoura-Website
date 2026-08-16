@@ -73,10 +73,10 @@ export default function VisualHarness() {
       </Group>
 
       {/* ---------------- Product cards ---------------- */}
-      <Group id="product-cards" title="Storefront product cards" note="The Buy now call-to-action lives here.">
+      <Group id="product-cards" title="Storefront product cards" note="Specimen only: the action is decorative here so the design guide cannot mutate a real cart.">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-harness="product-cards">
           {productFixtures.map(product => (
-            <ProductCard key={product.id} product={product} showWishlist={false} />
+            <ProductCard key={product.id} product={product} showWishlist={false} showAction={false} />
           ))}
         </div>
       </Group>

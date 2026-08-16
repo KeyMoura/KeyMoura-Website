@@ -12,6 +12,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { BlocksProvider } from "@/components/BlocksProvider";
 import { getSiteSettings } from "@/lib/siteSettings";
+import { loadStorefrontNav } from "@/lib/commerce/storefrontNav";
 import { optionalVars } from "@/theme/runtime";
 import { SiteSettingsProvider } from "@/components/SiteSettingsProvider";
 
@@ -40,7 +41,14 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const settings = await getSiteSettings();
+  /*
+   * The header's category dropdown is rendered from the same hierarchy the
+   * catalog uses, loaded here so it is server-rendered rather than fetched
+   * after hydration — a menu that pops into existence a second late is a menu
+   * customers stop reaching for. Two small queries, and a failure returns an
+   * empty menu so Products stays a working link to /catalog regardless.
+   */
+  const [settings, productsNav] = await Promise.all([getSiteSettings(), loadStorefrontNav()]);
   const brandStyles = {
     "--brand-primary": settings.primaryColor,
     "--brand-accent": settings.accentColor,
@@ -113,7 +121,7 @@ export default async function RootLayout({
           <BlocksProvider>
             <GlobalLockdownGate>
               <div className="flex min-h-screen flex-col">
-                <SiteHeader />
+                <SiteHeader productsNav={productsNav} />
                 <SiteBroadcastBanner />
                 <CommandPalette />
                 <main id="main-content" className="flex-1" tabIndex={-1}>

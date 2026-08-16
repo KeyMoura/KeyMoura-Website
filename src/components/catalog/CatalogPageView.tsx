@@ -81,35 +81,45 @@ export default function CatalogPageView({
         </nav>
       ) : null}
 
-      <header className="max-w-3xl">
+      {/*
+        The intro, kept short.
+        
+        The "Need something else? Start a custom project" button used to sit
+        here, above the products, on every catalog and category page — an
+        apology for the catalog before anyone had looked at it. It moved to
+        where it is useful: the no-results state, and a quiet rule below the
+        results. See `CatalogRecovery`.
+      */}
+      <header className="catalog-intro">
         <p className="ui-eyebrow">{category ? "KeyMoura products" : "Made by KeyMoura"}</p>
-        <h1 className="mt-2 text-4xl font-semibold tracking-tight md:text-5xl">{heading}</h1>
-        <p className="mt-4 leading-7 text-brand-textMuted">{description}</p>
-        <div className="ui-action-row mt-6">
-          <Link href="/orders/new" className="ui-btn ui-btn-secondary">
-            Need something else? Start a custom project
-          </Link>
-        </div>
+        <h1 className="catalog-intro-title">{heading}</h1>
+        <p className="catalog-intro-body">{description}</p>
       </header>
 
+      {/*
+        Subcategories, as a row of links rather than a grid of cards.
+
+        Cards here competed with the product cards immediately below them for
+        the same attention with the same shape, and a subcategory is a signpost
+        rather than a thing you can buy. Links read as navigation, take one line
+        instead of seven, and stop the top of a category page looking like a
+        second catalog.
+      */}
       {discovery.length ? (
-        <section className="catalog-discovery" aria-labelledby="catalog-discovery-heading">
-          <div>
-            <p className="ui-eyebrow">Explore this collection</p>
-            <h2 id="catalog-discovery-heading" className="catalog-discovery-title">
-              Shop by subcategory
-            </h2>
-          </div>
-          <div className="catalog-discovery-grid">
+        <nav className="catalog-subnav" aria-labelledby="catalog-discovery-heading">
+          <h2 id="catalog-discovery-heading" className="catalog-subnav-heading">
+            Shop by subcategory
+          </h2>
+          <ul className="catalog-subnav-list">
             {discovery.map((item) => (
-              <Link key={item.id} href={categoryPath(item, categories)} className="catalog-discovery-card">
-                <span className="catalog-discovery-name">{item.name}</span>
-                {item.description ? <span className="catalog-discovery-description">{item.description}</span> : null}
-                <span className="catalog-discovery-action">Browse <span aria-hidden="true">→</span></span>
-              </Link>
+              <li key={item.id}>
+                <Link href={categoryPath(item, categories)} className="catalog-subnav-link">
+                  {item.name}
+                </Link>
+              </li>
             ))}
-          </div>
-        </section>
+          </ul>
+        </nav>
       ) : null}
 
       <Suspense fallback={<div className="catalog-nav-placeholder" aria-hidden="true" />}>
