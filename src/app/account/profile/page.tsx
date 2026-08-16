@@ -942,7 +942,7 @@ const loadMyReports = async (viewerId: string) => {
       </section>
 
       <section className="mt-5 grid gap-4 sm:grid-cols-2">
-        <Link href="/orders" className="group rounded-2xl border border-brand-primary/40 bg-brand-primary/10 p-5 transition hover:-translate-y-0.5 hover:border-brand-primary">
+        <Link href="/account/orders" className="group rounded-2xl border border-brand-primary/40 bg-brand-primary/10 p-5 transition hover:-translate-y-0.5 hover:border-brand-primary">
           <div className="flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-[.18em] text-brand-primary">Orders</span><span className="text-2xl text-brand-primary transition group-hover:translate-x-1">→</span></div>
           <h2 className="mt-3 text-xl font-semibold">Requests & orders</h2>
           <p className="mt-2 text-sm leading-6 text-brand-textMuted">Review quotes, make payments, send messages, and track production or delivery.</p>

@@ -106,10 +106,10 @@ export const DESTINATIONS: DestinationItem[] = [
   { kind: "destination", id: "my-support", title: "My support requests", href: "/account/support", description: "Your questions and our replies", keywords: ["support", "ticket", "request", "conversation", "reply"], requiresAuth: true },
   { kind: "destination", id: "shipping", title: "Shipping", href: "/shipping", description: "Delivery and pickup information", keywords: ["delivery", "pickup", "post"] },
   { kind: "destination", id: "refunds", title: "Cancellations & refunds", href: "/refunds", description: "Order cancellation and refund policy", keywords: ["refund", "cancel", "return"] },
-  { kind: "destination", id: "orders", title: "My orders", href: "/orders", description: "Your requests, quotes, and order status", keywords: ["orders", "quotes", "purchases", "status", "invoice"], requiresAuth: true },
+  { kind: "destination", id: "orders", title: "My orders", href: "/account/orders", description: "Your requests, quotes, and order status", keywords: ["orders", "quotes", "purchases", "status", "invoice"], requiresAuth: true },
   { kind: "destination", id: "account", title: "Account", href: "/account", description: "Profile, security, and preferences", keywords: ["profile", "settings", "password", "email"], requiresAuth: true },
   { kind: "destination", id: "messages", title: "Messages", href: "/messages", description: "Your direct message threads", keywords: ["dm", "inbox", "chat"], requiresAuth: true },
-  { kind: "destination", id: "notifications", title: "Notifications", href: "/notifications", description: "Replies, mentions, and announcements", keywords: ["alerts", "mentions", "replies"], requiresAuth: true },
+  { kind: "destination", id: "notifications", title: "Notifications", href: "/account/notifications", description: "Replies, mentions, and announcements", keywords: ["alerts", "mentions", "replies"], requiresAuth: true },
 ];
 
 export function availableDestinations(signedIn: boolean): DestinationItem[] {

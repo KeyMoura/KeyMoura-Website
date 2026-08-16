@@ -24,6 +24,16 @@ export type NavItem = {
   label: string;
   /** Shown in the mobile drawer and the More menu, where there is room to explain. */
   description?: string;
+  /**
+   * Match this path and nothing beneath it.
+   *
+   * Needed as soon as a section has an index *and* children: `/account` is the
+   * overview, and without this it also claims `/account/orders`, so two entries
+   * light up and the current one is ambiguous. `/` gets this behaviour
+   * unconditionally — every path starts with a slash — but it is the only href
+   * that can be special-cased safely.
+   */
+  exact?: boolean;
 };
 
 /**
@@ -80,8 +90,8 @@ export const secondaryNav: readonly NavItem[] = [
  * undiscoverable by moving.
  */
 export const accountNav: readonly NavItem[] = [
-  { href: "/account", label: "Account" },
-  { href: "/orders", label: "Orders" },
+  { href: "/account", label: "Account", exact: true },
+  { href: "/account/orders", label: "Orders" },
   /*
    * "Requests" pointed at `/orders?view=requests` and no page ever read that
    * parameter, so it was a second menu entry that opened the first one's page
@@ -96,12 +106,36 @@ export const accountNav: readonly NavItem[] = [
   { href: "/account/support", label: "Support" },
   { href: "/wishlist", label: "Wishlist" },
   { href: "/messages", label: "Messages" },
-  { href: "/notifications", label: "Notifications" },
+  { href: "/account/notifications", label: "Notifications" },
 ] as const;
 
 /** Account-menu entries that sit below a divider: security, then sign out. */
 export const accountSecondaryNav: readonly NavItem[] = [
   { href: "/account#security", label: "Security & connected accounts" },
+] as const;
+
+/**
+ * The tabs across the top of every account page.
+ *
+ * Related to `accountNav` but not the same list, and the difference is the
+ * point. `accountNav` is a *menu* reachable from anywhere on the site, so it
+ * carries the shortcuts a customer wants from a product page — Wishlist,
+ * Messages. This is *section* navigation: the places that are part of the
+ * account area and render inside its shell.
+ *
+ * Every entry here is under `/account`, which is what makes the tabs honest.
+ * The previous version listed "Orders & projects" at `/orders` and
+ * "Notifications" at `/notifications`, so two of its five tabs navigated out of
+ * the layout that drew them and the tab strip disappeared on arrival. Moving
+ * those two routes is what let this list become a true section nav; the test
+ * asserts the invariant so a future entry cannot quietly point outside again.
+ */
+export const accountSectionNav: readonly NavItem[] = [
+  { href: "/account", label: "Overview", exact: true },
+  { href: "/account/orders", label: "Orders & projects" },
+  { href: "/account/support", label: "Support" },
+  { href: "/account/profile", label: "Profile & sign-in" },
+  { href: "/account/notifications", label: "Notifications" },
 ] as const;
 
 /**
@@ -119,7 +153,7 @@ export const footerNav: readonly { heading: string; items: readonly NavItem[] }[
       { href: "/orders/new", label: "Custom projects" },
       { href: "/wishlist", label: "Wishlist" },
       { href: "/cart", label: "Cart" },
-      { href: "/orders", label: "Your orders" },
+      { href: "/account/orders", label: "Your orders" },
     ],
   },
   {
@@ -158,16 +192,23 @@ export function staffNavItems(isStaff: boolean): readonly NavItem[] {
  * Whether a nav link should render as the current page.
  *
  * `/` matches only itself — every path starts with a slash, so a prefix test
- * would light the home link up everywhere.
+ * would light the home link up everywhere. `exact` generalises that to any
+ * section which has both an index page and children; `/account` is the case
+ * that forced it, once order history moved to `/account/orders`.
  *
- * Query strings are compared when the item carries one, which is what keeps
- * "Orders" and "Requests" (`/orders` and `/orders?view=requests`) from both
- * appearing active on the same page.
+ * Query strings are compared when the item carries one, which is what keeps two
+ * entries pointing at the same path with different filters from both appearing
+ * active on the same page.
  */
-export function isNavItemActive(item: Pick<NavItem, "href">, pathname: string, search?: string): boolean {
+export function isNavItemActive(
+  item: Pick<NavItem, "href" | "exact">,
+  pathname: string,
+  search?: string
+): boolean {
   const [path, query] = item.href.split("?");
 
   if (path === "/") return pathname === "/";
+  if (item.exact) return pathname === path;
   if (pathname !== path && !pathname.startsWith(`${path}/`)) return false;
 
   if (query) return (search ?? "").replace(/^\?/, "") === query;

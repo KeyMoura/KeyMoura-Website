@@ -8,6 +8,6 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as { to?:unknown }|null;
   const to = typeof body?.to === "string" ? body.to.trim() : "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return NextResponse.json({ error:"Enter a valid test address." }, { status:400 });
-  const result = await sendCommerceEmail({ to, templateKey:"status_update", eventKey:`test-${actor.userId}-${Date.now()}`, variables:{ customer_name:"Ethan", product_name:"KeyMoura sample product", order_label:"KM-TEST", status:"in progress", price:"$125.00" }, href:"/orders" });
+  const result = await sendCommerceEmail({ to, templateKey:"status_update", eventKey:`test-${actor.userId}-${Date.now()}`, variables:{ customer_name:"Ethan", product_name:"KeyMoura sample product", order_label:"KM-TEST", status:"in progress", price:"$125.00" }, href:"/account/orders" });
   return NextResponse.json(result, { status:result.sent ? 200 : 502 });
 }

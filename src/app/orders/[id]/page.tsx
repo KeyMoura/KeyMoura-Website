@@ -265,7 +265,7 @@ export default function OrderDetailPage() {
                 but not for a missing row would make the two distinguishable
                 again. The sentence above is the whole answer. */}
             <div className="ui-action-row mt-5">
-              <Link href="/orders" className="ui-btn ui-btn-primary">Your orders</Link>
+              <Link href="/account/orders" className="ui-btn ui-btn-primary">Your orders</Link>
               <Link href="/support" className="ui-btn ui-btn-ghost">Contact support</Link>
             </div>
           </div>
@@ -276,7 +276,7 @@ export default function OrderDetailPage() {
   const checkoutAmount = checkoutAmountCents(order);
   return (
     <main className="page-container page-stack">
-      <Link href="/orders" className="text-sm text-brand-textMuted transition hover:text-brand-primary">← Back to your orders</Link>
+      <Link href="/account/orders" className="text-sm text-brand-textMuted transition hover:text-brand-primary">← Back to your orders</Link>
       <CustomerOrderOverview order={order} items={order.order_items ?? []} paymentAvailable={paymentAvailable} />
       <div id="customer-action" className="scroll-mt-24">
       {isPendingProposal ? <section className="ui-card !border-brand-primary/50 !bg-brand-primary/10"><p className="ui-eyebrow">Order proposal</p><h2 className="mt-2 text-xl font-semibold">Accept, decline, or ask a question</h2><p className="mt-2 text-sm text-brand-textMuted">KeyMoura is offering {order.quantity > 1 ? `${order.quantity} × ` : ""}{order.product_name} for {order.agreed_price_cents != null ? moneyFromCents(order.agreed_price_cents) : "a price to be confirmed"}. Accepting moves it into secure payment and the normal production workflow.</p>{order.customer_notes ? <div className="ui-card mt-4 whitespace-pre-wrap text-sm">{order.customer_notes}</div> : null}<div className="ui-card mt-5"><label className="block text-sm font-medium">Decline reason<textarea value={proposalDeclineReason} onChange={event=>setProposalDeclineReason(event.target.value)} maxLength={1000} placeholder="Tell KeyMoura why this proposal does not work for you…" className="ui-input mt-2 min-h-20" /></label></div><div className="ui-action-row mt-4"><button type="button" disabled={busy || proposalDeclineReason.trim().length < 3} onClick={()=>void decideProposal("decline")} className="ui-btn ui-btn-danger disabled:opacity-40">Decline proposal</button><button type="button" disabled={busy} onClick={()=>void decideProposal("accept")} className="ui-btn ui-btn-primary disabled:opacity-50">{busy ? "Saving…" : "Accept proposal"}</button><a href="#order-conversation" className="ui-btn ui-btn-secondary">Message KeyMoura</a></div></section> : null}
