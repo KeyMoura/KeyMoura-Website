@@ -161,8 +161,11 @@ test("Products still navigates, still opens, and is still two tab stops", () => 
 
 test("the 4.0 dropdown behaviour is untouched", () => {
   for (const kept of [
-    "OPEN_DELAY_MS",
-    "CLOSE_DELAY_MS",
+    // The two delay constants moved into `useNavHoverIntent` in Custom Project
+    // Request 3.0, so More could open the same way instead of a second hover
+    // system being written beside this one. Products still hovers, on the same
+    // numbers; only the declaration site changed.
+    "useNavHoverIntent",
     "products-menu-panel",
     "nav.categories.map",
     "category.children.map",
@@ -172,8 +175,10 @@ test("the 4.0 dropdown behaviour is untouched", () => {
   }
   // Hover intent still closes slower than it opens: opening late costs a moment,
   // closing early costs the interaction.
-  const open = Number(productsMenu.match(/OPEN_DELAY_MS = (\d+)/)?.[1]);
-  const close = Number(productsMenu.match(/CLOSE_DELAY_MS = (\d+)/)?.[1]);
+  const hook = read("src/components/nav/useNavHoverIntent.ts");
+  const open = Number(hook.match(/NAV_HOVER_OPEN_DELAY_MS = (\d+)/)?.[1]);
+  const close = Number(hook.match(/NAV_HOVER_CLOSE_DELAY_MS = (\d+)/)?.[1]);
+  assert.ok(open > 0, "opening must keep its intent delay");
   assert.ok(close > open, "the close delay must stay the longer of the two");
 });
 

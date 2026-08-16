@@ -564,7 +564,11 @@ test("the current page is marked with an underline, not a pill", () => {
   // The rule itself: a scaled pseudo-element, because a border cannot animate
   // its width and would move every link by a pixel between states.
   const rule = cssRules.slice(cssRules.indexOf(".site-header-shell .site-nav-primary-link::after"));
-  assert.match(rule, /height: 2px/);
+  // 3px since Custom Project Request 3.0 — 2px was a hairline that dissolved
+  // into the navbar background at this text size. The thickness itself is
+  // pinned in `custom-project-request-3.test.ts`; what matters here is that
+  // pass 4.0's *construction* survived, which the next two lines assert.
+  assert.match(rule, /height: 3px/);
   assert.match(rule, /transform: scaleX\(0\)/);
   assert.match(rule, /\.site-nav-primary-link\.is-active::after \{[\s\S]{0,120}transform: scaleX\(1\)/);
 

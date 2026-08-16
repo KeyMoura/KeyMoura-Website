@@ -1,156 +1,65 @@
-"use client";
+import { routeServiceClient } from "@/lib/api/routeAuth";
+import CustomRequestWizard from "@/components/orders/CustomRequestWizard";
+import type { ProductOption } from "@/components/orders/CustomRequestSteps";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import QuantityField from "@/components/commerce/QuantityField";
-import { MenuSelect } from "@/components/ui/MenuSelect";
-import { Field, Notice, cx } from "@/components/ui/DesignSystem";
-import { emptyShippingAddress, type FulfillmentMethod, type ShippingAddress } from "@/lib/checkout";
-import { supabaseBrowser } from "@/lib/supabaseClient";
-
-type Draft = { id:string; title:string; request_data:FormData; updated_at:string };
-type FormData = {
-  title:string; project_type:string; description:string; material:string; dimensions:string; tolerance:string; finish:string;
-  quantity:number; budget:string; target_date:string; fulfillment_method:FulfillmentMethod; shipping_address:ShippingAddress;
-};
-const initial = (): FormData => ({ title:"", project_type:"", description:"", material:"", dimensions:"", tolerance:"", finish:"", quantity:1, budget:"", target_date:"", fulfillment_method:"shipping", shipping_address:emptyShippingAddress() });
 /**
- * Spacing is `.ui-label`'s job now, not a margin on every control.
+ * `/orders/new` — the custom project intake.
  *
- * This was `"ui-input mt-1"` — 4px between a label and its field on all four
- * steps, which is what put `Project type *` on top of its dropdown. The label
- * spacing moved into the shared `Field` component so every pair on the page is
- * consistent with the rest of the site rather than with itself.
+ * ## Why this became a server component
+ *
+ * It used to be `"use client"` from the first line, which meant the one thing
+ * it could not do was know anything before it rendered. So the product a
+ * customer might want changed was not offerable — there was no list — and
+ * "customise something you already make" simply was not a journey this page
+ * had. It existed only on a product page, in a different form, with different
+ * fields, posting a different payload.
+ *
+ * Loading the catalog here closes that. The page renders knowing what KeyMoura
+ * publishes, so the wizard can offer it, and a link from a product page
+ * (`/orders/new?product=<slug>`) arrives with that product already resolved to
+ * its real name rather than to whatever the query string said.
+ *
+ * Identity stays on the client, through `useCheckoutContext` — the same server
+ * answer the cart and the product-page request form read, rather than a third
+ * opinion about who is signed in.
+ *
+ * The list is read with the service client because it is public catalog data
+ * and this page is public: published, unarchived products and two columns of
+ * them. `/orders/[id]/confirmed` reads the same way for the same reason.
  */
-const input = "ui-input";
-/** `MenuSelect` renders a button, so it needs the trigger layout as well. */
-const selectInput = `${input} flex items-center justify-between text-left`;
-const projectTypes = ["Automotive part", "Replacement part", "Sign or display", "Furniture / woodworking", "Fixture or jig", "Prototype", "Other custom project"];
-const materials = ["Open to recommendation", "Aluminum", "Delrin / acetal", "Acrylic", "Hardwood", "Plywood / MDF", "Brass", "Other"];
 
-function fileError(file: File) {
-  const allowed = /\.(stl|step|stp|iges|igs|dxf|dwg|svg|pdf|png|jpe?g|webp|zip)$/i;
-  if (!allowed.test(file.name)) return `${file.name}: use CAD, drawing, image, PDF, or ZIP files.`;
-  if (file.size > 50 * 1024 * 1024) return `${file.name}: each file must be 50 MB or smaller.`;
-  return "";
+export const dynamic = "force-dynamic";
+
+async function loadRequestableProducts(): Promise<ProductOption[]> {
+  const { data, error } = await routeServiceClient
+    .from("products")
+    .select("name,slug")
+    .eq("is_published", true)
+    .is("archived_at", null)
+    .order("name", { ascending: true })
+    .limit(200);
+
+  if (error || !data) return [];
+  return (data as { name: string; slug: string }[]).map((row) => ({ name: row.name, slug: row.slug }));
 }
 
-export default function NewCustomRequestPage() {
-  const router = useRouter();
-  const supabase = useMemo(() => supabaseBrowser(), []);
-  const [form,setForm] = useState<FormData>(initial);
-  const [step,setStep] = useState<1|2|3|4>(1);
-  const [files,setFiles] = useState<File[]>([]);
-  const [drafts,setDrafts] = useState<Draft[]>([]);
-  const [draftId,setDraftId] = useState<string|null>(null);
-  const [busy,setBusy] = useState(false);
-  const [error,setError] = useState("");
-  const [saved,setSaved] = useState("");
-  const [deletingDraft,setDeletingDraft] = useState<string|null>(null);
+export default async function NewCustomRequestPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
+  const requested = typeof query.product === "string" ? query.product : "";
 
-  useEffect(() => { void (async()=>{
-    const { data:{ user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const result = await supabase.from("order_request_drafts").select("id,title,request_data,updated_at").eq("customer_id",user.id).order("updated_at",{ascending:false});
-    setDrafts((result.data ?? []) as Draft[]);
-  })(); },[supabase]);
+  const products = await loadRequestableProducts();
+  // Resolved against the loaded list rather than trusted: an unknown or
+  // unpublished slug in the URL simply starts an ordinary request instead of
+  // seeding the form with a product that does not exist.
+  const initialProduct = requested ? (products.find((entry) => entry.slug === requested) ?? null) : null;
 
-  function validate(current:number) {
-    if (current === 1 && (!form.project_type || form.description.trim().length < 20)) return "Choose a project type and describe what you need in at least 20 characters.";
-    if (current === 2) { for (const file of files) { const message=fileError(file); if(message) return message; } }
-    if (current === 3 && form.fulfillment_method === "shipping") { const a=form.shipping_address; if(!a.name.trim()||!a.line1.trim()||!a.city.trim()||!a.state.trim()||!a.postal_code.trim()) return "Enter a complete shipping address."; }
-    return "";
-  }
-  function next() { const message=validate(step); if(message) return setError(message); setError(""); setStep(Math.min(4,step+1) as 1|2|3|4); window.scrollTo({top:0,behavior:"smooth"}); }
-  async function headers() { const { data }=await supabase.auth.getSession(); return { "Content-Type":"application/json", ...(data.session?.access_token?{Authorization:`Bearer ${data.session.access_token}`}:{}) }; }
-  async function saveDraft() {
-    setBusy(true); setError(""); setSaved("");
-    const { data:{ user } }=await supabase.auth.getUser();
-    if(!user){ router.push(`/auth/login?next=${encodeURIComponent("/orders/new")}`); return; }
-    const payload={customer_id:user.id,title:form.title.trim()||form.project_type||"Untitled custom request",request_data:form,updated_at:new Date().toISOString()};
-    const result=draftId?await supabase.from("order_request_drafts").update(payload).eq("id",draftId).eq("customer_id",user.id).select().single():await supabase.from("order_request_drafts").insert(payload).select().single();
-    if(result.error) setError(result.error.message); else { setDraftId(result.data.id); setSaved("Draft saved. Files are added when you submit."); setDrafts(current=>[result.data as Draft,...current.filter(item=>item.id!==result.data.id)]); }
-    setBusy(false);
-  }
-  async function deleteDraft(id:string) {
-    if (!window.confirm("Delete this draft? This cannot be undone.")) return;
-    setDeletingDraft(id); setError("");
-    const { data:{ user } }=await supabase.auth.getUser();
-    if (!user) { setDeletingDraft(null); return; }
-    const result=await supabase.from("order_request_drafts").delete().eq("id",id).eq("customer_id",user.id);
-    if (result.error) setError(result.error.message);
-    else { setDrafts(current=>current.filter(item=>item.id!==id)); if(draftId===id){setDraftId(null);setForm(initial());setStep(1);setSaved("Draft deleted.");} }
-    setDeletingDraft(null);
-  }
-  async function submit(e:FormEvent) {
-    e.preventDefault(); const message=[1,2,3].map(validate).find(Boolean); if(message) return setError(message);
-    setBusy(true); setError("");
-    const { data:{ user } }=await supabase.auth.getUser();
-    if(!user){ router.push(`/auth/login?next=${encodeURIComponent("/orders/new")}`); return; }
-    const batch=crypto.randomUUID(); const uploaded:{path:string;name:string;size:number}[]=[];
-    for(const file of files){ const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=`${user.id}/${batch}/${crypto.randomUUID()}-${safe}`; const result=await supabase.storage.from("order-assets").upload(path,file,{contentType:file.type||undefined}); if(result.error){ if(uploaded.length) await supabase.storage.from("order-assets").remove(uploaded.map(item=>item.path)); setBusy(false); return setError(`Could not upload ${file.name}: ${result.error.message}`); } uploaded.push({path,name:file.name,size:file.size}); }
-    const response=await fetch("/api/orders/custom",{method:"POST",headers:await headers(),body:JSON.stringify({...form,files:uploaded,draft_id:draftId})});
-    const result=await response.json() as {id?:string;href?:string;error?:string};
-    if(!response.ok||!result.id){ if(uploaded.length) await supabase.storage.from("order-assets").remove(uploaded.map(item=>item.path)); setError(result.error||"Could not submit request."); setBusy(false); return; }
-    // `/api/orders/custom` already decides where this request is readable from —
-    // it is the side that knows whether the order got a customer or a guest
-    // token. Reconstructing the path here meant the answer was computed twice,
-    // and the copy that ignored the server was the one the customer followed.
-    // This page is signed-in only, so the two agree today; honouring the server
-    // is what keeps them agreeing if that ever changes.
-    router.push(result.href ?? `/orders/${result.id}/confirmed`);
-  }
-  const set=<K extends keyof FormData>(key:K,value:FormData[K])=>setForm(current=>({...current,[key]:value}));
-  const labels=["Project","Specs & files","Delivery","Review"];
-  return <main className="page-container">
-    <div className="grid gap-8 lg:grid-cols-[.7fr_1.3fr]">
-      <aside><p className="text-xs font-semibold uppercase tracking-[.2em] text-brand-primary">Custom CNC request</p><h1 className="mt-2 text-4xl font-semibold">Tell us what you need made.</h1><p className="mt-4 leading-7 text-brand-textMuted">A sketch or plain-language idea is enough to start. No payment is taken until you review and approve a quote.</p>
-        <div className="ui-card mt-7"><h2 className="font-semibold">Before production</h2><ul className="mt-3 space-y-2 text-sm text-brand-textMuted"><li>• We review manufacturability and ask questions.</li><li>• You receive a written price and payment schedule.</li><li>• Production starts only after quote approval and required payment.</li></ul></div>
-        {drafts.length?<div className="ui-card mt-5"><h2 className="text-sm font-semibold">Saved drafts</h2><div className="mt-3 space-y-2">{drafts.map(d=><div key={d.id} className={`ui-card flex items-center gap-2 !p-2 ${draftId===d.id?"!border-brand-primary !bg-brand-primary/5":""}`}><button type="button" onClick={()=>{setForm({...initial(),...d.request_data});setDraftId(d.id);setStep(1);setSaved("");}} className="min-w-0 flex-1 p-1 text-left text-sm"><span className="block truncate font-medium">{d.title}</span><span className="mt-1 block text-xs text-brand-textMuted">Updated {new Date(d.updated_at).toLocaleDateString()}</span></button><button type="button" disabled={deletingDraft===d.id} onClick={()=>void deleteDraft(d.id)} className="ui-btn ui-btn-danger text-xs disabled:opacity-50">{deletingDraft===d.id?"Deleting…":"Delete"}</button></div>)}</div></div>:null}
-      </aside>
-      <form onSubmit={submit} className="ui-card p-5 sm:p-7">
-        <div className="ui-stepper" aria-label="Request progress">{labels.map((label,index)=><button type="button" key={label} data-step={index+1} disabled={index+1>step} aria-current={step===index+1?"step":undefined} onClick={()=>index+1<step&&setStep((index+1) as 1|2|3|4)} className={cx("ui-step text-left",step===index+1&&"is-current",step>index+1&&"is-complete")}>{label}</button>)}</div>
-        {step===1?<section className="mt-7"><h2 className="text-2xl font-semibold">What are we making?</h2><div className="mt-5 grid gap-5">
-          <Field label="Project type" required>
-            <MenuSelect ariaLabel="Project type" value={form.project_type} onChange={v=>set("project_type",v)} options={[{value:"",label:"Choose a project type"},...projectTypes.map(v=>({value:v,label:v}))]} className={selectInput} />
-          </Field>
-          <Field label="Project name" help="Optional — we will use the project type if you leave this blank.">
-            <input className={input} value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Example: Delrin shift knob" maxLength={120}/>
-          </Field>
-          <Field label="Describe the part and how it will be used" required help="At least 20 characters.">
-            <textarea className={`${input} min-h-36`} value={form.description} onChange={e=>set("description",e.target.value)} placeholder="What should it do? What does it attach to? Include anything that cannot change." maxLength={5000}/>
-          </Field>
-          <QuantityField value={form.quantity} max={null} absoluteMax={1000} showMax={false} onCommit={v=>set("quantity",v)} />
-        </div></section>:null}
-        {step===2?<section className="mt-7"><h2 className="text-2xl font-semibold">Specifications and files</h2><p className="mt-2 text-sm text-brand-textMuted">Unknown is okay—choose “open to recommendation” and we’ll help.</p><div className="mt-5 grid gap-5 sm:grid-cols-2">
-          <Field label="Material">
-            <MenuSelect ariaLabel="Material" value={form.material} onChange={v=>set("material",v)} options={materials.map(v=>({value:v,label:v}))} className={selectInput} />
-          </Field>
-          <Field label="Overall dimensions">
-            <input className={input} value={form.dimensions} onChange={e=>set("dimensions",e.target.value)} placeholder='Example: 3.0" × 3.0" × 2.5"'/>
-          </Field>
-          <Field label="Required tolerance">
-            <input className={input} value={form.tolerance} onChange={e=>set("tolerance",e.target.value)} placeholder="Example: ±0.1 mm, or advise me"/>
-          </Field>
-          <Field label="Finish / appearance">
-            <input className={input} value={form.finish} onChange={e=>set("finish",e.target.value)} placeholder="Sanded, polished, anodized…"/>
-          </Field>
-          <Field label="Budget range" help="Optional.">
-            <input className={input} value={form.budget} onChange={e=>set("budget",e.target.value)} placeholder="Optional"/>
-          </Field>
-          <Field label="Needed by" help="Optional.">
-            <input className={input} type="date" value={form.target_date} onChange={e=>set("target_date",e.target.value)}/>
-          </Field>
-          <Field className="sm:col-span-2" label="CAD, drawings, photos, or references" help="Up to 10 files · 50 MB each · CAD, drawings, images, PDF, or ZIP">
-            <input className={input} type="file" multiple accept=".stl,.step,.stp,.iges,.igs,.dxf,.dwg,.svg,.pdf,.png,.jpg,.jpeg,.webp,.zip" onChange={e=>setFiles(Array.from(e.target.files??[]).slice(0,10))}/>
-            {files.length?<span className="mt-2 block text-sm text-brand-primary">{files.map(f=>f.name).join(", ")}</span>:null}
-          </Field>
-        </div></section>:null}
-        {step===3?<section className="mt-7"><h2 className="text-2xl font-semibold">Delivery</h2><div className="mt-5 grid grid-cols-2 gap-3"><button type="button" onClick={()=>set("fulfillment_method","shipping")} className={`ui-card ui-card-hover text-left ${form.fulfillment_method==="shipping"?"!border-brand-primary !bg-brand-primary/10":""}`}><b>Ship to me</b><span className="mt-1 block text-xs text-brand-textMuted">Quoted after review</span></button><button type="button" onClick={()=>set("fulfillment_method","pickup")} className={`ui-card ui-card-hover text-left ${form.fulfillment_method==="pickup"?"!border-brand-primary !bg-brand-primary/10":""}`}><b>Local pickup</b><span className="mt-1 block text-xs text-brand-textMuted">Arrange after completion</span></button></div>{form.fulfillment_method==="shipping"?<div className="mt-5 grid gap-5 sm:grid-cols-2">{([['name','Recipient',true],['line1','Street address',true],['line2','Apartment / suite',false],['city','City',true],['state','State',true],['postal_code','ZIP code',true]] as [keyof ShippingAddress,string,boolean][]).map(([key,label,required])=><Field key={key} label={label} required={required} className={key==='line1'||key==='line2'?'sm:col-span-2':undefined}><input className={input} value={form.shipping_address[key]} onChange={e=>set("shipping_address",{...form.shipping_address,[key]:e.target.value})}/></Field>)}</div>:null}</section>:null}
-        {step===4?<section className="mt-7"><h2 className="text-2xl font-semibold">Review your request</h2><p className="mt-2 text-sm text-brand-textMuted">Submitting is free. KeyMoura will review it and send a quote for your approval.</p><dl className="mt-5 grid gap-3 sm:grid-cols-2">{[["Project",form.title||form.project_type],["Type",form.project_type],["Quantity",String(form.quantity)],["Material",form.material||"Recommendation requested"],["Dimensions",form.dimensions||"To discuss"],["Tolerance",form.tolerance||"Standard / advise me"],["Finish",form.finish||"To discuss"],["Files",files.length?`${files.length} attached`:"None"],["Delivery",form.fulfillment_method==="shipping"?"Shipping":"Local pickup"],["Needed by",form.target_date||"Flexible"]].map(([label,value])=><div key={label} className="rounded-xl border border-zinc-800 p-3"><dt className="text-xs text-brand-textMuted">{label}</dt><dd className="mt-1 text-sm">{value}</dd></div>)}</dl><div className="mt-4 rounded-xl border border-zinc-800 p-4"><p className="text-xs text-brand-textMuted">Description</p><p className="mt-2 whitespace-pre-wrap text-sm">{form.description}</p></div></section>:null}
-        {error?<Notice tone="danger" role="alert" className="mt-5">{error}</Notice>:null}{saved?<Notice tone="success" role="status" className="mt-5">{saved}</Notice>:null}
-        <div className="ui-action-row mt-7">{step>1?<button type="button" onClick={()=>setStep((step-1) as 1|2|3)} className="ui-btn ui-btn-ghost">Back</button>:null}<button type="button" disabled={busy} onClick={()=>void saveDraft()} className="ui-btn ui-btn-secondary disabled:opacity-50">Save draft</button>{step<4?<button type="button" onClick={next} className="ui-btn ui-btn-primary ml-auto">Continue</button>:<button disabled={busy} className="ui-btn ui-btn-primary ml-auto disabled:opacity-50">{busy?"Submitting…":"Submit request — no charge"}</button>}</div>
-      </form>
-    </div>
-  </main>;
+  return (
+    <main className="page-container">
+      <CustomRequestWizard products={products} initialProduct={initialProduct} />
+    </main>
+  );
 }

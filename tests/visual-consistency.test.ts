@@ -60,7 +60,9 @@ test("catalog actions use the shared primary secondary and destructive hierarchy
 });
 
 test("customer and staff request flows share the same progress language", () => {
-  const customerRequest = read("src/app/orders/new/page.tsx");
+  // `/orders/new/page.tsx` is a server shell since Custom Project Request 3.0;
+  // the stepper it renders lives in the wizard component.
+  const customerRequest = read("src/components/orders/CustomRequestWizard.tsx");
   const staffProposal = read("src/app/staff/orders/new/page.tsx");
 
   for (const page of [customerRequest, staffProposal]) {

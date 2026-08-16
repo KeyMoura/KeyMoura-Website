@@ -26,7 +26,7 @@ const code = (source: string) =>
 
 const customRoute = read("src/app/api/orders/custom/route.ts");
 const requestForm = read("src/components/product/ProductRequestForm.tsx");
-const newRequestPage = read("src/app/orders/new/page.tsx");
+const newRequestPage = read("src/components/orders/CustomRequestWizard.tsx");
 const confirmedPage = read("src/app/orders/[id]/confirmed/page.tsx");
 const accountOrderRoute = read("src/app/api/orders/route.ts");
 
@@ -88,15 +88,26 @@ test("the account product request path is account-only by construction", () => {
 });
 
 test("the custom request page uses the server href rather than rebuilding it", () => {
-  // This page is signed-in only, so today the two agree. The assertion is that
-  // it stops deriving the answer at all — the defect class is a client that
-  // recomputes ownership, not one that recomputes it wrongly right now.
+  // The assertion is that the client stops deriving the answer at all — the
+  // defect class is a client that recomputes ownership, not one that recomputes
+  // it wrongly right now.
+  //
+  // It stopped being hypothetical in Custom Project Request 3.0. This page is
+  // no longer signed-in only: `/api/orders/custom` had always accepted guest
+  // requests, and the page was the only thing refusing them — at the *end* of a
+  // long form, on submit. Now a guest can send one, and the server's `href` is
+  // the difference between landing on their order and landing on a page that
+  // refuses them.
   assert.match(newRequestPage, /result\.href \?\? `\/orders\/\$\{result\.id\}\/confirmed`/);
-  assert.match(newRequestPage, /\{id\?:string;href\?:string;error\?:string\}/, "href must be declared, not discarded");
   assert.match(
     newRequestPage,
-    /if\(!user\)\{ router\.push\(`\/auth\/login\?next=/,
-    "the page must remain signed-in only"
+    /href\?: string;/,
+    "href must be declared, not discarded"
+  );
+  assert.match(
+    newRequestPage,
+    /if \(!signedIn && !guestRequestsAllowed\) \{\s*\n\s*router\.push\(`\/auth\/login\?next=/,
+    "sign-in is required only when the shop has guest requests switched off"
   );
 });
 

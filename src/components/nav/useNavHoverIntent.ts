@@ -75,8 +75,19 @@ export function useNavHoverIntent({
   setOpen: (open: boolean) => void;
 }): NavHoverIntent {
   const timerRef = useRef<number | null>(null);
+
+  /**
+   * The latest `setOpen`, read by the timer rather than captured by it.
+   *
+   * Updated in an effect and not during render: writing a ref while rendering
+   * is a tear under concurrent rendering, and `react-hooks/refs` is right to
+   * refuse it. An effect is early enough — a timer can only fire after the
+   * render that scheduled it has committed.
+   */
   const setOpenRef = useRef(setOpen);
-  setOpenRef.current = setOpen;
+  useEffect(() => {
+    setOpenRef.current = setOpen;
+  });
 
   const cancel = useCallback(() => {
     if (timerRef.current !== null) {
