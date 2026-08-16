@@ -344,12 +344,20 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
               </Link>
             ))}
 
+            {/*
+              `hoverIntent` because this is a navigation menu sitting on the
+              same bar as Products, and two dropdowns side by side that answer
+              a pointer differently read as one of them being broken. It is the
+              same hook and the same delays; the account menu and the
+              notification popover deliberately do not opt in.
+            */}
             <NavMenu
               triggerClassName={`site-nav-link site-nav-primary-link inline-flex items-center gap-1.5${
                 moreContainsCurrent ? " is-active" : ""
               }`}
               menuLabel="More destinations"
               align="left"
+              hoverIntent
               panelClassName="w-60 overflow-hidden rounded-2xl border p-1.5 shadow-2xl"
               trigger={
                 <>

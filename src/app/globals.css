@@ -1747,17 +1747,36 @@
    * pixel between states unless a transparent one were reserved on all four
    * sides — which is exactly the fragile arrangement `minimal` used to need.
    *
-   * 2px, inset slightly from the control box so it sits under the word rather
-   * than under the padding, and 0.3rem clear of the baseline. Thicker reads as
-   * a bar; a hairline disappears against the navbar background at the sizes
-   * this text is set in.
+   * ## Its width is a ratio, not an inset
+   *
+   * This used to be `inset-inline: 0.375rem` — 6px off each edge of the control
+   * box. A fixed inset makes the rule a different proportion of every item it
+   * sits under: at 6px either side it came to about 80% of the control under
+   * `About` and about 91% under `Custom Projects`, so the longest link on the
+   * bar wore the widest, heaviest-looking rule and the set never read as one
+   * treatment. It was also *wider than the word* on the short links, which is
+   * what made it read as a bar rather than an underline.
+   *
+   * A percentage inset fixes the proportion instead. `14%` either side leaves
+   * 72% of the control, centred, whatever the label is — comfortably inside the
+   * word on a long link, still clearly wider than the padding on a short one.
+   * It needs no per-item measurement and it costs nothing at runtime, and the
+   * Products trigger — whose padding is asymmetric because of its chevron —
+   * gets a rule centred on the whole control rather than on the word alone,
+   * which is what keeps the label and the chevron reading as one thing.
+   *
+   * 3px rather than 2px, and 0.3rem clear of the baseline. 2px was a hairline
+   * that dissolved into the navbar background at 14px text; much past 3px and
+   * it becomes a tab indicator. The same geometry is drawn for active, hover
+   * and focus — only the opacity differs — so the shape never moves between
+   * states.
    */
   .site-header-shell .site-nav-primary-link::after {
     content: "";
     position: absolute;
-    inset-inline: 0.375rem;
+    inset-inline: 14%;
     bottom: 0.3rem;
-    height: 2px;
+    height: 3px;
     border-radius: 999px;
     background: var(--km-nav-active, #f59e0b);
     transform: scaleX(0);

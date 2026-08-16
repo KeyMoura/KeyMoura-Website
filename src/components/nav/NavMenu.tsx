@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useNavHoverIntent } from "@/components/nav/useNavHoverIntent";
 
 /**
  * The dropdown behaviour shared by every navbar menu.
@@ -35,6 +36,17 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
  * Reduced motion is honoured by CSS (`.nav-menu-panel`), not by a JS branch, so
  * there is no media query to read during server rendering and no mismatch when
  * it hydrates.
+ *
+ * ## Hover is opt-in, and deliberately not the default
+ *
+ * `hoverIntent` turns on the same open/close timers `ProductsMenu` uses, from
+ * the same `useNavHoverIntent` hook. It is off unless a caller asks for it,
+ * because only *navigation* menus should answer a passing cursor. The account
+ * menu and the notification popover are personal controls a customer opens on
+ * purpose; a panel of account links unfurling because the pointer crossed the
+ * avatar on its way to the cart is the behaviour nobody wants and everybody has
+ * met. So More opts in — it is a navigation menu, and it sits on the same bar
+ * as Products — and the other two stay click-only.
  */
 
 type NavMenuProps = {
@@ -49,6 +61,11 @@ type NavMenuProps = {
   isHighlighted?: boolean;
   align?: "left" | "right";
   panelClassName?: string;
+  /**
+   * Open on a deliberate hover as well as on click, the way Products does.
+   * For navigation menus only — see the note above.
+   */
+  hoverIntent?: boolean;
   /** Each item must carry `role="menuitem"` and `tabIndex={-1}`. */
   children: React.ReactNode;
 };
@@ -61,6 +78,7 @@ export default function NavMenu({
   isHighlighted = false,
   align = "right",
   panelClassName = "",
+  hoverIntent = false,
   children,
 }: NavMenuProps) {
   const [open, setOpen] = useState(false);
@@ -71,18 +89,28 @@ export default function NavMenu({
   const focusFirstRef = useRef(false);
   const menuId = useId();
 
-  const close = useCallback((restoreFocus = false) => {
-    setOpen(false);
-    if (restoreFocus) triggerRef.current?.focus();
-  }, []);
+  const { hoverProps, cancel: cancelHover } = useNavHoverIntent({ enabled: hoverIntent, setOpen });
+
+  const close = useCallback(
+    (restoreFocus = false) => {
+      cancelHover();
+      setOpen(false);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    [cancelHover]
+  );
 
   // Outside click, Escape, and focus leaving the menu all dismiss it.
   useEffect(() => {
     if (!open) return;
 
+    // These close through `close()` rather than `setOpen(false)` so a hover
+    // timer already in flight is cancelled too — otherwise clicking away from a
+    // menu the pointer had just entered lets the pending open land afterwards
+    // and the menu reappears on its own.
     const onPointerDown = (event: MouseEvent | TouchEvent) => {
       const el = wrapRef.current;
-      if (el && event.target instanceof Node && !el.contains(event.target)) setOpen(false);
+      if (el && event.target instanceof Node && !el.contains(event.target)) close();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -94,7 +122,7 @@ export default function NavMenu({
 
     const onFocusIn = (event: FocusEvent) => {
       const el = wrapRef.current;
-      if (el && event.target instanceof Node && !el.contains(event.target)) setOpen(false);
+      if (el && event.target instanceof Node && !el.contains(event.target)) close();
     };
 
     document.addEventListener("mousedown", onPointerDown);
@@ -121,7 +149,7 @@ export default function NavMenu({
     if (event.key === "Tab") {
       // Let the browser move focus; closing keeps the panel from lingering
       // behind the controls that follow it in the tab order.
-      setOpen(false);
+      close();
       return;
     }
     if (!keys.includes(event.key)) return;
@@ -148,17 +176,24 @@ export default function NavMenu({
       if (!open) {
         event.preventDefault();
         focusFirstRef.current = true;
+        // A deliberate key press outranks whatever the pointer had scheduled.
+        cancelHover();
         setOpen(true);
       }
     }
   };
 
   return (
-    <div ref={wrapRef} className="relative">
+    <div ref={wrapRef} className="relative" {...hoverProps}>
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          // Same rule as the keyboard: a click decides, and a pending hover
+          // timer must not undo it a moment later.
+          cancelHover();
+          setOpen((value) => !value);
+        }}
         onKeyDown={onTriggerKeyDown}
         aria-expanded={open}
         aria-haspopup="menu"

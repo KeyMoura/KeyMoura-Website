@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faArrowRight } from "@fortawesome/free-solid-svg-icons";
+import { useNavHoverIntent } from "@/components/nav/useNavHoverIntent";
 import type { StorefrontNav } from "@/lib/commerce/storefrontNavModel";
 
 /**
@@ -47,15 +48,10 @@ import type { StorefrontNav } from "@/lib/commerce/storefrontNavModel";
  *
  * ## Hover intent
  *
- * Opening on `mouseenter` with no delay makes the panel flash open every time
- * the cursor crosses Products on its way to Custom Projects. Closing on
- * `mouseleave` with no delay makes the panel vanish while the cursor is
- * travelling the few pixels between the trigger and the panel.
- *
- * Both are timers, and the close delay is the longer of the two: opening late
- * costs a moment, closing early costs the interaction. The panel and the
- * trigger share one wrapper and one set of handlers, so moving from one into
- * the other never leaves the wrapper and never starts the closing timer at all.
+ * The two timers that open and close this on hover now live in
+ * `useNavHoverIntent`, which the More menu uses as well — the reasoning for the
+ * delays, the gap, and the touch gate is recorded there. This component only
+ * says *that* it hovers; the shared hook says how.
  *
  * A touch device has no hover, so the disclosure button is the only way in —
  * which is correct, and is why it is a real button rather than a decorative
@@ -81,40 +77,27 @@ type ProductsMenuProps = {
   controlClassName: string;
 };
 
-const OPEN_DELAY_MS = 110;
-const CLOSE_DELAY_MS = 220;
-
 export default function ProductsMenu({ nav, isActive, controlClassName }: ProductsMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const timerRef = useRef<number | null>(null);
   const focusFirstRef = useRef(false);
   const panelId = useId();
 
-  const clearTimer = () => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
+  const hasCategories = nav.categories.length > 0;
+  // Nothing to open when the catalog has no categories, so the pointer should
+  // not be scheduling anything either.
+  const { hoverProps, cancel: clearTimer } = useNavHoverIntent({ enabled: hasCategories, setOpen });
 
-  const schedule = useCallback((next: boolean, delay: number) => {
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      setOpen(next);
-    }, delay);
-  }, []);
-
-  const close = useCallback((restoreFocus = false) => {
-    clearTimer();
-    setOpen(false);
-    if (restoreFocus) triggerRef.current?.focus();
-  }, []);
-
-  useEffect(() => clearTimer, []);
+  const close = useCallback(
+    (restoreFocus = false) => {
+      clearTimer();
+      setOpen(false);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    [clearTimer]
+  );
 
   // Outside click, Escape, and focus leaving all dismiss it. Same three rules
   // `NavMenu` follows, so every menu in the header behaves identically.
@@ -204,15 +187,8 @@ export default function ProductsMenu({ nav, isActive, controlClassName }: Produc
     setOpen(true);
   };
 
-  const hasCategories = nav.categories.length > 0;
-
   return (
-    <div
-      ref={wrapRef}
-      className="products-menu"
-      onMouseEnter={() => schedule(true, OPEN_DELAY_MS)}
-      onMouseLeave={() => schedule(false, CLOSE_DELAY_MS)}
-    >
+    <div ref={wrapRef} className="products-menu" {...hoverProps}>
       {/*
         The one outlined control. `data-has-menu` is what lets the CSS give the
         chevron side less padding than the label side without guessing whether a
