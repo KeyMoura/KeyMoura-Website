@@ -81,15 +81,79 @@ export function withRecentProduct(
   return [product, ...current.filter((entry) => entry.id !== product.id)].slice(0, RECENTLY_VIEWED_LIMIT);
 }
 
-export function readRecentlyViewed(): RecentProduct[] {
-  if (typeof window === "undefined") return [];
+// ---------------------------------------------------------------------------
+// The external store
+// ---------------------------------------------------------------------------
+
+/**
+ * `localStorage` is an external, mutable, browser-only store, so this is
+ * exposed as one rather than read into `useState` inside an effect.
+ *
+ * That is not a lint workaround, it is the thing `useSyncExternalStore` exists
+ * for, and it buys two real properties:
+ *
+ *   1. **No hydration mismatch.** The server snapshot is a stable empty array,
+ *      so the strip renders nothing on the server and nothing on the first
+ *      client paint, then appears — rather than the server guessing and the
+ *      client correcting it under the customer's scroll position.
+ *   2. **The recorder and the strip stay in step.** Opening a product writes
+ *      the list; every mounted reader is notified and re-renders. Without a
+ *      store, the strip on the product page would show yesterday's list until
+ *      a reload.
+ *
+ * `snapshot` is cached deliberately. `getSnapshot` must return a
+ * referentially-stable value between changes or React re-renders forever, and
+ * parsing JSON on every call would return a fresh array each time.
+ */
+let snapshot: RecentProduct[] = [];
+let snapshotLoaded = false;
+const listeners = new Set<() => void>();
+
+/** Stable across calls, so the server and the first client render agree. */
+const SERVER_SNAPSHOT: RecentProduct[] = [];
+
+function refresh(): void {
   try {
-    return parseRecentlyViewed(window.localStorage.getItem(RECENTLY_VIEWED_KEY));
+    snapshot = parseRecentlyViewed(window.localStorage.getItem(RECENTLY_VIEWED_KEY));
   } catch {
     // Private browsing, a disabled storage setting, or a full quota. None of
     // those is a reason to break the page the strip sits on.
-    return [];
+    snapshot = [];
   }
+  snapshotLoaded = true;
+}
+
+function emit(): void {
+  for (const listener of listeners) listener();
+}
+
+export function subscribeRecentlyViewed(listener: () => void): () => void {
+  listeners.add(listener);
+  // A second tab that views a product should update this one's strip.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== RECENTLY_VIEWED_KEY) return;
+    refresh();
+    emit();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+export function recentlyViewedSnapshot(): RecentProduct[] {
+  if (!snapshotLoaded) refresh();
+  return snapshot;
+}
+
+export function recentlyViewedServerSnapshot(): RecentProduct[] {
+  return SERVER_SNAPSHOT;
+}
+
+export function readRecentlyViewed(): RecentProduct[] {
+  if (typeof window === "undefined") return [];
+  return recentlyViewedSnapshot();
 }
 
 export function rememberRecentProduct(product: RecentProduct): RecentProduct[] {
@@ -100,6 +164,9 @@ export function rememberRecentProduct(product: RecentProduct): RecentProduct[] {
   } catch {
     // Ignored for the same reason.
   }
+  snapshot = next;
+  snapshotLoaded = true;
+  emit();
   return next;
 }
 
@@ -110,4 +177,7 @@ export function clearRecentlyViewed(): void {
   } catch {
     // Ignored for the same reason.
   }
+  snapshot = [];
+  snapshotLoaded = true;
+  emit();
 }

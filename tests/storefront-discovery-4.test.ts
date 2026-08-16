@@ -26,6 +26,7 @@ import {
   parseRecentlyViewed,
   RECENTLY_VIEWED_LIMIT,
   withRecentProduct,
+  type RecentProduct,
 } from "../src/lib/commerce/recentlyViewed.ts";
 import { buildBrowseMenu } from "../src/lib/commerce/catalogBrowse.ts";
 import type { CategoryRow } from "../src/lib/commerce/categories.ts";
@@ -501,7 +502,7 @@ test("suggestions are bounded on the server, not trimmed in the browser", () => 
 });
 
 test("suggestions expose only public catalog fields", () => {
-  const select = suggestRoute.match(/\.select\(\s*"([^"]+)"/s)?.[1] ?? "";
+  const select = suggestRoute.match(/\.select\(\s*"([^"]+)"/)?.[1] ?? "";
   for (const forbidden of ["cost", "inventory_quantity", "internal", "notes", "supplier"]) {
     assert.doesNotMatch(select, new RegExp(forbidden, "i"), `${forbidden} must not be selected`);
   }
@@ -679,8 +680,8 @@ test("switching category keeps the search and the refinements", () => {
 // ---------------------------------------------------------------------------
 
 test("recently viewed is bounded and de-duplicated", () => {
-  const make = (id: string) => ({ id, name: id, slug: id, image: null, price: "$1.00" });
-  let list = [] as ReturnType<typeof make>[];
+  const make = (id: string): RecentProduct => ({ id, name: id, slug: id, image: null, price: "$1.00" });
+  let list: RecentProduct[] = [];
   for (let index = 0; index < 12; index += 1) list = withRecentProduct(list, make(`p${index}`));
   assert.equal(list.length, RECENTLY_VIEWED_LIMIT);
   assert.equal(list[0].id, "p11");

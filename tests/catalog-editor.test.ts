@@ -81,10 +81,20 @@ test("backordered products are not labeled out of stock", async () => {
 });
 
 test("storefront and order API enforce catalog availability", () => {
-  // Availability now renders through the shared product card.
+  /*
+   * Availability renders through the shared product card, which since Discovery
+   * 4.0 asks `catalogActions` rather than calling the domain helper itself — the
+   * same rule, one module further out, so that the card, the list row and the
+   * homepage cannot answer differently. Asserting it there is what keeps the
+   * chain honest; asserting the card imports it is what stops a card growing a
+   * second opinion.
+   */
   const card = readFileSync("src/components/ProductCard.tsx", "utf8");
-  assert.match(card, /productCanBeRequested/);
-  assert.match(card, /availabilityLabel/);
+  assert.match(card, /from "@\/lib\/commerce\/catalogActions"/);
+  assert.match(card, /availabilityPresentation/);
+  const actions = readFileSync("src/lib/commerce/catalogActions.ts", "utf8");
+  assert.match(actions, /productCanBeRequested/);
+  assert.match(actions, /availability_status/);
   // The catalog query and the grid moved out of the page when category routes
   // arrived: every catalog surface — /catalog, /catalog/[category] and
   // /catalog/[category]/[subcategory] — now shares one loader and one grid.

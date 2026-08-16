@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import {
   clearRecentlyViewed,
-  readRecentlyViewed,
+  recentlyViewedServerSnapshot,
+  recentlyViewedSnapshot,
   rememberRecentProduct,
+  subscribeRecentlyViewed,
   type RecentProduct,
 } from "@/lib/commerce/recentlyViewed";
 
@@ -16,14 +18,18 @@ import {
  * storage rules and there is no version of this where one is correct and the
  * other is not.
  *
- * ## Why it renders nothing on the server
+ * ## Why `useSyncExternalStore` and not `useState` in an effect
  *
- * The list lives in `localStorage`, which the server cannot read, so any
- * server-rendered version of this strip would be wrong and then correct itself
- * — a block of products appearing under the customer's scroll position after
- * hydration. Reading it in an effect and rendering nothing until then means the
- * page never moves: the strip either was not there and is not there, or it
- * appears below content the customer has to scroll to reach anyway.
+ * The list lives in `localStorage`, which the server cannot read. Reading it
+ * into state inside an effect works, and has two problems this avoids:
+ *
+ *   - The server would render one thing and the client another. The store's
+ *     server snapshot is a stable empty array, so the strip is absent on the
+ *     server and absent on first paint, then appears below content the customer
+ *     has to scroll to reach anyway. Nothing moves under them.
+ *   - The recorder and the strip would not agree. On a product page both are
+ *     mounted: opening the product writes the list, and every subscriber
+ *     re-renders, so the strip below is current rather than one visit stale.
  *
  * A customer with no history sees nothing at all. An empty "Recently viewed"
  * heading is a promise the shop has not kept.
@@ -34,18 +40,21 @@ type RecentlyViewedProps =
   | { mode: "list"; /** Never show the product you are currently looking at. */ excludeId?: string };
 
 export default function RecentlyViewed(props: RecentlyViewedProps) {
-  const [items, setItems] = useState<RecentProduct[]>([]);
+  const items = useSyncExternalStore(
+    subscribeRecentlyViewed,
+    recentlyViewedSnapshot,
+    recentlyViewedServerSnapshot
+  );
 
   const recording = props.mode === "record";
+  // Serialized so the effect re-runs when the product genuinely changes, rather
+  // than on every render because the parent rebuilt the object literal.
   const productKey = recording ? JSON.stringify(props.product) : null;
 
   useEffect(() => {
-    if (recording && productKey) {
-      setItems(rememberRecentProduct(JSON.parse(productKey) as RecentProduct));
-      return;
-    }
-    setItems(readRecentlyViewed());
-  }, [recording, productKey]);
+    if (!productKey) return;
+    rememberRecentProduct(JSON.parse(productKey) as RecentProduct);
+  }, [productKey]);
 
   // The recorder is invisible: its whole job is the write above.
   if (recording) return null;
@@ -66,14 +75,7 @@ export default function RecentlyViewed(props: RecentlyViewedProps) {
           quietly accumulates a browsing record with no way to clear it is the
           thing this design was trying not to be.
         */}
-        <button
-          type="button"
-          onClick={() => {
-            clearRecentlyViewed();
-            setItems([]);
-          }}
-          className="recently-viewed-clear"
-        >
+        <button type="button" onClick={clearRecentlyViewed} className="recently-viewed-clear">
           Clear
         </button>
       </div>

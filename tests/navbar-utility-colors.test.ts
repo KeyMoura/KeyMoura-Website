@@ -87,10 +87,21 @@ test("every navbar utility control carries the dedicated utility class", () => {
   // menu button. The old header spelled out four near-identical class
   // constants, which is how one of them ends up a different colour.
   assert.match(header, /const utilityClass = "site-nav-utility site-nav-control"/);
-  // Desktop search, mobile search, the mobile menu button, and the account
-  // trigger (which takes it as `triggerClassName`).
+  /*
+   * Discovery 4.0 removed the two magnifier buttons: the bar carries a real
+   * search field now, and the mobile bar carries it on a second row. What is
+   * left wearing the utility class is the account trigger and the mobile menu
+   * button — so the count is the definition plus two, not plus four.
+   */
   const utilityUses = header.match(/\butilityClass\b/g) ?? [];
-  assert.ok(utilityUses.length >= 5, `expected the definition plus four controls; saw ${utilityUses.length}`);
+  assert.ok(utilityUses.length >= 3, `expected the definition plus its controls; saw ${utilityUses.length}`);
+  // The search field replaced them, and reads the same utility tokens rather
+  // than inventing a fourth set of navbar colours.
+  assert.match(header, /StorefrontSearch/);
+  const searchCss = read("src/app/globals.css");
+  const searchBlock = searchCss.slice(searchCss.indexOf(".storefront-search-form {"));
+  assert.match(searchBlock.slice(0, 500), /var\(--km-nav-util-border/);
+  assert.match(searchBlock.slice(0, 500), /var\(--km-nav-util-bg/);
   assert.match(header, /triggerClassName=\{`\$\{utilityClass\} site-nav-account`\}/);
 
   for (const [name, source] of [["bell", bell], ["cart", cart], ["wishlist", wishlist]] as const) {

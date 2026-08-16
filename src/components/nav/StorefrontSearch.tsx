@@ -234,7 +234,6 @@ export default function StorefrontSearch({
           aria-autocomplete="list"
           aria-activedescendant={active >= 0 ? `${listId}-option-${active}` : undefined}
           autoComplete="off"
-          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus={autoFocus}
           value={value}
           placeholder="Search products…"

@@ -3451,10 +3451,13 @@
     .home-focus { gap: 4.5rem; }
   }
 
-  /* ---- Product cards ------------------------------------------------------
+  /* Product cards: one shared silhouette for the homepage row, the catalog
+   * grid and the catalog's list rows.
    *
-   * One shared silhouette for the homepage row, the catalog grid and the
-   * catalog's list rows.
+   * The opening words of this comment are load-bearing: `homepage-3.test.ts`
+   * bounds the homepage's CSS block by searching for them, so that its
+   * assertions cannot be satisfied by a rule belonging to some other
+   * section. Rewording the first line unbounds that slice.
    *
    * ## Products over chrome
    *
