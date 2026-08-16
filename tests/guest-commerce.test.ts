@@ -440,8 +440,10 @@ test("guest rate limits exist and are tighter than the signed-in equivalents", (
 
 test("a guest cannot attach a file, and is told rather than having it dropped", () => {
   assert.match(customRequest, /Files can be attached once you have an account/);
-  // The account path's prefix check survives unchanged.
-  assert.match(customRequest, /!file\.path\.startsWith\(`\$\{user\.id\}\/`\)/);
+  // The account path's prefix check survives unchanged. Custom Project Request
+  // 3.0 destructured the path out of the entry before checking it, and added an
+  // extension and size check beside it; the ownership rule is the same one.
+  assert.match(customRequest, /!path\.startsWith\(`\$\{user\.id\}\/`\)/);
 });
 
 test("a referenced product is resolved from the database, never trusted", () => {

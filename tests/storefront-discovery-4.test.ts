@@ -454,8 +454,14 @@ test("the dropdown is keyboard reachable and escapable", () => {
 });
 
 test("hover open and close are both delayed, and closing is the slower one", () => {
-  const open = Number(productsMenu.match(/OPEN_DELAY_MS = (\d+)/)?.[1]);
-  const close = Number(productsMenu.match(/CLOSE_DELAY_MS = (\d+)/)?.[1]);
+  // The timers moved into `useNavHoverIntent` in Custom Project Request 3.0 so
+  // the More menu could share them rather than grow a second hover system.
+  // Products still hovers; the delays are just declared somewhere both menus
+  // can reach. The behaviour asserted here is unchanged.
+  assert.match(productsMenu, /useNavHoverIntent/, "Products must still hover");
+  const hook = read("src/components/nav/useNavHoverIntent.ts");
+  const open = Number(hook.match(/NAV_HOVER_OPEN_DELAY_MS = (\d+)/)?.[1]);
+  const close = Number(hook.match(/NAV_HOVER_CLOSE_DELAY_MS = (\d+)/)?.[1]);
   assert.ok(open > 0, "opening must have intent delay");
   assert.ok(close > open, "closing must be more forgiving than opening");
 });

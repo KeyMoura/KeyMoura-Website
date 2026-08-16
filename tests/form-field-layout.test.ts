@@ -17,7 +17,17 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const globalsCss = read("src/app/globals.css");
-const customRequestForm = read("src/app/orders/new/page.tsx");
+/**
+ * Since Custom Project Request 3.0 the request form's fields live in
+ * `CustomRequestSteps` and its review/contact fields in `CustomRequestWizard`;
+ * `/orders/new/page.tsx` is a server component that loads the catalog. Both
+ * halves are read here so "no field on this form sets its own spacing" still
+ * covers the whole form.
+ */
+const customRequestForm =
+  read("src/components/orders/CustomRequestSteps.tsx") +
+  read("src/components/orders/CustomRequestWizard.tsx");
+const requestControls = read("src/components/orders/RequestControls.tsx");
 const designSystem = read("src/components/ui/DesignSystem.tsx");
 
 test("label spacing is declared once, in the stylesheet", () => {
@@ -65,20 +75,29 @@ test("every field on the custom request form goes through the shared component",
     /<label className="text-sm">[A-Z]/,
     "a bare label text node bypasses .ui-label entirely"
   );
-  assert.ok(customRequestForm.includes("<Field"), "the form should render fields through the shared component");
+  // `RequestField` is `Field` plus the error association a validated form
+  // needs; `ChoiceGroup` is the fieldset/legend a group of radios needs, which
+  // one `<label>` cannot be. Both keep `.ui-label`, which is what this file is
+  // really about.
+  assert.ok(
+    customRequestForm.includes("<RequestField") || customRequestForm.includes("<Field"),
+    "the form should render fields through a shared component"
+  );
+  assert.match(requestControls, /className="ui-label"/, "the shared field must still use .ui-label");
 });
 
 test("the required fields are marked as required, not merely asterisked", () => {
-  // `Project type` and the description are the two step-1 validations.
-  assert.match(customRequestForm, /label="Project type" required/, "Project type is validated, so it is required");
+  // The project type is a group of radio cards now, so its required-ness is
+  // carried by the group rather than by a dropdown's label.
+  assert.match(customRequestForm, /legend="What kind of project is this\?"/);
   assert.match(
     customRequestForm,
-    /label="Describe the part and how it will be used" required/,
+    /label="Tell us what you want made and what it needs to do"\s*\n?\s*htmlFor=\{descriptionId\}\s*\n?\s*required/,
     "the description is validated at 20 characters, so it is required"
   );
   assert.doesNotMatch(
     customRequestForm,
-    /label="Project type \*"/,
+    /label="[^"]*\*"/,
     "the asterisk is the component's job, so it can carry a text equivalent"
   );
 });

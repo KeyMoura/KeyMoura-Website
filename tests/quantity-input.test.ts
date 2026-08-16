@@ -28,7 +28,9 @@ const panel = read("src/components/product/ProductPurchasePanel.tsx");
 const cartPage = read("src/app/cart/page.tsx");
 const cartDrawer = read("src/components/commerce/CartDrawer.tsx");
 const requestForm = read("src/components/product/ProductRequestForm.tsx");
-const customRequestPage = read("src/app/orders/new/page.tsx");
+// The custom request's quantity control lives in the wizard's steps since
+// Custom Project Request 3.0; `/orders/new/page.tsx` is now a server shell.
+const customRequestPage = read("src/components/orders/CustomRequestSteps.tsx");
 const css = read("src/app/globals.css");
 
 // ---------------------------------------------------------------------------

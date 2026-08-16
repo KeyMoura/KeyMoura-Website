@@ -36,9 +36,10 @@ test("account is the customer order launch point", () => {
 });
 
 test("draft deletion is owner scoped and confirmed", () => {
-  const page = read("src/app/orders/new/page.tsx");
+  // The wizard moved out of the route file in Custom Project Request 3.0.
+  const page = read("src/components/orders/CustomRequestWizard.tsx");
   assert.match(page, /Delete this draft\?/);
-  assert.match(page, /\.delete\(\)\.eq\("id",id\)\.eq\("customer_id",user\.id\)/);
+  assert.match(page, /\.delete\(\)\s*\n?\s*\.eq\("id", id\)\s*\n?\s*\.eq\("customer_id", user\.id\)/);
 });
 
 test("staff customer-facing changes require review and clarify quote totals", () => {
