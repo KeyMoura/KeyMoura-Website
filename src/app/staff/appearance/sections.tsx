@@ -11,6 +11,7 @@ import {
   hasAnnouncementCta,
   isAnnouncementScheduled,
   isExternalAnnouncementHref,
+  normalizeAnnouncementConfig,
   normalizeAnnouncementHref,
   type AnnouncementConfig,
 } from "@/theme/announcement";
@@ -392,6 +393,19 @@ export function AnnouncementSection({
 
   const hrefTyped = announcement.ctaHref.trim();
   const hrefRejected = Boolean(hrefTyped) && !normalizeAnnouncementHref(hrefTyped);
+
+  /*
+   * The preview renders the *normalized* config, not the working form.
+   *
+   * These are not the same thing while somebody is typing, and the difference
+   * matters twice. It is a correctness point — a preview showing a call to
+   * action that the save would refuse is previewing something that cannot
+   * exist — and a safety one: without this, typing `javascript:…` into the link
+   * field puts that string straight into an `href` in the staff member's own
+   * document. The value is refused on save either way, but a preview has no
+   * business rendering a URL scheme the application does not accept.
+   */
+  const preview = normalizeAnnouncementConfig({ announcement });
   const ctaHalf = Boolean(announcement.ctaText) !== Boolean(announcement.ctaHref);
   const scheduleInverted =
     Boolean(announcement.startsAt && announcement.endsAt) &&
@@ -528,7 +542,7 @@ export function AnnouncementSection({
         title="Preview"
         description="The real announcement bar component, exactly as the storefront renders it."
       >
-        {announcement.message ? (
+        {preview.message ? (
           <>
             {/*
               `key` forces a remount whenever the wording changes.
@@ -540,12 +554,12 @@ export function AnnouncementSection({
               broken.
             */}
             <AnnouncementBar
-              key={`${announcement.message}|${announcement.label}|${announcement.ctaText}`}
-              config={announcement}
+              key={`${preview.message}|${preview.label}|${preview.ctaText}`}
+              config={preview}
             />
             <p className="text-xs text-brand-textMuted">
-              {hasAnnouncementCta(announcement)
-                ? isExternalAnnouncementHref(announcement.ctaHref)
+              {hasAnnouncementCta(preview)
+                ? isExternalAnnouncementHref(preview.ctaHref)
                   ? "The link points off this site and will open in the same tab."
                   : "The link points at a page on this site."
                 : "No link — the message shows on its own."}

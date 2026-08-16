@@ -521,6 +521,35 @@ test("the editor previews the real component, not an approximation of it", () =>
   assert.match(sections, /<AnnouncementBar/);
 });
 
+test("the preview renders the normalized config, never the raw form", () => {
+  /*
+   * Caught in browser QA. The preview was handed the working form, so typing
+   * `javascript:alert(1)` into the link field rendered a call to action carrying
+   * that string as an `href` in the staff member's own document — a URL scheme
+   * the application refuses everywhere else.
+   *
+   * Two things were wrong and one fix addresses both: a preview showing a link
+   * the save would reject is previewing something that cannot exist, and a
+   * preview has no business putting an unaccepted scheme into the DOM. It now
+   * renders what `normalizeAnnouncementConfig` produces, which is what would
+   * actually be stored.
+   */
+  assert.match(sections, /const preview = normalizeAnnouncementConfig\(\{ announcement \}\)/);
+  assert.match(sections, /<AnnouncementBar[\s\S]{0,160}config=\{preview\}/);
+  assert.doesNotMatch(sections, /config=\{announcement\}/);
+
+  // The property the fix relies on.
+  assert.equal(
+    normalizeAnnouncementConfig({ announcement: { ctaText: "Shop", ctaHref: "javascript:alert(1)" } }).ctaHref,
+    ""
+  );
+  assert.equal(
+    hasAnnouncementCta(normalizeAnnouncementConfig({ announcement: { ctaText: "Shop", ctaHref: "javascript:alert(1)" } })),
+    false,
+    "half a call to action is no call to action, so nothing renders"
+  );
+});
+
 // ===========================================================================
 // PART F/G/H — navbar language, More menu, count badges
 // ===========================================================================
