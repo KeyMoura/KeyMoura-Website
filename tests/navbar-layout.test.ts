@@ -87,8 +87,28 @@ test("desktop and mobile navigation cannot drift apart", () => {
   for (const source of [header, drawer]) {
     assert.match(source, /from "@\/lib\/navigation"/, "both surfaces read the one module");
   }
-  assert.match(header, /primaryNav\.map/);
-  assert.match(drawer, /primaryNav\.map/);
+  /*
+   * Both surfaces still derive every destination from `primaryNav`; what
+   * changed in Discovery 4.0 is that each filters it first. The header holds
+   * Products back for `ProductsMenu` (a link *with a menu*, which the plain
+   * mapper cannot render) and splits the rest across the bar and More at
+   * 1280; the drawer holds Products back for its own expandable branch.
+   *
+   * So the assertion is that the module is the source and the list is
+   * mapped — not that the mapping is spelled one exact way.
+   */
+  for (const source of [header, drawer]) {
+    // Derived from the module's list — mapped directly, or filtered first and
+    // then mapped, which is what both surfaces now do so that Products can be
+    // rendered as a link *with a menu* rather than as a plain link.
+    assert.match(source, /primaryNav\.(map|filter)\(/, "the list must be derived from the module");
+  }
+  assert.match(header, /\.map\(\(item\)/, "the header must render its links from a list");
+  assert.match(drawer, /\.map\(\(item\)/, "the drawer must render its links from a list");
+  // And nothing may reintroduce a hand-written label list beside it.
+  for (const label of ["Custom Projects", "Gallery"]) {
+    assert.doesNotMatch(header, new RegExp(`>\\s*${label}\\s*<`), `${label} must come from primaryNav`);
+  }
 
   // No literal customer hrefs left hard-coded in the header's markup.
   for (const href of allCustomerNavHrefs()) {
@@ -135,8 +155,19 @@ test("active state distinguishes /orders from /orders?view=requests", () => {
  * symmetric template entirely — but the invariant is worth stating.
  */
 test("the navigation is the flexible column, not the utilities", () => {
-  assert.match(header, /grid-cols-\[auto_minmax\(0,1fr\)_auto\]/);
+  /*
+   * The template moved into `globals.css` when Discovery 4.0 gave the
+   * storefront search a track of its own — four columns is past what a
+   * Tailwind arbitrary value reads well as. The invariant is unchanged and
+   * is now asserted where it lives: the brand and the utilities are content
+   * sized, and the flexible tracks are the navigation and the search.
+   */
+  assert.match(
+    css,
+    /\.site-header-desktop \{\s*grid-template-columns: auto minmax\(0, auto\) minmax\(0, 1fr\) auto;/
+  );
   assert.doesNotMatch(header, /grid-cols-\[minmax\(0,1fr\)_auto_minmax\(0,1fr\)\]/);
+  assert.doesNotMatch(css, /grid-template-columns: minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
 });
 
 test("the utility cluster declares that it does not compress", () => {

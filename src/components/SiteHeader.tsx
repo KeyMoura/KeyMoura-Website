@@ -13,9 +13,12 @@ import NavMenu from "@/components/nav/NavMenu";
 import AccountMenu from "@/components/nav/AccountMenu";
 import NotificationBell from "@/components/nav/NotificationBell";
 import MobileNavDrawer from "@/components/nav/MobileNavDrawer";
+import ProductsMenu from "@/components/nav/ProductsMenu";
+import StorefrontSearch from "@/components/nav/StorefrontSearch";
 import { isNavItemActive, primaryNav, secondaryNav } from "@/lib/navigation";
+import { EMPTY_STOREFRONT_NAV, type StorefrontNav } from "@/lib/commerce/storefrontNavModel";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faBars, faMagnifyingGlass, faChevronDown } from "@fortawesome/free-solid-svg-icons";
+import { faBars, faChevronDown } from "@fortawesome/free-solid-svg-icons";
 
 type SimpleUser = { id: string; email: string | null };
 
@@ -69,7 +72,7 @@ type SimpleProfile = {
  * during server rendering and correct it after mount, which is a hydration
  * mismatch and a visible reflow on every page load.
  */
-export default function SiteHeader() {
+export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { productsNav?: StorefrontNav }) {
   const pathname = usePathname();
   const siteSettings = useSiteSettings();
 
@@ -197,9 +200,23 @@ export default function SiteHeader() {
 
   const utilityClass = "site-nav-utility site-nav-control";
 
+  /*
+   * Which primary links get a slot on the bar, and which move into More.
+   *
+   * `primaryNav` is still the one source; this only decides where each entry is
+   * *rendered*. Products is handled separately by `ProductsMenu` because it is
+   * a link with a menu attached, so it is filtered out of both lists here.
+   */
+  const deskLinks = useMemo(() => primaryNav.filter((item) => item.href !== "/catalog"), []);
+  const narrowMoreItems = useMemo(
+    () => primaryNav.filter((item) => item.href !== "/catalog" && item.href !== "/orders/new"),
+    []
+  );
+
   const moreContainsCurrent = useMemo(
-    () => secondaryNav.some((item) => isNavItemActive(item, pathname)),
-    [pathname]
+    () =>
+      [...secondaryNav, ...narrowMoreItems].some((item) => isNavItemActive(item, pathname)),
+    [pathname, narrowMoreItems]
   );
 
   const headerStyle = { borderColor: "var(--km-nav-border)" };
@@ -221,7 +238,7 @@ export default function SiteHeader() {
             utility cluster is additionally `shrink-0`, because a compressed
             cart button is a cart button someone cannot press. */}
         <div
-          className="site-header-desktop hidden min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 lg:grid"
+          className="site-header-desktop hidden min-w-0 items-center gap-4 lg:grid"
           data-testid="desktop-header"
         >
           <Link
@@ -249,12 +266,30 @@ export default function SiteHeader() {
             )}
           </Link>
 
-          <nav className="flex min-w-0 items-center gap-1" aria-label="Primary" data-testid="primary-navigation-group">
-            {primaryNav.map((item) => (
+          <nav className="site-header-nav" aria-label="Primary" data-testid="primary-navigation-group">
+            <ProductsMenu
+              nav={productsNav}
+              isActive={isNavItemActive({ href: "/catalog" }, pathname)}
+              linkClassName={navLinkClass("/catalog")}
+            />
+
+            {/*
+              Custom Projects always; Gallery and About from `xl`.
+
+              This is the intentional handoff for the 1024–1279 band. Search now
+              wants real width on the bar, and at 1024 the four links plus the
+              utilities left it about 260px — a field the size of the button it
+              replaced. Rather than shrink search back down, the two links a
+              customer reads once move into More below `xl`, where More already
+              is. They are rendered twice with exactly one visible at a time:
+              `display: none` removes the hidden copy from the accessibility
+              tree and the tab order, so nobody meets a duplicate.
+            */}
+            {deskLinks.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className={navLinkClass(item.href)}
+                className={`${navLinkClass(item.href)}${item.href === "/orders/new" ? "" : " site-nav-link-wide"}`}
                 aria-current={isNavItemActive(item, pathname) ? "page" : undefined}
               >
                 {item.label}
@@ -275,6 +310,21 @@ export default function SiteHeader() {
                 </>
               }
             >
+              {narrowMoreItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  role="menuitem"
+                  tabIndex={-1}
+                  aria-current={isNavItemActive(item, pathname) ? "page" : undefined}
+                  className="nav-menu-item nav-menu-item-stacked site-more-item-narrow"
+                >
+                  <span className="font-medium">{item.label}</span>
+                  {item.description ? (
+                    <span className="nav-menu-item-description">{item.description}</span>
+                  ) : null}
+                </Link>
+              ))}
               {secondaryNav.map((item) => (
                 <Link
                   key={item.href}
@@ -293,16 +343,14 @@ export default function SiteHeader() {
             </NavMenu>
           </nav>
 
+          {/* The storefront's search, on the bar rather than behind an icon. */}
+          <StorefrontSearch className="site-header-search" />
+
           <div className="flex shrink-0 items-center justify-end gap-2" data-testid="header-utilities">
-            <button
-              type="button"
-              onClick={openSearch}
-              className={utilityClass}
-              aria-label="Search products (Ctrl+K)"
-            >
-              <FontAwesomeIcon icon={faMagnifyingGlass} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="hidden 2xl:inline">Search</span>
-            </button>
+            {/* The magnifier used to live here and is gone on purpose: the bar
+                now carries a real search field, and a second control opening a
+                modal search beside it is two answers to one question. Ctrl+K
+                still opens the site-wide palette for anyone who knows it. */}
 
             {/* Guests build carts and wishlists too; hiding these from them
                 loses what they just filled. */}
@@ -336,7 +384,8 @@ export default function SiteHeader() {
         {/* MOBILE — logo, search, cart, menu. Wishlist, account, orders and
             everything else live in the drawer, because eight controls on a
             320px bar is how the badges started clipping each other. */}
-        <div className="site-header-mobile flex items-center justify-between gap-2 lg:hidden">
+        <div className="site-header-mobile lg:hidden">
+          <div className="site-header-mobile-row">
           <Link href="/" aria-label={`${siteSettings.name} home`} className="site-header-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -349,15 +398,6 @@ export default function SiteHeader() {
           </Link>
 
           <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              onClick={openSearch}
-              className={utilityClass}
-              aria-label="Search products"
-            >
-              <FontAwesomeIcon icon={faMagnifyingGlass} className="h-4 w-4" aria-hidden="true" />
-            </button>
-
             <CartIndicator />
 
             <button
@@ -375,6 +415,17 @@ export default function SiteHeader() {
               ) : null}
             </button>
           </div>
+          </div>
+
+          {/*
+            Row two: search, at the full width of the bar.
+
+            Squeezing it into row one alongside the logo, the cart and the menu
+            gave it about 120px at 375px, which is a field you cannot read your
+            own query in. A second row costs 52px of vertical space on a phone
+            and makes the shop's primary action a full-width tap target.
+          */}
+          <StorefrontSearch className="site-header-mobile-search" />
         </div>
       </div>
 
@@ -388,6 +439,7 @@ export default function SiteHeader() {
         onOpenSearch={openSearch}
         unreadMessages={unreadMessages}
         unreadNotifications={unreadNotifications}
+        productsNav={productsNav}
       />
     </header>
   );

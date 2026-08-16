@@ -19,9 +19,91 @@ export type CatalogData = {
 // read the select list at compile time, and a built-up string types the result
 // as an error row instead of a product.
 const PRODUCT_COLUMNS =
-  "id,name,slug,short_description,image_url,category,category_id,purchase_mode,starting_price_cents,is_custom,availability_status,lead_time_text,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock,created_at";
+  "id,name,slug,short_description,image_url,category,category_id,purchase_mode,starting_price_cents,is_custom,availability_status,lead_time_text,inventory_policy,inventory_quantity,continue_selling_when_out_of_stock,material,created_at";
 
 const CATEGORY_COLUMNS = "id,name,slug,description,parent_id,image_url,display_order,is_active,archived_at";
+
+/**
+ * Which products cannot be added to a cart without a decision, and which merely
+ * offer one.
+ *
+ * **One query for the whole catalog, not one per card.** PostgREST embeds the
+ * values inside their group, so the requirement rule — a required group with at
+ * least one *active* value — is decided from a single round trip no matter how
+ * many products are on the page. A per-card lookup here would be an N+1 on the
+ * busiest page of the shop, and it would be invisible until the catalog grew.
+ *
+ * The rule is copied from `priceLine`, deliberately and exactly: a required
+ * group with no usable values does not block a purchase there, so it must not
+ * send a card to a configuration page here. The shop has one of those today.
+ *
+ * Both flags are readable by `anon` under RLS (`20260802020100_product_purchase
+ * _modes.sql` scopes option reads to published products), so this stays on the
+ * public client with the rest of the catalog and never sees a draft.
+ */
+type OptionGroupRow = {
+  product_id: string;
+  is_required: boolean;
+  product_option_values: { is_active: boolean }[] | null;
+};
+
+async function attachOptionFlags(
+  supabase: ReturnType<typeof supabasePublicServer>,
+  products: CatalogProductRow[]
+): Promise<void> {
+  if (!products.length) return;
+
+  const { data, error } = await supabase
+    .from("product_option_groups")
+    .select("product_id,is_required,product_option_values(is_active)")
+    .in(
+      "product_id",
+      products.map((product) => product.id)
+    );
+
+  // A failure here costs the two badges and the sharper call-to-action, not the
+  // catalog. Every card falls back to "no known options", and the server still
+  // refuses an add that needed a choice — with the message it always gave.
+  if (error) return;
+
+  const required = new Set<string>();
+  const any = new Set<string>();
+
+  for (const row of (data ?? []) as OptionGroupRow[]) {
+    any.add(row.product_id);
+    const usableValues = (row.product_option_values ?? []).filter((value) => value.is_active).length;
+    if (row.is_required && usableValues > 0) required.add(row.product_id);
+  }
+
+  for (const product of products) {
+    product.requires_configuration = required.has(product.id);
+    product.has_options = any.has(product.id);
+  }
+}
+
+/**
+ * "Interior / Shift Knobs" on every card, from the rows already in hand.
+ *
+ * `products.category` is a denormalized *name* and carries no hierarchy, so a
+ * product filed under a subcategory used to show only the leaf — the card said
+ * "Shift Knobs" with no indication of where that sits. Resolving the trail from
+ * `category_id` against the categories this function already loaded costs no
+ * extra query and gives the card the same two-level path the breadcrumb shows.
+ *
+ * A product with no category, or one pointing at a row that is archived or
+ * hidden, gets no trail and falls back to the flat text. Nothing is invented.
+ */
+function attachCategoryTrails(products: CatalogProductRow[], categories: readonly CategoryRow[]): void {
+  if (!products.length) return;
+  const byId = new Map(categories.filter((row) => row.is_active && !row.archived_at).map((row) => [row.id, row]));
+
+  for (const product of products) {
+    const category = product.category_id ? byId.get(product.category_id) : undefined;
+    if (!category) continue;
+    const parent = category.parent_id ? byId.get(category.parent_id) : undefined;
+    product.category_trail = parent ? [parent.name, category.name] : [category.name];
+  }
+}
 
 /**
  * Everything the storefront catalog renders, loaded once as the public.
@@ -91,9 +173,14 @@ export async function loadCatalogData(): Promise<CatalogData> {
 
     const byProduct = groupMediaByProduct(media ?? []);
     for (const product of products) product.product_media = byProduct.get(product.id) ?? [];
+
+    await attachOptionFlags(supabase, products);
   }
 
-  return { products, categories: (categoryResult.data ?? []) as CategoryRow[] };
+  const categories = (categoryResult.data ?? []) as CategoryRow[];
+  attachCategoryTrails(products, categories);
+
+  return { products, categories };
 }
 
 /**
@@ -150,6 +237,8 @@ export async function loadFeaturedProducts(limit = 6): Promise<CatalogProductRow
 
     const byProduct = groupMediaByProduct(media ?? []);
     for (const product of products) product.product_media = byProduct.get(product.id) ?? [];
+
+    await attachOptionFlags(supabase, products);
 
     return products;
   } catch {

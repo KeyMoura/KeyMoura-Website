@@ -94,6 +94,12 @@ test("every stacking-context property inside the card is accounted for", () => {
     ".product-card:hover": "the card itself is the overlay's containing block, not a sibling of it",
     ".product-card:hover .product-card-action": "the span is pointer-events: none and below the overlay",
     ".product-card:hover .product-image-media": "the image box precedes the anchor in tree order",
+    ':where([data-card-style="solid"], [data-card-style="outline"], [data-card-style="elevated"]) .product-card:hover':
+      "a transform on the card itself: the card is the containing block for the overlay, not a sibling of it",
+    ".product-card-media":
+      "isolation on the media well: the overlay carries z-index 1, so it paints in the positive-z step and the well paints in the auto step below it",
+    ".product-card-hover-image":
+      "opacity inside the media well, so it cannot escape that stacking context, and it is pointer-events: none besides",
   };
 
   const rules = css.matchAll(/(?:^|[};])\s*([^{};]*\.product-card[^{}]*?)\s*\{([^}]*)\}/g);

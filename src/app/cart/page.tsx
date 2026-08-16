@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { TermsInlineNotice } from "@/components/legal/TermsNotice";
 import { useCallback, useState } from "react";
 import ProductImage from "@/components/ProductImage";
 import CartSharePanel from "@/components/commerce/CartSharePanel";
@@ -467,6 +468,16 @@ export default function CartPage() {
                 You will be asked to sign in before paying.
               </p>
             ) : null}
+
+            {/*
+              Conspicuous, and immediately below the button it belongs to.
+
+              A footer link is browsewrap and is the weakest form there is; a
+              checkbox here would be friction on a purchase of listed goods that
+              the Terms already govern. A sentence attached to the action is the
+              proportionate middle, and it is where a customer's eye already is.
+            */}
+            <TermsInlineNotice variant="checkout" className="mt-3 text-center" />
           </aside>
 
           <CheckoutFulfillmentPanel onChange={handleFulfillmentChange} onTotals={handleTotals} />

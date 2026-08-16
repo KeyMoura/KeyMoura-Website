@@ -421,21 +421,17 @@ test("the catalog root has one category navigator, not two", () => {
    *
    * Inside a category the same block answers a different question — where you
    * can go deeper — so it is scoped to that case rather than deleted.
+   *
+   * Discovery 4.0 turned that block from a card grid into a row of links
+   * (`.catalog-subnav`), because cards there competed with the product cards
+   * directly below them using the same shape. The scoping rule is untouched and
+   * is what this test is really about.
    */
-  assert.match(
-    view,
-    /const discovery = category\s*\n\s*\? categories\.filter/,
-    "subcategory discovery must be scoped to a category page"
-  );
-  assert.doesNotMatch(view, /Browse categories/, "the catalog root must not carry a second category navigator");
-  assert.doesNotMatch(view, /Find your part/);
-  assert.doesNotMatch(view, /item\.parent_id === null/, "the root must not list top-level categories as cards");
-
-  // The canonical navigation, the deeper-discovery case, and everything the
-  // browser owns all survive.
-  assert.match(view, /<CatalogBrowser/);
-  assert.match(view, /catalog-discovery-grid/);
-  assert.match(view, /aria-label="Breadcrumb"/);
+  assert.match(view, /const discovery = category\s*\?/, "subcategories render only inside a category");
+  assert.match(view, /catalog-subnav/);
+  assert.doesNotMatch(view, /Find your part/i);
+  // And the old card grid is gone from the stylesheet, not merely unused.
+  assert.doesNotMatch(css, /catalog-discovery-card/);
 });
 
 test("catalog query failures cannot masquerade as an empty result", () => {

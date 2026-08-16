@@ -8,6 +8,8 @@ import CatalogBrowseDrawer from "@/components/catalog/CatalogBrowseDrawer";
 import CatalogCategoryTree from "@/components/catalog/CatalogCategoryTree";
 import CatalogViewControl from "@/components/catalog/CatalogViewControl";
 import CommerceSearch from "@/components/catalog/CommerceSearch";
+import CatalogRecovery from "@/components/catalog/CatalogRecovery";
+import RecentlyViewed from "@/components/catalog/RecentlyViewed";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import type { CategoryRow } from "@/lib/commerce/categories";
 import {
@@ -219,43 +221,52 @@ export default function CatalogBrowser({
       */}
       <nav aria-label="Browse products" className="catalog-rail">
         <section className="catalog-rail-section">
-          <h2 className="catalog-rail-heading">Categories</h2>
+          <h2 className="catalog-rail-heading">Shop by category</h2>
           <CatalogCategoryTree menu={menu} variant="rail" />
         </section>
 
-        {/* Refinements, kept visually distinct from the category list above.
-            Sorting is deliberately *not* here — it belongs with the grid it
-            reorders, where the reader can see the effect. */}
-        <section className="catalog-rail-section">
-          <h2 className="catalog-rail-heading">Availability</h2>
-          <MenuSelect
-            ariaLabel="Availability"
-            className="ui-select-trigger w-full"
-            value={filters.availability}
-            onChange={(value) => setFilters({ availability: value as CatalogFilters["availability"] }, "push")}
-            options={AVAILABILITY_OPTIONS}
-          />
-        </section>
+        {/*
+          Refinements, in a group of their own below a rule.
 
-        <section className="catalog-rail-section">
-          <h2 className="catalog-rail-heading">How it is bought</h2>
-          <MenuSelect
-            ariaLabel="How it is bought"
-            className="ui-select-trigger w-full"
-            value={filters.mode}
-            onChange={(value) => setFilters({ mode: value as CatalogFilters["mode"] }, "push")}
-            options={MODE_OPTIONS}
-          />
-        </section>
+          The rail previously ran category list, heading, dropdown, heading,
+          dropdown, button as six equal-weight blocks — which is the shape of a
+          settings panel, not a shop. Categories are *what you are looking at*
+          and refinements are *how*; separating them says so without adding a
+          single box. Sorting is deliberately absent: it belongs with the grid
+          it reorders, where the reader can see the effect.
+        */}
+        <div className="catalog-rail-refine">
+          <section className="catalog-rail-section">
+            <h2 className="catalog-rail-heading">Availability</h2>
+            <MenuSelect
+              ariaLabel="Availability"
+              className="ui-select-trigger w-full"
+              value={filters.availability}
+              onChange={(value) => setFilters({ availability: value as CatalogFilters["availability"] }, "push")}
+              options={AVAILABILITY_OPTIONS}
+            />
+          </section>
 
-        <button
-          type="button"
-          onClick={clear}
-          disabled={isDefault}
-          className="ui-btn ui-btn-ghost w-full !py-2 text-sm disabled:opacity-40"
-        >
-          Clear filters
-        </button>
+          <section className="catalog-rail-section">
+            <h2 className="catalog-rail-heading">How it is bought</h2>
+            <MenuSelect
+              ariaLabel="How it is bought"
+              className="ui-select-trigger w-full"
+              value={filters.mode}
+              onChange={(value) => setFilters({ mode: value as CatalogFilters["mode"] }, "push")}
+              options={MODE_OPTIONS}
+            />
+          </section>
+
+          <button
+            type="button"
+            onClick={clear}
+            disabled={isDefault}
+            className="catalog-rail-clear"
+          >
+            Clear filters
+          </button>
+        </div>
       </nav>
 
       <div className="catalog-main">
@@ -385,42 +396,62 @@ export default function CatalogBrowser({
            * fix in one press without throwing away the category they navigated
            * to on the way here.
            */
-          <div className="ui-empty-state mt-6 !p-10">
-            <h2 className="text-xl font-semibold text-brand-text">
+          <div className="catalog-empty">
+            <h2 className="catalog-empty-title">
               {term
                 ? `No products match “${term}”.`
                 : scopedProducts.length
                   ? "No products match those filters."
                   : "Nothing is listed here yet."}
             </h2>
-            <p className="mt-2">
+            <p className="catalog-empty-body">
               {term
-                ? "Try another search, or clear your filters."
+                ? "Check the spelling, try a broader word, or clear the filters you have set."
                 : scopedProducts.length
-                  ? "Try clearing a filter — or describe what you need and we will quote it."
-                  : "Browse everything, or describe what you need and we will quote it."}
+                  ? "Try clearing a filter to widen the search."
+                  : "Browse the whole catalog to see what is listed."}
             </p>
-            <div className="ui-action-row mt-5 justify-center">
+
+            {/*
+              Every escape hatch that is actually available, and none that are
+              not: Clear search only when there is a search, Clear filters only
+              when a filter is doing something.
+            */}
+            <div className="catalog-empty-actions">
               {term ? (
                 <button type="button" onClick={clearSearch} className="ui-btn ui-btn-secondary">
                   Clear search
                 </button>
               ) : null}
-              {scopedProducts.length ? (
-                <button type="button" onClick={clear} disabled={isDefault} className="ui-btn ui-btn-secondary disabled:opacity-40">
+              {!isDefault ? (
+                <button type="button" onClick={clear} className="ui-btn ui-btn-secondary">
                   Clear filters
                 </button>
-              ) : (
+              ) : null}
+              {activeCategoryId ? (
                 <Link href="/catalog" className="ui-btn ui-btn-secondary">
-                  All products
+                  Search all products
                 </Link>
-              )}
-              <Link href="/orders/new" className="ui-btn ui-btn-primary">
-                Start a custom project
-              </Link>
+              ) : null}
             </div>
+
+            {/*
+              And then the thing only this shop can offer. A customer who
+              searched for something KeyMoura does not stock has not reached a
+              dead end — they have reached the beginning of a custom project.
+            */}
+            <CatalogRecovery variant="empty" term={term || null} />
           </div>
         )}
+
+        {/*
+          Below the results, in this order: the custom-work offer for anyone who
+          read everything and found nothing that fits, then their own history.
+          Neither appears above the products, and the offer is suppressed on an
+          empty page because the empty state has already made it at full weight.
+        */}
+        {visible.length ? <CatalogRecovery variant="footer" /> : null}
+        <RecentlyViewed mode="list" />
       </div>
     </div>
   );

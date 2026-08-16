@@ -179,15 +179,33 @@ test("the search term is removable without losing the category", () => {
 
 test("an empty result names the term and offers to clear it", () => {
   assert.match(browser, /No products match “\$\{term\}”/);
-  assert.match(browser, /Try another search, or clear your filters\./);
-  const empty = browser.slice(browser.indexOf('className="ui-empty-state'));
+  /*
+   * Discovery 4.0 rewrote the recovery copy and dropped the shared
+   * `.ui-empty-state` panel for a `.catalog-empty` block, because a bordered
+   * card was the wrong shape for the page's least-decorated moment. It also
+   * stopped rendering escape hatches that do nothing: Clear filters is now
+   * absent when nothing is set rather than present and disabled, which is the
+   * change this assertion follows.
+   */
+  assert.match(browser, /Check the spelling, try a broader word/);
+  const empty = browser.slice(browser.indexOf('className="catalog-empty"'));
   assert.ok(empty.includes("Clear search"), "the empty state must offer the one-press fix");
-  // And "Clear filters" is disabled rather than absent when there is nothing to
-  // clear, so the button does not appear and vanish between renders.
-  assert.match(empty, /onClick=\{clear\} disabled=\{isDefault\}/);
+  assert.match(empty, /\{!isDefault \? \(/, "Clear filters appears only when a filter is set");
+  // And the shop's own recovery: a search that found nothing is where custom
+  // work is the most useful next step.
+  assert.match(empty, /CatalogRecovery variant="empty"/);
 });
 
 test("active filters carry a Clear all beside the individual chips", () => {
   assert.match(browser, /catalog-filter-chip catalog-filter-chip-clear/);
-  assert.match(globalsCss, /\.catalog-filter-chip-clear \{\s*border-style: dashed;/);
+  /*
+   * Removing everything is still a different act from removing one thing, so
+   * it still does not wear the same × the individual chips do. The dashed
+   * border became an underline in Discovery 4.0 — the chips gained a brand
+   * tint, and a dashed outline beside them read as a disabled control.
+   */
+  const clearBlock = globalsCss.slice(globalsCss.indexOf(".catalog-filter-chip-clear {"));
+  assert.match(clearBlock.slice(0, 260), /text-decoration: underline/);
+  assert.match(clearBlock.slice(0, 260), /background: transparent/);
+  assert.doesNotMatch(clearBlock.slice(0, 260), /aria-hidden/);
 });
