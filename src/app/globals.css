@@ -3670,12 +3670,17 @@
     text-transform: uppercase;
     opacity: 0.75;
   }
-  .product-card-spec-value { color: var(--text); }
+  /* `min-width: 0` so the value may shrink below the min-content width its own
+     unbroken "Walnut/Poplar/African Mahogany" sets, which is what lets
+     `overflow-wrap` break it instead of the row overflowing. */
+  .product-card-spec-value { color: var(--text); min-width: 0; }
   @media (min-width: 1024px) {
     [data-catalog-density="2"] .catalog-grid .product-card-spec { display: flex; }
   }
   @media (min-width: 640px) {
-    [data-catalog-density="list"] .catalog-grid .product-card-spec { display: flex; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-spec {
+      display: flex;
+    }
   }
 
   /*
@@ -5660,8 +5665,19 @@
    * Scoped under `.catalog-grid` on purpose. The attribute lives on `<html>`
    * and survives a client-side navigation off the catalog, so an unscoped rule
    * would turn the homepage's featured products into list rows on the way past.
+   *
+   * ## Why every rule below also matches "no attribute at all"
+   *
+   * List is the canonical default now, so the *absence* of a stored preference
+   * has to mean list too — otherwise a browser with scripting off, or one whose
+   * `localStorage` throws before the pre-paint script can stamp anything, would
+   * silently get the old three-across grid while `DEFAULT_CATALOG_VIEW` claimed
+   * otherwise. `:root:not([data-catalog-density])` is that case, and it is
+   * wrapped in `:where()` so adding it costs the selector no specificity: these
+   * rules still beat the plain `.catalog-grid` defaults above by their class
+   * count alone, exactly as they did when the attribute was the only way in.
    */
-  [data-catalog-density="list"] .catalog-grid {
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
   }
@@ -5672,39 +5688,61 @@
    * geometry squeezed onto a phone is the thing this mode exists to avoid. The
    * image is capped so the title, price and action stay above the fold.
    */
-  [data-catalog-density="list"] .catalog-grid .product-image { aspect-ratio: 16 / 10; }
-  [data-catalog-density="list"] .catalog-grid .product-card-media { border-radius: var(--card-radius, 1rem); }
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-image {
+    aspect-ratio: 16 / 10;
+  }
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-media {
+    border-radius: var(--card-radius, 1rem);
+  }
 
   @media (min-width: 640px) {
-    [data-catalog-density="list"] .catalog-grid .product-card {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card {
       display: grid;
       /* The image track is fixed rather than fractional so a long product name
          cannot shrink the photograph, and `minmax(0, 1fr)` on the middle track
          is what stops that name widening the row into horizontal overflow. */
       grid-template-columns: 13rem minmax(0, 1fr);
       grid-template-areas: "media body" "media footer";
-      align-items: start;
+      /*
+       * `stretch`, not `start`.
+       *
+       * This is what gives the information column a floor to anchor against.
+       * With `start`, the body box was only as tall as its own text, so
+       * `margin-top: auto` inside it had no free space to consume and the status
+       * row simply followed the last line of description — which is the drift
+       * this pass set out to remove. Stretching the body to the row's full
+       * height turns that `auto` back into a real anchor.
+       */
+      align-items: stretch;
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-media {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-media {
       grid-area: media;
       /* Fills the row's full height rather than sitting at the top of a short
          one, which is what makes the row read as one object. */
       height: 100%;
       min-height: 11rem;
     }
-    [data-catalog-density="list"] .catalog-grid .product-image {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-image {
       height: 100%;
       aspect-ratio: auto;
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-body { grid-area: body; padding: 0 0 0 1.25rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-footer { grid-area: footer; padding: 0.75rem 0 0 1.25rem; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-body {
+      grid-area: body;
+      padding: 0 0 0 1.25rem;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-footer {
+      grid-area: footer;
+      padding: 0.75rem 0 0 1.25rem;
+    }
     /* The reason to be in list view: more of the description, without opening
        the product. Four lines rather than the grid's two. */
-    [data-catalog-density="list"] .catalog-grid .product-card-description {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-description {
       -webkit-line-clamp: 4;
       line-clamp: 4;
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-title { font-size: 1.375rem; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-title {
+      font-size: 1.375rem;
+    }
   }
 
   /*
@@ -5712,14 +5750,33 @@
    * a shopper's eye goes to when comparing rows. `max-content` on the middle
    * track is refused: the purchase column is fixed and the description takes
    * what is left, so rows with long and short names still line their buttons up.
+   *
+   * ## The three track widths, and why they moved
+   *
+   * Media was 15rem and the purchase column `minmax(10rem, 14rem)`, which at
+   * 1024 left the information column — the one carrying the name, the sentence,
+   * the material and the status row — about 300px between a 240px photograph and
+   * a 224px button. The row was image-led to the point of being image-*dominated*
+   * at exactly the width where the browsing rail is already taking 15rem out of
+   * the page.
+   *
+   * Media is now 14rem (224px, a 6.7% trim) and the purchase column
+   * `minmax(9.5rem, 12.5rem)`, which returns roughly 60px to the middle at 1024
+   * and more above it. The photograph is still the widest fixed thing in the row
+   * and still the first thing the eye lands on; it has simply stopped crowding
+   * the text it is meant to be introducing. The call to action keeps its full
+   * width, its weight and its colour — 12.5rem is a 200px button, which is not a
+   * weakened CTA, it is a CTA that is no longer wider than it is useful.
    */
   @media (min-width: 1024px) {
-    [data-catalog-density="list"] .catalog-grid .product-card {
-      grid-template-columns: 15rem minmax(0, 1fr) minmax(10rem, 14rem);
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card {
+      grid-template-columns: 14rem minmax(0, 1fr) minmax(9.5rem, 12.5rem);
       grid-template-areas: "media body footer";
     }
-    [data-catalog-density="list"] .catalog-grid .product-card-media { min-height: 12.5rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-footer {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-media {
+      min-height: 12.5rem;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-footer {
       flex-direction: column;
       align-items: stretch;
       justify-content: flex-start;
@@ -5728,18 +5785,72 @@
     }
     /* The purchase column reads top-down, so the button spans it rather than
        hugging the right edge of a column that has no right edge to hug. */
-    [data-catalog-density="list"] .catalog-grid .product-card-cta-wrap { align-items: stretch; }
-    [data-catalog-density="list"] .catalog-grid .product-card-cta { width: 100%; padding-block: 0.625rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-cta-error { text-align: left; }
-    [data-catalog-density="list"] .catalog-grid .product-card-price { font-size: 1.25rem; }
-    [data-catalog-density="list"] .catalog-grid .product-card-action {
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-cta-wrap {
+      align-items: stretch;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-cta {
       width: 100%;
       padding-block: 0.625rem;
     }
-    /* The status row stops being the body's floor once the body is a middle
-       column of its own: pinning it to the bottom of a tall row would strand it
-       far below the description it belongs to. */
-    [data-catalog-density="list"] .catalog-grid .product-card-status { margin-top: 0.875rem; padding-top: 0; }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-cta-error {
+      text-align: left;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-price {
+      font-size: 1.25rem;
+    }
+    :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-action {
+      width: 100%;
+      padding-block: 0.625rem;
+    }
+  }
+
+  /*
+   * ---- The status row's anchor in list view -------------------------------
+   *
+   * The base card already puts `margin-top: auto` on `.product-card-status`, so
+   * status, price and action sit on the card floor as one block. List view used
+   * to *undo* that (`margin-top: 0.875rem; padding-top: 0`) on the theory that a
+   * middle column with nothing below it would strand the row at the bottom of a
+   * tall row. What actually happened is what the grid used to do: availability,
+   * lead time and Customizable landed wherever the description happened to stop,
+   * so two adjacent results — one with a two-line name, one with a material line
+   * — put their status rows at visibly different heights.
+   *
+   * The anchor is restored, and it is a real anchor now that the body stretches
+   * (see `align-items: stretch` above). The information column reads
+   * category → title → description → material → [flexible space] → status, and
+   * the flexible space is what absorbs the difference between a long product and
+   * a short one.
+   *
+   * The two guards that keep it from becoming a giant blank gap:
+   *
+   *   - `padding-top` survives as a *minimum* separation, so a row whose text
+   *     fills the column still has air above the status line.
+   *   - The row's height is set by the media well's `min-height` (12.5rem), not
+   *     by an artificial `min-height` on the text column. The most slack this can
+   *     open is the difference between four lines of description and none — about
+   *     70px — which is the row's own photograph height doing the work, not a
+   *     spacer inserted to force equality.
+   */
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-status {
+    margin-top: auto;
+    padding-top: 0.875rem;
+  }
+
+  /*
+   * Material, in the one layout wide enough to print it in full.
+   *
+   * "Walnut/Poplar/African Mahogany Hardwoods" is 40 characters with no spaces
+   * around its slashes, which is the shape that breaks a flex row: the value is
+   * one unbreakable word as far as line-breaking is concerned, so without help
+   * it sets the column's min-content width and pushes the purchase column off
+   * the row. `flex-wrap` lets the value drop below its "MATERIAL" key rather
+   * than fighting it for the line, `min-width: 0` lets it shrink below that
+   * min-content width, and `overflow-wrap: anywhere` — inherited from the base
+   * rule — is what finally allows the break inside the slashes.
+   */
+  :where([data-catalog-density="list"], :root:not([data-catalog-density])) .catalog-grid .product-card-spec {
+    flex-wrap: wrap;
   }
 
   /* ==== Catalog chrome 4.0 ================================================

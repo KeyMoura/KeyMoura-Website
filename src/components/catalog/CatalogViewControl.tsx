@@ -10,6 +10,7 @@ import {
   CATALOG_VIEW_SHORT_LABELS,
   catalogViewAttribute,
   DEFAULT_CATALOG_VIEW,
+  DEFAULT_GRID_DENSITY,
   parseCatalogView,
   type CatalogView,
 } from "@/lib/commerce/catalogView";
@@ -42,9 +43,14 @@ import {
  * Which leaves a hole: below `lg` a group whose only visible member is *List*
  * is a switch you can turn on and not off. So there is one extra button —
  * *Grid* — visible only where the densities are not. It is not a fifth stored
- * value; it writes the ordinary default. `display: none` takes the hidden half
+ * value; it writes `DEFAULT_GRID_DENSITY`. `display: none` takes the hidden half
  * out of the accessibility tree too, so exactly one option is ever checked, at
  * either width.
+ *
+ * That constant is deliberately *not* `DEFAULT_CATALOG_VIEW`, which is now
+ * `list`. Wiring Grid to the canonical default would make the one control whose
+ * job is to leave the list re-select it, which is the same dead switch under a
+ * different name.
  */
 
 export default function CatalogViewControl() {
@@ -109,7 +115,7 @@ export default function CatalogViewControl() {
       // Focus follows selection, which is the expected behaviour for a radio
       // group. Scoped to this group's own element rather than looked up on the
       // document, so a second instance elsewhere cannot steal the focus.
-      setView(value === "grid" ? DEFAULT_CATALOG_VIEW : parseCatalogView(value));
+      setView(value === "grid" ? DEFAULT_GRID_DENSITY : parseCatalogView(value));
       next.focus();
     },
     [setView]
@@ -173,7 +179,7 @@ export default function CatalogViewControl() {
         tabIndex={isGrid ? 0 : -1}
         data-view="grid"
         title={CATALOG_VIEW_LABELS.grid}
-        onClick={() => setView(isGrid ? view : DEFAULT_CATALOG_VIEW)}
+        onClick={() => setView(isGrid ? view : DEFAULT_GRID_DENSITY)}
         onKeyDown={onKeyDown}
         className={`catalog-view-option${isGrid ? " is-selected" : ""}`}
       >
