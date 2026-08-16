@@ -3478,7 +3478,24 @@
     border: 1px solid transparent;
     background: transparent;
     transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+    /*
+     * The card measures itself, not the viewport.
+     *
+     * A card's width depends on the column count *and* on whether the browsing
+     * rail is present, so a media query cannot tell you how much room the
+     * purchase row actually has. At 1100px with the rail and three columns each
+     * card is about 250px, which is enough for "$50.00 · Add to cart" on one
+     * line and not enough for "From $20.00 · Request a quote" — so the footer
+     * wrapped on one card in the row and not the others, and the purchase block
+     * it anchors sat 37px higher on that card. Measured, not guessed.
+     *
+     * A container query makes the stack/row decision from the card's own width,
+     * so every card in a row decides the same way and the block stays level.
+     */
+    container-type: inline-size;
+    container-name: product-card;
   }
+
 
   [data-card-style="solid"] .product-card { background: var(--panel); border-color: var(--border); overflow: hidden; }
   [data-card-style="outline"] .product-card { background: transparent; border-color: var(--border); overflow: hidden; }
@@ -3618,6 +3635,17 @@
      a shopper is scanning, and a truncated sentence between them is noise. */
   @media (min-width: 1280px) {
     [data-catalog-density="4"] .catalog-grid .product-card-description { display: none; }
+    /*
+     * The lead time goes too.
+     *
+     * Four across at 1440 gives each card 193px, which is not enough for "Made
+     * to order · Usually 1-2 weeks · Customizable" on one line — measured, the
+     * status row wrapped to two lines on two of three cards and to one on the
+     * third. The block stays anchored either way, but a browse mode should be
+     * scannable, and the lead time is the least load-bearing of the three: it
+     * is still on every other view and on the product page.
+     */
+    [data-catalog-density="4"] .catalog-grid .product-status-detail { display: none; }
   }
 
   /*
@@ -3876,6 +3904,19 @@
     text-align: right;
     color: color-mix(in srgb, #fbbf24 80%, var(--text));
     overflow-wrap: anywhere;
+  }
+
+  /*
+   * The narrow-card purchase layout.
+   *
+   * Below this width the price and the action stop sharing a line for *every*
+   * card, rather than for whichever cards happen to have a long call to action.
+   */
+  @container product-card (max-width: 17rem) {
+    .product-card-footer { flex-direction: column; align-items: stretch; gap: 0.625rem; }
+    .product-card-cta-wrap { align-items: stretch; }
+    .product-card-cta { width: 100%; }
+    .product-card-cta-error { text-align: left; }
   }
 
   /*

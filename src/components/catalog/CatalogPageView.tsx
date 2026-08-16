@@ -83,7 +83,7 @@ export default function CatalogPageView({
 
       {/*
         The intro, kept short.
-        
+
         The "Need something else? Start a custom project" button used to sit
         here, above the products, on every catalog and category page — an
         apology for the catalog before anyone had looked at it. It moved to
