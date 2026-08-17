@@ -354,7 +354,15 @@ test("submission routes to wherever the server says the request is readable", ()
 test("the submit control cannot be pressed twice and never fakes success", () => {
   assert.match(wizard, /disabled=\{busy \|\| !identityKnown\}/);
   assert.match(wizard, /busy \? "Sending…" : "Submit project request"/);
-  assert.match(wizard, /if \(busy\) return;/);
+  /*
+   * The door used to be `if (busy) return;`, which is state — two clicks in one
+   * frame read the same stale `false` out of the same closure and both went
+   * through, and `disabled` only lands on the render *after* the first. It is a
+   * ref now, closed before the first await, which is the only point early
+   * enough to beat a second click. See `custom-request-review-submission`.
+   */
+  assert.match(wizard, /const inFlight = useRef\(false\)/);
+  assert.match(wizard, /if \(inFlight\.current\) return;\s*\n\s*inFlight\.current = true;/);
 });
 
 test("the CTA is a request, not a purchase", () => {
