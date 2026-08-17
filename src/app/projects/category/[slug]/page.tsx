@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { InfoCard, InfoCardItem } from "@/components/info/InfoCard";
+import SearchFieldIcon from "@/components/ui/SearchFieldIcon";
 import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 
 type InfoCategoryRow = {
@@ -480,9 +481,14 @@ export default function InfoCategoryPage() {
       <section className="space-y-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
+            {/* `content-search` and the shared icon, so this nested route is the
+                same control as the `/projects` index it was reached from. It was
+                a hand-rolled `rounded-full border-zinc-700 bg-black/40` box with
+                an emoji in it: a different shape, a different radius, and two
+                hardcoded colours that ignore the Appearance theme entirely. */}
             <div
               ref={chipContainerRef}
-              className="flex max-h-24 flex-wrap items-center gap-1 overflow-y-auto rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 cursor-text scrollbar-thin scrollbar-track-black/40 scrollbar-thumb-zinc-700/80"
+              className="content-search flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto scrollbar-thin scrollbar-track-black/40 scrollbar-thumb-zinc-700/80"
               onClick={() => {
                 const el = document.getElementById("category-infosearch-input") as
                   | HTMLInputElement
@@ -490,7 +496,7 @@ export default function InfoCategoryPage() {
                 el?.focus();
               }}
             >
-              <span className="mr-1 text-[13px] text-brand-textMuted">🔍</span>
+              <SearchFieldIcon />
 
               {committedTerms.map((term) => (
                 <button

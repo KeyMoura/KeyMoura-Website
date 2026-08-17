@@ -9,6 +9,7 @@ import { faHeart as faHeartSolid } from "@fortawesome/free-solid-svg-icons";
 import { faHeart as faHeartRegular } from "@fortawesome/free-regular-svg-icons";
 import { DonationBadge } from "@/components/DonationBadge";
 import { VerifiedBadge } from "@/components/VerifiedBadge";
+import SearchFieldIcon from "@/components/ui/SearchFieldIcon";
 
 type GarageCarRow = {
   id: string;
@@ -467,7 +468,7 @@ export default function PublicGaragePage() {
 
           <div className="w-full md:w-80">
             <div className="flex max-h-24 cursor-text flex-wrap items-center gap-1 overflow-y-auto rounded-full border border-zinc-700 bg-black/40 px-3 py-1.5 text-xs text-brand-text focus-within:border-amber-400">
-              <span className="mr-1 text-[13px] text-brand-textMuted">🔍</span>
+              <SearchFieldIcon />
               {committedTerms.map((term) => (
                 <button
                   key={term}
