@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { MenuSelect } from "@/components/ui/MenuSelect";
-import { Badge, EmptyState, Notice } from "@/components/ui/DesignSystem";
+import { Badge, EmptyState, Field, Notice } from "@/components/ui/DesignSystem";
 import { ErrorState, LoadingState, PageHeader, StaffPage } from "@/components/staff/StaffPage";
 import { AUDIT_AREAS, AUDIT_AREA_LABELS, actionLabel, actionsForArea, type AuditArea } from "@/lib/audit/actions";
 import { auditLinks } from "@/lib/audit/links";
@@ -251,7 +251,7 @@ function AuditLog() {
             onChange={(changeEvent) => setSearchDraft(changeEvent.target.value)}
             placeholder="Search KM-0012, a product, an action…"
             aria-label="Search the audit log"
-            className="ui-input no-zoom-input h-8 w-64 max-w-full text-[12px]"
+            className="ui-input no-zoom-input w-64 max-w-full text-sm"
           />
         </form>
 
@@ -259,7 +259,7 @@ function AuditLog() {
           ariaLabel="Actor"
           value={filters.actor ?? "all"}
           onChange={(next) => apply({ actor: next === "all" ? null : next })}
-          className="ui-select-trigger !min-h-8 w-auto !py-1 text-[12px]"
+          className="ui-select-trigger w-auto text-sm"
           options={[
             { value: "all", label: "Anyone" },
             ...actors.map((option) => ({ value: option.id, label: option.label })),
@@ -270,7 +270,7 @@ function AuditLog() {
           ariaLabel="Area"
           value={filters.area ?? "all"}
           onChange={(next) => apply({ area: next === "all" ? null : (next as AuditArea), action: null })}
-          className="ui-select-trigger !min-h-8 w-auto !py-1 text-[12px]"
+          className="ui-select-trigger w-auto text-sm"
           options={[
             { value: "all", label: "All areas" },
             ...AUDIT_AREAS.map((area) => ({ value: area, label: AUDIT_AREA_LABELS[area] })),
@@ -284,7 +284,7 @@ function AuditLog() {
             ariaLabel="Action"
             value={filters.action ?? "all"}
             onChange={(next) => apply({ action: next === "all" ? null : next })}
-            className="ui-select-trigger !min-h-8 w-auto !py-1 text-[12px]"
+            className="ui-select-trigger w-auto text-sm"
             options={[{ value: "all", label: "All actions" }, ...actionOptions]}
           />
         ) : null}
@@ -292,14 +292,14 @@ function AuditLog() {
         <button
           type="button"
           onClick={() => setShowMoreFilters((previous) => !previous)}
-          className="ui-btn ui-btn-ghost h-8 !px-3 text-[11px]"
+          className="ui-btn ui-btn-ghost text-sm"
           aria-expanded={showMoreFilters}
         >
           {showMoreFilters ? "Fewer filters" : "More filters"}
         </button>
 
         {hasActiveFilters(filters) ? (
-          <button type="button" onClick={() => apply({ ...emptyPatch })} className="ui-btn ui-btn-ghost h-8 !px-3 text-[11px]">
+          <button type="button" onClick={() => apply({ ...emptyPatch })} className="ui-btn ui-btn-ghost text-sm">
             Clear
           </button>
         ) : null}
@@ -307,24 +307,24 @@ function AuditLog() {
 
       {showMoreFilters ? (
         <div className="staff-filter-panel !flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-[11px] text-brand-textMuted">
-            From
+          {/* `Field`, so the label rhythm is `.ui-label`'s rather than a fourth
+              hand-rolled `flex flex-col gap-1` with its own type size. */}
+          <Field label="From">
             <input
               type="date"
               value={filters.from ?? ""}
               onChange={(changeEvent) => apply({ from: changeEvent.target.value || null })}
-              className="ui-input no-zoom-input h-8 text-[12px]"
+              className="ui-input no-zoom-input text-sm"
             />
-          </label>
-          <label className="flex flex-col gap-1 text-[11px] text-brand-textMuted">
-            To
+          </Field>
+          <Field label="To">
             <input
               type="date"
               value={filters.to ?? ""}
               onChange={(changeEvent) => apply({ to: changeEvent.target.value || null })}
-              className="ui-input no-zoom-input h-8 text-[12px]"
+              className="ui-input no-zoom-input text-sm"
             />
-          </label>
+          </Field>
           {filters.orderId ? (
             <FilterChip label="Order" onClear={() => apply({ orderId: null })} />
           ) : null}
@@ -365,28 +365,38 @@ function AuditLog() {
         </div>
       )}
 
+      {/*
+        The same pagination family as `/staff/orders`, `/staff/inventory` and
+        `/staff/support`: a named `<nav>` on `.staff-toolbar`, the position
+        stated between two secondary buttons.
+
+        The wording stays "Newest"/"Older" here, and that is the one place a
+        difference is justified: this list is cursor-paged strictly by time and
+        has no page number to be on, so "Previous" would name a page that does
+        not exist. The treatment is shared even though the words are not.
+      */}
       {state.kind === "ready" && (state.hasMore || filters.cursor) ? (
-        <div className="mt-3 flex items-center justify-between gap-3">
+        <nav className="staff-toolbar justify-between" aria-label="Pagination">
           <button
             type="button"
             disabled={!filters.cursor}
             onClick={() => apply({ cursor: null })}
-            className="ui-btn ui-btn-ghost h-9 text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
+            className="ui-btn ui-btn-secondary text-sm disabled:cursor-not-allowed disabled:opacity-40"
           >
             Newest
           </button>
-          <span className="staff-row-meta">
+          <span className="staff-row-meta" aria-live="polite">
             {events.length} {events.length === 1 ? "event" : "events"} · {filters.pageSize} per page
           </span>
           <button
             type="button"
             disabled={!state.hasMore}
             onClick={() => apply({ cursor: state.nextCursor })}
-            className="ui-btn ui-btn-ghost h-9 text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
+            className="ui-btn ui-btn-secondary text-sm disabled:cursor-not-allowed disabled:opacity-40"
           >
             Older
           </button>
-        </div>
+        </nav>
       ) : null}
     </StaffPage>
   );
@@ -406,14 +416,24 @@ const emptyPatch: Partial<AuditFilters> = {
   pageSize: AUDIT_PAGE_SIZE,
 };
 
+/**
+ * An active filter, shown so it can be taken off again.
+ *
+ * `.staff-view` with `aria-pressed`, which is the pill every other staff
+ * surface uses for an engaged filter — same shape, same accent-tinted active
+ * treatment. It used to be a hand-rolled amber box at 32px with its own radius
+ * and its own border colour, which read as a warning rather than as a filter and
+ * matched nothing else in the row it sat in.
+ *
+ * The × keeps a text equivalent: on its own it is announced as "times" or
+ * skipped, and this control's whole job is to say what removing it will do.
+ */
 function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClear}
-      className="flex h-8 items-center gap-2 rounded-md border border-amber-400/50 bg-amber-400/10 px-2 text-[11px] text-amber-200"
-    >
-      {label} ×
+    <button type="button" aria-pressed onClick={onClear} className="staff-view">
+      {label}
+      <span aria-hidden="true">×</span>
+      <span className="sr-only">(remove this filter)</span>
     </button>
   );
 }
@@ -509,7 +529,7 @@ function AuditRow({
           {links.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {links.map((link) => (
-                <Link key={link.href} href={link.href} className="ui-btn ui-btn-ghost h-8 !px-3 text-[11px]">
+                <Link key={link.href} href={link.href} className="ui-btn ui-btn-ghost text-sm">
                   {link.label}
                 </Link>
               ))}
@@ -569,7 +589,7 @@ function Detail({ term, children }: { term: string; children: React.ReactNode })
 
 function ScopeButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="ui-btn ui-btn-ghost h-8 !px-3 text-[11px]">
+    <button type="button" onClick={onClick} className="ui-btn ui-btn-ghost text-sm">
       {label}
     </button>
   );
