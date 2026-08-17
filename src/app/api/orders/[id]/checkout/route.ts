@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
-import { checkoutAmountCents, netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
+import { chargeableAmountCents, netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
 import { captureCommerceException } from "@/lib/monitoring";
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -19,7 +19,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "This quote has expired. Message KeyMoura to request an updated quote." }, { status: 409 });
   }
   const remaining = remainingBalanceCents(order);
-  const amountDue = checkoutAmountCents(order);
+  // Capped by what `record_stripe_order_payment` will actually bank. Asking for
+  // more than the row can absorb produces a card charge the webhook can only
+  // refuse — money taken and never recorded — so it is refused here instead.
+  const amountDue = chargeableAmountCents(order);
   if (amountDue < 50) return NextResponse.json({ error: "No payable balance remains." }, { status: 409 });
 
   const stripe = stripeClient();
@@ -45,7 +48,24 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     success_url: `${siteUrl}/orders/${order.id}?payment=success`,
     cancel_url: `${siteUrl}/orders/${order.id}?payment=cancelled`,
   }, { idempotencyKey: `checkout-${order.id}-${amountDue}-${collectedBeforeCheckout}` });
-  const update = await routeServiceClient.from("orders").update({ stripe_checkout_session_id: session.id, payment_status: "unpaid", status: "awaiting_payment" }).eq("id", order.id).eq("customer_id", user.id);
+  /*
+   * The session id is always recorded. The payment state is only reset on an
+   * order that has collected nothing.
+   *
+   * Writing `unpaid` over a deposit-paid order erased that deposit from every
+   * read that goes through `netCollectedCents` — which returns 0 for an
+   * `unpaid` row whatever `amount_paid_cents` says — so the order page offered
+   * the deposit a second time. `chargeableAmountCents` above now stops that
+   * becoming a charge, and this stops the state being manufactured at all.
+   */
+  const update = await routeServiceClient
+    .from("orders")
+    .update({
+      stripe_checkout_session_id: session.id,
+      ...(collectedBeforeCheckout > 0 ? {} : { payment_status: "unpaid", status: "awaiting_payment" }),
+    })
+    .eq("id", order.id)
+    .eq("customer_id", user.id);
   if (update.error) {
     captureCommerceException(update.error, { operation: "save_checkout_session", orderId: order.id });
     return NextResponse.json({ error: "Could not prepare checkout. Please try again." }, { status: 500 });

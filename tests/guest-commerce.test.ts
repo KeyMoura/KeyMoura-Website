@@ -393,7 +393,11 @@ test("guest writes authorize, rate limit, and answer every denial identically", 
 });
 
 test("guest payment recomputes the amount and reads nothing from the body", () => {
-  assert.match(guestPay, /checkoutAmountCents\(order\)/);
+  // `chargeableAmountCents` rather than `checkoutAmountCents`: same property —
+  // the amount comes from the order row — through a helper that additionally
+  // caps it at what `record_stripe_order_payment` will actually bank, so the
+  // route cannot ask Stripe for money the ledger would then refuse to record.
+  assert.match(guestPay, /chargeableAmountCents\(order\)/);
   assert.match(guestPay, /\.is\("customer_id", null\)/);
   const source = code(guestPay);
   assert.doesNotMatch(source, /req\.json\(\)/, "the request body is not read at all");

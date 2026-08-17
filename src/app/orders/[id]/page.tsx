@@ -8,7 +8,7 @@ import { useParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { moneyFromCents } from "@/lib/orderHub";
 import { customerOrderStatus } from "@/lib/commerce/customerOrderView";
-import { checkoutAmountCents } from "@/lib/paymentMath";
+import { chargeableAmountCents } from "@/lib/paymentMath";
 import { OrderReviewGallery } from "@/components/OrderReviewGallery";
 import { OrderLifecycleActions } from "@/components/commerce/OrderLifecycleActions";
 import { CustomerOrderOverview } from "@/components/commerce/CustomerOrderOverview";
@@ -273,7 +273,9 @@ export default function OrderDetailPage() {
       </main>
     );
   const isPendingProposal = order.initiated_by_staff && order.status === "requested";
-  const checkoutAmount = checkoutAmountCents(order);
+  // The capped figure, so the button never names a price the checkout route
+  // would refuse and the ledger could not bank.
+  const checkoutAmount = chargeableAmountCents(order);
   return (
     <main className="page-container page-stack">
       <Link href="/account/orders" className="text-sm text-brand-textMuted transition hover:text-brand-primary">← Back to your orders</Link>

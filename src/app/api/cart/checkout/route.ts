@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { snapshotPurchasedOptions } from "@/lib/commerce/orderConfiguration";
+import { snapshotPurchasedOptions, snapshotSelections } from "@/lib/commerce/orderConfiguration";
 import { getUserFromRequest, routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
 import { captureCommerceException } from "@/lib/monitoring";
 import { resolveCart } from "@/lib/commerce/cartService";
 import { readGuestToken } from "@/lib/commerce/cartSession";
 import { mergeGuestCart } from "@/lib/commerce/cartService";
+import { lineSignature, type PricedLine } from "@/lib/commerce/pricing";
 import {
   createGuestOrderToken,
   guestAccessExpiry,
   GUEST_ORDER_COOKIE,
   guestOrderCookieOptions,
+  guestTokenMatches,
   hashGuestOrderToken,
+  normalizeGuestOrderToken,
   parseGuestContact,
   type GuestContact,
 } from "@/lib/commerce/guestOrders";
@@ -156,6 +159,23 @@ export async function POST(req: NextRequest) {
   if (!cart.cartId) {
     return NextResponse.json({ error: "Could not start checkout. Please try again." }, { status: 500 });
   }
+
+  /*
+   * Before anything is written: is this cart already checking out?
+   *
+   * Checked here rather than after the reservation so a repeat click touches no
+   * state at all — the hold the first attempt took is still active, still linked
+   * to that order and that session, and re-reserving would only supersede it
+   * with an identical one.
+   */
+  const inFlight = await inFlightCheckout({
+    req,
+    cartId: cart.cartId,
+    userId: user?.id ?? null,
+    totalCents,
+    lines,
+  });
+  if (inFlight) return NextResponse.json({ url: inFlight.url, orderId: inFlight.orderId });
 
   const reservation = await reserveCartInventory({
     cartId: cart.cartId,
@@ -367,4 +387,135 @@ export async function POST(req: NextRequest) {
     captureCommerceException(error, { operation: "create_direct_checkout_session", orderId: order.id });
     return NextResponse.json({ error: "Could not start checkout. Please try again." }, { status: 500 });
   }
+}
+
+/**
+ * One line of a basket, reduced to the facts that decide whether two baskets
+ * are the same purchase: the product, the exact configuration, how many, and
+ * what each costs. Order-independent, because a cart's row order is not part of
+ * what the customer is buying.
+ */
+function basketFingerprint(
+  lines: readonly { productId: string; selectedOptions: Record<string, string>; quantity: number; unitPriceCents: number }[]
+): string {
+  return lines
+    .map((line) => `${lineSignature(line.productId, line.selectedOptions)}|q=${line.quantity}|u=${line.unitPriceCents}`)
+    .sort()
+    .join("\n");
+}
+
+type ReusableOrderRow = {
+  id: string;
+  customer_id: string | null;
+  guest_token_hash: string | null;
+  order_kind: string | null;
+  status: string;
+  payment_status: string;
+  agreed_price_cents: number | null;
+  stripe_checkout_session_id: string | null;
+};
+
+/**
+ * The checkout this cart is already in the middle of, when there is one.
+ *
+ * Every POST used to insert a fresh order, so a double click, a Back out of
+ * Stripe, or a retry after a flaky response each left another
+ * `awaiting_payment` row in the customer's history and on the staff queue — and
+ * two live sessions for one basket is how one basket gets paid for twice.
+ *
+ * The cart already records the order it was converted for, so no new state is
+ * needed to find it. This mirrors the reuse `/api/orders/[id]/checkout` has
+ * always done for quotes, and is deliberately strict: same owner, same basket,
+ * same total, nothing paid against it, and Stripe still calling the session
+ * open. Any mismatch returns null and the normal path writes a new order, which
+ * is exactly the old behaviour.
+ *
+ * Comparing the *basket* and not merely the total matters: swapping one item
+ * for another at the same price leaves the total identical while changing what
+ * is being bought, and reusing there would charge the customer for the order
+ * they no longer have.
+ */
+async function inFlightCheckout(input: {
+  req: NextRequest;
+  cartId: string;
+  userId: string | null;
+  totalCents: number;
+  lines: readonly PricedLine[];
+}): Promise<{ url: string; orderId: string } | null> {
+  const { data: cartRow } = await routeServiceClient
+    .from("carts")
+    .select("converted_order_id")
+    .eq("id", input.cartId)
+    .maybeSingle();
+
+  const orderId = (cartRow as { converted_order_id: string | null } | null)?.converted_order_id;
+  if (!orderId) return null;
+
+  const { data } = await routeServiceClient
+    .from("orders")
+    .select("id,customer_id,guest_token_hash,order_kind,status,payment_status,agreed_price_cents,stripe_checkout_session_id")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  const order = data as ReusableOrderRow | null;
+  if (
+    !order ||
+    order.order_kind !== "direct_purchase" ||
+    order.status !== "awaiting_payment" ||
+    order.payment_status !== "unpaid" ||
+    order.agreed_price_cents !== input.totalCents ||
+    !order.stripe_checkout_session_id
+  ) {
+    return null;
+  }
+
+  /**
+   * Same owner.
+   *
+   * An account order must belong to this account. A guest order must be one
+   * this browser still holds the credential for — reuse cannot mint a
+   * replacement, because the raw token is not recoverable from its digest, so a
+   * guest who has lost the cookie is better served by a new order that comes
+   * with a new one.
+   */
+  const ownerMatches = input.userId
+    ? order.customer_id === input.userId
+    : !order.customer_id &&
+      guestTokenMatches(
+        normalizeGuestOrderToken(input.req.cookies.get(GUEST_ORDER_COOKIE)?.value),
+        order.guest_token_hash
+      );
+  if (!ownerMatches) return null;
+
+  const { data: itemRows, error: itemsError } = await routeServiceClient
+    .from("order_items")
+    .select("product_id,quantity,unit_price_cents,selected_options")
+    .eq("order_id", order.id);
+
+  // An unreadable item list is not a matching basket. Falling through writes a
+  // new order, which is the safe direction to fail in.
+  if (itemsError || !itemRows?.length) return null;
+
+  const storedBasket = basketFingerprint(
+    (itemRows as { product_id: string | null; quantity: number; unit_price_cents: number; selected_options: unknown }[]).map(
+      (row) => ({
+        productId: String(row.product_id ?? ""),
+        selectedOptions: snapshotSelections(row.selected_options),
+        quantity: Number(row.quantity ?? 0),
+        unitPriceCents: Number(row.unit_price_cents ?? 0),
+      })
+    )
+  );
+
+  if (storedBasket !== basketFingerprint(input.lines)) return null;
+
+  try {
+    const session = await stripeClient().checkout.sessions.retrieve(order.stripe_checkout_session_id);
+    if (session.status === "open" && session.amount_total === input.totalCents && session.url) {
+      return { url: session.url, orderId: order.id };
+    }
+  } catch {
+    // A session Stripe no longer knows about must not block a fresh checkout.
+  }
+  return null;
 }

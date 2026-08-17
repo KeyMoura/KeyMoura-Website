@@ -21,6 +21,27 @@ export function snapshotPurchasedOptions(line: Pick<PricedLine, "optionLabels">)
   }]));
 }
 
+/**
+ * The selection map a snapshot was built from.
+ *
+ * The inverse of `snapshotPurchasedOptions`, and the only reason it exists is
+ * to compare a stored order line against a live cart line — a stored line keeps
+ * the labels and prices of the moment it was written, so its raw selections
+ * have to be recovered before the two can be matched. Not for display: a
+ * historical page reads the snapshot itself, never a value re-resolved from it.
+ */
+export function snapshotSelections(snapshot: unknown): Record<string, string> {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return {};
+  const selections: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(snapshot as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const entry = raw as Partial<PurchasedOptionSnapshot>;
+    const value = typeof entry.value === "string" ? entry.value : entry.value_name;
+    if (typeof value === "string") selections[key] = value;
+  }
+  return selections;
+}
+
 export function purchasedOptions(snapshot: unknown): PurchasedOptionSnapshot[] {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return [];
   return Object.values(snapshot).flatMap((raw) => {

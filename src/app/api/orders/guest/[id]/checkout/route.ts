@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { routeServiceClient } from "@/lib/api/routeAuth";
 import { stripeClient } from "@/lib/stripe";
-import { checkoutAmountCents, netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
+import { chargeableAmountCents, netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
 import { captureCommerceException } from "@/lib/monitoring";
 import { authorizeGuestOrderWrite, guestOrderTokenFromRequest } from "@/lib/commerce/guestOrderAccess";
 import { consumeRateLimit, rateLimitMessage, RATE_LIMITS } from "@/lib/commerce/rateLimit";
@@ -63,7 +63,9 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   }
 
   const remaining = remainingBalanceCents(order);
-  const amountDue = checkoutAmountCents(order);
+  // The same cap the account route applies, for the same reason: an amount the
+  // ledger cannot bank becomes a charge the webhook can only refuse.
+  const amountDue = chargeableAmountCents(order);
   if (amountDue < 50) return NextResponse.json({ error: "No payable balance remains." }, { status: 409 });
 
   const stripe = stripeClient();
@@ -114,9 +116,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     { idempotencyKey: `guest-checkout-${order.id}-${amountDue}-${collectedBeforeCheckout}` }
   );
 
+  // The payment state is reset only on an order that has collected nothing —
+  // the same rule, and the same reasoning, as the account route.
   const update = await routeServiceClient
     .from("orders")
-    .update({ stripe_checkout_session_id: session.id, payment_status: "unpaid", status: "awaiting_payment" })
+    .update({
+      stripe_checkout_session_id: session.id,
+      ...(collectedBeforeCheckout > 0 ? {} : { payment_status: "unpaid", status: "awaiting_payment" }),
+    })
     .eq("id", order.id)
     .is("customer_id", null);
 
