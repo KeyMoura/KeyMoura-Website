@@ -529,17 +529,79 @@ const header = read("src/components/SiteHeader.tsx");
 const underlineRule =
   css.match(/\.site-header-shell \.site-nav-primary-link::after \{[\s\S]*?\}/)?.[0] ?? "";
 
-test("the underline is thicker than it was", () => {
-  assert.match(underlineRule, /height: 3px/);
-  assert.doesNotMatch(underlineRule, /height: 2px/);
+test("the underline is thicker than it was, and sits lower", () => {
+  // 2px was a hairline at 14px text; 3px still read as one against the navbar
+  // and sat close enough to the descenders to look attached to them.
+  assert.match(underlineRule, /height: 4px/);
+  assert.doesNotMatch(underlineRule, /height: [23]px/);
+  assert.match(underlineRule, /bottom: 0\.125rem/, "lower than the 0.3rem it was");
 });
 
-test("the underline is a centred proportion of the control, not a fixed inset", () => {
-  // A fixed inset made the rule ~80% of the control under `About` and ~91%
-  // under `Custom Projects`; a percentage inset makes it one ratio everywhere.
-  assert.match(underlineRule, /inset-inline: 14%/);
+test("the underline is the label's width, not a fraction of the control's", () => {
+  /*
+   * Two models have been tried here and both were proportional to the wrong
+   * thing. A fixed `0.375rem` inset was replaced by `14%` — 72% of the control
+   * — because a fixed inset makes the rule a different *proportion* of every
+   * item. It does, and that is not the thing to hold constant: a control is the
+   * label plus a constant 20px of padding, so a constant percentage of it
+   * shrinks relative to the word as the word grows. 72% of About's ~60px
+   * control clears its 40px word; 72% of Custom Projects' ~128px control is
+   * 16px short of its word at each end.
+   *
+   * What is constant now is the relationship to the word: the padding box grown
+   * by a named overhang, per side. About and Gallery sit on the ~57px crossover
+   * and barely move; Products, Custom Projects and More are past it and get
+   * wider, which is the correction that was asked for.
+   */
+  assert.doesNotMatch(underlineRule, /inset-inline: 14%/);
   assert.doesNotMatch(underlineRule, /inset-inline: 0\.375rem/);
+  assert.match(underlineRule, /--nav-link-pad\) - var\(--nav-underline-overhang\)/);
+  assert.match(underlineRule, /--nav-link-pad-end\) - var\(--nav-underline-overhang\)/);
   assert.match(underlineRule, /transform-origin: center/);
+
+  // The padding the rule is derived from is the padding the link is drawn with,
+  // declared once. Two independent numbers is how the geometry drifted before.
+  const linkRule = css.match(/\.site-header-shell \.site-nav-primary-link \{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(linkRule, /--nav-link-pad: 0\.625rem/);
+  assert.match(linkRule, /--nav-underline-overhang: 0\.125rem/);
+  assert.match(linkRule, /padding-inline: var\(--nav-link-pad\) var\(--nav-link-pad-end\)/);
+});
+
+test("the three long labels get a wider rule than the percentage gave them", () => {
+  /*
+   * Arithmetic rather than a rendered measurement, because the rule is now a
+   * pure function of the control's width and there is nothing to lay out: the
+   * new width is `control - 2 * (pad - overhang)`, the old one was
+   * `0.72 * control`. The crossover is 16 / 0.28 ≈ 57px, so this asserts the
+   * direction of the change for each label the owner named, from its own
+   * approximate control width at 14px/500.
+   */
+  const PAD = 10;
+  const OVERHANG = 2;
+  const newWidth = (control: number) => control - 2 * (PAD - OVERHANG);
+  const oldWidth = (control: number) => 0.72 * control;
+
+  // Label width + 20px of inline padding, rounded from the rendered bar.
+  const controls: Record<string, number> = {
+    About: 60,
+    Gallery: 68,
+    More: 72,
+    Products: 86,
+    "Custom Projects": 128,
+  };
+
+  for (const label of ["Products", "Custom Projects", "More"]) {
+    assert.ok(
+      newWidth(controls[label]) > oldWidth(controls[label]),
+      `${label} must get a wider rule than the percentage gave it`
+    );
+  }
+
+  // About and Gallery are on the crossover and must stay where they were.
+  for (const label of ["About", "Gallery"]) {
+    const drift = Math.abs(newWidth(controls[label]) - oldWidth(controls[label]));
+    assert.ok(drift <= 4, `${label} must keep roughly its current width (moved ${drift.toFixed(1)}px)`);
+  }
 });
 
 test("active and hover draw the same shape, differing only in weight", () => {

@@ -71,7 +71,7 @@ test("Appearance is sectioned by owner task, and every section resets only itsel
    * Asserting the declaration is therefore stricter than the old string match
    * against the page, not looser.
    */
-  for (const id of ["brand", "navigation", "announcement", "homepage", "colours", "components", "business", "templates"]) {
+  for (const id of ["brand", "navigation", "announcement", "homepage", "colors", "components", "business", "templates"]) {
     const section = APPEARANCE_SECTIONS.find((entry) => entry.id === id);
     assert.ok(section, `${id} must be a section`);
     assert.ok(section.label && section.description, `${id} needs a heading and a description`);
@@ -821,21 +821,50 @@ test("filter chips are still their own thing", () => {
 // PART K — icons
 // ===========================================================================
 
-test("/projects uses the same search icon as the header", () => {
-  const projects = read("src/app/projects/ProjectsIndexClient.tsx");
-  assert.match(projects, /faMagnifyingGlass/);
-  assert.match(projects, /@fortawesome\/free-solid-svg-icons/);
+test("every chip-search field draws the one canonical search icon", () => {
   /*
-   * It was the 🔍 emoji, which is not an icon: it renders as whatever glyph the
-   * operating system ships — full colour on macOS and Windows, a different angle
-   * on Android — at a size and baseline the surrounding text controls rather
-   * than the design.
+   * It was the 🔍 emoji, which is not an icon: it renders as whatever glyph
+   * the operating system ships — full colour on macOS and Windows, a
+   * different angle on Android — at a size and baseline the surrounding text
+   * controls rather than the design.
+   *
+   * That was corrected on `/projects` alone, in that one file. The nested
+   * category route — `/projects/category/cnc-machining` — is a *copy* of
+   * the same control and kept the emoji, so clicking into a category from the
+   * page that had just been fixed changed the icon under the customer.
+   * `/garage` and the two community pages are copies of it as well.
+   *
+   * So the assertion is no longer "this file imports the right glyph". It is
+   * that every surface drawing a magnifier inside a field draws the same
+   * component, and that the emoji is gone from all of them — which is the
+   * property that was actually false, and which a single-file check could not
+   * have caught.
    */
-  // Comments stripped: the component explains what it replaced and names the
-  // character while doing so, which is exactly what the comment is for.
-  assert.doesNotMatch(code(projects), /\u{1F50D}|\u{1F50E}/u, "the emoji must not come back");
+  const chipSearchSurfaces = [
+    "src/app/projects/ProjectsIndexClient.tsx",
+    "src/app/projects/category/[slug]/page.tsx",
+    "src/app/garage/page.tsx",
+    "src/app/community/page.tsx",
+    "src/app/community/[slug]/page.tsx",
+  ];
 
-  // One source for the glyph across every search field.
+  for (const path of chipSearchSurfaces) {
+    const source = read(path);
+    assert.match(source, /<SearchFieldIcon/, `${path} should draw the shared icon`);
+    assert.match(source, /@\/components\/ui\/SearchFieldIcon/, `${path} should import it`);
+    // Comments stripped: the shared component explains what it replaced and
+    // names the character while doing so, which is what the comment is for.
+    assert.doesNotMatch(code(source), /\u{1F50D}|\u{1F50E}/u, `${path} must not bring the emoji back`);
+  }
+
+  // The component is one definition over Font Awesome, not a fifth copy.
+  const icon = read("src/components/ui/SearchFieldIcon.tsx");
+  assert.match(icon, /faMagnifyingGlass/);
+  assert.match(icon, /@fortawesome\/free-solid-svg-icons/);
+  assert.match(icon, /aria-hidden="true"/, "a labelled field must not announce its icon too");
+
+  // And the fields whose icon is positioned by their own stylesheet resolve the
+  // same glyph from the same package.
   for (const path of [
     "src/components/nav/StorefrontSearch.tsx",
     "src/components/catalog/CommerceSearch.tsx",

@@ -52,15 +52,41 @@ const withText = renderToStaticMarkup(
 // The control
 // ---------------------------------------------------------------------------
 
-test("it is a search landmark with a name of its own", () => {
+test("it is a search landmark named for the narrowing it does", () => {
   assert.match(markup, /role="search"/);
-  assert.match(markup, /aria-label="Search products"/);
+  /*
+   * "Filter products", not "Search products".
+   *
+   * The navbar's global search sits two inches above this on every page and
+   * writes the identical `?q=` parameter, so a screen reader met two `search`
+   * landmarks with the same name on one page and a customer met a field that
+   * looked like it might search something else. The control was kept — it
+   * narrows the list already on screen, per keystroke, which the navbar (which
+   * navigates) cannot do — and renamed for what it actually is.
+   */
+  assert.match(markup, /aria-label="Filter products"/);
+  assert.doesNotMatch(markup, /aria-label="Search products"/, "that name belongs to the navbar");
   // A form, so Enter submits without a keydown handler pretending to be one.
   assert.match(markup, /^<form/);
 });
 
+test("inside a department it says which one it is filtering", () => {
+  const scoped = renderToStaticMarkup(
+    createElement(CommerceSearch, {
+      value: "",
+      onChange: () => {},
+      onSubmit: () => {},
+      onClear: () => {},
+      inputId: "test-search",
+      scopeName: "Interior",
+    })
+  );
+  assert.match(scoped, /aria-label="Filter Interior"/);
+  assert.match(scoped, /placeholder="Filter Interior…"/);
+});
+
 test("the input is labelled, not merely placeheld", () => {
-  assert.match(markup, /<label class="sr-only" for="test-search">Search products<\/label>/);
+  assert.match(markup, /<label class="sr-only" for="test-search">Filter products<\/label>/);
   assert.match(markup, /id="test-search"/);
   assert.match(markup, /type="search"/);
   // The id is passed in rather than hard-coded, so two instances on one page
@@ -71,7 +97,9 @@ test("the input is labelled, not merely placeheld", () => {
 
 test("there is a real submit button", () => {
   assert.match(markup, /<button type="submit"/);
-  assert.match(markup, /Search<\/span>/);
+  assert.match(markup, /Filter<\/span>/);
+  // The word is hidden below 420px, so the name has to survive on the button.
+  assert.match(markup, /<button type="submit"[^>]*aria-label="Filter products"/);
   // And it stays a labelled control at narrow widths rather than disappearing:
   // the word is swapped for an icon, and the word survives as its name.
   assert.match(globalsCss, /\.commerce-search-submit-icon \{ display: none;/);
@@ -81,7 +109,7 @@ test("there is a real submit button", () => {
 
 test("clear appears only when there is something to clear, and is named", () => {
   assert.ok(!markup.includes("commerce-search-clear"), "an empty box has nothing to clear");
-  assert.match(withText, /class="commerce-search-clear" aria-label="Clear search"/);
+  assert.match(withText, /class="commerce-search-clear" aria-label="Clear filter"/);
   // The browser's own cancel cross is suppressed: it is unlabelled, invisible
   // to a screen reader, and sits exactly where ours goes.
   assert.match(globalsCss, /\.commerce-search-input::-webkit-search-cancel-button \{ -webkit-appearance: none; appearance: none; \}/);

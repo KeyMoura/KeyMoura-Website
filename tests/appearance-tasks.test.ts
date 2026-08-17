@@ -187,7 +187,9 @@ test("no task speaks in tokens, variables or inheritance jargon", () => {
 });
 
 test("field roles are the words a person uses about a thing", () => {
-  const allowed = new Set(["Background", "Text", "Border", "Colour", "Fade"]);
+  // "Color", not "Colour": these strings are rendered as the field label in
+  // `ColorControls`, so they are owner-facing wording, not an internal enum.
+  const allowed = new Set(["Background", "Text", "Border", "Color", "Fade"]);
   for (const task of APPEARANCE_TASKS) {
     for (const field of task.fields) {
       assert.ok(allowed.has(field.role), `${task.id}: ${field.role}`);
@@ -215,7 +217,8 @@ test("inheritance is offered as following the brand accent, never as “unset”
    * no longer offers to make it follow the accent.
    */
   const controls = readFileSync("src/app/staff/appearance/ColorControls.tsx", "utf8");
-  assert.ok(controls.includes("Give it its own colour"), "opting out must be offered in words");
+  // Pass 6 spelled the owner-facing wording American across the whole editor.
+  assert.ok(controls.includes("Give it its own color"), "opting out must be offered in words");
   assert.ok(controls.includes("Follow "), "opting back in must name what it follows");
   assert.match(controls, /setting\.optional\.inheritsFrom/, "the wording comes from the map, never a hard-coded accent");
   for (const source of [page, controls]) {
