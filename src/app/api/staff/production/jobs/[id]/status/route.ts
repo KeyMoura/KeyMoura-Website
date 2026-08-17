@@ -208,15 +208,54 @@ const CUSTOMER_VISIBLE_PRODUCTION: Partial<Record<ProductionStatus, { template: 
  * A test asserts those column names never appear in this file.
  */
 async function announceProductionStatus(job: JobRow, to: ProductionStatus, actorUserId: string) {
-  const spec = CUSTOMER_VISIBLE_PRODUCTION[to];
-  if (!spec || !job.order_id) return;
+  if (!job.order_id) return;
 
   const { data: order } = await routeServiceClient
     .from("orders")
-    .select("id,customer_id,guest_email,guest_name,product_name,order_number")
+    .select("id,customer_id,guest_email,guest_name,product_name,order_number,ready_to_fulfill_at")
     .eq("id", job.order_id)
     .maybeSingle();
-  if (!order?.customer_id) return;
+  if (!order) return;
+
+  /*
+   * The handoff, before anything to do with messages.
+   *
+   * Finishing the job is the moment the goods exist, and it is what the
+   * fulfillment queue sorts its backlog by. Both of the writes below used to
+   * sit behind `if (!order?.customer_id) return` — a guard about whether the
+   * *customer* has an account — so a completed guest order told nobody and
+   * carried no handoff stamp. Neither fact is about the customer.
+   *
+   * `.is(..., null)` makes the stamp first-write-wins: a job reopened and
+   * completed again keeps the original handoff time rather than looking newly
+   * arrived and jumping the queue.
+   */
+  if (to === "completed") {
+    if (!order.ready_to_fulfill_at) {
+      await routeServiceClient
+        .from("orders")
+        .update({ ready_to_fulfill_at: new Date().toISOString() })
+        .eq("id", order.id)
+        .is("ready_to_fulfill_at", null);
+    }
+
+    // Finished work is the fulfillment desk's cue, and it is a different reader
+    // from the machinist who just ticked the box. Keyed on the order, so the
+    // order separately reaching `ready` does not ring the bell twice.
+    await raiseOperationalAlert({
+      kind: "order.ready_to_fulfill",
+      subjectId: String(order.id),
+      actorUserId,
+      message: `${order.order_number || "An order"} has finished production and is ready to prepare.`,
+    });
+  }
+
+  const spec = CUSTOMER_VISIBLE_PRODUCTION[to];
+  if (!spec) return;
+  // Guest orders are messaged through `guest_email`; `sendLifecycleNotification`
+  // already chooses the channel, so the account check that used to be here only
+  // ever suppressed mail a guest was entitled to.
+  if (!order.customer_id && !order.guest_email) return;
 
   await sendLifecycleNotification({
     orderId: String(order.id),
@@ -227,17 +266,6 @@ async function announceProductionStatus(job: JobRow, to: ProductionStatus, actor
     title: spec.title,
     message: spec.message,
   });
-
-  // Finished work is the fulfillment desk's cue, and it is a different reader
-  // from the machinist who just ticked the box.
-  if (to === "completed") {
-    await raiseOperationalAlert({
-      kind: "order.ready_to_fulfill",
-      subjectId: String(order.id),
-      actorUserId,
-      message: `${order.order_number || "An order"} has finished production and is ready to prepare.`,
-    });
-  }
 }
 
 export const dynamic = "force-dynamic";

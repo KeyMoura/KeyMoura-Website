@@ -15,9 +15,39 @@ test("customer status projection hides sensitive and unknown workflow states", (
 
 test("shipping timeline uses authoritative event dates and omits pickup", () => {
   const stages = customerOrderProgress({ ...base, fulfillment_status: "shipped", shipped_at: "2026-08-15T12:00:00Z" });
-  assert.deepEqual(stages.map((stage) => stage.label), ["Order received", "Payment confirmed", "In production", "Final checks", "Shipped"]);
+  // "Ready to ship", not "Final checks": the stage is named for what the
+  // customer is waiting on, and by this point the part exists and the only
+  // question is when it leaves. "Final checks" described the internal
+  // `final_review` state, which is not what this stage tracks.
+  assert.deepEqual(stages.map((stage) => stage.label), ["Order received", "Payment confirmed", "In production", "Ready to ship", "Shipped"]);
   assert.equal(stages.at(-1)?.at, "2026-08-15T12:00:00Z");
   assert.ok(!stages.some((stage) => stage.label.includes("pickup")));
+});
+
+test("production is only complete once the work is, not when payment clears", () => {
+  /*
+   * The defect this pins: `record_stripe_order_payment` moves every paid order
+   * to `in_progress`, which means production has *started*. Counting that as a
+   * finished stage ticked "In production" off at checkout, so a customer whose
+   * part had not been touched saw it complete with "Ready to ship" current.
+   */
+  const justPaid = customerOrderProgress({ ...base, status: "in_progress" });
+  assert.equal(justPaid.find((stage) => stage.label === "In production")?.state, "current");
+
+  // The part exists once it is out for review or ready, and only then.
+  for (const status of ["final_review", "ready", "completed"]) {
+    const later = customerOrderProgress({ ...base, status });
+    assert.equal(
+      later.find((stage) => stage.label === "In production")?.state,
+      "complete",
+      `production should read complete at ${status}`
+    );
+  }
+
+  // A handed-over order counts too: an order can be packed and posted without
+  // a production job ever having existed.
+  const posted = customerOrderProgress({ ...base, status: "in_progress", fulfillment_status: "shipped" });
+  assert.equal(posted.find((stage) => stage.label === "In production")?.state, "complete");
 });
 
 test("pickup timeline omits shipping and marks collection as current", () => {

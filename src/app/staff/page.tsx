@@ -79,7 +79,7 @@ type Profile = { id: string; username: string | null; display_name: string | nul
 type Activity = { id: number; order_id: string; to_status: string; note: string | null; created_at: string };
 
 const ORDER_SELECT =
-  "id,order_number,customer_id,product_name,status,quantity,agreed_price_cents,amount_paid_cents," +
+  "id,order_number,customer_id,product_name,status,order_kind,quantity,agreed_price_cents,amount_paid_cents," +
   "amount_refunded_cents,payment_status,paid_at,target_date,created_at,updated_at,shipped_at,delivered_at," +
   "fulfillment_status,fulfillment_method,cancellation_status,return_status,shipping_carrier,tracking_number,ready_at";
 

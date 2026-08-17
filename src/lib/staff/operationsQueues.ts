@@ -24,6 +24,21 @@ export type QueueOrder = {
   customer_id: string;
   product_name: string;
   status: string;
+  /**
+   * `custom_request` or `direct_purchase`. Read by the production gate: a
+   * bespoke order is always made before it can be sent, a catalogue purchase
+   * of stock generally is not.
+   */
+  order_kind?: string | null;
+  /**
+   * The furthest-along linked production job, when the caller has it.
+   *
+   * Optional for the same reason as `paid_at`: `staff_order_queue` carries it
+   * and the fulfillment queue — which reads `orders` through RLS, a table with
+   * no such column — does not. Absent, the gate falls back to `order_kind` and
+   * `status`, which every caller has.
+   */
+  production_status?: string | null;
   quantity: number;
   agreed_price_cents: number | null;
   amount_paid_cents: number;
@@ -62,7 +77,67 @@ export function outstandingBalanceCents(order: {
   return Math.max(0, (order.agreed_price_cents || 0) - net);
 }
 
+// ---------------------------------------------------------------------------
+// The production gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Production job states in which the goods physically exist.
+ *
+ * `ready_to_ship` and `ready_for_pickup` are production's own hand-off states —
+ * the job is off the machine — so they count as made, not merely as finished
+ * paperwork.
+ */
+export const PRODUCTION_DONE_STATUSES: readonly string[] = [
+  "completed",
+  "ready_to_ship",
+  "ready_for_pickup",
+];
+
+/**
+ * Order states in which production has finished on the *order* record.
+ *
+ * `final_review` is deliberately absent. The part exists by then, but the
+ * customer has not signed it off, and packing something that may still be
+ * revised is how a rejected part ends up in the post.
+ */
+export const ORDER_PRODUCTION_COMPLETE: readonly string[] = ["ready", "completed"];
+
+/**
+ * Whether anything has to be *made* before this order can be sent.
+ *
+ * Deliberately narrow. Paying for a catalogue product that is in stock does not
+ * start a production job, and gating those on a status nobody sets would strand
+ * every direct purchase in a queue waiting for work that will never happen —
+ * `record_stripe_order_payment` moves *every* paid order to `in_progress`,
+ * including a plain stock purchase, so `status` alone cannot answer this.
+ *
+ * Two things make an order need production: it is bespoke, or somebody opened a
+ * job for it.
+ */
+export function requiresProduction(order: Pick<QueueOrder, "order_kind" | "production_status">): boolean {
+  if (String(order.order_kind || "") === "custom_request") return true;
+  return Boolean(String(order.production_status || "").trim());
+}
+
+/**
+ * Whether the goods are made and may be handed to fulfillment.
+ *
+ * An order needing no production is complete by definition — there was nothing
+ * to wait for. Where a job exists it is the authority, because it is the record
+ * of the actual work; where one does not, the order's own status is.
+ */
+export function productionComplete(
+  order: Pick<QueueOrder, "status" | "order_kind" | "production_status">
+): boolean {
+  if (!requiresProduction(order)) return true;
+  const job = String(order.production_status || "").trim();
+  if (job) return PRODUCTION_DONE_STATUSES.includes(job);
+  return ORDER_PRODUCTION_COMPLETE.includes(String(order.status || ""));
+}
+
 export const FULFILLMENT_BUCKETS = [
+  "awaiting_production",
   "to_prepare",
   "in_progress",
   "ready",
@@ -76,9 +151,13 @@ export type FulfillmentBucket = (typeof FULFILLMENT_BUCKETS)[number];
 export const FULFILLMENT_BUCKET_COPY: Readonly<
   Record<FulfillmentBucket, { label: string; description: string }>
 > = {
+  awaiting_production: {
+    label: "In production",
+    description: "Paid, but still being made. Not fulfillment work yet — it arrives here when production finishes.",
+  },
   to_prepare: {
     label: "To prepare",
-    description: "Paid and not started. These are the orders to pick and pack next.",
+    description: "Made, paid and not started. These are the orders to pick and pack next.",
   },
   in_progress: {
     label: "Being prepared",
@@ -132,12 +211,37 @@ export function fulfillmentBucket(order: QueueOrder): FulfillmentBucket {
   // the balance matters.
   if (outstandingBalanceCents(order) > 0) return "awaiting_payment";
 
+  // Somebody has physically started packing this. That is a deliberate act and
+  // it is reported as what it is, even if the gate below would have said the
+  // work was early — hiding started work is worse than showing it.
   if (state === "processing") return "in_progress";
+
+  /*
+   * The production gate.
+   *
+   * Without this, `unfulfilled` + paid fell straight through to `to_prepare`,
+   * so an order landed on the packing bench the instant its payment cleared —
+   * `record_stripe_order_payment` sets `status = 'in_progress'` on every paid
+   * order, which is to say "production started", and the fulfillment queue was
+   * reading that moment as "ready to pack". Production finishing is what hands
+   * an order to fulfillment, and until it does this is somebody else's work.
+   */
+  if (!productionComplete(order)) return "awaiting_production";
+
   return "to_prepare";
 }
 
-/** Buckets that represent live work, in the order a shop actually works them. */
+/**
+ * Buckets that represent live work, in the order a shop actually works them.
+ *
+ * `awaiting_production` leads because it is upstream of everything else: it is
+ * what is coming, not what is late. It stays in this list rather than being
+ * hidden so that every open order is still counted exactly once and the page's
+ * claim that the counts add up survives — but `fulfillmentNextAction` names it
+ * as somebody else's work, so it reads as a pipeline rather than a backlog.
+ */
 export const ACTIVE_FULFILLMENT_BUCKETS: readonly FulfillmentBucket[] = [
+  "awaiting_production",
   "to_prepare",
   "in_progress",
   "ready",
@@ -145,10 +249,18 @@ export const ACTIVE_FULFILLMENT_BUCKETS: readonly FulfillmentBucket[] = [
   "awaiting_payment",
 ];
 
-export function groupByFulfillmentBucket(orders: readonly QueueOrder[]): Record<FulfillmentBucket, QueueOrder[]> {
-  const grouped = Object.fromEntries(FULFILLMENT_BUCKETS.map((bucket) => [bucket, [] as QueueOrder[]])) as Record<
+/**
+ * Generic over the row, so a caller that selected more than `QueueOrder`
+ * requires gets its own type back rather than the narrowed one. The fulfillment
+ * queue reads an address and a handoff stamp it needs on the far side of this
+ * call; widening them away here would have forced a cast at every use.
+ */
+export function groupByFulfillmentBucket<T extends QueueOrder>(
+  orders: readonly T[]
+): Record<FulfillmentBucket, T[]> {
+  const grouped = Object.fromEntries(FULFILLMENT_BUCKETS.map((bucket) => [bucket, [] as T[]])) as Record<
     FulfillmentBucket,
-    QueueOrder[]
+    T[]
   >;
   for (const order of orders) grouped[fulfillmentBucket(order)].push(order);
   return grouped;
@@ -174,6 +286,8 @@ export function fulfillmentNextAction(order: QueueOrder): string {
   switch (fulfillmentBucket(order)) {
     case "awaiting_payment":
       return "Collect the balance before fulfilling";
+    case "awaiting_production":
+      return "Waiting on production to finish";
     case "to_prepare":
       return "Start preparing this order";
     case "in_progress":

@@ -465,7 +465,12 @@ test("the fulfillment queue stays a queue and never becomes a second order edito
   // Age is on the row: five orders "to prepare" is normal, one of them being
   // nine days old is not, and a queue without age cannot say so.
   assert.match(queue, /function ageLabel/);
-  assert.match(queue, /in this state/);
+  // "waiting", not "in this state": age is now measured from the production
+  // handoff rather than from the last edit, so it is how long the order has
+  // been the fulfillment desk's problem — not how long a column has held a
+  // value. `readySince` is what the row and the default sort both read.
+  assert.match(queue, /waiting/);
+  assert.match(queue, /function readySince/);
 });
 
 test("the reassuring empty state requires every source to have succeeded", () => {

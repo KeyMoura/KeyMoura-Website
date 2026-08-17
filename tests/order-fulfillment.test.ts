@@ -74,9 +74,19 @@ test("staff and customer order pages expose the fulfillment workflow", () => {
   assert.match(panel, /action: "transition"/);
   assert.match(panel, /data\.transitions\.map/);
 
-  // Customer: a parcel is followable, and the section is driven by the state
-  // field rather than by whether a tracking number happens to exist.
-  assert.match(customer, /<OrderFulfillmentStatus/);
+  /*
+   * Customer: a parcel is followable, and the section is driven by the state
+   * field rather than by whether a tracking number happens to exist.
+   *
+   * Asserted through the composition rather than against the page directly.
+   * Order Detail 2.0 moved the customer surface behind `CustomerOrderOverview`,
+   * which is what renders `OrderFulfillmentStatus`; this test kept looking for
+   * the mount on the page and had been failing — and therefore guaranteeing
+   * nothing about the customer's view of a shipment — ever since.
+   */
+  const overview = read("src/components/commerce/CustomerOrderOverview.tsx");
+  assert.match(customer, /<CustomerOrderOverview/);
+  assert.match(overview, /<OrderFulfillmentStatus/);
   assert.match(status, /Track your parcel/);
   assert.match(status, /order\.tracking_url/);
   assert.match(status, /order\.fulfillment_status/);

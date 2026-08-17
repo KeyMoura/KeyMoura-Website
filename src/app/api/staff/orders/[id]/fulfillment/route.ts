@@ -24,10 +24,12 @@ import {
 import {
   buildTrackingUrl,
   customerTrackingUrl,
+  isDeliverableStoredAddress,
   isSafeTrackingUrl,
   isValidTrackingNumber,
   normalizeTrackingNumber,
 } from "@/lib/commerce/commerceSettings";
+import { productionComplete } from "@/lib/staff/operationsQueues";
 import type { CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 
 /**
@@ -44,7 +46,7 @@ import type { CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 export const runtime = "nodejs";
 
 const ORDER_COLUMNS =
-  "id,order_number,customer_id,guest_email,guest_name,product_name,status,payment_status,fulfillment_status,fulfillment_method," +
+  "id,order_number,customer_id,guest_email,guest_name,product_name,status,order_kind,payment_status,fulfillment_status,fulfillment_method," +
   "shipping_address,shipping_carrier,tracking_number,tracking_url,shipped_at,delivered_at,ready_at," +
   "picked_up_at,ready_to_fulfill_at,pickup_confirmed_at,fulfillment_notes,customer_shipment_note," +
   "pickup_location_snapshot,shipping_method_snapshot,shipping_cents,fulfillment_updated_at,amount_paid_cents," +
@@ -59,6 +61,7 @@ type OrderRow = {
   product_name: string;
   order_number: string | null;
   status: string;
+  order_kind: string | null;
   payment_status: string;
   agreed_price_cents: number | null;
   amount_paid_cents: number;
@@ -123,6 +126,50 @@ async function loadOrder(id: string): Promise<OrderRow | null> {
   return (data as unknown as OrderRow) ?? null;
 }
 
+/**
+ * The furthest-along production job on this order, or null when there is none.
+ *
+ * Read through the service client because `production_jobs` grants SELECT to
+ * `service_role` alone — the browser cannot see it at all, which is why the
+ * fulfillment queue gates on `order_kind` and `status` while this route, which
+ * *can* see the jobs, gates on the real thing.
+ *
+ * The ranking mirrors `deriveOrderLifecycle`: one finished job and one still
+ * running means the order is not made.
+ */
+const PRODUCTION_RANK = [
+  "planning",
+  "waiting_on_materials",
+  "scheduled",
+  "in_progress",
+  "rework_required",
+  "quality_check",
+  "ready_for_pickup",
+  "ready_to_ship",
+  "completed",
+] as const;
+
+async function loadProductionStatus(orderId: string): Promise<string | null> {
+  const { data, error } = await routeServiceClient
+    .from("production_jobs")
+    .select("status")
+    .eq("order_id", orderId);
+  if (error) {
+    logLifecycleFailure("load_production_status", error, { orderId });
+    return null;
+  }
+  const statuses = (data ?? []).map((row) => String((row as { status: string }).status));
+  if (!statuses.length) return null;
+  // The *least* advanced job decides, so an order with two jobs is only made
+  // when both are. Cancelled jobs are not in the ranking and are ignored rather
+  // than being treated as the blocker.
+  const ranked = statuses
+    .map((status) => PRODUCTION_RANK.indexOf(status as (typeof PRODUCTION_RANK)[number]))
+    .filter((index) => index >= 0);
+  if (!ranked.length) return statuses[0];
+  return PRODUCTION_RANK[Math.min(...ranked)];
+}
+
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const actor = await requirePermission(req, "fulfillment.view");
   if (!actor) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -136,6 +183,13 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
   const from = String(order.fulfillment_status || "unfulfilled");
 
   const balance = outstandingBalanceCents(order);
+  const productionStatus = await loadProductionStatus(order.id);
+  const made = productionComplete({
+    status: order.status,
+    order_kind: order.order_kind,
+    production_status: productionStatus,
+  });
+  const deliverable = method !== "shipping" || isDeliverableStoredAddress(order.shipping_address);
 
   const transitions = fulfillmentTransitionsFor(from, method).map((to) => ({
     to,
@@ -146,9 +200,16 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     requiresTracking: to === "shipped" && method === "shipping",
     // Answered here rather than recomputed in the browser, so the button the
     // page disables and the transition the route refuses are the same set.
-    blockedReason: RELEASES_GOODS.includes(to) && balance > 0
-      ? `$${(balance / 100).toFixed(2)} is still owed on this order.`
-      : null,
+    // The order matches POST's: money, then production, then destination.
+    blockedReason: !RELEASES_GOODS.includes(to)
+      ? null
+      : balance > 0
+        ? `$${(balance / 100).toFixed(2)} is still owed on this order.`
+        : !made
+          ? "This order is still being made. Finish production before it leaves the shop."
+          : to === "shipped" && !deliverable
+            ? "This order has no complete delivery address."
+            : null,
   }));
 
   return NextResponse.json({
@@ -175,6 +236,22 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       pickupLocationSnapshot: order.pickup_location_snapshot ?? null,
       shippingCents: Number(order.shipping_cents ?? 0),
       updatedAt: order.fulfillment_updated_at ?? null,
+      readyToFulfillAt: order.ready_to_fulfill_at ?? null,
+    },
+    /*
+     * The three things that stop an order leaving, answered once.
+     *
+     * The panel renders these as warnings and the POST handler refuses on the
+     * same facts, so a warning is never advisory-only and a silent block never
+     * happens. `production.status` is null when no job exists, which is not the
+     * same as "not made" — `complete` is the answer, and the status is context.
+     */
+    readiness: {
+      production: { complete: made, status: productionStatus },
+      // Only meaningful for a posted order; a collection has no destination.
+      destination: { required: method === "shipping", deliverable },
+      // Somebody has to be reachable to be told it is ready to collect.
+      contact: { reachable: Boolean(order.customer_id || order.guest_email) },
     },
     transitions,
     carriers: settings.shipping.trackingTemplates.map((t) => ({ carrier: t.carrier, label: t.label })),
@@ -241,12 +318,50 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         { status: 409 }
       );
     }
+
+    /*
+     * Nor does it leave before it has been made.
+     *
+     * The queue stopped *offering* unmade orders as fulfillment work, but a
+     * queue is a view: the transition itself has to refuse, or "ready for
+     * pickup" is one crafted request away on an order still on the machine.
+     * `processing` is deliberately outside this block — packing early is
+     * normal and harmless, and only the handover is consequential.
+     */
+    const productionStatus = await loadProductionStatus(order.id);
+    if (!productionComplete({ status: order.status, order_kind: order.order_kind, production_status: productionStatus })) {
+      return NextResponse.json(
+        {
+          error: "This order is still being made. Finish production before marking it out of the shop.",
+          productionStatus,
+        },
+        { status: 409 }
+      );
+    }
+
   }
 
-  // A parcel is not shipped without a way to find it. Refused before the state
-  // moves, so the order does not end up "shipped" with nothing to tell the
-  // customer.
+  /*
+   * What posting a parcel specifically requires: somewhere to send it, and a
+   * way to find it afterwards. Both are refused before the state moves, so the
+   * order cannot end up "shipped" with nothing to tell the customer.
+   *
+   * The destination is checked first because it is the more fundamental of the
+   * two — a tracking number for a parcel with no address is not progress. Only
+   * the posted handover is checked: a collection has no destination, and
+   * `delivered` is confirmed after the fact, where refusing would strand an
+   * order in `shipped` forever.
+   */
   if (to === "shipped" && method === "shipping") {
+    if (!isDeliverableStoredAddress(order.shipping_address)) {
+      return NextResponse.json(
+        {
+          error:
+            "This order has no complete delivery address, so it cannot be marked shipped. Add one on the order first.",
+        },
+        { status: 409 }
+      );
+    }
     const carrier = String(body.carrier ?? order.shipping_carrier ?? "").trim();
     const number = normalizeTrackingNumber(body.trackingNumber ?? order.tracking_number);
     if (!carrier || !number) {
@@ -321,6 +436,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   }
 
   await notifyCustomer({ order, to, method, settings, actorUserId: actor.userId, customerNote });
+  await signalShopFloor({ order, to, actorUserId: actor.userId });
 
   await logLifecycleAudit({
     eventType: "staff.order.fulfillment_changed",
@@ -565,24 +681,33 @@ async function notifyCustomer(input: {
     },
   });
 
-  /**
-   * Two states are also a cue for somebody else in the shop.
-   *
-   * `ready_to_fulfill` is the packing bench's signal and `ready_for_pickup` is
-   * the counter's; both are routed to `fulfillment.view` rather than to
-   * whoever moved the state, and both are keyed on the order and the state so a
-   * repeat is silent. Nothing else in the graph earns an alert — announcing
-   * "processing" to the people who just pressed Processing is noise.
-   */
-  if (input.to === "ready_to_fulfill" || input.to === "ready_for_pickup") {
-    await raiseOperationalAlert({
-      kind: input.to === "ready_to_fulfill" ? "order.ready_to_fulfill" : "order.ready_for_pickup",
-      subjectId: input.order.id,
-      actorUserId: input.actorUserId,
-      message:
-        input.to === "ready_to_fulfill"
-          ? `${input.order.order_number || "An order"} is ready to pack.`
-          : `${input.order.order_number || "An order"} is ready for the customer to collect.`,
-    });
-  }
+}
+
+/**
+ * The cue for somebody else in the shop.
+ *
+ * **This used to live at the foot of `notifyCustomer` and never ran.** That
+ * function returns early when the state has no customer email, and
+ * `ready_to_fulfill` — the packing bench's whole reason to look up — is
+ * precisely a state with no customer email, so the bench was never told. The
+ * pickup alert did fire, but only while customer fulfillment emails were
+ * switched on: an internal signal was inheriting a customer's mail preference.
+ *
+ * Separating them is the fix. A staff alert is an operational fact about the
+ * shop, not a message to the customer, and the two are now unable to silence
+ * each other. Both are keyed on the order and the state, so a repeat is silent,
+ * and nothing else in the graph earns one — announcing "processing" to the
+ * people who just pressed Processing is noise.
+ */
+async function signalShopFloor(input: { order: OrderRow; to: FulfillmentState; actorUserId: string }) {
+  if (input.to !== "ready_to_fulfill" && input.to !== "ready_for_pickup") return;
+  await raiseOperationalAlert({
+    kind: input.to === "ready_to_fulfill" ? "order.ready_to_fulfill" : "order.ready_for_pickup",
+    subjectId: input.order.id,
+    actorUserId: input.actorUserId,
+    message:
+      input.to === "ready_to_fulfill"
+        ? `${input.order.order_number || "An order"} is ready to pack.`
+        : `${input.order.order_number || "An order"} is ready for the customer to collect.`,
+  });
 }

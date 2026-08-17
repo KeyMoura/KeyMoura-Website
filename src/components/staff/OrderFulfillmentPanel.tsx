@@ -70,6 +70,12 @@ type FulfillmentPayload = {
     pickupLocationSnapshot: Record<string, unknown> | null;
     shippingCents: number;
     updatedAt: string | null;
+    readyToFulfillAt: string | null;
+  };
+  readiness: {
+    production: { complete: boolean; status: string | null };
+    destination: { required: boolean; deliverable: boolean };
+    contact: { reachable: boolean };
   };
   transitions: Transition[];
   carriers: { carrier: string; label: string }[];
@@ -188,6 +194,38 @@ export function OrderFulfillmentPanel({
   const hasShipped = Boolean(order.shippedAt);
   const addressLines = formatStoredAddressLines(order.shippingAddress);
   const pickup = coercePickupSnapshot(order.pickupLocationSnapshot);
+  const readiness = data.readiness;
+
+  /*
+   * What is stopping this order leaving, said before the buttons rather than
+   * only on a disabled tooltip.
+   *
+   * Each of these is enforced by the route as well; this is the explanation,
+   * not the control. Ordered the way the route checks them, so the first
+   * warning is the first thing to fix.
+   */
+  const blockers = [
+    !readiness.production.complete
+      ? {
+          key: "production",
+          text: readiness.production.status
+            ? `Still in production — the linked job is “${readiness.production.status.replaceAll("_", " ")}”. It cannot leave the shop until production finishes.`
+            : "Still in production. It cannot leave the shop until production finishes.",
+        }
+      : null,
+    readiness.destination.required && !readiness.destination.deliverable
+      ? {
+          key: "destination",
+          text: "No complete delivery address on this order, so it cannot be marked shipped. Add one before packing it.",
+        }
+      : null,
+    !readiness.contact.reachable
+      ? {
+          key: "contact",
+          text: "No email address on this order, so the customer cannot be told it is ready. Collect one before marking it ready.",
+        }
+      : null,
+  ].filter(Boolean) as { key: string; text: string }[];
 
   async function post(body: Record<string, unknown>): Promise<ActionResult> {
     setError("");
@@ -259,6 +297,12 @@ export function OrderFulfillmentPanel({
         </Notice>
       ) : null}
 
+      {blockers.map((blocker) => (
+        <Notice key={blocker.key} tone="warning" className="mt-4">
+          {blocker.text}
+        </Notice>
+      ))}
+
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-zinc-800 bg-black/25 p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">
@@ -310,6 +354,9 @@ export function OrderFulfillmentPanel({
           <p className="text-xs font-semibold uppercase tracking-wider text-brand-textMuted">Timeline</p>
           <dl className="mt-2 grid gap-2 text-sm">
             {[
+              // The production handoff, which is when this became the
+              // fulfillment desk's problem and what the queue ages rows by.
+              ["Handed over by production", order.readyToFulfillAt],
               ["Ready", order.readyAt],
               ["Shipped", order.shippedAt],
               ["Collected", order.pickedUpAt],
@@ -322,7 +369,7 @@ export function OrderFulfillmentPanel({
                   <dd>{new Date(String(value)).toLocaleString()}</dd>
                 </div>
               ))}
-            {!order.readyAt && !order.shippedAt && !order.deliveredAt && !order.pickedUpAt ? (
+            {!order.readyToFulfillAt && !order.readyAt && !order.shippedAt && !order.deliveredAt && !order.pickedUpAt ? (
               <p className="text-brand-textMuted">Nothing has happened yet.</p>
             ) : null}
           </dl>

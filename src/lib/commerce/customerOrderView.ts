@@ -52,8 +52,22 @@ export function customerOrderProgress(order: ProgressOrder): CustomerProgressSta
     : [
         { key: "received", label: "Order received", done: true, at: order.created_at },
         { key: "payment", label: "Payment confirmed", done: paid(order) },
-        { key: "production", label: isPickup && ["ready_for_pickup", "picked_up"].includes(fulfillment) ? "Production complete" : "In production", done: ["in_progress", "final_review", "ready", "completed"].includes(order.status) || ["ready_to_fulfill", "ready_for_pickup", "shipped", "delivered", "picked_up"].includes(fulfillment) },
-        ...(!isPickup ? [{ key: "checks", label: "Final checks", done: ["final_review", "ready", "completed"].includes(order.status) || ["ready_to_fulfill", "shipped", "delivered"].includes(fulfillment) }] : []),
+        /*
+         * Production is complete at `final_review` and later, and **not** at
+         * `in_progress`.
+         *
+         * `in_progress` is set by `record_stripe_order_payment` the moment a
+         * payment clears — it means production has *started*. Counting it as
+         * done ticked this stage off at checkout, so a customer whose part had
+         * not been touched saw "In production ✓" with "Ready to ship" as the
+         * current step. The fulfillment states below it stay in the test
+         * because an order can be handed over without a job ever existing.
+         */
+        { key: "production", label: isPickup && ["ready_for_pickup", "picked_up"].includes(fulfillment) ? "Production complete" : "In production", done: ["final_review", "ready", "completed"].includes(order.status) || ["ready_to_fulfill", "ready_for_pickup", "shipped", "delivered", "picked_up"].includes(fulfillment) },
+        // Named for what the customer is waiting on rather than for the
+        // internal review state: by here the part exists and the question is
+        // when it goes out.
+        ...(!isPickup ? [{ key: "checks", label: "Ready to ship", done: ["ready", "completed"].includes(order.status) || ["ready_to_fulfill", "shipped", "delivered"].includes(fulfillment) }] : []),
         ...(isPickup
           ? [
               { key: "pickup-ready", label: "Ready for pickup", done: ["ready_for_pickup", "picked_up"].includes(fulfillment), at: order.ready_at },

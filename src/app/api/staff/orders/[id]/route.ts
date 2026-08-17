@@ -3,6 +3,7 @@ import { requirePermission, routeServiceClient } from "@/lib/api/routeAuth";
 import { recordOrderAudit } from "@/lib/audit/orders";
 import { getCommerceEmailConfig, sendCommerceEmail, type CommerceEmailTemplateKey } from "@/lib/commerceEmail";
 import { notifyOrderUser } from "@/lib/orderNotifications";
+import { raiseOperationalAlert } from "@/lib/comms/operationalAlerts";
 import { netCollectedCents, remainingBalanceCents } from "@/lib/paymentMath";
 
 const allowedStatuses = new Set(["requested","needs_information","accepted","awaiting_payment","in_progress","customer_review","final_review","ready","completed","declined","cancelled"]);
@@ -165,6 +166,25 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     update.stripe_checkout_session_id = null;
   }
   /*
+   * Production finishing is what hands an order to fulfillment.
+   *
+   * `ready` is the point at which the goods exist and the fulfillment queue
+   * starts offering the order as work. Stamping `ready_to_fulfill_at` here is
+   * what gives that queue an age to sort by — before this, an order's "waiting
+   * since" fell back to `updated_at`, so editing a note sent it to the back of
+   * the line.
+   *
+   * The *fulfillment* status is deliberately not touched. It stays wherever it
+   * is — `unfulfilled` on a fresh order — because handing over is a fulfillment
+   * decision with its own guards and its own customer email, and writing both
+   * fields from here is how an order ends up claiming to be packed by a route
+   * that never looked at a shelf. Production complete is not order complete.
+   */
+  const handsOffToFulfillment = update.status === "ready" && existing.status !== "ready";
+  if (handsOffToFulfillment && !existing.ready_to_fulfill_at) {
+    update.ready_to_fulfill_at = new Date().toISOString();
+  }
+  /*
    * The guarded write.
    *
    * Re-asserting the status — and the quote revision whenever this request
@@ -223,6 +243,24 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     source: "staff_ui",
     actorIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
   });
+
+  /*
+   * Tell the fulfillment desk, now that the write is known to have committed.
+   *
+   * A different reader from the person who just approved the work: the customer
+   * hears "moving to fulfillment" through the notification below, and this is
+   * the internal cue that there is something to pack. Keyed on the order and
+   * the kind, so re-saving a `ready` order does not raise it twice, and routed
+   * to `fulfillment.view` rather than to whoever pressed the button.
+   */
+  if (handsOffToFulfillment) {
+    await raiseOperationalAlert({
+      kind: "order.ready_to_fulfill",
+      subjectId: id,
+      actorUserId: actor.userId,
+      message: `${existing.order_number || "An order"} has finished production and is ready to prepare.`,
+    });
+  }
 
   if (typeof update.quote_revision === "number" && typeof update.agreed_price_cents === "number") {
     await routeServiceClient.from("order_quotes").insert({ order_id:id, revision:update.quote_revision, total_cents:update.agreed_price_cents, deposit_cents:update.deposit_amount_cents ?? existing.deposit_amount_cents, note:optionalText(body.quote_note,2000), created_by:actor.userId });
