@@ -1,4 +1,5 @@
 import { APPEARANCE_TASKS, settingFor, type AppearanceTask } from "./appearanceTasks";
+import { BUTTON_ROLES } from "./buttonRoles";
 import { SECTION_TOGGLES } from "./homepage";
 
 /**
@@ -48,7 +49,7 @@ export type AppearanceSectionId =
   | "navigation"
   | "announcement"
   | "homepage"
-  | "colours"
+  | "colors"
   | "typography"
   | "components"
   | "commerce"
@@ -110,7 +111,7 @@ export const APPEARANCE_SECTIONS: readonly AppearanceSectionDef[] = [
     id: "navigation",
     cluster: "storefront",
     label: "Navigation",
-    description: "The header customers see on every page — its shape, its colours, and how links look at rest, under the pointer, and on the current page.",
+    description: "The header customers see on every page — its shape, its colors, and how links look at rest, under the pointer, and on the current page.",
     preview: "header",
   },
   {
@@ -128,17 +129,17 @@ export const APPEARANCE_SECTIONS: readonly AppearanceSectionDef[] = [
     preview: "homepage",
   },
   {
-    id: "colours",
+    id: "colors",
     cluster: "system",
-    label: "Colours",
-    description: "The page, the cards on it, and the text — grouped by what each colour actually paints.",
+    label: "Colors",
+    description: "The page, the cards on it, and the text — grouped by what each color actually paints.",
     preview: "palette",
   },
   {
     id: "typography",
     cluster: "system",
     label: "Typography",
-    description: "The typeface the whole site is set in, and the text colours that go with it.",
+    description: "The typeface the whole site is set in, and the text colors that go with it.",
     preview: "type",
   },
   {
@@ -185,7 +186,7 @@ export const APPEARANCE_SECTIONS: readonly AppearanceSectionDef[] = [
     id: "advanced",
     cluster: "site",
     label: "Advanced",
-    description: "The CSS variable behind every colour, for anyone working on the site's code. Nothing here needs setting.",
+    description: "The CSS variable behind every color, for anyone working on the site's code. Nothing here needs setting.",
   },
 ];
 
@@ -218,11 +219,11 @@ export function appearanceSection(id: AppearanceSectionId): AppearanceSectionDef
  * **Badges moved to the card they appear on.** See the note on "Labels" above.
  */
 const TASK_SECTION: Readonly<Record<string, AppearanceSectionId>> = {
-  "brand-primary": "colours",
-  "brand-accent": "colours",
-  "brand-surfaces": "colours",
+  "brand-primary": "colors",
+  "brand-accent": "colors",
+  "brand-surfaces": "colors",
   "brand-text": "typography",
-  "advanced-page-fade": "colours",
+  "advanced-page-fade": "colors",
   "advanced-body-links": "typography",
 
   "primary-button": "components",
@@ -244,7 +245,7 @@ const TASK_SECTION: Readonly<Record<string, AppearanceSectionId>> = {
 };
 
 export function sectionForTask(taskId: string): AppearanceSectionId {
-  return TASK_SECTION[taskId] ?? "colours";
+  return TASK_SECTION[taskId] ?? "colors";
 }
 
 /** Every colour task a section draws, in declaration order. */
@@ -383,9 +384,9 @@ const NON_COLOUR_ENTRIES: readonly AppearanceSearchEntry[] = [
   },
   {
     anchor: "announcement-tone",
-    label: "Announcement colour",
+    label: "Announcement color",
     section: "announcement",
-    context: "Accent, brand or quiet — all built from colours you already control",
+    context: "Accent, brand or quiet — all built from colors you already control",
     keywords: ["announcement", "tone", "colour", "color", "background", "accent", "brand", "quiet"],
   },
   {
@@ -458,6 +459,16 @@ const NON_COLOUR_ENTRIES: readonly AppearanceSearchEntry[] = [
 
   // ---- Components --------------------------------------------------------
   {
+    anchor: "component-request-flow",
+    label: "Custom request page",
+    section: "components",
+    context: "What every control on /orders/new follows",
+    keywords: [
+      "orders/new", "custom request", "request", "wizard", "stepper", "step", "continue",
+      "submit request", "back", "upload", "selected", "option card", "quote",
+    ],
+  },
+  {
     anchor: "component-primary-shape",
     label: "Primary button shape",
     section: "components",
@@ -505,7 +516,7 @@ const NON_COLOUR_ENTRIES: readonly AppearanceSearchEntry[] = [
     anchor: "commerce-cta",
     label: "Add to cart button",
     section: "commerce",
-    context: "Every storefront buying action, and where its colours come from",
+    context: "Every storefront buying action, and where its colors come from",
     keywords: [
       "add to cart", "buy", "buy now", "cart", "checkout", "cta", "purchase", "customize",
       "commerce", "button", "request",
@@ -515,7 +526,7 @@ const NON_COLOUR_ENTRIES: readonly AppearanceSearchEntry[] = [
     anchor: "commerce-statuses",
     label: "Stock and status badges",
     section: "commerce",
-    context: "In stock, Sold out and Made to order, and which of them you can recolour",
+    context: "In stock, Sold out and Made to order, and which of them you can recolor",
     keywords: ["status", "stock", "sold out", "made to order", "badge", "availability", "semantic", "green", "red"],
   },
 
@@ -596,7 +607,47 @@ const NON_COLOUR_ENTRIES: readonly AppearanceSearchEntry[] = [
  * own description, which is already written in the vocabulary of the thing on
  * screen.
  */
+/**
+ * One findable entry per semantic button role.
+ *
+ * Generated rather than written out, from the same `BUTTON_ROLES` the Buttons
+ * workspace renders — so every button the mapping names is a thing the owner
+ * can *search for*. "checkout", "submit request", "back" and "add to cart" are
+ * the words somebody types when they want to change how one of those looks, and
+ * before this they matched the primary-button colour task only by accident of
+ * its keyword list, or not at all.
+ *
+ * The anchor is the role's block in the Buttons workspace, which is where the
+ * question "which setting is this?" is actually answered — the colour and shape
+ * controls are one click further on, and reachable from there.
+ */
+const BUTTON_ROLE_ENTRIES: readonly AppearanceSearchEntry[] = BUTTON_ROLES.map((role) => ({
+  anchor: `button-role-${role.id}`,
+  label: role.label,
+  section: "components" as const,
+  /*
+   * The word "button" is in the context on purpose.
+   *
+   * `searchMatchStrength` scores a label-or-context hit above a keyword hit,
+   * and the single most likely query here is "button". With the word only in
+   * the keyword list these entries scored 1 and were outranked by Brand
+   * primary, whose *description* happens to mention buttons falling back to it
+   * — so typing "button" led with a colour token rather than with the roles.
+   */
+  context: `Button role — used on ${role.surfaces
+    .slice(0, 3)
+    .map((surface) => surface.label)
+    .join(", ")}`,
+  keywords: [
+    ...role.keywords,
+    ...role.surfaces.map((surface) => surface.label.toLowerCase()),
+    ...role.classNames,
+    "button",
+  ],
+}));
+
 export const APPEARANCE_SEARCH_INDEX: readonly AppearanceSearchEntry[] = [
+  ...BUTTON_ROLE_ENTRIES,
   ...APPEARANCE_TASKS.map((task) => ({
     anchor: `task-${task.id}`,
     label: task.label,

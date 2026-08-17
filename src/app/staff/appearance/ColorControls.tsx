@@ -139,7 +139,7 @@ export function TaskEditor({
 
       {task.fields.some((field) => settingFor(field.key).shared) ? (
         <p className="mt-2 text-xs text-amber-300">
-          Shared — this colour is used in more than one place, so changing it moves them together.
+          Shared — this color is used in more than one place, so changing it moves them together.
         </p>
       ) : null}
     </div>
@@ -248,7 +248,7 @@ function ColorField({
           onClick={() => onChange(following ? fallback : "")}
           className="mt-2 text-[11px] font-semibold text-brand-accent hover:underline"
         >
-          {following ? "Give it its own colour" : `Follow ${setting.optional.inheritsFrom} again`}
+          {following ? "Give it its own color" : `Follow ${setting.optional.inheritsFrom} again`}
         </button>
       ) : null}
 

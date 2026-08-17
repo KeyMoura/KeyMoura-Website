@@ -38,7 +38,7 @@ import {
 import {
   AdvancedPanel,
   BusinessPanel,
-  ColoursPanel,
+  ColorsPanel,
   CommercePanel,
   ComponentsPanel,
   FormsPanel,
@@ -372,7 +372,7 @@ export default function AppearancePage() {
     const primaryFill = form.theme.primaryButtonBackground || form.primaryColor;
     const secondaryFill = form.theme.secondaryButtonBackground || form.accentColor;
     if (form.theme.primaryButtonStyle === "solid" && contrast(form.theme.primaryButtonText, primaryFill) < 4.5) return "Primary button text needs more contrast against the primary button background.";
-    if (form.theme.primaryButtonStyle !== "solid" && form.theme.primaryButtonBackground && contrast(form.primaryColor, primaryFill) < 4.5) return "The primary brand colour needs more contrast against the primary button background — the Soft, Outline and Framed shapes draw the label in it.";
+    if (form.theme.primaryButtonStyle !== "solid" && form.theme.primaryButtonBackground && contrast(form.primaryColor, primaryFill) < 4.5) return "The primary brand color needs more contrast against the primary button background — the Soft, Outline and Framed shapes draw the label in it.";
     if (form.theme.secondaryButtonStyle === "solid" && contrast(form.theme.secondaryButtonText, secondaryFill) < 4.5) return "Secondary button text needs more contrast against the secondary button background.";
     return "";
   }, [form]);
@@ -729,9 +729,9 @@ export default function AppearancePage() {
               />
             ) : null}
 
-            {section === "colours" ? <ColoursPanel editor={editor} /> : null}
+            {section === "colors" ? <ColorsPanel editor={editor} onGoTo={goTo} /> : null}
             {section === "typography" ? <TypographyPanel editor={editor} /> : null}
-            {section === "components" ? <ComponentsPanel editor={editor} /> : null}
+            {section === "components" ? <ComponentsPanel editor={editor} onGoTo={goTo} /> : null}
             {section === "commerce" ? <CommercePanel editor={editor} onGoTo={goTo} /> : null}
             {section === "forms" ? <FormsPanel editor={editor} /> : null}
             {section === "layout" ? <LayoutPanel editor={editor} /> : null}
@@ -748,7 +748,7 @@ export default function AppearancePage() {
                 <ControlGroup
                   anchor="templates-save"
                   title="Save the current look"
-                  description="Captures the brand colours, every component and navbar setting, and the brand artwork. Business details are not included, so applying a template never renames the site."
+                  description="Captures the brand colors, every component and navbar setting, and the brand artwork. Business details are not included, so applying a template never renames the site."
                 >
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="min-w-56 flex-1">

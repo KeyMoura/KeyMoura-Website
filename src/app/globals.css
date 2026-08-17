@@ -750,6 +750,32 @@
   .appearance-actions { flex: none; }
 
   /*
+   * A row in one of the editor's index lists — the colour index under Colors,
+   * and the `/orders/new` mapping under Buttons.
+   *
+   * It is a `<button>` because it moves the editor to another section and
+   * focuses a control, which is not a navigation; styling it as a row rather
+   * than as a button is what keeps a list of twelve of them from reading as
+   * twelve things to press.
+   */
+  .appearance-index-link {
+    display: flex;
+    width: 100%;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-radius: calc(var(--control-radius) - 0.125rem);
+    padding: 0.25rem 0.375rem;
+    text-align: left;
+    font-size: 0.8125rem;
+    transition: background-color 120ms ease-out, color 120ms ease-out;
+  }
+  .appearance-index-link:hover { background: var(--panel-strong); color: var(--brand-primary); }
+  .appearance-index-link:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: -2px; }
+  .appearance-index-link-go { flex: none; color: var(--muted); }
+  .appearance-index-link:hover .appearance-index-link-go { color: inherit; }
+
+  /*
    * The rail is a second sidebar, and this page already has one.
    *
    * `.staff-shell` gives the staff navigation 280px from 1024px upwards, so at
