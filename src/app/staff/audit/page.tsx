@@ -430,7 +430,7 @@ const emptyPatch: Partial<AuditFilters> = {
  */
 function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <button type="button" aria-pressed onClick={onClear} className="staff-view">
+    <button type="button" aria-pressed="true" onClick={onClear} className="staff-view">
       {label}
       <span aria-hidden="true">×</span>
       <span className="sr-only">(remove this filter)</span>

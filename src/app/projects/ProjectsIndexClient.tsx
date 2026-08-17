@@ -8,7 +8,6 @@ import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
 import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 import SearchFieldIcon from "@/components/ui/SearchFieldIcon";
-import { clickBoost } from "@/lib/search/relevance";
 import { trackSearch, trackSearchClick } from "@/lib/search/track";
 
 function InfoCtaButton({
@@ -237,13 +236,6 @@ function logInfoSearchClick(payload: InfoSearchClickPayload): void {
   });
 }
 
-// --- click boost aggregation rows ---
-
-type ClickAggRow = {
-  clicked_page_id: string;
-  position: number | null;
-};
-
 export default function ProjectsIndexClient() {
   const siteSettings = useSiteSettings();
   const router = useRouter();
@@ -464,76 +456,35 @@ export default function ProjectsIndexClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Click stats → clickBoosts
+  /*
+   * Behaviour, as a bounded ranking weight.
+   *
+   * This used to read `info_search_click_events` straight from the browser.
+   * `select` on that table is staff-only under row-level security, so for
+   * every customer it returned nothing and the relevance learning it feeds
+   * never ran once. The aggregation now happens on the server, which is also
+   * where the raw events stay: what comes back is a map of project id to a
+   * 0–200 weight, with no queries, no counts, no identities in it.
+   *
+   * The formula it replaced was `total * 4 + top3 * 3 + top1 * 3`, uncapped,
+   * against a textual range of about thirty points — so eight clicks
+   * outweighed any possible match, and ranking first earned more clicks. That
+   * is the runaway popularity loop, and it was already built. `clickBoost`
+   * caps the contribution below the width of a single relevance tier.
+   */
   useEffect(() => {
-    const loadClickBoosts = async () => {
+    const loadClickWeights = async () => {
       try {
-        const supabase = supabaseBrowser();
-        const { data, error } = await supabase
-          .from("info_search_click_events")
-          .select("clicked_page_id, position")
-          .limit(1000);
-
-        if (error) {
-          console.error("Failed to load click stats", error);
-          return;
-        }
-
-        const rows = (data ?? []) as ClickAggRow[];
-
-        /*
-         * A bounded share of clicks, not an unbounded count.
-         *
-         * What was here computed `total * 4 + top3 * 3 + top1 * 3` with no
-         * ceiling, against a textual scoring scheme whose whole range was about
-         * thirty points. Eight clicks on one write-up therefore added more than
-         * any query could earn by matching, and the arithmetic only ever ran one
-         * way: the most-clicked result ranks first, ranking first earns more
-         * clicks, and within a few weeks the same page is the top answer to
-         * every query. That is precisely the runaway popularity loop this pass
-         * was asked not to build, and it was already built.
-         *
-         * `clickBoost` replaces it with three defences — a minimum sample, a
-         * ratio rather than a count, and a hard cap of `CLICK_BOOST_MAX` points
-         * that is smaller than the gap between two relevance tiers. Behaviour
-         * can now break a tie between comparable results and can never promote a
-         * weak match over a strong one.
-         *
-         * The denominator is every click this page has recorded, so the ratio is
-         * "of the choices customers made, what share went here" rather than a
-         * true click-through rate. CTR needs impressions per result, which the
-         * current tables cannot express — `docs/search-architecture.md` records
-         * the migration that adds them.
-         */
-        const perPage = new Map<string, { clicks: number; positionTotal: number }>();
-        let totalClicks = 0;
-
-        for (const row of rows) {
-          const pageId = row.clicked_page_id;
-          if (!pageId) continue;
-          const entry = perPage.get(pageId) ?? { clicks: 0, positionTotal: 0 };
-          entry.clicks += 1;
-          entry.positionTotal += Math.max(0, Math.min(row.position ?? 0, 200));
-          perPage.set(pageId, entry);
-          totalClicks += 1;
-        }
-
-        const boosts: Record<string, number> = {};
-        for (const [pageId, entry] of perPage) {
-          boosts[pageId] = clickBoost({
-            impressions: totalClicks,
-            clicks: entry.clicks,
-            averagePosition: entry.clicks ? entry.positionTotal / entry.clicks : 0,
-          });
-        }
-
-        setClickBoosts(boosts);
-      } catch (e) {
-        console.error("Failed to load click boosts", e);
+        const response = await fetch("/api/public/search-weights");
+        if (!response.ok) return;
+        const payload = (await response.json()) as { weights?: Record<string, number> };
+        if (payload?.weights) setClickBoosts(payload.weights);
+      } catch {
+        // A ranking without behaviour is still a ranking.
       }
     };
 
-    void loadClickBoosts();
+    void loadClickWeights();
   }, []);
 
   // All known tags (for suggestions)
