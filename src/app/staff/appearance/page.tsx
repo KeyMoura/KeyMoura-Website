@@ -647,7 +647,11 @@ export default function AppearancePage() {
           <section className="ui-card space-y-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <h2 className="text-base font-semibold">{currentSection.label}</h2>
+                {/* 18px against the groups' 14px. At `text-base` the section
+                    title was 16px semibold and the group titles 14px semibold —
+                    two steps apart in nothing but size, which read as one flat
+                    level rather than a heading over its sections. */}
+                <h2 className="text-lg font-semibold">{currentSection.label}</h2>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-brand-textMuted">
                   {currentSection.description}
                 </p>
@@ -978,14 +982,43 @@ function useShellHeight() {
       }
     };
 
-    measure();
-    window.addEventListener("resize", measure);
-    // The breadcrumb can wrap to a second line when the section name is long,
-    // which moves the shell without a resize event.
-    const observer = new ResizeObserver(measure);
+    /*
+     * Measured twice: now, and again once the current task has drained.
+     *
+     * Crossing a breakpoint changes what sits *above* the shell — the staff
+     * mobile nav appears below `lg`, moving the shell down 61px — and the first
+     * reading can land before that has settled. The second call is a no-op
+     * whenever the first was right, because of the 1px guard.
+     *
+     * `setTimeout`, not `requestAnimationFrame`: rAF does not fire at all while
+     * a tab is not being painted, so the correction would silently never run in
+     * exactly the automated check that has to catch this.
+     */
+    const remeasure = () => {
+      measure();
+      window.setTimeout(measure, 0);
+    };
+
+    remeasure();
+    window.addEventListener("resize", remeasure);
+
+    /*
+     * Observing the document element, not only the shell's parent.
+     *
+     * A `resize` event is not guaranteed — a viewport driven through the
+     * devtools protocol can change size without one, which is how a stale
+     * 122.8px measurement survived a move to tablet width and put the publish
+     * bar back below the fold. A `ResizeObserver` on the root reports the
+     * viewport change itself, whatever did or did not dispatch an event.
+     *
+     * The parent is observed too, for the case that is not a viewport change at
+     * all: the breadcrumb wrapping to a second line when a section name is long.
+     */
+    const observer = new ResizeObserver(remeasure);
+    observer.observe(document.documentElement);
     if (shell.parentElement) observer.observe(shell.parentElement);
     return () => {
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("resize", remeasure);
       observer.disconnect();
     };
   }, []);

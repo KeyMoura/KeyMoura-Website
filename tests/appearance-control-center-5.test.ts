@@ -943,9 +943,11 @@ test("the shell measures where it starts rather than assuming", () => {
   assert.match(page, /function useShellHeight/);
   assert.match(page, /shell\.style\.setProperty\("--appearance-top", `\$\{top\}px`\)/);
   assert.match(page, /ref=\{shellRef\}/);
-  // Remeasured on resize, and when the breadcrumb wraps without one.
-  assert.match(page, /window\.addEventListener\("resize", measure\)/);
-  assert.match(page, /new ResizeObserver\(measure\)/);
+  // Remeasured on resize, and when the breadcrumb wraps without one. The
+  // observer wiring itself is asserted in the finalization test below, which
+  // covers the viewport change that arrives without a `resize` event at all.
+  assert.match(page, /window\.addEventListener\("resize", remeasure\)/);
+  assert.match(page, /new ResizeObserver\(remeasure\)/);
   // No feedback loop: a sub-pixel change must not re-trigger a write every frame.
   assert.match(page, /Math\.abs\(previous - top\) > 1/);
 });
@@ -970,4 +972,117 @@ test("the rail and the section picker are mutually exclusive at every width", ()
     assert.match(block, /APPEARANCE_CLUSTERS\.map/);
     assert.match(block, /APPEARANCE_SECTIONS\.filter/);
   }
+});
+
+/* ========================================================================== */
+/* Finalization pass — width, and what visual review found                    */
+/* ========================================================================== */
+
+test("the editor opts its own page out of the reading-width cap", () => {
+  /*
+   * `.page-container-wide` is 80rem, which is right for the staff pages it was
+   * written for. This one has a 280px staff sidebar, a 216px section rail and a
+   * preview of a full-width storefront surface, and under the shared cap the
+   * workspace was 712px at 1920 while a third of the screen sat empty.
+   *
+   * Measured after the change: 712 → 783 at 1366, → 857 at 1440, → 1096 at
+   * 1920, and the preview stage 638 → 1047.
+   */
+  assert.match(cssRules, /\.page-container-wide:has\(> \.staff-shell \.appearance-shell\) \{ max-width: 104rem; \}/);
+
+  /*
+   * Scoped with `:has()` rather than a prop on `StaffShell`, which twenty other
+   * pages share. A browser without `:has()` keeps the 80rem cap — the layout
+   * that shipped — so the fallback is the previous behaviour rather than a
+   * broken one.
+   */
+  const shell = read("src/components/staff/StaffShell.tsx");
+  assert.match(shell, /className="page-container-wide"/);
+  assert.doesNotMatch(code(shell), /appearance/i, "the shared shell must not learn about this page");
+});
+
+test("the extra width reaches the previews, not the prose", () => {
+  /*
+   * A message field or a hero paragraph stretched across a 1920px monitor is
+   * harder to read and harder to edit than the same field at a sensible measure.
+   * The cap is on the controls, not their containers: the containers are grids
+   * that should fill the width, and capping those would give the width back to
+   * nothing.
+   */
+  assert.match(cssRules, /\.appearance-workspace \.ui-input \{ max-width: 42rem; \}/);
+
+  /*
+   * Keyed on `.ui-input`. The first attempt used an element/attribute selector
+   * — `:where(input:not([type="color"])…, textarea, select)` — and silently
+   * matched nothing once built: a 1047px textarea still computed `max-width:
+   * none`. Colour swatches carry `.ui-color-input` and checkboxes carry
+   * neither, so the class excludes exactly the controls that have no measure.
+   */
+  assert.doesNotMatch(cssRules, /\.appearance-workspace\s*\n?\s*:where\(input/);
+  assert.match(controls, /className="ui-color-input/, "swatches must not be capped as prose");
+});
+
+test("the shell re-measures on a viewport change it was not told about", () => {
+  /*
+   * Caught by resizing rather than reloading. Crossing to tablet width brings
+   * the staff mobile nav in above the shell, moving it from 123px down to
+   * 184px — and the stored measurement stayed at 123, so the shell was 61px too
+   * tall and the publish bar left the viewport again.
+   *
+   * A `resize` event is not guaranteed: a viewport driven through the devtools
+   * protocol can change size without dispatching one. A `ResizeObserver` on the
+   * root element reports the change itself, whatever did or did not fire.
+   */
+  assert.match(page, /observer\.observe\(document\.documentElement\)/);
+  assert.match(page, /if \(shell\.parentElement\) observer\.observe\(shell\.parentElement\)/);
+
+  // And measured twice, because the row above can reflow after the first read.
+  assert.match(page, /const remeasure = \(\) => \{\s*\n\s*measure\(\);\s*\n\s*window\.setTimeout\(measure, 0\);/);
+  // Not rAF: it never fires in an unpainted tab, which is where this is checked.
+  assert.doesNotMatch(code(page), /requestAnimationFrame\(measure/);
+});
+
+test("no card sits inside a card inside a card", () => {
+  /*
+   * Measured in the browser, per section. The preview was the worst: `.ui-card`
+   * wrapping `.ui-preview` inside the section's own `.ui-card`, and the preview
+   * content is frequently a card itself — four bordered boxes deep. Every
+   * section now measures 1–2 containers deep, and the only 3 is Advanced, whose
+   * third level is table-row separators.
+   *
+   * Bordered containers in the Colours section went 14 → 5.
+   */
+  // The stage draws its own border and background; a card around it added only
+  // an outline.
+  const stageBlock = stage.slice(stage.indexOf("export function PreviewStage"));
+  assert.doesNotMatch(stageBlock.slice(0, stageBlock.indexOf("function Surface")), /className="ui-card/);
+
+  // An individual colour has no box of its own — the task box groups them and
+  // the role label names them.
+  const field = controls.slice(controls.indexOf("function ColorField"));
+  assert.doesNotMatch(
+    field.slice(0, field.indexOf("function ") + 1 || 2000),
+    /border border-brand-border\/70/,
+    "a swatch must not carry a third rule around it"
+  );
+
+  // The two logo surfaces are told apart by the background each one paints.
+  const upload = read("src/app/staff/appearance/LogoUpload.tsx");
+  assert.match(upload, /className="rounded-\[var\(--control-radius\)\] p-3"/);
+  assert.doesNotMatch(
+    upload,
+    /rounded-\[var\(--control-radius\)\] border border-brand-border p-3"\s*\n\s*style=\{\{ background: surface\.background/,
+    "the surface swatches must not be bordered as well as filled"
+  );
+});
+
+test("the section title outranks the group titles", () => {
+  /*
+   * `text-base` put the section title at 16px semibold against group titles at
+   * 14px semibold — two steps apart in nothing but size, which reads as one
+   * flat level rather than a heading over its sections. Measured at 18px / 14px
+   * after the change.
+   */
+  assert.match(page, /<h2 className="text-lg font-semibold">\{currentSection\.label\}<\/h2>/);
+  assert.match(controls, /<h3 className="text-sm font-semibold">/);
 });

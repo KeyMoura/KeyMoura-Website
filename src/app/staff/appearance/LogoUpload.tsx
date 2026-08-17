@@ -149,7 +149,11 @@ export function LogoUpload({
         {(surfaces ?? DEFAULT_SURFACES).map((surface) => (
           <div
             key={surface.name}
-            className="rounded-[var(--control-radius)] border border-brand-border p-3"
+            /* No border: these two are already told apart by the thing that
+               matters — the background each one paints, which is the whole
+               point of showing the mark twice. An outline on top of that was a
+               third bordered box inside the section card for no information. */
+            className="rounded-[var(--control-radius)] p-3"
             style={{ background: surface.background }}
           >
             <div className="flex h-12 items-center justify-center">

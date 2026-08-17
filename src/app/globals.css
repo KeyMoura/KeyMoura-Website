@@ -696,6 +696,28 @@
    * thing falls back to ordinary document flow and the page scrolls — which is
    * the right behaviour for a short window and the layout phones get anyway.
    */
+  /*
+   * The editor opts its own page out of the reading-width cap.
+   *
+   * `.page-container-wide` is 80rem, which is right for the staff pages it was
+   * written for — those are documents, and a document has a comfortable measure.
+   * The Appearance editor is a *tool*: it has a 280px staff sidebar, a 216px
+   * section rail and a preview of a full-width storefront surface, and at 1920px
+   * the 80rem cap left the workspace 712px while a third of the screen sat
+   * empty. A navbar preview cannot be judged at 712px.
+   *
+   * `:has()` rather than a prop on `StaffShell`, because this is a statement
+   * about one page and `StaffShell` is shared by twenty. Nothing else changes,
+   * there is no new flag to thread through, and a browser without `:has()`
+   * simply keeps the 80rem cap — which is the layout that shipped, so the
+   * degradation is the previous behaviour rather than a broken one.
+   *
+   * The ceiling is 104rem, not `none`. Past about 1700px the rails stop growing
+   * and the extra width would go entirely to the workspace, which is where the
+   * measure caps below start refusing it anyway.
+   */
+  .page-container-wide:has(> .staff-shell .appearance-shell) { max-width: 104rem; }
+
   .appearance-shell { display: flex; flex-direction: column; gap: .75rem; }
   .appearance-head { flex: none; }
   .appearance-body { display: grid; gap: .75rem; min-height: 0; }
@@ -792,6 +814,29 @@
    * fold; at 45vh it takes a little over a third of the workspace and the
    * controls it is previewing stay visible underneath.
    */
+  /*
+   * A text control does not become more usable by being 1100px wide.
+   *
+   * The extra width from the rule above goes to the things that can spend it —
+   * the preview stage, the colour grids, the option rows, the product pickers —
+   * and this is what stops it reaching the things that cannot. A message field
+   * or a hero paragraph stretched across a 1920px monitor is harder to read and
+   * harder to edit than the same field at a sensible measure.
+   *
+   * Applied to the controls rather than to their containers, deliberately: the
+   * containers are grids that *should* fill the width, and capping those would
+   * give the width back to nothing.
+   *
+   * Keyed on `.ui-input`, which every text field, textarea and select on this
+   * page already carries, rather than on an element/attribute selector. The
+   * first attempt was `:where(input:not([type="color"])…, textarea, select)` and
+   * it silently matched nothing once built — the computed `max-width` stayed
+   * `none` on a 1047px textarea. Colour swatches carry `.ui-color-input` and
+   * checkboxes carry neither, so keying on the class excludes exactly the two
+   * kinds of control that have no measure to cap.
+   */
+  .appearance-workspace .ui-input { max-width: 42rem; }
+
   .appearance-stage { max-height: 45vh; overflow: auto; overscroll-behavior: contain; }
   .appearance-stage-wide { overflow-x: auto; }
   /* Previews of a full-width surface get real width to be judged at, and scroll

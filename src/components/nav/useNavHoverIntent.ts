@@ -32,32 +32,60 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
  * outside it), which clears the pending close before it runs. The menu never
  * shuts, and no invisible bridge element is needed to hold it open.
  *
- * ## Why hover is gated on the pointer, not the viewport
+ * ## Why the gate is the event's own pointer, not a media query
  *
  * A touch tap synthesises `mouseenter` before `click` in every major browser.
  * On a control whose trigger is also its toggle — which `More` is — that reads
  * as open-then-close, and the menu appears not to work at all on a phone. So
- * every handler asks the platform whether this pointer can actually hover, and
- * does nothing when it cannot. Tap keeps going through `onClick`, untouched.
+ * hover has to be ignored when the thing doing it cannot hover.
  *
- * The check runs inside the handler rather than deciding whether to attach the
- * handler, because a handler is not markup: attaching it unconditionally means
- * the server and the client render the identical tree and there is no media
- * query to read during SSR and no mismatch to correct after hydration.
+ * The first version of this asked a media query: `(hover: hover) and (pointer:
+ * fine)`. **That was a regression and this is what it broke.** Those queries
+ * describe the device's *primary* input, and on a Windows laptop with a
+ * touchscreen the primary input is the touchscreen — Chrome reports `pointer:
+ * coarse` and `hover: none` on that hardware even with a mouse plugged in and
+ * in use. So the gate returned false for a real mouse, and Products and More
+ * both became click-only on an extremely ordinary machine. Products had had no
+ * gate at all before the two menus were unified, which is why unifying them is
+ * what broke it.
+ *
+ * `any-hover` / `any-pointer` would fix that particular device and still be the
+ * wrong question: both ask *what is attached*, when the thing worth knowing is
+ * what is happening right now. A hybrid device has both, and the answer has to
+ * differ between the finger and the mouse on the same machine.
+ *
+ * So the handlers are `pointerenter` / `pointerleave` and the gate is
+ * `event.pointerType`. It is exact, it is per-interaction, and it needs no
+ * device taxonomy: a mouse or a pen hovers, a finger does not, and a hybrid
+ * device gets both behaviours from the same code depending on which the person
+ * actually used. `pointerenter` and `pointerleave` carry the same
+ * enter/leave semantics as their mouse equivalents, so the wrapper bridge above
+ * is unaffected.
+ *
+ * Attaching unconditionally also keeps SSR honest: there is no capability to
+ * read while rendering and no mismatch to correct after hydration.
  */
 
 export const NAV_HOVER_OPEN_DELAY_MS = 110;
 export const NAV_HOVER_CLOSE_DELAY_MS = 220;
 
-/** Whether this pointer can hover at all. False on touch, and during SSR. */
-function pointerCanHover(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+/**
+ * Whether this particular interaction came from something that hovers.
+ *
+ * Pen included: a stylus reports proximity and genuinely hovers. Touch is the
+ * only type excluded, and an unknown or absent type is treated as hovering
+ * because every non-touch input this has to serve does.
+ */
+export function pointerTypeHovers(pointerType: string | undefined): boolean {
+  return pointerType !== "touch";
 }
 
 export type NavHoverIntent = {
   /** Spread onto the wrapper that contains both the trigger and the panel. */
-  hoverProps: { onMouseEnter: () => void; onMouseLeave: () => void };
+  hoverProps: {
+    onPointerEnter: (event: { pointerType?: string }) => void;
+    onPointerLeave: (event: { pointerType?: string }) => void;
+  };
   /**
    * Cancels any pending open/close. Call before any deliberate state change —
    * a click, a key press — so a timer scheduled by the pointer cannot land
@@ -111,12 +139,12 @@ export function useNavHoverIntent({
 
   const hoverProps = useMemo(
     () => ({
-      onMouseEnter: () => {
-        if (!enabled || !pointerCanHover()) return;
+      onPointerEnter: (event: { pointerType?: string }) => {
+        if (!enabled || !pointerTypeHovers(event?.pointerType)) return;
         schedule(true, NAV_HOVER_OPEN_DELAY_MS);
       },
-      onMouseLeave: () => {
-        if (!enabled || !pointerCanHover()) return;
+      onPointerLeave: (event: { pointerType?: string }) => {
+        if (!enabled || !pointerTypeHovers(event?.pointerType)) return;
         schedule(false, NAV_HOVER_CLOSE_DELAY_MS);
       },
     }),

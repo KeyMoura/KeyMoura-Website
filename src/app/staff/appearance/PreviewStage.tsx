@@ -104,8 +104,18 @@ export function PreviewStage({ input }: { input: PreviewInput }) {
   const options = CONTEXTS[input.preview];
 
   return (
-    <div className="ui-card !p-3">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    /*
+     * No card around the stage.
+     *
+     * It used to be `.ui-card` wrapping `.ui-preview`, inside the section's own
+     * `.ui-card` — three bordered boxes before the preview's *content*, which is
+     * frequently a card itself, making four. The stage already draws its own
+     * border and its own background, because it has to: it paints the draft
+     * theme rather than the staff theme. A second box around it was decoration
+     * that only added an outline.
+     */
+    <div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-brand-textMuted">Preview</p>
         {options ? (
           <div className="ui-tabs !p-1" role="group" aria-label="Preview context">

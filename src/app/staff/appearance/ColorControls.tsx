@@ -179,7 +179,16 @@ function ColorField({
   const moved = value !== published;
 
   return (
-    <div className="rounded-[var(--control-radius)] border border-brand-border/70 p-2.5">
+    /*
+     * No border on an individual colour.
+     *
+     * Each of these sat in its own outlined box, inside the task's outlined box,
+     * inside the section card — three rules around one swatch, thirty-odd times
+     * down a page whose brief asked for fewer borders and no wall of tiny
+     * swatches. The task box already says which fields belong together and the
+     * role label already says what each one is; the grid gap does the rest.
+     */
+    <div>
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-semibold">{role}</span>
         {/*

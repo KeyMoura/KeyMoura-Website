@@ -560,6 +560,22 @@ test("More and Products share one hover-intent implementation", () => {
   // No second hover system left behind in ProductsMenu.
   assert.doesNotMatch(stripComments(productsMenu), /OPEN_DELAY_MS = |setTimeout\(/);
   assert.match(header, /hoverIntent\s*\n?\s*(\/\*|panelClassName|trigger|>)/);
+
+  /*
+   * Both consumers spread the same `hoverProps` onto the wrapper that holds the
+   * trigger *and* the panel. That shared wrapper is the whole bridge: crossing
+   * the gap fires leave and only schedules a close, and entering the panel
+   * re-enters the wrapper's subtree and cancels it. Putting the handlers on the
+   * trigger alone would shut the menu the moment the pointer set off for it.
+   */
+  for (const consumer of [navMenu, productsMenu]) {
+    assert.match(consumer, /<div ref=\{wrapRef\}[^>]*\{\.\.\.hoverProps\}>/);
+  }
+  // Pointer events, not mouse events: the gate needs `pointerType`, and only
+  // the pointer family carries it.
+  assert.match(hoverIntent, /onPointerEnter:/);
+  assert.match(hoverIntent, /onPointerLeave:/);
+  assert.doesNotMatch(stripComments(hoverIntent), /onMouseEnter|onMouseLeave/);
 });
 
 test("hover is opt-in, so the account and notification menus stay click-only", () => {
@@ -571,11 +587,34 @@ test("hover is opt-in, so the account and notification menus stay click-only", (
 });
 
 test("a pointer that cannot hover never opens a menu by hovering", () => {
-  assert.match(hoverIntent, /\(hover: hover\) and \(pointer: fine\)/);
-  assert.match(hoverIntent, /if \(!enabled \|\| !pointerCanHover\(\)\) return;/);
+  /*
+   * ## This assertion used to pin the bug in place
+   *
+   * It required `(hover: hover) and (pointer: fine)`, and that media query is
+   * what broke Products and More on real hardware: those queries describe the
+   * device's *primary* input, so a Windows laptop with a touchscreen reports
+   * `pointer: coarse` and `hover: none` even with a mouse plugged in and in use.
+   * Both menus went click-only on an extremely ordinary machine, and this test
+   * went green the whole time — because it was asserting the mechanism rather
+   * than the behaviour, and the mechanism was the thing that was wrong.
+   *
+   * The gate is now the event's own `pointerType`, which is per-interaction and
+   * needs no device taxonomy. The behavioural half of this lives in
+   * `tests/nav-hover-intent.test.ts`, which drives the real state machine.
+   */
+  assert.match(hoverIntent, /export function pointerTypeHovers/);
+  assert.match(hoverIntent, /return pointerType !== "touch";/);
+  assert.match(hoverIntent, /if \(!enabled \|\| !pointerTypeHovers\(event\?\.pointerType\)\) return;/);
+
+  // The primary-pointer queries must not come back. `any-hover` is no better:
+  // both ask what is attached, when the question is what is happening now.
+  const code = stripComments(hoverIntent);
+  assert.doesNotMatch(code, /matchMedia/, "capability must come from the event, not a media query");
+  assert.doesNotMatch(code, /pointer: fine|hover: hover|any-hover|any-pointer/);
+
   // Read at handler time, not at render time — an SSR branch would be a
   // hydration mismatch.
-  assert.doesNotMatch(stripComments(hoverIntent), /useState\(\(\) => pointerCanHover/);
+  assert.doesNotMatch(code, /useState\(\(\) => pointer/);
 });
 
 test("a click or key press outranks a hover timer already in flight", () => {
