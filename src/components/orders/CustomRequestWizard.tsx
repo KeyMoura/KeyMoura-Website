@@ -643,7 +643,19 @@ export default function CustomRequestWizard({
                   aria-current={isCurrent ? "step" : undefined}
                   className={cx("ui-step request-step-chip", isCurrent && "is-current", done && "is-complete")}
                 >
-                  <span className="truncate">{entry.label}</span>
+                  {/*
+                    Five equal columns and a marker leave about 110px for a
+                    label, so "Quantity & delivery" ends as "Quantity & …".
+                    Everyone not using a pointer already had the whole thing —
+                    it is the button's accessible name, which `truncate` only
+                    clips visually — and this is the half that was missing.
+                    Same `title`-on-the-clipped-element pattern the attachment
+                    list uses for a long filename, rather than a wider chip:
+                    growing these is what breaks the row at 768px.
+                  */}
+                  <span className="truncate" title={entry.label}>
+                    {entry.label}
+                  </span>
                   <span className="sr-only">
                     {isCurrent ? " (current step)" : visited ? " (answered — go back to it)" : " (not yet reached)"}
                   </span>
