@@ -141,6 +141,17 @@ export default function CustomRequestWizard({
   const stepChangedRef = useRef(false);
   const dirtyRef = useRef(false);
   /**
+   * The door on a submission that is already on its way.
+   *
+   * A ref rather than `busy`, because `busy` is state: two clicks landing in the
+   * same frame both read the same stale `false` out of the same closure and both
+   * proceed. The disabled attribute has the same hole — it is only applied on the
+   * render *after* the first click. `submitToken` means the second request cannot
+   * become a second order, but it would still be a second POST, and the customer
+   * would still watch one of them fail. This closes it in the browser.
+   */
+  const inFlight = useRef(false);
+  /**
    * One id for the life of this wizard, sent as `checkout_token`.
    *
    * A double-click, an impatient second tap, or a retry after a timeout that
@@ -385,10 +396,37 @@ export default function CustomRequestWizard({
    * Submission
    * ---------------------------------------------------------------- */
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (busy) return;
-
+  /**
+   * Sending the request. Reachable only from the Submit button's own click.
+   *
+   * ## The bug this shape exists to make impossible
+   *
+   * The primary action used to be one JSX slot holding a ternary: a
+   * `type="button"` Continue on steps 1–4, and a `type="submit"` Submit on the
+   * review. Two `<button>`s in the same position with no `key` are the *same
+   * element* to React, so it kept the live DOM node and patched the attribute —
+   * `type="button"` became `type="submit"` on the node the customer had just
+   * pressed.
+   *
+   * React flushes a click synchronously, so that patch landed *during* the
+   * click's dispatch, and a button's activation behaviour is resolved from its
+   * `type` **after** the listeners have run. By the time the browser asked "what
+   * does this click do", it was looking at a submit button. So the press that
+   * meant Continue was also the press that meant Submit: the review step painted
+   * and the request left about two seconds later, before the customer had read a
+   * word of it.
+   *
+   * Nothing about it was an effect, a timer, or a mount — which is why it
+   * survived a read of every `useEffect` on the page.
+   *
+   * The three things that now hold it shut, in order of how much they are
+   * trusted: the two buttons carry distinct `key`s, so there is no shared node
+   * left to morph; the form's `onSubmit` refuses every submission outright, so a
+   * stray Enter or a re-introduced `type="submit"` reaches nothing; and this is
+   * a plain function called from `onClick`, so a submission has to be something
+   * a person did to the Submit button.
+   */
+  async function submit() {
     const found = validateAll(form);
     if (found.length) {
       showErrors(found);
@@ -410,9 +448,20 @@ export default function CustomRequestWizard({
       return;
     }
 
+    // Past every check that can refuse this locally, so from here a request can
+    // genuinely leave. The door closes before the first `await`, which is the
+    // only point early enough to beat a second click.
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setBanner("");
     setErrors({});
+
+    /** Nothing was sent, or what was sent failed. Let them try again. */
+    const abandon = () => {
+      inFlight.current = false;
+      setBusy(false);
+    };
 
     const {
       data: { user },
@@ -441,7 +490,7 @@ export default function CustomRequestWizard({
             )
           );
           setBanner(`We could not upload ${entry.file.name}. Nothing was sent — try again in a moment.`);
-          setBusy(false);
+          abandon();
           return;
         }
         setFiles((existing) =>
@@ -479,7 +528,7 @@ export default function CustomRequestWizard({
         await supabase.storage.from("order-assets").remove(uploaded.map((item) => item.path));
       }
       setBanner("We could not reach KeyMoura just then. Your request is still here — try again.");
-      setBusy(false);
+      abandon();
       return;
     }
 
@@ -493,7 +542,7 @@ export default function CustomRequestWizard({
       }
       if (result?.field) setErrors({ [result.field]: result.error ?? "Please check this." });
       setBanner(result?.error || "We could not send that request. Nothing was submitted — please try again.");
-      setBusy(false);
+      abandon();
       return;
     }
 
@@ -565,7 +614,19 @@ export default function CustomRequestWizard({
         ) : null}
       </aside>
 
-      <form onSubmit={submit} className="request-form" noValidate>
+      {/*
+        A `<form>` for its semantics — labels, autofill, one landmark for the
+        answers — and for nothing else. It never submits.
+
+        Every submission is refused here rather than routed anywhere: the only
+        way to send this request is the Submit button's own `onClick`. That is
+        what makes "reaching the review step submitted my request" unreachable
+        by construction rather than by inspection — a stray Enter in the email
+        field, a `type="submit"` added to some future control, and the exact
+        button-morph that caused it the first time all arrive at this line and
+        stop.
+      */}
+      <form onSubmit={(event: FormEvent) => event.preventDefault()} className="request-form" noValidate>
         {/* ---------------- Progress ---------------- */}
         <ol className="ui-stepper request-stepper" aria-label="Request progress">
           {STEPS.map((entry, position) => {
@@ -582,7 +643,19 @@ export default function CustomRequestWizard({
                   aria-current={isCurrent ? "step" : undefined}
                   className={cx("ui-step request-step-chip", isCurrent && "is-current", done && "is-complete")}
                 >
-                  <span className="truncate">{entry.label}</span>
+                  {/*
+                    Five equal columns and a marker leave about 110px for a
+                    label, so "Quantity & delivery" ends as "Quantity & …".
+                    Everyone not using a pointer already had the whole thing —
+                    it is the button's accessible name, which `truncate` only
+                    clips visually — and this is the half that was missing.
+                    Same `title`-on-the-clipped-element pattern the attachment
+                    list uses for a long filename, rather than a wider chip:
+                    growing these is what breaks the row at 768px.
+                  */}
+                  <span className="truncate" title={entry.label}>
+                    {entry.label}
+                  </span>
                   <span className="sr-only">
                     {isCurrent ? " (current step)" : visited ? " (answered — go back to it)" : " (not yet reached)"}
                   </span>
@@ -648,12 +721,27 @@ export default function CustomRequestWizard({
             {savedNote}
           </span>
 
+          {/*
+            The two `key`s are load-bearing, not decoration.
+
+            Without them these are one element to React — same tag, same slot —
+            so it keeps the DOM node and patches the attribute, and the node the
+            customer pressed as Continue finishes the click as a submit button.
+            Distinct keys make it unmount one and mount the other, so there is
+            no node in common for a `type` to change on.
+          */}
           {isLast ? (
-            <button type="submit" disabled={busy || !identityKnown} className="ui-btn ui-btn-primary request-submit">
+            <button
+              key="submit"
+              type="button"
+              onClick={() => void submit()}
+              disabled={busy || !identityKnown}
+              className="ui-btn ui-btn-primary request-submit"
+            >
               {busy ? "Sending…" : "Submit project request"}
             </button>
           ) : (
-            <button type="button" onClick={next} className="ui-btn ui-btn-primary request-submit">
+            <button key="continue" type="button" onClick={next} className="ui-btn ui-btn-primary request-submit">
               Continue
             </button>
           )}
