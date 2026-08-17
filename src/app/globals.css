@@ -1957,11 +1957,22 @@
      the border survives at `transparent` so the enclosed variant can colour it
      without any link changing width when the owner switches treatments. */
   .site-header-shell .site-nav-primary-link {
+    /*
+     * The inline padding is a variable because the underline below is derived
+     * from it. They were two independent numbers, and the rule's width was a
+     * percentage that had no idea what the padding was — which is how the
+     * geometry drifted. `--nav-link-pad-end` defaults to the same value and is
+     * overridden only by the Products trigger, whose chevron side is tighter.
+     */
+    --nav-link-pad: 0.625rem;
+    --nav-link-pad-end: var(--nav-link-pad);
+    /* How far past the label the rule runs, on each side. */
+    --nav-underline-overhang: 0.125rem;
     position: relative;
     display: inline-flex;
     align-items: center;
     height: 2.25rem;
-    padding-inline: 0.625rem;
+    padding-inline: var(--nav-link-pad) var(--nav-link-pad-end);
     border: 1px solid transparent;
     border-radius: 0;
     font-size: 0.875rem;
@@ -1994,36 +2005,51 @@
    * pixel between states unless a transparent one were reserved on all four
    * sides — which is exactly the fragile arrangement `minimal` used to need.
    *
-   * ## Its width is a ratio, not an inset
+   * ## Its width is the label's, not a fraction of the control's
    *
-   * This used to be `inset-inline: 0.375rem` — 6px off each edge of the control
-   * box. A fixed inset makes the rule a different proportion of every item it
-   * sits under: at 6px either side it came to about 80% of the control under
-   * `About` and about 91% under `Custom Projects`, so the longest link on the
-   * bar wore the widest, heaviest-looking rule and the set never read as one
-   * treatment. It was also *wider than the word* on the short links, which is
-   * what made it read as a bar rather than an underline.
+   * Two models have been tried and both were proportional to the wrong thing.
+   * A fixed `inset-inline: 0.375rem` was replaced by `inset-inline: 14%` —
+   * 72% of the control, centred — on the reasoning that a fixed inset makes the
+   * rule a different *proportion* of every item.
    *
-   * A percentage inset fixes the proportion instead. `14%` either side leaves
-   * 72% of the control, centred, whatever the label is — comfortably inside the
-   * word on a long link, still clearly wider than the padding on a short one.
-   * It needs no per-item measurement and it costs nothing at runtime, and the
-   * Products trigger — whose padding is asymmetric because of its chevron —
-   * gets a rule centred on the whole control rather than on the word alone,
-   * which is what keeps the label and the chevron reading as one thing.
+   * It does, and that turned out not to be the thing to hold constant. A
+   * control is the label plus a constant 20px of padding, so a constant
+   * percentage of it is a rule that shrinks relative to the word as the word
+   * grows: 72% of `About`'s 60px control is 43px against a 40px word — a hair
+   * proud of it — while 72% of `Custom Projects`' 128px control is 92px against
+   * a 108px word, a stub sitting 16px short at each end. The set read as one
+   * treatment in the stylesheet and as three different ones on the bar, which
+   * is what the owner saw: About and Gallery correct, Products, Custom Projects
+   * and More too narrow.
    *
-   * 3px rather than 2px, and 0.3rem clear of the baseline. 2px was a hairline
-   * that dissolved into the navbar background at 14px text; much past 3px and
-   * it becomes a tab indicator. The same geometry is drawn for active, hover
-   * and focus — only the opacity differs — so the shape never moves between
-   * states.
+   * What has to be constant is the relationship to the **word**. The rule is
+   * now the padding box grown by `--nav-underline-overhang`, so it clears the
+   * label by 2px at each end whatever the label is, and nothing has to be
+   * measured per item. The crossover is a ~57px control: below it this is
+   * fractionally narrower than the old percentage, above it wider and
+   * increasingly so — which is precisely the correction asked for, because
+   * About and Gallery sit on the crossover and the other three are past it.
+   *
+   * Per-side, not symmetric. `--nav-link-pad-end` lets the Products trigger —
+   * whose chevron side is tighter — get a rule that clears its content by the
+   * same 2px at both ends. The label and the chevron stay under one rule, which
+   * is what keeps them reading as one control.
+   *
+   * 4px rather than 3px, and 2px clear of the control's bottom rather than
+   * 4.8px. 3px at 14px text was still reading as a hairline against the navbar
+   * and sitting close enough to the descenders to look attached to them; much
+   * past 4px and it becomes a tab indicator. The same geometry is drawn for
+   * active, hover and focus — only the opacity differs — so the shape never
+   * moves between states.
    */
   .site-header-shell .site-nav-primary-link::after {
     content: "";
     position: absolute;
-    inset-inline: 14%;
-    bottom: 0.3rem;
-    height: 3px;
+    inset-inline:
+      calc(var(--nav-link-pad) - var(--nav-underline-overhang))
+      calc(var(--nav-link-pad-end) - var(--nav-underline-overhang));
+    bottom: 0.125rem;
+    height: 4px;
     border-radius: 999px;
     background: var(--km-nav-active, #f59e0b);
     transform: scaleX(0);
@@ -2139,15 +2165,17 @@
    * underline spans both, rather than a rule under the word and a bare chevron
    * beside it.
    *
-   * Only the padding is restated here. The label side keeps the standard
-   * inline padding; the chevron side is tightened because the chevron already
-   * carries its own width, and leaving both equal made the control visibly
-   * lopsided against its neighbours.
+   * Only the padding is restated here, and it is restated as
+   * `--nav-link-pad-end` rather than as a `padding-inline` shorthand so the
+   * underline follows it. The label side keeps the standard inline padding; the
+   * chevron side is tightened because the chevron already carries its own
+   * width, and leaving both equal made the control visibly lopsided against its
+   * neighbours.
    */
   .products-menu { position: relative; display: flex; min-width: 0; align-items: center; }
   .site-header-shell .products-menu-trigger[data-has-menu="true"] {
     gap: 0.125rem;
-    padding-inline: 0.625rem 0.375rem;
+    --nav-link-pad-end: 0.375rem;
   }
 
   /*
@@ -2561,11 +2589,37 @@
     pointer-events: none;
   }
 
-  /* Dropdown panels shared by the More menu and the account menu. */
+  /*
+   * Dropdown panels shared by the More menu, the account menu and the
+   * notification popover.
+   *
+   * ## Why the whole chrome is here now
+   *
+   * It used to be half here and half at each call site: this rule set the
+   * background, the border *colour* and the animation, and every caller then
+   * passed `overflow-hidden rounded-2xl border p-1.5 shadow-2xl` as Tailwind
+   * utilities. Three copies of a design decision is three chances to disagree,
+   * and they had — More carried `shadow-2xl` and an 80%-opacity border against
+   * the Products panel's `0 24px 60px rgba(0,0,0,.45)` and its full-strength
+   * one, on a background whose fallback was `#0a0a0c` rather than
+   * `var(--panel-strong)`. Side by side on the same bar, one dropdown looked
+   * lifted off the page and the other looked printed on it, which is what made
+   * Products and More read as two design systems.
+   *
+   * The values are the Products panel's, because that is the one being matched.
+   * Callers now pass a width and a padding and nothing else — the two things
+   * that genuinely differ between a category menu, an account menu and a
+   * notification list. Padding stays with the caller because the notification
+   * popover deliberately has none: its header rule and its rows are full-bleed,
+   * and 6px of panel padding would inset every divider in it.
+   */
   .nav-menu-panel {
-    background: var(--km-nav-mobile-bg, #0a0a0c);
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid var(--km-nav-border, #3f3f46);
+    background: var(--km-nav-mobile-bg, var(--panel-strong, #18181b));
     color: var(--km-nav-mobile-text, #f4f4f5);
-    border-color: color-mix(in srgb, var(--km-nav-border, #3f3f46) 80%, transparent);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
     animation: nav-menu-in 120ms ease-out;
   }
   @keyframes nav-menu-in {
@@ -2577,22 +2631,36 @@
     border-bottom: 1px solid color-mix(in srgb, var(--km-nav-border, #3f3f46) 60%, transparent);
     margin-bottom: 0.25rem;
   }
+  /*
+   * A row, on the Products panel's metrics.
+   *
+   * 44px, a 0.5rem radius and 14px text, matching `.products-menu-parent`
+   * exactly — these were 0.625rem and 13px with no minimum height, which is why
+   * a More row and a Products row of the same words were different sizes and
+   * different shapes on the same bar. The 44px floor is the same touch-target
+   * argument the Products list makes: a laptop with a touchscreen is a desktop
+   * viewport with fingers on it.
+   */
   .nav-menu-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.5rem 0.625rem;
-    border-radius: 0.625rem;
-    font-size: 0.8125rem;
+    min-height: 2.75rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
     color: var(--km-nav-mobile-text, #f4f4f5);
     transition: background-color 120ms ease-out, color 120ms ease-out;
   }
-  .nav-menu-item-stacked { flex-direction: column; align-items: flex-start; gap: 0.125rem; }
+  .nav-menu-item-stacked { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.125rem; }
+  /* Hover recolours to the active colour, not to the hover *text* colour: the
+     Products rows do, and two dropdowns on one bar answering the pointer in two
+     different colours is the tell that they are two components. */
   .nav-menu-item:hover,
   .nav-menu-item:focus-visible {
     background-color: var(--km-nav-hover-bg, #18181b);
-    color: var(--km-nav-hover-text, #ffffff);
+    color: var(--km-nav-active, #f59e0b);
   }
   .nav-menu-item[aria-current="page"] { color: var(--km-nav-active, #f59e0b); }
   .nav-menu-item-description {
@@ -2600,6 +2668,17 @@
     line-height: 1.4;
     opacity: 0.72;
   }
+  /* The disclosure chevron on a menu trigger, turned over while the panel is
+     open — which is what the Products toggle already did inline, and what made
+     More look like a control that had not noticed it was open. Driven from
+     `aria-expanded` rather than from React state, so the picture cannot
+     disagree with what assistive technology is told. */
+  .nav-menu-chevron { transition: transform 150ms ease-out; }
+  [aria-expanded="true"] > .nav-menu-chevron { transform: rotate(180deg); }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-menu-chevron { transition: none; }
+  }
+
   .nav-menu-item-signout { color: color-mix(in srgb, var(--km-nav-mobile-text, #f4f4f5) 80%, #f87171); }
   .nav-menu-item-staff { font-weight: 600; }
   .nav-menu-divider {

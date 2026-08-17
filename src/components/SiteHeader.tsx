@@ -358,11 +358,27 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
               menuLabel="More destinations"
               align="left"
               hoverIntent
-              panelClassName="w-60 overflow-hidden rounded-2xl border p-1.5 shadow-2xl"
+              /*
+                A width and a padding, and nothing else. The border, radius,
+                shadow and background moved into `.nav-menu-panel` so this menu
+                and the Products panel beside it are the same panel — see the
+                note on that rule for what they had drifted into.
+
+                18rem rather than the 15rem this used to be. The three
+                destinations carry descriptions, and "Ask a question, or follow
+                up on an order" wrapped to three lines at 15rem, which is what
+                made a menu of three items as tall as the Products panel's
+                category tree.
+              */
+              panelClassName="w-72 p-2"
               trigger={
                 <>
                   More
-                  <FontAwesomeIcon icon={faChevronDown} className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+                  <FontAwesomeIcon
+                    icon={faChevronDown}
+                    className="nav-menu-chevron h-2.5 w-2.5 shrink-0"
+                    aria-hidden="true"
+                  />
                 </>
               }
             >
@@ -384,8 +400,11 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
             </NavMenu>
           </nav>
 
-          {/* The storefront's search, on the bar rather than behind an icon. */}
-          <StorefrontSearch className="site-header-search" />
+          {/* The storefront's search, on the bar rather than behind an icon.
+              It is handed the same `productsNav` the Products dropdown is drawn
+              from, because its scope selector offers the catalog's real
+              departments — one hierarchy, two controls reading it. */}
+          <StorefrontSearch className="site-header-search" nav={productsNav} />
 
           {/*
             Search → Notifications → Account → Wishlist → Cart.
@@ -493,7 +512,7 @@ export default function SiteHeader({ productsNav = EMPTY_STOREFRONT_NAV }: { pro
             own query in. A second row costs 52px of vertical space on a phone
             and makes the shop's primary action a full-width tap target.
           */}
-          <StorefrontSearch className="site-header-mobile-search" />
+          <StorefrontSearch className="site-header-mobile-search" nav={productsNav} />
         </div>
       </div>
 
