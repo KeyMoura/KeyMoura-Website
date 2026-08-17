@@ -294,7 +294,10 @@ export function SectionPicker({
 }) {
   const id = useId();
   return (
-    <div className="lg:hidden">
+    /* Hidden exactly where `.appearance-rail` appears, at 1280px. The two are a
+       pair: below that width the staff sidebar already owns 280px and a second
+       column would leave the editor narrower than the layout this replaced. */
+    <div className="xl:hidden">
       <label htmlFor={id} className="ui-label">
         Section
       </label>

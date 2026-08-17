@@ -91,6 +91,31 @@
   }
 
   /*
+   * The same triple, re-declared for a scoped preview.
+   *
+   * Custom properties whose values contain `var()` are substituted **where they
+   * are declared**, not where they are used. The three above are declared on
+   * `:root`, and the root layout sets `--km-primary-button-*` on `<html>` — the
+   * same element — so the live site resolves them correctly.
+   *
+   * The Appearance editor cannot do that: it paints a *draft* theme onto a
+   * subtree, so its `--km-primary-button-bg` sits below `:root` and arrives too
+   * late to be substituted. The result was a preview whose Add to cart button
+   * kept the published colour no matter what the owner typed — on the one
+   * control the section exists to change. Browser QA caught it; the test suite
+   * could not, because it asserted the editor *emits* the variable, which it did.
+   *
+   * `[data-theme-scope="true"]` is the editor's own subtree. This sits before
+   * the style-specific rules below, which carry equal specificity and therefore
+   * still win on source order for Soft, Outline and Framed.
+   */
+  [data-theme-scope="true"] {
+    --primary-action-bg: var(--km-primary-button-bg, var(--brand-primary, #fbbf24));
+    --primary-action-border: var(--km-primary-button-border, var(--km-primary-button-bg, var(--brand-primary, #fbbf24)));
+    --primary-action-text: var(--km-primary-button-text, #09090b);
+  }
+
+  /*
    * Non-solid primary styles put the label on the *page*, not on the brand
    * fill — so it cannot keep using the on-fill text colour. It did, and the
    * result measured 1.05:1: near-black #09090b text on a transparent button
@@ -678,16 +703,79 @@
   .appearance-workspace { min-height: 0; }
   .appearance-actions { flex: none; }
 
-  @media (min-width: 1024px) and (min-height: 640px) {
+  /*
+   * The rail is a second sidebar, and this page already has one.
+   *
+   * `.staff-shell` gives the staff navigation 280px from 1024px upwards, so at
+   * 1024 the content column is about 709px — and putting a 216px rail beside the
+   * workspace inside that left 440px for the editor itself. That is *narrower
+   * than the three-column layout this pass replaced*, arrived at from the
+   * opposite direction, and browser QA is the only thing that would have caught
+   * it: both rails are individually reasonable and the sum is not.
+   *
+   * So the rail waits for a width where two sidebars genuinely fit. Below that
+   * the section list is the `<select>` in `SectionPicker`, which costs one row
+   * instead of a column, and the workspace gets the whole width.
+   */
+  .appearance-rail { display: none; }
+
+  /*
+   * The viewport-high shell starts at tablet width, not desktop.
+   *
+   * The gate is about *height*, not width — what it buys is an action bar that
+   * is always on screen and always below the content. A 768×1024 tablet has more
+   * vertical room than a 1366×768 laptop, and browser QA found the bar sitting
+   * 1621px down the document there: reachable only by scrolling to the very
+   * bottom, which is exactly the "where did my unpublished changes go" problem
+   * on a different device.
+   *
+   * Phones stay in ordinary document flow. On a phone the workspace needs every
+   * pixel of height it can get, and a nested scroll container fights the
+   * browser's own address-bar behaviour for no gain — the bar is one flick away
+   * at the end of a short, single-column page.
+   *
+   * 720px rather than 768px because a 768px *window* is a 753px layout viewport
+   * once the scrollbar is taken out, and a tablet held in portrait must not fall
+   * through to the phone layout on a technicality. 720 is comfortably above the
+   * widest phone this supports (430px) and below the narrowest tablet.
+   */
+  @media (min-width: 720px) and (min-height: 640px) {
+    /*
+     * `--appearance-top` is how far down the viewport the shell actually
+     * begins, written by the editor once it has been laid out.
+     *
+     * The first version of this used `calc(100dvh - var(--km-header-height) -
+     * 2rem)`, copied from `.staff-shell-rail`, and was wrong by 47px — which
+     * put the publish bar below the fold at 1366×768, the exact viewport this
+     * pass exists to fix. The rail gets away with that expression because it is
+     * `position: sticky` and pins itself to the top of the viewport; the shell
+     * is in normal flow, below the staff breadcrumb, and the breadcrumb's height
+     * is not something CSS here can know.
+     *
+     * Hard-coding the breadcrumb's height would work today and drift the moment
+     * anybody touched the staff chrome — and drift silently, because the symptom
+     * is a control 30px off the bottom of the screen rather than a broken build.
+     * So the shell measures its own top and the arithmetic follows from that.
+     * The fallback covers the frame before the measurement lands.
+     */
     .appearance-shell {
-      height: calc(100dvh - var(--km-header-height) - 2rem);
+      height: calc(100dvh - var(--appearance-top, 7.75rem) - 1.5rem);
     }
-    .appearance-body { flex: 1 1 auto; grid-template-columns: 13.5rem minmax(0, 1fr); }
+    .appearance-body { flex: 1 1 auto; }
     /* `overflow-y: auto` needs the `min-height: 0` above to mean anything: a
        flex/grid item defaults to `min-height: auto`, which refuses to shrink
        below its content and pushes the overflow back out of the box. */
-    .appearance-rail { overflow-y: auto; overscroll-behavior: contain; }
     .appearance-workspace { overflow-y: auto; overscroll-behavior: contain; }
+  }
+
+  /* Two sidebars only where two sidebars fit — see `.appearance-rail` above. */
+  @media (min-width: 1280px) {
+    .appearance-rail { display: block; }
+    .appearance-body { grid-template-columns: 13.5rem minmax(0, 1fr); }
+  }
+
+  @media (min-width: 1280px) and (min-height: 640px) {
+    .appearance-rail { overflow-y: auto; overscroll-behavior: contain; }
   }
 
   /*

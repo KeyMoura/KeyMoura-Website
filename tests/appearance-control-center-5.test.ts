@@ -96,6 +96,8 @@ test("the three-column editor is gone, and cannot come back unnoticed", () => {
   assert.match(page, /className="appearance-body"/);
   assert.match(cssRules, /\.appearance-body \{ display: grid; gap: \.75rem; min-height: 0; \}/);
   assert.match(cssRules, /grid-template-columns: 13\.5rem minmax\(0, 1fr\)/);
+  // Exactly two columns, and only above the width where two sidebars fit.
+  assert.doesNotMatch(cssRules, /\.appearance-body \{[^}]*grid-template-columns:[^;]*minmax[^;]*minmax/);
 });
 
 test("the workspace scrolls itself, so the action bar is never over content", () => {
@@ -127,12 +129,16 @@ test("the workspace scrolls itself, so the action bar is never over content", ()
   assert.match(cssRules, /\.appearance-workspace \{ min-height: 0; \}/);
 
   /*
-   * The fixed height only applies where there is room for it. Below 640px tall
-   * the shell would be shorter than a workable workspace, so it falls back to
-   * ordinary document flow and the page scrolls — which is the right behaviour
-   * for a short window and the layout phones get anyway.
+   * The gate is about height, not width: what the shell buys is an action bar
+   * always on screen and always below the content, and a 768×1024 tablet has
+   * more vertical room than a 1366×768 laptop. Browser QA found the bar 1621px
+   * down the document at tablet width when this was gated at 1024.
+   *
+   * Below 640px tall the shell would be shorter than a workable workspace, so it
+   * falls back to ordinary document flow — which is also what phones get.
    */
-  assert.match(cssRules, /@media \(min-width: 1024px\) and \(min-height: 640px\)/);
+  assert.match(cssRules, /@media \(min-width: 720px\) and \(min-height: 640px\)/);
+  assert.doesNotMatch(cssRules, /@media \(min-width: 1024px\) and \(min-height: 640px\)/);
 });
 
 test("the rail is one line per section, clustered, and has a phone equivalent", () => {
@@ -159,8 +165,16 @@ test("the rail is one line per section, clustered, and has a phone equivalent", 
   // already keyboard- and screen-reader-correct, opening the platform's own
   // picker on a phone.
   assert.match(chrome, /function SectionPicker/);
-  assert.match(chrome, /className="lg:hidden"/);
+  /*
+   * The rail and the picker are a matched pair at 1280px, not 1024px. The staff
+   * sidebar already takes 280px from 1024 up, so a second column there left the
+   * editor 440px — narrower than the three-column layout this pass replaced,
+   * reached from the opposite direction.
+   */
+  assert.match(chrome, /className="xl:hidden"/);
   assert.match(page, /<SectionPicker/);
+  assert.match(cssRules, /@media \(min-width: 1280px\) \{\s*\.appearance-rail \{ display: block; \}/);
+  assert.match(cssRules, /\.appearance-rail \{ display: none; \}/);
 });
 
 /* ========================================================================== */
@@ -849,4 +863,111 @@ test("every colour still has exactly one control, in exactly one section", () =>
 
   const drawn = APPEARANCE_SECTIONS.flatMap((section) => tasksForSection(section.id));
   assert.equal(drawn.length, APPEARANCE_TASKS.length, "a task drawn twice, or not at all");
+});
+
+/* ========================================================================== */
+/* Defects browser QA found that no source-reading test could                 */
+/* ========================================================================== */
+
+test("a scoped draft theme re-resolves the primary action role", () => {
+  /*
+   * ## The bug
+   *
+   * `--primary-action-bg` is `var(--km-primary-button-bg, var(--brand-primary))`
+   * declared on `:root`. Custom properties containing `var()` are substituted
+   * **where they are declared**, not where they are used — and the root layout
+   * sets `--km-primary-button-*` on `<html>`, the same element, so the live site
+   * resolves correctly.
+   *
+   * The editor cannot do that. It paints a *draft* theme onto a subtree, so its
+   * `--km-primary-button-bg` sits below `:root` and arrives too late to be
+   * substituted. The preview's Add to cart button therefore kept the published
+   * colour no matter what the owner typed — on the one control the Product cards
+   * section exists to change.
+   *
+   * Measured in the browser: `:root` resolved `#fbbf24` while the editor's
+   * subtree held a draft of `#2e7d32`, and the button painted gold.
+   *
+   * ## Why no test caught it
+   *
+   * `appearance-role-coverage.test.ts` asserted the editor *emits* the variable,
+   * which it did, and that `.ui-btn-primary` *reads the role*, which it does.
+   * Both were true and the preview was still wrong, because the defect is in
+   * where substitution happens — a property of the cascade, not of either file.
+   * This asserts the fix; the browser is what found it.
+   */
+  const scope = cssRules.slice(cssRules.indexOf('[data-theme-scope="true"] {'));
+  const block = scope.slice(0, scope.indexOf("}"));
+  for (const role of ["--primary-action-bg", "--primary-action-border", "--primary-action-text"]) {
+    assert.match(block, new RegExp(`${role}:`), `${role} must be re-declared for a scoped theme`);
+  }
+  assert.match(block, /--primary-action-bg: var\(--km-primary-button-bg, var\(--brand-primary/);
+
+  // The editor's subtree carries the hook, and emits the variable it re-reads.
+  assert.match(page, /data-theme-scope="true"/);
+  assert.match(page, /"--km-primary-button-bg": form\.theme\.primaryButtonBackground/);
+
+  /*
+   * The style-specific rules must still win. They carry equal specificity, so
+   * this is decided by source order: the scope block has to come first, or Soft,
+   * Outline and Framed would all silently become Solid inside the editor.
+   */
+  assert.ok(
+    cssRules.indexOf('[data-theme-scope="true"] {') <
+      cssRules.indexOf('[data-primary-button-style="soft"]'),
+    "the scope rule must precede the style-specific rules"
+  );
+});
+
+test("the shell measures where it starts rather than assuming", () => {
+  /*
+   * ## The bug
+   *
+   * The shell's height was `calc(100dvh - var(--km-header-height) - 2rem)`,
+   * copied from `.staff-shell-rail`. The rail gets away with that because it is
+   * `position: sticky` and pins itself to the top of the viewport; the shell is
+   * in normal flow, *below the staff breadcrumb*.
+   *
+   * Measured at 1366×768: the shell began 123px down, not 76px, so it ran to
+   * 799px on a 768px screen and the publish bar sat 31px below the fold — in the
+   * editor whose entire purpose was to stop controls falling off the bottom of a
+   * laptop. Both numbers are plausible; only layout can tell them apart.
+   */
+  assert.match(cssRules, /height: calc\(100dvh - var\(--appearance-top, 7\.75rem\) - 1\.5rem\)/);
+  assert.doesNotMatch(
+    cssRules,
+    /\.appearance-shell \{\s*height: calc\(100dvh - var\(--km-header-height\)/,
+    "the shell must not assume it starts under the site header"
+  );
+
+  assert.match(page, /function useShellHeight/);
+  assert.match(page, /shell\.style\.setProperty\("--appearance-top", `\$\{top\}px`\)/);
+  assert.match(page, /ref=\{shellRef\}/);
+  // Remeasured on resize, and when the breadcrumb wraps without one.
+  assert.match(page, /window\.addEventListener\("resize", measure\)/);
+  assert.match(page, /new ResizeObserver\(measure\)/);
+  // No feedback loop: a sub-pixel change must not re-trigger a write every frame.
+  assert.match(page, /Math\.abs\(previous - top\) > 1/);
+});
+
+test("the rail and the section picker are mutually exclusive at every width", () => {
+  /*
+   * Browser QA at 1024×768: the staff sidebar takes 280px from 1024 up, and a
+   * 216px appearance rail beside it left the workspace 440px — narrower than the
+   * three-column layout this pass replaced. Both sidebars are individually
+   * reasonable; the sum is not.
+   *
+   * They now swap at 1280px, and this asserts the swap is exclusive so no width
+   * shows both or neither.
+   */
+  assert.match(cssRules, /\.appearance-rail \{ display: none; \}/);
+  assert.match(cssRules, /@media \(min-width: 1280px\) \{\s*\.appearance-rail \{ display: block; \}/);
+  assert.match(chrome, /className="xl:hidden"/, "the picker hides exactly where the rail appears");
+  // Both render the same declared list, so they cannot offer different sections.
+  const railBlock = chrome.slice(chrome.indexOf("function SectionRail"), chrome.indexOf("function SectionPicker"));
+  const pickerBlock = chrome.slice(chrome.indexOf("function SectionPicker"));
+  for (const block of [railBlock, pickerBlock]) {
+    assert.match(block, /APPEARANCE_CLUSTERS\.map/);
+    assert.match(block, /APPEARANCE_SECTIONS\.filter/);
+  }
 });

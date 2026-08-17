@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 import { hero as shippedHero } from "@/lib/home/content";
@@ -581,9 +581,11 @@ export default function AppearancePage() {
 
   const currentSection = appearanceSection(section);
   const heroCopy = resolveHomepageHero(form.homepage, shippedHero);
+  const shellRef = useShellHeight();
 
   return (
     <main
+      ref={shellRef}
       className="appearance-shell"
       style={variables}
       data-theme-scope="true"
@@ -931,6 +933,64 @@ export default function AppearancePage() {
       ) : null}
     </main>
   );
+}
+
+/**
+ * Tell the shell how far down the viewport it starts.
+ *
+ * ## Why this is measured rather than calculated
+ *
+ * The shell is a fixed-height flex column so that the action bar can sit below
+ * the scrolling workspace instead of over it. That only works if its height is
+ * *the space actually available*, and the space available depends on how much
+ * staff chrome is above it — the site header, the content container's padding,
+ * and the breadcrumb.
+ *
+ * The first version copied `.staff-shell-rail`'s expression, `calc(100dvh -
+ * var(--km-header-height) - 2rem)`, and was wrong by 47px: the rail is
+ * `position: sticky` and pins itself to the top of the viewport, while the shell
+ * is in normal flow below the breadcrumb. At 1366×768 that put the publish bar
+ * 31px below the fold — in the editor whose entire purpose was to stop controls
+ * falling off the bottom of a laptop screen. Browser QA caught it; no test
+ * could have, because both numbers are plausible and the difference is only
+ * visible after layout.
+ *
+ * Hard-coding the breadcrumb's height would have worked today and drifted
+ * silently the next time the staff chrome changed. So the shell asks the
+ * browser, which is the only thing that knows.
+ *
+ * No feedback loop: the shell is the last child of its column, so its own height
+ * cannot move its top. The 1px threshold guards against sub-pixel jitter
+ * re-triggering a write on every resize frame.
+ */
+function useShellHeight() {
+  const ref = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const shell = ref.current;
+    if (!shell) return;
+
+    const measure = () => {
+      const top = shell.getBoundingClientRect().top + window.scrollY;
+      const previous = Number.parseFloat(shell.style.getPropertyValue("--appearance-top"));
+      if (Number.isNaN(previous) || Math.abs(previous - top) > 1) {
+        shell.style.setProperty("--appearance-top", `${top}px`);
+      }
+    };
+
+    measure();
+    window.addEventListener("resize", measure);
+    // The breadcrumb can wrap to a second line when the section name is long,
+    // which moves the shell without a resize event.
+    const observer = new ResizeObserver(measure);
+    if (shell.parentElement) observer.observe(shell.parentElement);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer.disconnect();
+    };
+  }, []);
+
+  return ref;
 }
 
 /**
