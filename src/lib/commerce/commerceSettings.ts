@@ -129,6 +129,20 @@ export function isDeliverableAddress(address: Address | null | undefined): boole
 }
 
 /**
+ * The same test, for a value straight out of a `jsonb` column.
+ *
+ * Separate entry point for the same reason `formatStoredAddressLines` is one:
+ * a caller reading `orders.shipping_address` holds `unknown`, and casting it
+ * through `as unknown as Address` asserts the one thing that has not been
+ * checked. The fulfillment queue and the shipping guard both ask this of raw
+ * database values, so the cast would otherwise appear twice.
+ */
+export function isDeliverableStoredAddress(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  return isDeliverableAddress(coerceStoredAddress(raw));
+}
+
+/**
  * One-line rendering for confirmations and printed documents.
  *
  * Reads through `coerceStoredAddress`, so a legacy `state`/`postal_code` row

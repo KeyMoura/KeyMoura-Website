@@ -18,8 +18,19 @@ export function orderLabel(value: string) {
  * leak just because another production status was added to the database.
  */
 export function orderCustomerStatus(status: string, fulfillmentStatus?: string | null) {
+  /*
+   * The delivery state wins wherever it says something the order status cannot.
+   *
+   * `delivered` and `picked_up` were missing, so both fell through to the
+   * `completed` label and every finished order — posted or collected — read a
+   * flat "Complete". "Delivered" and "Picked up" are what the customer
+   * actually wants confirmed, and they are the more specific truth.
+   */
   if (["shipped", "in_transit"].includes(fulfillmentStatus ?? "")) return "Shipped";
+  if (fulfillmentStatus === "delivered") return "Delivered";
+  if (fulfillmentStatus === "picked_up") return "Picked up";
   if (fulfillmentStatus === "ready_for_pickup") return "Ready for pickup";
+  if (fulfillmentStatus === "ready_to_fulfill") return "Ready to ship";
   const labels: Record<string, string> = {
     requested: "Request received",
     needs_information: "Details needed",
@@ -31,7 +42,9 @@ export function orderCustomerStatus(status: string, fulfillmentStatus?: string |
     production_active: "In production",
     qc: "Final checks",
     final_review: "Your review needed",
-    ready: "Ready for fulfillment",
+    // Not "Ready for fulfillment": that is the shop's word for its own next
+    // step, and it tells a customer nothing about their order.
+    ready: "Ready to send",
     fulfilled: "Shipped",
     completed: "Complete",
     declined: "Not proceeding",
