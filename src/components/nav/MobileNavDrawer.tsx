@@ -227,7 +227,12 @@ export default function MobileNavDrawer({
             customer who opened the menu first does not have to close it again
             to search.
           */}
-          <StorefrontSearch variant="drawer" className="mobile-nav-search-field" onNavigate={onClose} />
+          <StorefrontSearch
+            variant="drawer"
+            className="mobile-nav-search-field"
+            onNavigate={onClose}
+            nav={productsNav}
+          />
 
           <nav aria-label="Primary" className="mobile-nav-group">
             {/*

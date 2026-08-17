@@ -13,28 +13,49 @@ type CommerceSearchProps = {
   onClear: () => void;
   /** The id the label points at. Supplied so two instances cannot collide. */
   inputId: string;
-  placeholder?: string;
+  /**
+   * The department currently being browsed, when there is one.
+   *
+   * Names the control after what it actually narrows — "Filter Interior" rather
+   * than "Search products" — which is the difference between this and the
+   * navbar's search. See the note below.
+   */
+  scopeName?: string | null;
   className?: string;
 };
 
 /**
- * The storefront's search control.
+ * The catalog's own filter.
+ *
+ * ## Why it is a filter now, and not a second search
+ *
+ * It used to call itself "Search products", with a search landmark of that
+ * name, a `Search` button and a "Search products…" placeholder — while the
+ * navbar, two inches above it, carried a control with the identical name that
+ * writes the identical `?q=` parameter. Two boxes, one search: a screen reader
+ * met two `search` landmarks called the same thing on one page, and a customer
+ * met a field that looked like it might search something *else*.
+ *
+ * It was not removed, because it does something the navbar cannot. The navbar
+ * navigates — every scope it offers resolves to a URL and going there is the
+ * whole interaction. This narrows the list already on the screen, per keystroke,
+ * from products already in memory, without a round trip. Refining in place and
+ * going somewhere are different actions, and the brief's rule keeps a local
+ * control that serves a genuinely different scoped purpose.
+ *
+ * So what changed is what it claims to be. It is named for the narrowing it
+ * does, it says which department it is narrowing when the customer is inside
+ * one, and its landmark no longer collides with the global search's.
  *
  * ## Why this is a form and not an input
  *
  * The catalog filters as you type, so a submit button is technically redundant
  * — and it was left out for exactly that reason, which is how the storefront
- * ended up with a search box indistinguishable from an admin table's filter
- * field. On a shop, search is the primary way a customer states what they came
- * for, and a bare input with a placeholder does not read as a thing you *do*.
- * A labelled row with an icon, a real submit button and a visible clear action
- * does.
- *
- * The button is not decorative. It gives the control a keyboard-and-touch
- * commit that skips the 350ms debounce, it gives the mobile keyboard a real
- * "Search" key through `type="search"` inside a form, and it is the affordance
- * that tells a customer this box is worth typing a sentence into. Enter submits
- * the form, which is the same path.
+ * ended up with a filter field indistinguishable from an admin table's. The
+ * button gives the control a keyboard-and-touch commit that skips the 350ms
+ * debounce, it gives the mobile keyboard a real action key through
+ * `type="search"` inside a form, and it is the affordance that tells a customer
+ * this box is worth typing into. Enter submits the form, which is the same path.
  *
  * ## Why the parent owns the text
  *
@@ -49,22 +70,25 @@ export default function CommerceSearch({
   onSubmit,
   onClear,
   inputId,
-  // Short on purpose. "Search products, categories, or keywords" is more
-  // informative and does not fit: at 375 the field is about 250px and the
-  // sentence clips mid-word, which reads as a broken control rather than a
-  // helpful one. The icon and the button already say this is a search; the
-  // placeholder only has to say what is being searched.
-  placeholder = "Search products…",
+  scopeName,
   className,
 }: CommerceSearchProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Short on purpose. "Filter by name, description, or keyword" is more
+  // informative and does not fit: at 375 the field is about 250px and the
+  // sentence clips mid-word, which reads as a broken control rather than a
+  // helpful one. The icon and the button already say what kind of control this
+  // is; the label only has to say what it narrows.
+  const label = scopeName ? `Filter ${scopeName}` : "Filter products";
+  const placeholder = `${label}…`;
 
   return (
     <form
       role="search"
       // A search landmark needs a name of its own; without one a screen reader
-      // announces "search" twice on any page that has a second one.
-      aria-label="Search products"
+      // announces "search" twice on this page, which has the navbar's as well.
+      aria-label={label}
       className={`commerce-search ${className ?? ""}`.trim()}
       onSubmit={(event) => {
         event.preventDefault();
@@ -76,7 +100,7 @@ export default function CommerceSearch({
     >
       <div className="commerce-search-field">
         <label className="sr-only" htmlFor={inputId}>
-          Search products
+          {label}
         </label>
         <FontAwesomeIcon icon={faMagnifyingGlass} className="commerce-search-icon" aria-hidden="true" />
         <input
@@ -101,16 +125,18 @@ export default function CommerceSearch({
               inputRef.current?.focus();
             }}
             className="commerce-search-clear"
-            aria-label="Clear search"
+            aria-label="Clear filter"
           >
             <FontAwesomeIcon icon={faXmark} className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         ) : null}
       </div>
 
-      <button type="submit" className="ui-btn ui-btn-primary commerce-search-submit">
+      {/* `aria-label` as well as the visible word, because the word is hidden
+          below the breakpoint where the button becomes icon-only. */}
+      <button type="submit" className="ui-btn ui-btn-primary commerce-search-submit" aria-label={label}>
         <FontAwesomeIcon icon={faMagnifyingGlass} className="commerce-search-submit-icon" aria-hidden="true" />
-        <span className="commerce-search-submit-label">Search</span>
+        <span className="commerce-search-submit-label">Filter</span>
       </button>
     </form>
   );
