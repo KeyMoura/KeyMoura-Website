@@ -485,10 +485,18 @@ export function HomeAssurances() {
   );
 }
 
-/** The close: large, quiet, and two doors again — the same two the hero opened with. */
+/**
+ * The close: large, quiet, and two doors again — the same two the hero opened with.
+ *
+ * `page-closing-band` is not decoration. It states that this section finishes
+ * the page, and the footer reads it to drop the 4rem lead-in it adds after
+ * constrained content. Without it the band's own 4.5–8rem of padding and its
+ * border were followed by 64px of unpainted page background before the footer's
+ * border — the empty strip reported above the footer.
+ */
 export function HomeFinalCta() {
   return (
-    <section className="home-close" aria-labelledby="home-close">
+    <section className="home-close page-closing-band" aria-labelledby="home-close">
       <div className="home-close-wash" aria-hidden="true" />
       <Reveal className="home-shell home-close-inner">
         <p className="home-eyebrow">{finalCta.label}</p>

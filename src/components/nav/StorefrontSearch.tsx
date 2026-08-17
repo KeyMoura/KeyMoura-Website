@@ -22,6 +22,7 @@ import {
   searchDestination,
 } from "@/lib/commerce/searchScopes";
 import { EMPTY_STOREFRONT_NAV, type StorefrontNav } from "@/lib/commerce/storefrontNavModel";
+import { trackSearch, trackSearchClick } from "@/lib/search/track";
 
 /**
  * The storefront's global search.
@@ -212,6 +213,7 @@ export default function StorefrontSearch({
     [onNavigate, router]
   );
 
+
   /*
    * Only rows that came back *for this scope* are selectable.
    *
@@ -225,12 +227,62 @@ export default function StorefrontSearch({
   );
   const total = rows.length;
 
+  /*
+   * Analytics, on commit only.
+   *
+   * A row per keystroke — or per debounce pause — would make the record of what
+   * customers search for mostly a record of them typing, and the fragments on
+   * the way to a real query are not questions anybody asked. So the event is
+   * written when the customer commits: Enter, the button, or choosing a
+   * suggestion. Where they chose one, the click is written against the event
+   * that produced it, carrying the rank they actually saw it at.
+   *
+   * Neither call is awaited on the navigation path and neither can throw into
+   * it. Both post to a server route that validates the payload, because the
+   * ranking reads this back and the browser is the thing being measured.
+   */
+  const commit = useCallback(
+    (href: string, chosen: { row: SuggestRow; position: number } | null) => {
+      const committed = normalizeSuggestQuery(value);
+      if (committed) {
+        void trackSearch({
+          source: "storefront-nav",
+          query: committed,
+          scope: scope.id,
+          resultCount: total,
+        }).then((searchEventId) => {
+          // A category row is a navigation destination rather than a catalog
+          // record: it has an href and a name, and no id to attribute a click
+          // to. Sending its href as a result id would fail validation, so the
+          // search is recorded and the click is simply not claimed.
+          const identity =
+            chosen?.row.kind === "product"
+              ? ({ resultType: "product", resultId: chosen.row.product.id } as const)
+              : chosen?.row.kind === "project"
+                ? ({ resultType: "project", resultId: chosen.row.project.id } as const)
+                : null;
+          if (!identity || !chosen) return;
+          trackSearchClick({
+            source: "storefront-nav",
+            searchEventId,
+            ...identity,
+            position: chosen.position,
+            scope: scope.id,
+            query: committed,
+          });
+        });
+      }
+      go(href);
+    },
+    [go, scope.id, total, value]
+  );
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     // A highlighted suggestion wins: the customer chose a specific thing and
     // sending them to a result page for it instead would be ignoring the choice.
-    const chosen = rows[active]?.href;
-    go(chosen ?? searchDestination(scope, value));
+    const chosen = rows[active];
+    commit(chosen?.href ?? searchDestination(scope, value), chosen ? { row: chosen, position: active } : null);
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -294,7 +346,7 @@ export default function StorefrontSearch({
               // mousedown, not click: the input blurs before click fires and
               // the outside-click handler would have closed the panel first.
               event.preventDefault();
-              go(row.href);
+              commit(row.href, { row, position: index });
             }}
           >
             {row.kind === "product" ? (
@@ -473,7 +525,7 @@ export default function StorefrontSearch({
                 className="storefront-search-all"
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  go(searchDestination(scope, value));
+                  commit(searchDestination(scope, value), null);
                 }}
               >
                 {scope.kind === "category"
@@ -488,7 +540,7 @@ export default function StorefrontSearch({
                 className="storefront-search-all"
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  go(projectsDestination(value));
+                  commit(projectsDestination(value), null);
                 }}
               >
                 See all project results for “{query}”

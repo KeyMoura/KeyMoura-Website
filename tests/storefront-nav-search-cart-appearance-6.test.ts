@@ -374,7 +374,11 @@ test("keyboard selection indexes one flat row list across all three groups", () 
   assert.match(search, /role="listbox"/);
   assert.match(search, /role="option"/);
   assert.match(search, /aria-activedescendant/);
-  assert.match(search, /rows\[active\]\?\.href/, "Enter must follow the highlighted row");
+  // Enter follows the highlight. The submit handler reads the row at `active`
+  // and uses its href, falling back to the scope's results page only when
+  // nothing is highlighted — `active` being -1 is a real position in the cycle.
+  assert.match(search, /const chosen = rows\[active\]/, "Enter must read the highlighted row");
+  assert.match(search, /chosen\?\.href \?\? searchDestination\(scope, value\)/, "…and follow it");
 });
 
 test("the placeholder and the landmark name say which scope is active", () => {

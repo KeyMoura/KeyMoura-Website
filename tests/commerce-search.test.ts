@@ -102,9 +102,33 @@ test("there is a real submit button", () => {
   assert.match(markup, /<button type="submit"[^>]*aria-label="Filter products"/);
   // And it stays a labelled control at narrow widths rather than disappearing:
   // the word is swapped for an icon, and the word survives as its name.
-  assert.match(globalsCss, /\.commerce-search-submit-icon \{ display: none;/);
-  assert.match(globalsCss, /@media \(max-width: 419\.98px\) \{[\s\S]*?\.commerce-search-submit-icon \{ display: inline-block; \}/);
+  //
+  // The swap is written with `--fa-display`, not `display`. Font Awesome's
+  // React component injects its own stylesheet at runtime and that stylesheet
+  // is **unlayered** — `.svg-inline--fa { display: var(--fa-display,
+  // inline-block) }` — so unlayered beats every `@layer`, whatever the
+  // specificity. The `display: none` this rule used to carry lived in
+  // `@layer components` and therefore never took effect: the button drew its
+  // magnifier *and* its word at every width. Setting the custom property the
+  // injected rule reads is the version that works from inside a layer.
+  assert.match(globalsCss, /\.commerce-search-submit-icon \{ --fa-display: none;/);
+  assert.match(globalsCss, /@media \(max-width: 419\.98px\) \{[\s\S]*?\.commerce-search-submit-icon \{ --fa-display: inline-block; \}/);
   assert.match(globalsCss, /\.commerce-search-submit-label \{ position: absolute; width: 1px;/);
+});
+
+test("hiding a Font Awesome icon never uses `display`, which cannot win", () => {
+  // A regression guard for the trap above: any rule in globals.css that targets
+  // one of the icon classes must set `--fa-display`, because a `display`
+  // declaration on the same selector is silently discarded by the unlayered
+  // stylesheet Font Awesome injects.
+  const iconRules = globalsCss.match(/^\s*\.[a-z-]*-(?:search-icon|submit-icon)[^{]*\{[^}]*\}/gm) ?? [];
+  assert.ok(iconRules.length > 0, "expected to find icon rules to check");
+  for (const rule of iconRules) {
+    assert.ok(
+      !/(^|[^-])display:/.test(rule),
+      `Font Awesome icon rule sets \`display\`, which has no effect: ${rule.trim()}`
+    );
+  }
 });
 
 test("clear appears only when there is something to clear, and is named", () => {

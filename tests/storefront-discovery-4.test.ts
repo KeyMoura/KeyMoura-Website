@@ -511,7 +511,22 @@ test("query normalization is forgiving without being clever", () => {
 test("suggestions are bounded on the server, not trimmed in the browser", () => {
   assert.ok(SUGGEST_LIMITS.products <= 6);
   assert.ok(SUGGEST_LIMITS.categories <= 4);
-  assert.match(suggestRoute, /\.limit\(SUGGEST_LIMITS\.products\)/);
+
+  /*
+   * Two bounds now, because ranking was added between recall and the answer.
+   *
+   * The route used to ask the database for exactly five products and return
+   * them, which meant the five were whichever `ilike` matched first in
+   * `sort_order` — the best match for a query was routinely absent from a panel
+   * that had room for it. Recall is now bounded at `FUZZY_RECALL_LIMIT`, ranked,
+   * and *then* cut to `SUGGEST_LIMITS`. Both numbers are applied on the server;
+   * nothing is fetched wholesale and trimmed in the browser, which is what this
+   * test exists to guarantee.
+   */
+  assert.match(suggestRoute, /const FUZZY_RECALL_LIMIT = \d+;/, "recall is bounded");
+  assert.match(suggestRoute, /\.limit\(FUZZY_RECALL_LIMIT\)/, "…and the bound reaches the query");
+  assert.match(suggestRoute, /\.slice\(0, SUGGEST_LIMITS\.products\)/, "the answer is cut after ranking");
+  assert.match(suggestRoute, /\.slice\(0, SUGGEST_LIMITS\.projects\)/);
   // Short queries never reach the database at all.
   assert.match(suggestRoute, /minQueryLength/);
 });
