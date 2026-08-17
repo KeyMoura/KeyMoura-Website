@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { ORDER_HISTORY_SORTS, ORDER_HISTORY_SORT_OPTIONS, sortOrderHistory } from "../src/lib/commerce/orderHistory.ts";
 import { SORTS, emptyFilters } from "../src/lib/staff/orderFilters.ts";
 import { buildQueryPlan } from "../src/lib/staff/orderQueryPlan.ts";
+import { APPEARANCE_SECTIONS } from "../src/theme/appearanceSections.ts";
 import { APPEARANCE_SETTINGS } from "../src/theme/appearanceMap.ts";
 import { ownedKeys } from "../src/theme/appearanceTasks.ts";
 
@@ -109,24 +110,46 @@ test("account security exposes safe Supabase identity linking", () => {
 });
 
 test("appearance is organized around owner tasks, not kinds of setting", () => {
-  const page = read("src/app/staff/appearance/page.tsx");
   /*
-   * Pass 4.0 reorganised these. The previous six were named after *kinds of
-   * setting* — Colours, Shapes & density, Logos & icons — and the four things
-   * this pass was asked about had no home among them: the logo could only be a
-   * URL, the announcement bar was the security banner, homepage merchandising
-   * was code, and the navbar's shape and its colours were two sections apart.
+   * Pass 4.0 reorganised these away from *kinds of setting* — Colours, Shapes &
+   * density, Logos & icons — because the four things that pass was asked about
+   * had no home among them. Pass 5.0 finished the job and moved the declaration
+   * out of the page, so this reads the declaration.
+   *
+   * The sections a shop owner works in, by the name they would use for them.
    */
-  for (const label of ["Brand", "Navigation", "Announcement bar", "Homepage", "Colours", "Buttons & components", "Business details"]) {
-    assert.match(page, new RegExp(label));
+  const labels = APPEARANCE_SECTIONS.map((section) => section.label);
+  for (const label of [
+    "Brand",
+    "Navigation",
+    "Announcement bar",
+    "Homepage",
+    "Colours",
+    "Typography",
+    "Buttons & components",
+    "Product cards",
+    "Forms",
+    "Layout & density",
+    "Business details",
+  ]) {
+    assert.ok(labels.includes(label), `missing section: ${label}`);
   }
-  assert.match(page, /Reset this section/);
-  assert.match(page, /Publish appearance/);
-  assert.match(page, /You have unpublished appearance changes/);
-  for (const label of ["Layout & type", "Control shapes", "Segmented tabs", "Cards & panels", "Inputs", "Content width"]) {
-    assert.match(page, new RegExp(label));
+
+  // Every section says what it is in one sentence, and none of them says it in
+  // a paragraph — the old rail printed a full sentence under all eight entries,
+  // which is prose you read past on every visit to reach one word.
+  for (const section of APPEARANCE_SECTIONS) {
+    assert.ok(section.description.length > 30, `${section.id} needs a real sentence`);
+    assert.ok(section.description.length < 220, `${section.id}'s description is a paragraph`);
   }
-  assert.match(page, /"framed"/);
+
+  const panels = read("src/app/staff/appearance/panels.tsx");
+  const chrome = read("src/app/staff/appearance/EditorChrome.tsx");
+  assert.match(chrome, /Publish appearance/);
+  for (const label of ["Segmented tabs", "Cards & panels", "Content width", "Corner shape", "Typeface"]) {
+    assert.match(panels, new RegExp(label));
+  }
+  assert.match(panels, /"framed"/);
 });
 
 /**
@@ -185,14 +208,28 @@ test("every colour control is rendered from the declared task list", () => {
    * So "from the declared map" is still the property; the declaration simply
    * gained a layer that speaks the owner's vocabulary.
    */
-  const page = read("src/app/staff/appearance/page.tsx");
-  assert.match(page, /searchAppearanceTasks/, "the list is filtered by the shared search");
-  assert.match(page, /APPEARANCE_TASK_SECTIONS/, "sections come from the declaration, not from the page");
-  assert.match(page, /settingFor\(field\.key\)/, "each field resolves to its real map entry");
+  const controls = read("src/app/staff/appearance/ColorControls.tsx");
+  const panels = read("src/app/staff/appearance/panels.tsx");
+  assert.match(panels, /tasksForSection\(/, "sections come from the declaration, not from the page");
+  assert.match(controls, /settingFor\(field\.key\)/, "each field resolves to its real map entry");
+  assert.match(controls, /setting\.description/, "and renders that entry's own explanation");
 
-  // A hand-written colour field beside the declared ones would be a control with
-  // no description and no search terms — exactly what these passes removed.
-  assert.doesNotMatch(page, /function ColorField/, "there is no second, unexplained colour control");
+  /*
+   * There is exactly one colour control component.
+   *
+   * A second, hand-written swatch beside the declared ones would be a control
+   * with no description, no inheritance handling and no search terms — which is
+   * precisely what these passes removed. `ColorField` is private to
+   * `ColorControls.tsx`; nothing else may define one.
+   */
+  for (const file of ["page.tsx", "panels.tsx", "sections.tsx", "PreviewStage.tsx"]) {
+    assert.doesNotMatch(
+      read(`src/app/staff/appearance/${file}`),
+      /function ColorField/,
+      `${file} must not define a second colour control`
+    );
+  }
+  assert.match(controls, /function ColorField/, "the one colour control lives here");
 
   // Every colour still reaches a control, and no colour reaches two. Asserted
   // here as well as in the task suite because this is the test that would be

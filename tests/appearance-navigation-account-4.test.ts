@@ -36,6 +36,13 @@ import {
   sniffBrandImageType,
 } from "../src/lib/brandAssets.ts";
 import { accountSectionNav, isNavItemActive, primaryNav, secondaryNav } from "../src/lib/navigation.ts";
+import {
+  APPEARANCE_CLUSTERS,
+  APPEARANCE_SECTIONS,
+  sectionForTask,
+  tasksForSection,
+} from "../src/theme/appearanceSections.ts";
+import { APPEARANCE_TASKS } from "../src/theme/appearanceTasks.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 /** Source with comments removed, for "must not appear" assertions. */
@@ -47,6 +54,8 @@ const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, "");
 const header = read("src/components/SiteHeader.tsx");
 const appearancePage = read("src/app/staff/appearance/page.tsx");
 const sections = read("src/app/staff/appearance/sections.tsx");
+const chrome = read("src/app/staff/appearance/EditorChrome.tsx");
+const previewStage = read("src/app/staff/appearance/PreviewStage.tsx");
 const brandRoute = read("src/app/api/staff/appearance/brand-asset/route.ts");
 const appearanceRoute = read("src/app/api/staff/appearance/route.ts");
 
@@ -55,8 +64,24 @@ const appearanceRoute = read("src/app/api/staff/appearance/route.ts");
 // ===========================================================================
 
 test("Appearance is sectioned by owner task, and every section resets only itself", () => {
-  for (const section of ["brand", "navigation", "announcement", "homepage", "colors", "components", "business", "templates"]) {
-    assert.match(appearancePage, new RegExp(`${section}: \\{ label:`), `${section} needs a heading and a description`);
+  /*
+   * The section list moved out of the page and into `appearanceSections.ts`,
+   * which is the point of 5.0: the rail, the workspace and the search all read
+   * one declaration, so they cannot disagree about what the editor contains.
+   * Asserting the declaration is therefore stricter than the old string match
+   * against the page, not looser.
+   */
+  for (const id of ["brand", "navigation", "announcement", "homepage", "colours", "components", "business", "templates"]) {
+    const section = APPEARANCE_SECTIONS.find((entry) => entry.id === id);
+    assert.ok(section, `${id} must be a section`);
+    assert.ok(section.label && section.description, `${id} needs a heading and a description`);
+  }
+
+  // Every section belongs to a declared cluster, so none can be orphaned out of
+  // the rail by a typo.
+  const clusters = new Set(APPEARANCE_CLUSTERS.map((cluster) => cluster.id));
+  for (const section of APPEARANCE_SECTIONS) {
+    assert.ok(clusters.has(section.cluster), `${section.id} is in an unknown cluster`);
   }
 
   /*
@@ -67,35 +92,58 @@ test("Appearance is sectioned by owner task, and every section resets only itsel
    */
   const reset = appearancePage.slice(
     appearancePage.indexOf("const resetSection ="),
-    appearancePage.indexOf("async function save()")
+    appearancePage.indexOf("const sectionDirty")
   );
-  for (const branch of ["brand", "announcement", "homepage", "colors", "navigation", "components"]) {
+  for (const branch of ["brand", "announcement", "homepage", "business", "templates"]) {
     assert.ok(reset.includes(`"${branch}"`), `${branch} must have its own reset branch`);
   }
   assert.match(reset, /saved\.brand/);
   assert.match(reset, /saved\.announcement/);
   assert.match(reset, /saved\.homepage/);
+  // The colour branches are derived from the section map rather than a
+  // hand-written key list, so a colour that moves between sections cannot end
+  // up reset by both sections or by neither.
+  assert.match(reset, /settingSection\(setting\) !== section/);
+  assert.match(reset, /SECTION_CHOICE_KEYS\[section\]/);
 });
 
 test("the colour list is partitioned, so no colour has two controls", () => {
-  // Navigation shows the navbar's colours; Colours shows everything else. Both
-  // render the same list through one filter rather than duplicating entries —
-  // the rule `appearanceTasks.ts` exists to hold.
-  assert.match(appearancePage, /only="navigation"/);
-  assert.match(appearancePage, /only="site"/);
-  assert.match(appearancePage, /function isNavigationTask/);
-  assert.match(appearancePage, /isNavigationTask\(task\) === wantsNav/);
+  /*
+   * 5.0 widened this from a two-way split (navbar / everything else) to the
+   * full section map, so the property is asserted directly rather than through
+   * the shape of one filter: every task lands in exactly one section, and the
+   * union of the sections is the whole task list.
+   */
+  const seen = new Set<string>();
+  for (const task of APPEARANCE_TASKS) {
+    const section = sectionForTask(task.id);
+    assert.ok(
+      APPEARANCE_SECTIONS.some((entry) => entry.id === section),
+      `${task.id} is filed under an unknown section ${section}`
+    );
+    assert.ok(!seen.has(task.id), `${task.id} appears twice`);
+    seen.add(task.id);
+  }
+
+  const covered = APPEARANCE_SECTIONS.flatMap((entry) => tasksForSection(entry.id)).map((task) => task.id);
+  assert.equal(new Set(covered).size, APPEARANCE_TASKS.length, "every task must be reachable from a section");
+  assert.equal(covered.length, APPEARANCE_TASKS.length, "no task may be drawn by two sections");
 });
 
 test("unsaved state, save feedback and publishing stay explicit", () => {
-  assert.match(appearancePage, /You have unpublished appearance changes/);
-  assert.match(appearancePage, /Appearance is up to date/);
-  assert.match(appearancePage, /Discard changes/);
-  assert.match(appearancePage, /Publish appearance/);
-  assert.match(appearancePage, /Reset this section/);
+  // The action bar moved into the editor shell, where it is a sibling below the
+  // scrolling workspace rather than a `position: fixed` layer over it.
+  assert.match(chrome, /unpublished \{changed === 1 \? "change" : "changes"\}/);
+  assert.match(chrome, /Everything here is published/);
+  assert.match(chrome, /Discard changes/);
+  assert.match(chrome, /Publish appearance/);
+  assert.match(chrome, /aria-live="polite"/, "the dirty count must be announced when it changes");
+  assert.doesNotMatch(code(chrome), /fixed inset-x-0/, "the action bar must not be fixed over content");
+  assert.match(appearancePage, /Reset \{currentSection\.label\.toLowerCase\(\)\}/);
   // Feedback is a status region, never a modal dialog the browser owns.
   assert.doesNotMatch(code(appearancePage), /\balert\(/);
   assert.doesNotMatch(code(sections), /\balert\(/);
+  assert.doesNotMatch(code(chrome), /\balert\(/);
 });
 
 test("uploading a logo does not publish it", () => {
@@ -356,10 +404,9 @@ test("product ids are validated, never interpolated blind", () => {
   assert.equal(normalizeProductId("3F2504E0-4F89-41D3-9A0C-0305E82C3301"), "3f2504e0-4f89-41d3-9a0c-0305e82c3301");
   assert.equal(normalizeProductId("' or 1=1 --"), "");
   assert.equal(normalizeProductId(42), "");
-  assert.deepEqual(normalizeHomepageConfig({ homepage: { featuredProductId: "nope" } }), {
-    featuredProductId: "",
-    heroProductId: "",
-  });
+  const normalized = normalizeHomepageConfig({ homepage: { featuredProductId: "nope" } });
+  assert.equal(normalized.featuredProductId, "");
+  assert.equal(normalized.heroProductId, "");
 });
 
 test("the featured product is chosen by searching, not by pasting a UUID", () => {
@@ -517,8 +564,15 @@ test("the announcement wraps on a phone rather than truncating a promo code", ()
 });
 
 test("the editor previews the real component, not an approximation of it", () => {
-  assert.match(sections, /import AnnouncementBar from "@\/components\/AnnouncementBar"/);
-  assert.match(sections, /<AnnouncementBar/);
+  // The preview moved out of the announcement editor and into the shared stage,
+  // which is where every section's preview now lives. It is still the real
+  // component: an approximation that drifts is worse than no preview at all.
+  assert.match(previewStage, /import AnnouncementBar from "@\/components\/AnnouncementBar"/);
+  assert.match(previewStage, /<AnnouncementBar/);
+  // And the product card is the catalog's own component, in the catalog's grid.
+  assert.match(previewStage, /import ProductCard/);
+  assert.match(previewStage, /<ProductCard /);
+  assert.match(previewStage, /className="catalog-grid"/);
 });
 
 test("the preview renders the normalized config, never the raw form", () => {
@@ -534,9 +588,9 @@ test("the preview renders the normalized config, never the raw form", () => {
    * renders what `normalizeAnnouncementConfig` produces, which is what would
    * actually be stored.
    */
-  assert.match(sections, /const preview = normalizeAnnouncementConfig\(\{ announcement \}\)/);
-  assert.match(sections, /<AnnouncementBar[\s\S]{0,160}config=\{preview\}/);
-  assert.doesNotMatch(sections, /config=\{announcement\}/);
+  assert.match(previewStage, /const config = normalizeAnnouncementConfig\(\{ announcement \}\)/);
+  assert.match(previewStage, /<AnnouncementBar[\s\S]{0,160}config=\{config\}/);
+  assert.doesNotMatch(previewStage, /config=\{announcement\}/);
 
   // The property the fix relies on.
   assert.equal(
@@ -815,7 +869,7 @@ test("the upload control is a real, labelled file input", () => {
 });
 
 test("appearance inputs are labelled and their errors are associated", () => {
-  assert.match(sections, /aria-describedby=\{error \? errorId : undefined\}/);
+  assert.match(sections, /"aria-describedby": error \? errorId : undefined/);
   assert.match(sections, /<label htmlFor=\{id\}/);
   // Toggles are real checkboxes, not divs with role="switch" and hand-written
   // key handling.
@@ -824,7 +878,11 @@ test("appearance inputs are labelled and their errors are associated", () => {
 });
 
 test("the section list is keyboard navigable and says which section is open", () => {
-  assert.match(appearancePage, /aria-label="Appearance sections"/);
-  assert.match(appearancePage, /aria-current=\{section === key \? "page" : undefined\}/);
-  assert.match(appearancePage, /type="button"/);
+  assert.match(chrome, /aria-label="Appearance sections"/);
+  assert.match(chrome, /aria-current=\{section === entry\.id \? "page" : undefined\}/);
+  assert.match(chrome, /type="button"/);
+  // Below the rail's breakpoint the same list is a native <select>, so a phone
+  // gets the platform's own picker rather than a hand-built drawer.
+  assert.match(chrome, /function SectionPicker/);
+  assert.match(chrome, /<optgroup key=\{cluster\.id\} label=\{cluster\.label\}>/);
 });

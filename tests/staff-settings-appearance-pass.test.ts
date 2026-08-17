@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import {
+  APPEARANCE_SEARCH_INDEX,
+  APPEARANCE_SECTIONS,
+  searchAppearance,
+  sectionForTask,
+} from "../src/theme/appearanceSections.ts";
+import { SECTION_TOGGLES } from "../src/theme/homepage.ts";
 import { APPEARANCE_TASK_SECTIONS, APPEARANCE_TASKS, searchAppearanceTasks } from "../src/theme/appearanceTasks.ts";
 import { PRIMARY_STAFF_NAV_ITEMS, visibleStaffNav } from "../src/lib/staffNavigation.ts";
 
@@ -101,31 +108,151 @@ test("search still finds a control by what it is called on the storefront", () =
   assert.equal(searchAppearanceTasks("").length, APPEARANCE_TASKS.length);
 });
 
-test("Advanced keeps the uncommon raw controls", () => {
+test("the uncommon controls are filed by subject, not hidden behind a disclosure", () => {
+  /*
+   * ## What changed in 5.0, and why the old assertion had to go
+   *
+   * `APPEARANCE_TASKS` still files seven tasks under an `advanced` section, and
+   * that is still the right call *for the task data*: the page fade, body links,
+   * navbar hover, the two utility-button tasks, the count badge and the menu
+   * panels genuinely are the rarely-touched ones.
+   *
+   * What was wrong was the editor treating "rare" as a place. Five of those
+   * seven are navbar states, and filing them behind a collapsed disclosure in a
+   * different section is what made the obvious question — what is the
+   * difference between a link at rest, under the pointer, and on the page you
+   * are on — impossible to answer without knowing to open a `<details>` first.
+   *
+   * So the *presentation* now files them by subject. `sectionForTask` is the
+   * mapping, and this asserts that none of them landed back in a section a
+   * shop owner would never think to open.
+   */
   const advanced = APPEARANCE_TASKS.filter((task) => task.section === "advanced");
-  assert.ok(advanced.length >= 5, "Advanced must still hold the uncommon controls");
-  const page = read("src/app/staff/appearance/page.tsx");
-  // Still a disclosure, and still opened by a search that matches inside it.
-  assert.match(page, /<details className="ui-card p-4" open=\{searching\}>/);
+  assert.ok(advanced.length >= 5, "the task data still records which controls are uncommon");
+
+  for (const task of advanced) {
+    const section = sectionForTask(task.id);
+    assert.notEqual(section, "advanced", `${task.id} must be filed by subject, not by rarity`);
+    assert.ok(
+      APPEARANCE_SECTIONS.some((entry) => entry.id === section),
+      `${task.id} landed in an unknown section`
+    );
+  }
+
+  // The five navbar states belong with the navbar.
+  for (const id of [
+    "advanced-navbar-hover",
+    "advanced-utility-buttons",
+    "advanced-utility-hover",
+    "advanced-count-badge",
+    "advanced-menus",
+  ]) {
+    assert.equal(sectionForTask(id), "navigation", `${id} is a navbar control`);
+  }
+
+  /*
+   * And the Advanced *section* that remains is a read-only reference rather
+   * than a drawer of settings. The brief was explicit: the main editor must not
+   * be a CSS-variable inspector, and a developer-oriented token reference is
+   * welcome behind Advanced. That is exactly what is there.
+   */
+  const panels = read("src/app/staff/appearance/panels.tsx");
+  assert.match(panels, /function AdvancedPanel/);
+  assert.match(panels, /setting\.variable/, "the reference must name the CSS variable");
+  assert.match(panels, /Read-only/, "and must say that it is not where you edit");
 });
 
-test("the preview can take you to the setting behind what it shows", () => {
+test("search takes you to the setting itself, not just to its section", () => {
+  /*
+   * Widened from the preview's "Edit these" jump to the editor's search, which
+   * is where this now matters most. The old search filtered the colour list in
+   * place, so the six things this pass was asked to make easy — the
+   * announcement message, the logo, the featured product, the hero image, the
+   * site-name toggle, Add to cart — matched nothing at all, because none of
+   * them is a colour.
+   */
+  const chrome = read("src/app/staff/appearance/EditorChrome.tsx");
   const page = read("src/app/staff/appearance/page.tsx");
-  assert.match(page, /function jumpToAppearanceTask/);
-  // Each of the three steps that make the jump actually land.
-  assert.match(page, /closest\("details"\)\?\.setAttribute\("open", ""\)/, "must open a collapsed ancestor");
-  assert.match(page, /scrollIntoView/);
-  assert.match(page, /\.focus\(\{ preventScroll: true \}\)/, "must move focus, not only scroll");
-  assert.match(page, /setColorQuery\(""\)/, "must clear a filter that could hide the target");
-  // The anchors it jumps to exist, and are focusable.
-  assert.match(page, /id=\{`appearance-\$\{task\.id\}`\}/);
-  assert.match(page, /tabIndex=\{-1\}/);
 
-  // Every declared jump target is a real task id.
-  const targets = [...page.matchAll(/jumpTo="([a-z0-9-]+)"/g)].map((match) => match[1]);
-  assert.ok(targets.length >= 5, "the preview blocks should offer jumps");
-  const known = new Set(APPEARANCE_TASKS.map((task) => task.id));
-  for (const target of targets) assert.ok(known.has(target), `jumpTo="${target}" is not a task`);
+  assert.match(chrome, /export function focusControl/);
+  // Each of the three steps that make the jump actually land.
+  assert.match(chrome, /closest\("details"\)\?\.setAttribute\("open", ""\)/, "must open a collapsed ancestor");
+  assert.match(chrome, /scrollIntoView/);
+  assert.match(chrome, /\.focus\(\{ preventScroll: true \}\)/, "must move focus, not only scroll");
+  // Choosing a result opens the section that holds the control first; landing
+  // on an element that is not rendered is a silent no-op.
+  assert.match(page, /setSection\(target\)/);
+  assert.match(page, /window\.setTimeout\(\(\) => focusControl\(anchor\), 0\)/);
+
+  // The anchors are focusable, and both ends agree on how the id is built.
+  assert.match(chrome, /return `appearance-\$\{anchor\}`/);
+  assert.match(chrome, /tabIndex=\{-1\}/);
+
+  /*
+   * Every search result points at a control the editor actually renders.
+   *
+   * This is the assertion that keeps the index honest: an entry naming an
+   * anchor nobody draws sends the owner to a section where nothing happens and
+   * nothing explains why, which is worse than not matching at all.
+   */
+  const rendered = new Set<string>();
+  const sources = [
+    page,
+    chrome,
+    read("src/app/staff/appearance/sections.tsx"),
+    read("src/app/staff/appearance/panels.tsx"),
+    read("src/app/staff/appearance/ColorControls.tsx"),
+    read("src/app/staff/appearance/LogoUpload.tsx"),
+  ].join("\n");
+
+  for (const match of sources.matchAll(/anchor="([a-z0-9-]+)"/g)) rendered.add(match[1]);
+  for (const match of sources.matchAll(/anchor=\{"([a-z0-9-]+)"\}/g)) rendered.add(match[1]);
+  for (const match of sources.matchAll(/id="appearance-([a-z0-9-]+)"/g)) rendered.add(match[1]);
+  // The colour tasks and the homepage toggles are rendered from their lists.
+  for (const task of APPEARANCE_TASKS) rendered.add(`task-${task.id}`);
+  for (const match of sources.matchAll(/appearance-homepage-section-\$\{toggle\.id\}/g)) {
+    void match;
+    for (const toggle of SECTION_TOGGLES) rendered.add(`homepage-section-${toggle.id}`);
+  }
+
+  const missing = APPEARANCE_SEARCH_INDEX.filter((entry) => !rendered.has(entry.anchor)).map(
+    (entry) => entry.anchor
+  );
+  assert.deepEqual(missing, [], `search offers anchors nothing renders: ${missing.join(", ")}`);
+});
+
+test("search finds the things a shop owner actually types", () => {
+  /*
+   * The concrete cases from the brief. Each of these matched nothing before
+   * this pass, because the search was a filter over the colour list.
+   */
+  const cases: [string, string][] = [
+    ["announcement", "announcement-message"],
+    ["logo", "brand-primary-logo"],
+    ["add to cart", "commerce-cta"],
+    ["featured product", "homepage-featured-product"],
+    ["hero image", "homepage-hero-image"],
+    ["navbar", "task-navbar"],
+    ["site name", "brand-show-name"],
+    ["favicon", "business-icons"],
+    ["typeface", "type-font"],
+  ];
+
+  for (const [query, expected] of cases) {
+    const results = searchAppearance(query);
+    assert.ok(results.length > 0, `"${query}" must find something`);
+    assert.ok(
+      results.some((entry) => entry.anchor === expected),
+      `"${query}" must find ${expected}; got ${results.map((entry) => entry.anchor).join(", ")}`
+    );
+  }
+
+  // An empty query returns nothing rather than everything: the results are a
+  // dropdown over the workspace, and opening it on focus with 60 rows in it
+  // would cover the controls the owner is looking at.
+  assert.deepEqual(searchAppearance(""), []);
+  assert.deepEqual(searchAppearance("   "), []);
+  assert.deepEqual(searchAppearance("zzzz-no-such-setting"), []);
 });
 
 /* -------------------------------------------------------------- navigation */

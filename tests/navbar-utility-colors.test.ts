@@ -1,4 +1,6 @@
 import test from "node:test";
+
+import { sectionForTask } from "../src/theme/appearanceSections.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -35,23 +37,33 @@ test("Appearance exposes a dedicated navbar utility controls subsection", () => 
   assert.match(map, /Utility button background/);
   assert.match(map, /Search, wishlist, cart, notifications and account buttons/);
 
-  // "Reset this section" derives from the map instead of a hand-maintained key
-  // list, so a colour added to one and not the other can no longer survive a
-  // reset. Asserting the derivation is what makes the 19-key list unnecessary.
-  //
-  // Pass 4.0 split the colour list across Colours and Navigation, and the reset
-  // reads the same `group` field the two sections are filtered by — so "what a
-  // section shows" and "what it resets" still cannot drift.
-  assert.match(page, /section === "colors" \|\| section === "navigation"[\s\S]{0,600}APPEARANCE_SETTINGS/);
-  assert.match(page, /setting\.group === "navbar" \|\| setting\.group === "navbarMenus"/);
+  /*
+   * Section reset derives from the section map instead of a hand-maintained key
+   * list, so a colour added to one and not the other can no longer survive a
+   * reset. Asserting the derivation is what makes the old 19-key list
+   * unnecessary.
+   *
+   * Pass 5.0 widened the split from two sections to the full map, and the reset
+   * reads the same `sectionForTask` the workspace renders from — so "what a
+   * section shows" and "what it resets" still cannot drift.
+   */
+  assert.match(page, /settingSection\(setting\) !== section/);
+  assert.match(page, /for \(const setting of APPEARANCE_SETTINGS\)/);
+
+  // Every utility colour is drawn by the Navigation workspace, which is where
+  // an owner looking at the cart and search buttons would go.
+  for (const id of ["advanced-utility-buttons", "advanced-utility-hover", "advanced-count-badge"]) {
+    assert.equal(sectionForTask(id), "navigation", `${id} belongs in Navigation`);
+  }
 
   // The live-preview CSS variable map must include the new tokens.
   for (const cssVar of UTILITY_CSS_VARS) {
     assert.match(page, new RegExp(cssVar.replace(/-/g, "\\-")));
   }
 
-  // The navbar preview panel should render the utility cluster too.
-  assert.match(page, /site-nav-utility/);
+  // The header preview renders the utility cluster too.
+  const stage = read("src/app/staff/appearance/PreviewStage.tsx");
+  assert.match(stage, /site-nav-utility/);
 });
 
 test("the root layout wires the navbar utility CSS variables from the saved theme", () => {

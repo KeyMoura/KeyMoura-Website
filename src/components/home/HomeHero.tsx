@@ -4,6 +4,7 @@ import HomeMedia from "@/components/home/HomeMedia";
 import Reveal from "@/components/Reveal";
 import { assurances, hero } from "@/lib/home/content";
 import type { ProductImageSource } from "@/lib/productImages";
+import type { ResolvedHero } from "@/theme/homepage";
 
 /**
  * The hero.
@@ -44,9 +45,18 @@ type HomeHeroProps = {
   support: ProductImageSource | null;
   leadAlt: string;
   supportAlt: string;
+  /**
+   * The wording, already resolved against the shipped defaults.
+   *
+   * Resolved by the caller rather than here so this component has one source for
+   * every sentence it draws. A component that reads `hero` for some fields and a
+   * prop for others is one where an owner's headline sits above a shipped
+   * paragraph it no longer agrees with, and nobody can see why from this file.
+   */
+  copy: ResolvedHero;
 };
 
-export default function HomeHero({ lead, support, leadAlt, supportAlt }: HomeHeroProps) {
+export default function HomeHero({ lead, support, leadAlt, supportAlt, copy }: HomeHeroProps) {
   return (
     <section className="home-hero" aria-labelledby="home-hero-title">
       <div className="home-hero-wash" aria-hidden="true" />
@@ -55,14 +65,14 @@ export default function HomeHero({ lead, support, leadAlt, supportAlt }: HomeHer
       <div className="home-hero-inner">
         <div className="home-hero-copy">
           <Reveal>
-            <p className="home-eyebrow">{hero.eyebrow}</p>
+            <p className="home-eyebrow">{copy.eyebrow}</p>
             <h1 id="home-hero-title" className="home-hero-title">
-              {hero.titleLead} <span className="home-hero-accent">{hero.titleAccent}</span>
+              {copy.titleLead} <span className="home-hero-accent">{copy.titleAccent}</span>
             </h1>
           </Reveal>
 
           <Reveal delay={120}>
-            <p className="home-hero-lede">{hero.lede}</p>
+            <p className="home-hero-lede">{copy.lede}</p>
           </Reveal>
 
           <Reveal delay={240}>
@@ -73,11 +83,11 @@ export default function HomeHero({ lead, support, leadAlt, supportAlt }: HomeHer
                 would leave the page with no visual answer to "where do I
                 start", which is the one question the hero exists to answer.
               */}
-              <Link href={hero.primary.href} className="ui-btn ui-btn-primary home-cta-lg">
-                {hero.primary.label}
+              <Link href={copy.primary.href} className="ui-btn ui-btn-primary home-cta-lg">
+                {copy.primary.label}
               </Link>
-              <Link href={hero.secondary.href} className="ui-btn ui-btn-secondary home-cta-lg">
-                {hero.secondary.label}
+              <Link href={copy.secondary.href} className="ui-btn ui-btn-secondary home-cta-lg">
+                {copy.secondary.label}
               </Link>
               <Link href={hero.tertiary.href} className="home-hero-quiet">
                 {hero.tertiary.label}

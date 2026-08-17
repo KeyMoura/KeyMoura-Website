@@ -165,6 +165,30 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "The announcement's end time must be after its start time." }, { status: 400 });
   }
 
+  /*
+   * The homepage's two buttons are refused loudly for the same reason the
+   * announcement link is: they become `href`s above the fold on the site's
+   * most-visited page.
+   *
+   * Normalizing them to "" silently would be worse than rejecting, not better —
+   * `resolveHomepageHero` treats an empty destination as "use the shipped
+   * button", so a mistyped URL would quietly restore "Shop products" and the
+   * owner would publish believing they had changed it.
+   */
+  const requestedHomepage = (body.homepage as Record<string, unknown> | null) ?? {};
+  for (const [field, label] of [
+    ["heroPrimaryCtaHref", "main"],
+    ["heroSecondaryCtaHref", "second"],
+  ] as const) {
+    const requested = requestedHomepage[field];
+    if (typeof requested === "string" && requested.trim() && !homepage[field]) {
+      return NextResponse.json(
+        { error: `The homepage's ${label} button link must be a path starting with / or an https:// address.` },
+        { status: 400 }
+      );
+    }
+  }
+
   const brandingConfig = {
     shortName: clean(identity?.shortName, 30) || name,
     tagline: clean(identity?.tagline, 160), wordmarkUrl, footerLogoUrl, faviconUrl, appleIconUrl,

@@ -74,17 +74,35 @@ test("customer and staff request flows share the same progress language", () => 
 
 test("appearance offers visual choices and previews the complete component system", () => {
   const appearance = read("src/app/staff/appearance/page.tsx");
+  const panels = read("src/app/staff/appearance/panels.tsx");
+  const stage = read("src/app/staff/appearance/PreviewStage.tsx");
+  const sections = read("src/app/staff/appearance/sections.tsx");
 
-  // "Components" is now "Control shapes", and "Advanced palette" is gone —
-  // it hid eleven colours including both button texts behind a collapsed
-  // <details>, which is why nobody could find the one that colours the
-  // catalog's custom-project button.
-  for (const expected of ["Starting point", "Layout & type", "Control shapes", "Live appearance preview", "MetricCard", "Add to Cart", "Customizable"]) {
-    assert.ok(appearance.includes(expected), `missing appearance control or preview: ${expected}`);
+  /*
+   * "Advanced palette" is long gone — it hid eleven colours including both
+   * button texts behind a collapsed <details>, which is why nobody could find
+   * the one that colours the catalog's custom-project button.
+   *
+   * 5.0 also retired the permanent preview column. The preview is now one
+   * toggleable stage showing the surface the open section edits, so the things
+   * asserted here moved from "all visible at once, always" to "reachable from
+   * the section that owns them".
+   */
+  for (const expected of ["Corner shape", "Button shape", "Typeface"]) {
+    assert.ok(panels.includes(expected), `missing appearance control: ${expected}`);
   }
-  assert.doesNotMatch(appearance, /Advanced palette/, "no colour may be hidden behind a disclosure");
-  assert.doesNotMatch(appearance, /<MenuSelect/);
-  assert.match(appearance, /aria-pressed=\{value === item\}/);
+  for (const expected of ["Add to Cart", "Customizable", "In stock", "Sold out"]) {
+    assert.ok(
+      stage.includes(expected) || panels.includes(expected),
+      `missing appearance preview: ${expected}`
+    );
+  }
+  for (const source of [appearance, panels, stage]) {
+    assert.doesNotMatch(source, /Advanced palette/, "no colour may be hidden behind a disclosure");
+    assert.doesNotMatch(source, /<MenuSelect/);
+  }
+  // Choice controls are still pressed buttons with an announced state.
+  assert.match(sections, /aria-pressed=\{value === option\.value\}/);
 });
 
 test("every tab list and the linked info queues use the shared themed tab system", () => {

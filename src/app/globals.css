@@ -91,6 +91,31 @@
   }
 
   /*
+   * The same triple, re-declared for a scoped preview.
+   *
+   * Custom properties whose values contain `var()` are substituted **where they
+   * are declared**, not where they are used. The three above are declared on
+   * `:root`, and the root layout sets `--km-primary-button-*` on `<html>` — the
+   * same element — so the live site resolves them correctly.
+   *
+   * The Appearance editor cannot do that: it paints a *draft* theme onto a
+   * subtree, so its `--km-primary-button-bg` sits below `:root` and arrives too
+   * late to be substituted. The result was a preview whose Add to cart button
+   * kept the published colour no matter what the owner typed — on the one
+   * control the section exists to change. Browser QA caught it; the test suite
+   * could not, because it asserted the editor *emits* the variable, which it did.
+   *
+   * `[data-theme-scope="true"]` is the editor's own subtree. This sits before
+   * the style-specific rules below, which carry equal specificity and therefore
+   * still win on source order for Soft, Outline and Framed.
+   */
+  [data-theme-scope="true"] {
+    --primary-action-bg: var(--km-primary-button-bg, var(--brand-primary, #fbbf24));
+    --primary-action-border: var(--km-primary-button-border, var(--km-primary-button-bg, var(--brand-primary, #fbbf24)));
+    --primary-action-text: var(--km-primary-button-text, #09090b);
+  }
+
+  /*
    * Non-solid primary styles put the label on the *page*, not on the brand
    * fill — so it cannot keep using the on-fill text colour. It did, and the
    * result measured 1.05:1: near-black #09090b text on a transparent button
@@ -628,6 +653,195 @@
   .ui-select-option.is-active { border-color: color-mix(in srgb, var(--brand-accent) 50%, transparent); background: color-mix(in srgb, var(--brand-accent) 14%, transparent); color: var(--brand-accent); }
   .ui-preview { background: var(--km-bg); color: var(--km-text); border-color: var(--km-border); }
   .ui-preview a { color: var(--km-link); }
+
+  /*
+   * The Storefront Control Center's shell.
+   *
+   * ## The defect this exists to fix
+   *
+   * The old editor was `grid-cols-[230px_1fr_minmax(320px,.7fr)]` in the normal
+   * document flow, with the publish controls in a `position: fixed` bar across
+   * the bottom of the viewport and `pb-24` on the page to compensate. Three
+   * things followed from that, and all three were reported.
+   *
+   * A permanent third column meant the editor itself got roughly 40% of an
+   * already-narrowed content area — the staff rail takes 280px before this page
+   * sees anything, so a 1366px laptop left about 400px for the controls, and a
+   * colour row with a swatch, a hex field and a checkbox does not fit in 400px.
+   *
+   * The fixed bar covered whatever was under it. `pb-24` only reserves space at
+   * the *end* of the document; everything scrolling past the bottom edge passed
+   * beneath it, so on a 768px-tall screen the bar sat on top of live controls
+   * for the entire scroll.
+   *
+   * And the page was one long scroll, so reaching Publish from the middle of
+   * Colours meant scrolling to find out whether anything had changed.
+   *
+   * ## What this does instead
+   *
+   * The shell is a fixed-height flex column, sized to the space under the site
+   * header exactly as `.staff-shell-rail` is — the two agree because they are
+   * computed from the same expression. The head and the action bar are `flex:
+   * none`, so they are always on screen and always outside the scrolling
+   * region; the rail and the workspace share the remaining height and each
+   * scrolls itself.
+   *
+   * The action bar therefore cannot cover a control: it is a sibling *below* the
+   * scroll container, not a layer above it. Nothing is fixed, nothing is
+   * `z-index`ed over content, and Publish is reachable from anywhere in the
+   * editor without scrolling.
+   *
+   * `min-height: 640px` on the media query is the guard. Below that the fixed
+   * height would be shorter than the smallest workable workspace, so the whole
+   * thing falls back to ordinary document flow and the page scrolls — which is
+   * the right behaviour for a short window and the layout phones get anyway.
+   */
+  /*
+   * The editor opts its own page out of the reading-width cap.
+   *
+   * `.page-container-wide` is 80rem, which is right for the staff pages it was
+   * written for — those are documents, and a document has a comfortable measure.
+   * The Appearance editor is a *tool*: it has a 280px staff sidebar, a 216px
+   * section rail and a preview of a full-width storefront surface, and at 1920px
+   * the 80rem cap left the workspace 712px while a third of the screen sat
+   * empty. A navbar preview cannot be judged at 712px.
+   *
+   * `:has()` rather than a prop on `StaffShell`, because this is a statement
+   * about one page and `StaffShell` is shared by twenty. Nothing else changes,
+   * there is no new flag to thread through, and a browser without `:has()`
+   * simply keeps the 80rem cap — which is the layout that shipped, so the
+   * degradation is the previous behaviour rather than a broken one.
+   *
+   * The ceiling is 104rem, not `none`. Past about 1700px the rails stop growing
+   * and the extra width would go entirely to the workspace, which is where the
+   * measure caps below start refusing it anyway.
+   */
+  .page-container-wide:has(> .staff-shell .appearance-shell) { max-width: 104rem; }
+
+  .appearance-shell { display: flex; flex-direction: column; gap: .75rem; }
+  .appearance-head { flex: none; }
+  .appearance-body { display: grid; gap: .75rem; min-height: 0; }
+  .appearance-rail { min-height: 0; }
+  .appearance-workspace { min-height: 0; }
+  .appearance-actions { flex: none; }
+
+  /*
+   * The rail is a second sidebar, and this page already has one.
+   *
+   * `.staff-shell` gives the staff navigation 280px from 1024px upwards, so at
+   * 1024 the content column is about 709px — and putting a 216px rail beside the
+   * workspace inside that left 440px for the editor itself. That is *narrower
+   * than the three-column layout this pass replaced*, arrived at from the
+   * opposite direction, and browser QA is the only thing that would have caught
+   * it: both rails are individually reasonable and the sum is not.
+   *
+   * So the rail waits for a width where two sidebars genuinely fit. Below that
+   * the section list is the `<select>` in `SectionPicker`, which costs one row
+   * instead of a column, and the workspace gets the whole width.
+   */
+  .appearance-rail { display: none; }
+
+  /*
+   * The viewport-high shell starts at tablet width, not desktop.
+   *
+   * The gate is about *height*, not width — what it buys is an action bar that
+   * is always on screen and always below the content. A 768×1024 tablet has more
+   * vertical room than a 1366×768 laptop, and browser QA found the bar sitting
+   * 1621px down the document there: reachable only by scrolling to the very
+   * bottom, which is exactly the "where did my unpublished changes go" problem
+   * on a different device.
+   *
+   * Phones stay in ordinary document flow. On a phone the workspace needs every
+   * pixel of height it can get, and a nested scroll container fights the
+   * browser's own address-bar behaviour for no gain — the bar is one flick away
+   * at the end of a short, single-column page.
+   *
+   * 720px rather than 768px because a 768px *window* is a 753px layout viewport
+   * once the scrollbar is taken out, and a tablet held in portrait must not fall
+   * through to the phone layout on a technicality. 720 is comfortably above the
+   * widest phone this supports (430px) and below the narrowest tablet.
+   */
+  @media (min-width: 720px) and (min-height: 640px) {
+    /*
+     * `--appearance-top` is how far down the viewport the shell actually
+     * begins, written by the editor once it has been laid out.
+     *
+     * The first version of this used `calc(100dvh - var(--km-header-height) -
+     * 2rem)`, copied from `.staff-shell-rail`, and was wrong by 47px — which
+     * put the publish bar below the fold at 1366×768, the exact viewport this
+     * pass exists to fix. The rail gets away with that expression because it is
+     * `position: sticky` and pins itself to the top of the viewport; the shell
+     * is in normal flow, below the staff breadcrumb, and the breadcrumb's height
+     * is not something CSS here can know.
+     *
+     * Hard-coding the breadcrumb's height would work today and drift the moment
+     * anybody touched the staff chrome — and drift silently, because the symptom
+     * is a control 30px off the bottom of the screen rather than a broken build.
+     * So the shell measures its own top and the arithmetic follows from that.
+     * The fallback covers the frame before the measurement lands.
+     */
+    .appearance-shell {
+      height: calc(100dvh - var(--appearance-top, 7.75rem) - 1.5rem);
+    }
+    .appearance-body { flex: 1 1 auto; }
+    /* `overflow-y: auto` needs the `min-height: 0` above to mean anything: a
+       flex/grid item defaults to `min-height: auto`, which refuses to shrink
+       below its content and pushes the overflow back out of the box. */
+    .appearance-workspace { overflow-y: auto; overscroll-behavior: contain; }
+  }
+
+  /* Two sidebars only where two sidebars fit — see `.appearance-rail` above. */
+  @media (min-width: 1280px) {
+    .appearance-rail { display: block; }
+    .appearance-body { grid-template-columns: 13.5rem minmax(0, 1fr); }
+  }
+
+  @media (min-width: 1280px) and (min-height: 640px) {
+    .appearance-rail { overflow-y: auto; overscroll-behavior: contain; }
+  }
+
+  /*
+   * The preview stage.
+   *
+   * Full width and horizontal, not a column — a navbar needs 900px to show
+   * Products, Custom Projects, Gallery, About, More, search and the account
+   * cluster without clipping, and the old 320px column could show about a third
+   * of it. It is also *off* by default, so the editor's normal state is the
+   * whole workspace.
+   *
+   * The height cap is what keeps it from becoming the same problem in the other
+   * axis. On a 768px laptop an uncapped stage would push every control below the
+   * fold; at 45vh it takes a little over a third of the workspace and the
+   * controls it is previewing stay visible underneath.
+   */
+  /*
+   * A text control does not become more usable by being 1100px wide.
+   *
+   * The extra width from the rule above goes to the things that can spend it —
+   * the preview stage, the colour grids, the option rows, the product pickers —
+   * and this is what stops it reaching the things that cannot. A message field
+   * or a hero paragraph stretched across a 1920px monitor is harder to read and
+   * harder to edit than the same field at a sensible measure.
+   *
+   * Applied to the controls rather than to their containers, deliberately: the
+   * containers are grids that *should* fill the width, and capping those would
+   * give the width back to nothing.
+   *
+   * Keyed on `.ui-input`, which every text field, textarea and select on this
+   * page already carries, rather than on an element/attribute selector. The
+   * first attempt was `:where(input:not([type="color"])…, textarea, select)` and
+   * it silently matched nothing once built — the computed `max-width` stayed
+   * `none` on a 1047px textarea. Colour swatches carry `.ui-color-input` and
+   * checkboxes carry neither, so keying on the class excludes exactly the two
+   * kinds of control that have no measure to cap.
+   */
+  .appearance-workspace .ui-input { max-width: 42rem; }
+
+  .appearance-stage { max-height: 45vh; overflow: auto; overscroll-behavior: contain; }
+  .appearance-stage-wide { overflow-x: auto; }
+  /* Previews of a full-width surface get real width to be judged at, and scroll
+     horizontally inside their own box rather than widening the page. */
+  .appearance-stage-wide > * { min-width: 56rem; }
   .ui-notice { border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: .75rem 1rem; font-size: .875rem; }
   .ui-notice-info { border-color: color-mix(in srgb, var(--brand-accent) 38%, var(--border)); }
   .ui-notice-warning { border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border)); background: color-mix(in srgb, var(--brand-primary) 10%, var(--panel)); color: var(--text); }

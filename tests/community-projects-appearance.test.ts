@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
+import { sectionForTask } from "../src/theme/appearanceSections.ts";
+
 const read = (path: string) => readFileSync(path, "utf8");
 
 test("projects is the canonical public route while info remains compatible", () => {
@@ -31,7 +33,6 @@ test("community and projects share the customer content design system", () => {
 });
 
 test("appearance has a dedicated navbar editor and expanded controls", () => {
-  const appearance = read("src/app/staff/appearance/page.tsx");
   const runtime = read("src/theme/runtime.ts");
   const pdf = read("src/app/api/info/pdf/[slug]/route.ts");
 
@@ -43,14 +44,26 @@ test("appearance has a dedicated navbar editor and expanded controls", () => {
    * one list, so each colour still has exactly one control.
    */
   const map = read("src/theme/appearanceMap.ts");
-  for (const label of ["Header shape and behaviour", "When scrolling", "Surface shadows", "Border contrast"]) {
-    assert.match(appearance, new RegExp(label));
+  const panels = read("src/app/staff/appearance/panels.tsx");
+  for (const label of ["Shape and behaviour", "When scrolling", "Surface shadows", "Border contrast"]) {
+    assert.match(panels, new RegExp(label));
   }
   for (const label of ["Navbar background", "Current page link", "Navbar link text"]) {
     assert.match(map, new RegExp(label));
   }
-  assert.match(appearance, /publicNavigationStyle/, "the navbar treatment is still editable");
-  assert.match(appearance, /only="navigation"/, "navbar colours live beside the navbar's shape");
+  assert.match(panels, /publicNavigationStyle/, "the navbar treatment is still editable");
+  /*
+   * The navbar's colours live in the Navigation workspace beside its shape, and
+   * 5.0 brought the five hover/utility/menu tasks in with them — they were
+   * filed under a collapsed "Advanced" disclosure by rarity, which is what made
+   * "what is the difference between rest, hover and current page" unanswerable
+   * without knowing where to look.
+   */
+  assert.match(panels, /function NavigationPanel/);
+  assert.match(panels, /Link states/, "rest, hover and current page are shown together");
+  for (const id of ["navbar", "navbar-active", "advanced-navbar-hover", "advanced-count-badge"]) {
+    assert.equal(sectionForTask(id), "navigation", `${id} belongs in Navigation`);
+  }
   assert.match(runtime, /publicNavigationStyle: "underline"/);
   assert.doesNotMatch(pdf, /schassis\.info/i);
   assert.match(pdf, /keymoura\.com\/projects/);

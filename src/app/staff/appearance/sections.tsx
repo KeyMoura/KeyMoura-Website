@@ -2,22 +2,27 @@
 
 import { useId, type ReactNode } from "react";
 
-import AnnouncementBar from "@/components/AnnouncementBar";
-import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
+import { Notice, cx } from "@/components/ui/DesignSystem";
 import {
   ANNOUNCEMENT_CTA_MAX,
   ANNOUNCEMENT_LABEL_MAX,
   ANNOUNCEMENT_MESSAGE_MAX,
-  hasAnnouncementCta,
   isAnnouncementScheduled,
-  isExternalAnnouncementHref,
-  normalizeAnnouncementConfig,
   normalizeAnnouncementHref,
   type AnnouncementConfig,
 } from "@/theme/announcement";
-import { brandLogoFor, type BrandConfig, type BrandVariant } from "@/theme/brand";
-import type { HomepageConfig } from "@/theme/homepage";
+import type { BrandConfig, BrandVariant } from "@/theme/brand";
+import {
+  HERO_CTA_LABEL_MAX,
+  HERO_EYEBROW_MAX,
+  HERO_LEDE_MAX,
+  HERO_TITLE_MAX,
+  normalizeHomepageHref,
+  SECTION_TOGGLES,
+  type HomepageConfig,
+} from "@/theme/homepage";
 
+import { ControlGroup } from "./EditorChrome";
 import { LogoUpload } from "./LogoUpload";
 import { ProductPicker, type PickedProduct } from "./ProductPicker";
 
@@ -80,7 +85,7 @@ export function OptionRow<T extends string>({
     <div>
       <p className="ui-label">{label}</p>
       {hint ? <p className="mb-2 text-xs text-brand-textMuted">{hint}</p> : null}
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {options.map((option) => (
           <button
             key={option.value}
@@ -88,17 +93,17 @@ export function OptionRow<T extends string>({
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
             className={cx(
-              "ui-card ui-card-hover !p-3 text-left",
+              "ui-card ui-card-hover !p-2.5 text-left",
               value === option.value && "!border-brand-primary !bg-brand-primary/10"
             )}
           >
             <span
-              className={cx("block text-sm font-semibold", value === option.value && "text-brand-primary")}
+              className={cx("block text-[13px] font-semibold", value === option.value && "text-brand-primary")}
             >
               {option.label}
             </span>
             {option.help ? (
-              <span className="mt-1 block text-xs text-brand-textMuted">{option.help}</span>
+              <span className="mt-0.5 block text-[11px] leading-4 text-brand-textMuted">{option.help}</span>
             ) : null}
           </button>
         ))}
@@ -117,6 +122,7 @@ export function Field({
   type = "text",
   invalid,
   error,
+  multiline,
 }: {
   label: string;
   hint?: string;
@@ -127,23 +133,27 @@ export function Field({
   type?: string;
   invalid?: boolean;
   error?: string;
+  multiline?: boolean;
 }) {
   const id = useId();
   const errorId = `${id}-error`;
+  const shared = {
+    id,
+    value,
+    placeholder,
+    maxLength,
+    "aria-invalid": invalid || undefined,
+    "aria-describedby": error ? errorId : undefined,
+    className: "ui-input",
+  };
   return (
     <label htmlFor={id} className="block">
       <span className="ui-label">{label}</span>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={invalid || undefined}
-        aria-describedby={error ? errorId : undefined}
-        className="ui-input"
-      />
+      {multiline ? (
+        <textarea {...shared} rows={3} onChange={(event) => onChange(event.target.value)} />
+      ) : (
+        <input {...shared} type={type} onChange={(event) => onChange(event.target.value)} />
+      )}
       {hint ? <span className="mt-1 block text-xs text-brand-textMuted">{hint}</span> : null}
       {/* Validation messages are tied to their input rather than floating near
           it, so a screen reader reaches the reason at the same moment as the
@@ -167,9 +177,9 @@ export function Group({
   children: ReactNode;
 }) {
   return (
-    <fieldset className="rounded-[var(--control-radius)] border border-brand-border p-4">
+    <fieldset className="rounded-[var(--control-radius)] border border-brand-border p-3.5">
       <legend className="px-2 text-sm font-semibold">{title}</legend>
-      <p className="mb-4 text-xs text-brand-textMuted">{description}</p>
+      <p className="mb-3 text-xs text-brand-textMuted">{description}</p>
       <div className="space-y-4">{children}</div>
     </fieldset>
   );
@@ -179,20 +189,23 @@ export function Group({
 /* Brand                                                                     */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * The two logo slots are named "primary" and "alternate" rather than "colour"
+ * and "white" — `theme/brand.ts` records why. The two files this shop owns
+ * happen to be a full-colour mark and a white one, but nothing in the code
+ * depends on that, and a setting called "White logo" stops being true the first
+ * time somebody uploads two colour variants.
+ *
+ * Where each one is *used*, though, is named after the page rather than the
+ * slot: Homepage and Every other page. That is the question an owner has —
+ * "keymoura.com shows the colour mark, /catalog shows the white one" — and
+ * "slot A / slot B" was the previous answer to it.
+ */
 const VARIANT_OPTIONS = [
-  { value: "primary" as const, label: "Primary logo", help: "Slot one" },
-  { value: "alternate" as const, label: "Alternate logo", help: "Slot two" },
+  { value: "primary" as const, label: "Primary logo", help: "The first mark above" },
+  { value: "alternate" as const, label: "Alternate logo", help: "The second mark above" },
 ];
 
-/**
- * The brand section: two logo slots, where each is used, and the wordmark.
- *
- * The slots are named "primary" and "alternate" rather than "colour" and
- * "white". `theme/brand.ts` records why: the two files this shop happens to own
- * are a full-colour mark and a white one, but nothing in the code should depend
- * on that, and a setting called "White logo" stops being true the first time
- * somebody uploads two colour variants.
- */
 export function BrandSection({
   brand,
   siteName,
@@ -211,13 +224,15 @@ export function BrandSection({
 
   return (
     <>
-      <Group
+      <ControlGroup
+        anchor="brand-primary-logo"
         title="Logo files"
-        description="Upload the marks this site hosts. Nothing needs to be hosted anywhere else — files are stored with the site's own product images and served from the same place."
+        description="Uploaded to this site and served from it. Nothing needs to be hosted anywhere else."
       >
         <div className="grid gap-3 lg:grid-cols-2">
           <LogoUpload
             slot="primary"
+            anchor="brand-primary-logo"
             label="Primary logo"
             description="The mark the header uses unless you choose otherwise below."
             value={brand.primaryLogoUrl}
@@ -226,6 +241,7 @@ export function BrandSection({
           />
           <LogoUpload
             slot="alternate"
+            anchor="brand-alternate-logo"
             label="Alternate logo"
             description="A second version — often a white or single-colour mark for darker pages."
             value={brand.alternateLogoUrl}
@@ -233,9 +249,10 @@ export function BrandSection({
             onNotice={onNotice}
           />
         </div>
-      </Group>
+      </ControlGroup>
 
-      <Group
+      <ControlGroup
+        anchor="brand-homepage-logo"
         title="Which logo goes where"
         description="One rule decides the header's logo on every page. The homepage can differ from the rest of the site."
       >
@@ -245,12 +262,15 @@ export function BrandSection({
           options={VARIANT_OPTIONS}
           onChange={(value) => set("homepageLogo", value as BrandVariant)}
         />
-        <OptionRow
-          label="Every other page"
-          value={brand.interiorLogo}
-          options={VARIANT_OPTIONS}
-          onChange={(value) => set("interiorLogo", value as BrandVariant)}
-        />
+        <div id="appearance-brand-interior-logo" tabIndex={-1} className="scroll-mt-4">
+          <OptionRow
+            label="Every other page"
+            hint="Catalog, product pages, account, checkout."
+            value={brand.interiorLogo}
+            options={VARIANT_OPTIONS}
+            onChange={(value) => set("interiorLogo", value as BrandVariant)}
+          />
+        </div>
         {/* An empty slot is not an error, but choosing it silently gets you the
             primary mark, and an owner who is not told that will read the
             unchanged header as the setting not working. */}
@@ -259,9 +279,10 @@ export function BrandSection({
             No alternate logo is uploaded, so the primary logo is used in both places until you add one.
           </Notice>
         ) : null}
-      </Group>
+      </ControlGroup>
 
-      <Group
+      <ControlGroup
+        anchor="brand-show-name"
         title="Site name in the header"
         description="Whether the words sit beside the mark on wide screens. Phone and tablet headers show the mark alone either way — there is no room for both."
       >
@@ -271,95 +292,8 @@ export function BrandSection({
           checked={brand.showBrandName}
           onChange={(value) => set("showBrandName", value)}
         />
-      </Group>
-
-      <BrandPreview brand={brand} siteName={siteName} />
+      </ControlGroup>
     </>
-  );
-}
-
-/**
- * How the header will actually look, on both surfaces and in both routes.
- *
- * Built from the real navbar classes — `site-header-shell`, `site-nav-utility`,
- * `site-nav-primary-link` — rather than an approximation, so the underline, the
- * hover treatment and every navbar colour token are the ones the storefront
- * paints. An approximate preview that diverges is worse than none: it is
- * confidently wrong about the thing the owner came here to check.
- */
-function BrandPreview({ brand, siteName }: { brand: BrandConfig; siteName: string }) {
-  const rows: { title: string; variant: BrandVariant; note: string }[] = [
-    { title: "Homepage", variant: brand.homepageLogo, note: "What a visitor sees first" },
-    { title: "Every other page", variant: brand.interiorLogo, note: "Catalog, product, account, checkout" },
-  ];
-
-  return (
-    <Group
-      title="Preview"
-      description="The real header markup and the real navbar colours, on the two backgrounds a logo has to survive."
-    >
-      {rows.map((row) => {
-        const src = brandLogoFor(brand, row.variant);
-        return (
-          <div key={row.title}>
-            <p className="text-xs font-semibold">
-              {row.title}{" "}
-              <span className="font-normal text-brand-textMuted">
-                — {row.variant} logo · {row.note}
-              </span>
-            </p>
-            <div className="site-header-shell mt-2 rounded-[var(--control-radius)] border px-3 py-2">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-2">
-                  {src ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={src} alt="" className="h-8 w-8 object-contain" />
-                  ) : (
-                    <span className="text-[11px] text-brand-textMuted">No logo</span>
-                  )}
-                  {brand.showBrandName ? (
-                    <span className="site-header-wordmark">{siteName}</span>
-                  ) : null}
-                </span>
-                <span className="flex items-center gap-1">
-                  {["Products", "Custom Projects", "Gallery"].map((label, index) => (
-                    <span
-                      key={label}
-                      className={cx(
-                        "site-nav-link site-nav-primary-link !h-8 text-xs",
-                        index === 0 && "is-active"
-                      )}
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-
-      {/* The raised surface. A white mark uploaded as the alternate is invisible
-          here, and the footer and dialogs use exactly this background. */}
-      <div>
-        <p className="text-xs font-semibold">
-          On a panel <span className="font-normal text-brand-textMuted">— footer and dialogs</span>
-        </p>
-        <div
-          className="mt-2 flex items-center gap-2 rounded-[var(--control-radius)] border border-brand-border p-3"
-          style={{ background: "var(--km-surface-strong)" }}
-        >
-          {brand.primaryLogoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={brand.primaryLogoUrl} alt="" className="h-8 w-8 object-contain" />
-          ) : (
-            <span className="text-[11px] text-brand-textMuted">No logo</span>
-          )}
-          <span className="text-sm font-semibold">{siteName}</span>
-        </div>
-      </div>
-    </Group>
   );
 }
 
@@ -373,14 +307,6 @@ const TONE_OPTIONS = [
   { value: "neutral" as const, label: "Quiet", help: "Grey, for lead times and shipping notes" },
 ];
 
-/**
- * The storefront announcement bar's owner controls.
- *
- * The preview is the *actual component*, handed the working config. That is the
- * point of the split in `theme/announcement.ts`: the bar takes a plain config
- * object and renders it, so the editor can mount the same component the
- * storefront mounts and there is no second implementation to drift.
- */
 export function AnnouncementSection({
   announcement,
   onChange,
@@ -393,19 +319,6 @@ export function AnnouncementSection({
 
   const hrefTyped = announcement.ctaHref.trim();
   const hrefRejected = Boolean(hrefTyped) && !normalizeAnnouncementHref(hrefTyped);
-
-  /*
-   * The preview renders the *normalized* config, not the working form.
-   *
-   * These are not the same thing while somebody is typing, and the difference
-   * matters twice. It is a correctness point — a preview showing a call to
-   * action that the save would refuse is previewing something that cannot
-   * exist — and a safety one: without this, typing `javascript:…` into the link
-   * field puts that string straight into an `href` in the staff member's own
-   * document. The value is refused on save either way, but a preview has no
-   * business rendering a URL scheme the application does not accept.
-   */
-  const preview = normalizeAnnouncementConfig({ announcement });
   const ctaHalf = Boolean(announcement.ctaText) !== Boolean(announcement.ctaHref);
   const scheduleInverted =
     Boolean(announcement.startsAt && announcement.endsAt) &&
@@ -414,63 +327,68 @@ export function AnnouncementSection({
 
   return (
     <>
-      <Group
+      <ControlGroup
+        anchor="announcement-message"
         title="Message"
-        description="One line across the top of every storefront page. This is separate from the security notice on the Security page, which is for incidents."
+        description="One line across the top of every storefront page. Separate from the security notice on the Security page, which is for incidents."
       >
-        <Toggle
-          label="Show the announcement bar"
-          checked={announcement.enabled}
-          onChange={(value) => set("enabled", value)}
-        />
+        <div id="appearance-announcement-enabled" tabIndex={-1} className="scroll-mt-4">
+          <Toggle
+            label="Show the announcement bar"
+            checked={announcement.enabled}
+            onChange={(value) => set("enabled", value)}
+          />
+        </div>
 
-        <Field
-          label="Message"
-          hint="Include a discount code directly if you have one — “15% off this weekend — KM15”."
-          value={announcement.message}
-          maxLength={ANNOUNCEMENT_MESSAGE_MAX}
-          placeholder="Launching September 1st"
-          onChange={(value) => set("message", value)}
-        />
-
-        <Field
-          label="Label (optional)"
-          hint="A short pill before the message: NEW, SALE, UPDATE. Leave empty for none."
-          value={announcement.label}
-          maxLength={ANNOUNCEMENT_LABEL_MAX}
-          placeholder="NEW"
-          onChange={(value) => set("label", value)}
-        />
+        <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+          <Field
+            label="Message"
+            hint="Include a discount code directly if you have one — “15% off this weekend — KM15”."
+            value={announcement.message}
+            maxLength={ANNOUNCEMENT_MESSAGE_MAX}
+            placeholder="Launching September 1st"
+            onChange={(value) => set("message", value)}
+          />
+          <div id="appearance-announcement-label" tabIndex={-1} className="scroll-mt-4">
+            <Field
+              label="Label (optional)"
+              hint="A short pill before the message: NEW, SALE."
+              value={announcement.label}
+              maxLength={ANNOUNCEMENT_LABEL_MAX}
+              placeholder="NEW"
+              onChange={(value) => set("label", value)}
+            />
+          </div>
+        </div>
 
         {announcement.enabled && !announcement.message ? (
           <Notice tone="warning">The bar is on but has no message, so nothing will show.</Notice>
         ) : null}
-      </Group>
+      </ControlGroup>
 
-      <Group
+      <ControlGroup
+        anchor="announcement-link"
         title="Link"
         description="An optional call to action at the end of the message. Both parts are needed, or neither shows."
       >
-        <Field
-          label="Link text"
-          value={announcement.ctaText}
-          maxLength={ANNOUNCEMENT_CTA_MAX}
-          placeholder="Shop the sale"
-          onChange={(value) => set("ctaText", value)}
-        />
-        <Field
-          label="Link address"
-          hint="A path on this site such as /catalog, or a full https:// address. External links stay in the same tab."
-          value={announcement.ctaHref}
-          placeholder="/catalog"
-          invalid={hrefRejected}
-          error={
-            hrefRejected
-              ? "Use a path starting with / or a full https:// address."
-              : undefined
-          }
-          onChange={(value) => set("ctaHref", value)}
-        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="Link text"
+            value={announcement.ctaText}
+            maxLength={ANNOUNCEMENT_CTA_MAX}
+            placeholder="Shop the sale"
+            onChange={(value) => set("ctaText", value)}
+          />
+          <Field
+            label="Link address"
+            hint="A path such as /catalog, or a full https:// address."
+            value={announcement.ctaHref}
+            placeholder="/catalog"
+            invalid={hrefRejected}
+            error={hrefRejected ? "Use a path starting with / or a full https:// address." : undefined}
+            onChange={(value) => set("ctaHref", value)}
+          />
+        </div>
         {ctaHalf && !hrefRejected ? (
           <Notice tone="warning">
             {announcement.ctaText
@@ -478,11 +396,25 @@ export function AnnouncementSection({
               : "A link address without text will not show."}
           </Notice>
         ) : null}
-      </Group>
+      </ControlGroup>
 
-      <Group
+      <ControlGroup
+        anchor="announcement-tone"
+        title="Colour"
+        description="Three tones, all built from colours you already control. There is no red — an incident notice has its own banner."
+      >
+        <OptionRow
+          label="Tone"
+          value={announcement.tone}
+          options={TONE_OPTIONS}
+          onChange={(value) => set("tone", value)}
+        />
+      </ControlGroup>
+
+      <ControlGroup
+        anchor="announcement-dismissible"
         title="Dismissing"
-        description="Whether a customer can close the bar, and for how long it stays closed."
+        description="Whether a customer can close the bar."
       >
         <Toggle
           label="Let customers dismiss it"
@@ -490,9 +422,10 @@ export function AnnouncementSection({
           checked={announcement.dismissible}
           onChange={(value) => set("dismissible", value)}
         />
-      </Group>
+      </ControlGroup>
 
-      <Group
+      <ControlGroup
+        anchor="announcement-schedule"
         title="Schedule (optional)"
         description="Leave both empty to show it until you turn it off. Times are your browser's local time."
       >
@@ -524,51 +457,7 @@ export function AnnouncementSection({
           Storefront pages are cached for a few minutes, so a start or end time can take that long to take
           effect.
         </p>
-      </Group>
-
-      <Group
-        title="Appearance"
-        description="Three tones, all built from colours you already control. There is no red — an incident notice has its own banner."
-      >
-        <OptionRow
-          label="Tone"
-          value={announcement.tone}
-          options={TONE_OPTIONS}
-          onChange={(value) => set("tone", value)}
-        />
-      </Group>
-
-      <Group
-        title="Preview"
-        description="The real announcement bar component, exactly as the storefront renders it."
-      >
-        {preview.message ? (
-          <>
-            {/*
-              `key` forces a remount whenever the wording changes.
-
-              The bar hides itself when the reader has dismissed *this* version,
-              and the version is derived from the words. Without the remount an
-              owner who dismissed the preview would keep seeing an empty box
-              while editing, and would reasonably read that as the message being
-              broken.
-            */}
-            <AnnouncementBar
-              key={`${preview.message}|${preview.label}|${preview.ctaText}`}
-              config={preview}
-            />
-            <p className="text-xs text-brand-textMuted">
-              {hasAnnouncementCta(preview)
-                ? isExternalAnnouncementHref(preview.ctaHref)
-                  ? "The link points off this site and will open in the same tab."
-                  : "The link points at a page on this site."
-                : "No link — the message shows on its own."}
-            </p>
-          </>
-        ) : (
-          <p className="ui-empty-state">Add a message above to see it here.</p>
-        )}
-      </Group>
+      </ControlGroup>
     </>
   );
 }
@@ -600,33 +489,155 @@ function fromLocalInput(value: string): string {
 /* ------------------------------------------------------------------------ */
 
 /**
- * Homepage merchandising.
+ * The homepage, as a place an owner actually works.
  *
- * Two pins, and an honest statement about why there are only two.
- * `theme/homepage.ts` has the long version: Homepage 3.0 has no standalone image
- * slots at all — every frame on it is a product photograph, falling back to a
- * drawn sheet — so "upload a hero image" is not a setting on this architecture,
- * it is a new asset kind. What the owner can actually control is *which
- * products* fill the two frames that lead the page, and that is what this does.
+ * ## What this replaced
+ *
+ * Two product pickers and a paragraph explaining that everything else was
+ * hard-coded. That paragraph was honest about the architecture and useless as a
+ * control panel: the front page's headline, its buttons, its picture and which
+ * bands appeared were all code changes.
+ *
+ * ## What it does not do
+ *
+ * It is not a page builder. There is no drag handle, no section library and no
+ * reordering — `app/page.tsx` allocates the page's photographs in prominence
+ * order, so "move the focus band below the row" is not a reorder, it is a
+ * different allocation. A fixed, intentional structure with real configuration
+ * inside it is worth more here than a worse version of somebody else's builder.
+ *
+ * Empty copy fields mean "use the shipped wording", per field. That is why the
+ * placeholders show the real defaults rather than invented examples: the
+ * placeholder *is* what the page says today.
  */
 export function HomepageSection({
   homepage,
+  defaults,
   featured,
   hero,
   onChange,
   onPick,
+  onNotice,
 }: {
   homepage: HomepageConfig;
+  /** The shipped hero wording, shown as placeholders. */
+  defaults: { eyebrow: string; titleLead: string; titleAccent: string; lede: string; primaryLabel: string; primaryHref: string; secondaryLabel: string; secondaryHref: string };
   featured: PickedProduct | null;
   hero: PickedProduct | null;
   onChange: (next: HomepageConfig) => void;
   onPick: (slot: "featured" | "hero", product: PickedProduct | null) => void;
+  onNotice: (message: string) => void;
 }) {
+  const set = <K extends keyof HomepageConfig>(key: K, value: HomepageConfig[K]) =>
+    onChange({ ...homepage, [key]: value });
+
+  const badHref = (value: string) => Boolean(value.trim()) && !normalizeHomepageHref(value);
+
   return (
     <>
-      <Group
+      <ControlGroup
+        anchor="homepage-hero-copy"
+        title="Headline"
+        description="The first thing a visitor reads. Leave a field empty to keep the wording the site ships with — shown as the placeholder."
+      >
+        <Field
+          label="Eyebrow"
+          hint="The small line above the headline."
+          value={homepage.heroEyebrow}
+          maxLength={HERO_EYEBROW_MAX}
+          placeholder={defaults.eyebrow}
+          onChange={(value) => set("heroEyebrow", value)}
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="Headline"
+            hint="The plain half."
+            value={homepage.heroTitleLead}
+            maxLength={HERO_TITLE_MAX}
+            placeholder={defaults.titleLead}
+            onChange={(value) => set("heroTitleLead", value)}
+          />
+          <Field
+            label="Headline, in the brand colour"
+            hint="The second half, drawn in your primary colour."
+            value={homepage.heroTitleAccent}
+            maxLength={HERO_TITLE_MAX}
+            placeholder={defaults.titleAccent}
+            onChange={(value) => set("heroTitleAccent", value)}
+          />
+        </div>
+        <Field
+          label="Supporting paragraph"
+          multiline
+          value={homepage.heroLede}
+          maxLength={HERO_LEDE_MAX}
+          placeholder={defaults.lede}
+          onChange={(value) => set("heroLede", value)}
+        />
+      </ControlGroup>
+
+      <ControlGroup
+        anchor="homepage-hero-ctas"
+        title="Buttons"
+        description="The two buttons under the headline. A button needs both its words and its destination to be overridden — a label with nowhere to go falls back to the shipped pair."
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="Main button"
+            value={homepage.heroPrimaryCtaLabel}
+            maxLength={HERO_CTA_LABEL_MAX}
+            placeholder={defaults.primaryLabel}
+            onChange={(value) => set("heroPrimaryCtaLabel", value)}
+          />
+          <Field
+            label="Main button goes to"
+            value={homepage.heroPrimaryCtaHref}
+            placeholder={defaults.primaryHref}
+            invalid={badHref(homepage.heroPrimaryCtaHref)}
+            error={badHref(homepage.heroPrimaryCtaHref) ? "Use a path starting with / or a full https:// address." : undefined}
+            onChange={(value) => set("heroPrimaryCtaHref", value)}
+          />
+          <Field
+            label="Second button"
+            value={homepage.heroSecondaryCtaLabel}
+            maxLength={HERO_CTA_LABEL_MAX}
+            placeholder={defaults.secondaryLabel}
+            onChange={(value) => set("heroSecondaryCtaLabel", value)}
+          />
+          <Field
+            label="Second button goes to"
+            value={homepage.heroSecondaryCtaHref}
+            placeholder={defaults.secondaryHref}
+            invalid={badHref(homepage.heroSecondaryCtaHref)}
+            error={badHref(homepage.heroSecondaryCtaHref) ? "Use a path starting with / or a full https:// address." : undefined}
+            onChange={(value) => set("heroSecondaryCtaHref", value)}
+          />
+        </div>
+      </ControlGroup>
+
+      <ControlGroup
+        anchor="homepage-hero-image"
+        title="Hero image"
+        description="The picture in the large frame above the fold. Upload one, or leave it empty and the pinned product's photograph is used instead."
+      >
+        <div className="max-w-md">
+          <LogoUpload
+            slot="homepage-hero"
+            anchor="homepage-hero-image"
+            label="Hero image"
+            description="Shown at the top of the front page, beside the headline."
+            value={homepage.heroImageUrl}
+            surfaces={[{ name: "On the page", background: "var(--km-bg)" }]}
+            onChange={(url) => set("heroImageUrl", url)}
+            onNotice={onNotice}
+          />
+        </div>
+      </ControlGroup>
+
+      <ControlGroup
+        anchor="homepage-featured-product"
         title="Featured products"
-        description="The homepage draws its photography from the catalog. These two settings choose which products lead it; everything else fills in from catalog order."
+        description="Which products lead the page. Both fall back to catalog order if the product is unpublished or removed."
       >
         <ProductPicker
           label="Featured build"
@@ -637,38 +648,46 @@ export function HomepageSection({
             onChange({ ...homepage, featuredProductId: product?.id ?? "" });
           }}
         />
-        <ProductPicker
-          label="Hero image"
-          description="The large frame at the very top of the homepage. Its photograph is this product's first image."
-          selected={hero}
-          onSelect={(product) => {
-            onPick("hero", product);
-            onChange({ ...homepage, heroProductId: product?.id ?? "" });
-          }}
-        />
-      </Group>
-
-      <Group
-        title="Everything else on the homepage"
-        description="What this section deliberately does not do."
-      >
-        <div className="space-y-2 text-sm text-brand-textMuted">
-          <p>
-            <Badge>From the catalog</Badge> The two capability panels and the three-product row fill
-            themselves from published products, skipping whatever the frames above already used.
-          </p>
-          <p>
-            <Badge>From Projects</Badge> The “Made recently” band shows your most recent published project
-            write-ups. Edit those under Projects.
-          </p>
-          <p>
-            <Badge>Not configurable yet</Badge> The homepage has no image slots of its own — every picture on
-            it is a product or project photograph. Standalone hero artwork would need somewhere new to store
-            it and a rule for what happens when it is missing, so it is not offered here rather than half
-            offered.
-          </p>
+        <div id="appearance-homepage-hero-product" tabIndex={-1} className="scroll-mt-4">
+          <ProductPicker
+            label="Hero product"
+            description={
+              homepage.heroImageUrl
+                ? "Currently unused — an uploaded hero image takes the frame. Clear the image above to use a product photograph again."
+                : "The large frame at the very top of the homepage. Its photograph is this product's first image."
+            }
+            selected={hero}
+            onSelect={(product) => {
+              onPick("hero", product);
+              onChange({ ...homepage, heroProductId: product?.id ?? "" });
+            }}
+          />
         </div>
-      </Group>
+      </ControlGroup>
+
+      <ControlGroup
+        anchor="homepage-sections"
+        title="Sections"
+        description="Which optional bands appear below the hero. The hero, what we make, the product row, the custom-project band and the closing call to action always show — a homepage without them has stopped making your offer."
+      >
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {SECTION_TOGGLES.map((toggle) => (
+            <div
+              key={toggle.id}
+              id={`appearance-homepage-section-${toggle.id}`}
+              tabIndex={-1}
+              className="scroll-mt-4 rounded-[var(--control-radius)] border border-brand-border p-3"
+            >
+              <Toggle
+                label={toggle.label}
+                hint={toggle.description}
+                checked={homepage.sections[toggle.id] !== false}
+                onChange={(value) => set("sections", { ...homepage.sections, [toggle.id]: value })}
+              />
+            </div>
+          ))}
+        </div>
+      </ControlGroup>
     </>
   );
 }
