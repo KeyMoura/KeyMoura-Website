@@ -10,6 +10,7 @@ import type { AnnouncementConfig } from "@/theme/announcement";
 import { normalizeAnnouncementConfig } from "@/theme/announcement";
 import type { AppearancePreviewId } from "@/theme/appearanceSections";
 import { brandLogoFor, type BrandConfig } from "@/theme/brand";
+import { BUTTON_ROLES } from "@/theme/buttonRoles";
 import type { ResolvedHero } from "@/theme/homepage";
 import type { SiteTheme } from "@/theme/runtime";
 
@@ -472,14 +473,37 @@ function FormPreview() {
   );
 }
 
+/**
+ * The four roles, each captioned with what it is for.
+ *
+ * It was a row of four buttons with no captions — which shows what the roles
+ * *look* like and answers nothing about which is which. An owner comparing
+ * "Add to Cart" against "Request a Custom Version" cannot tell from the picture
+ * that the first is the role that also draws Check out, Continue and Submit
+ * request, and the second is the one that does not.
+ *
+ * The captions are the first two surfaces from `BUTTON_ROLES`, the same list
+ * the Buttons workspace maps in full, so a preview label cannot claim a usage
+ * the mapping does not. Two rather than all of them: this is a preview column,
+ * and the complete list is one section away.
+ */
 function ControlsPreview({ theme }: { theme: SiteTheme }) {
   return (
     <div className="space-y-3">
-      <div className="ui-action-row">
-        <span className="ui-btn ui-btn-primary">Add to Cart</span>
-        <span className="ui-btn ui-btn-secondary">Request a Custom Version</span>
-        <span className="ui-btn ui-btn-ghost">Cancel</span>
-        <span className="ui-btn ui-btn-danger">Delete</span>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {BUTTON_ROLES.map((role) => (
+          <div key={role.id} className="flex flex-col items-start gap-1">
+            <span className={`ui-btn ${role.classNames[0]} pointer-events-none`}>
+              {role.surfaces[0]?.label ?? role.label}
+            </span>
+            <span className="text-[11px] leading-tight text-brand-textMuted">
+              <b>{role.label}</b>
+              {role.surfaces.length ? (
+                <> — {role.surfaces.slice(0, 2).map((surface) => surface.label).join(", ")}</>
+              ) : null}
+            </span>
+          </div>
+        ))}
       </div>
       <div className="ui-tabs">
         <span className="ui-tab is-active">All orders</span>

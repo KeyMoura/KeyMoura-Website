@@ -243,7 +243,7 @@ export function BrandSection({
             slot="alternate"
             anchor="brand-alternate-logo"
             label="Alternate logo"
-            description="A second version — often a white or single-colour mark for darker pages."
+            description="A second version — often a white or single-color mark for darker pages."
             value={brand.alternateLogoUrl}
             onChange={(url) => set("alternateLogoUrl", url)}
             onNotice={onNotice}
@@ -302,8 +302,8 @@ export function BrandSection({
 /* ------------------------------------------------------------------------ */
 
 const TONE_OPTIONS = [
-  { value: "accent" as const, label: "Accent", help: "Your highlight colour — the everyday choice" },
-  { value: "brand" as const, label: "Brand", help: "Your primary colour, for a launch" },
+  { value: "accent" as const, label: "Accent", help: "Your highlight color — the everyday choice" },
+  { value: "brand" as const, label: "Brand", help: "Your primary color, for a launch" },
   { value: "neutral" as const, label: "Quiet", help: "Grey, for lead times and shipping notes" },
 ];
 
@@ -400,8 +400,8 @@ export function AnnouncementSection({
 
       <ControlGroup
         anchor="announcement-tone"
-        title="Colour"
-        description="Three tones, all built from colours you already control. There is no red — an incident notice has its own banner."
+        title="Color"
+        description="Three tones, all built from colors you already control. There is no red — an incident notice has its own banner."
       >
         <OptionRow
           label="Tone"
@@ -558,8 +558,8 @@ export function HomepageSection({
             onChange={(value) => set("heroTitleLead", value)}
           />
           <Field
-            label="Headline, in the brand colour"
-            hint="The second half, drawn in your primary colour."
+            label="Headline, in the brand color"
+            hint="The second half, drawn in your primary color."
             value={homepage.heroTitleAccent}
             maxLength={HERO_TITLE_MAX}
             placeholder={defaults.titleAccent}

@@ -287,7 +287,7 @@ test("search covers every kind of setting, not only colours", () => {
   // Every section a person can work in is represented. `templates` and
   // `advanced` are deliberately not: one holds saved looks rather than settings,
   // the other is a read-only reference.
-  for (const id of ["brand", "navigation", "announcement", "homepage", "colours", "typography", "components", "commerce", "forms", "layout", "business"]) {
+  for (const id of ["brand", "navigation", "announcement", "homepage", "colors", "typography", "components", "commerce", "forms", "layout", "business"]) {
     assert.ok((kinds.get(id) ?? 0) > 0, `${id} has no findable settings`);
   }
 

@@ -323,7 +323,7 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
       {
         href: "/staff/appearance",
         label: "Appearance",
-        description: "Colours, logos, wording and control styles for the storefront and the staff area.",
+        description: "Colors, logos, wording and control styles for the storefront and the staff area.",
         icon: "appearance",
         settingsSection: "design",
         anyOf: ["appearance.manage"],

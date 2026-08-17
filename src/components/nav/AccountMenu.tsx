@@ -76,7 +76,9 @@ export default function AccountMenu({
       menuLabel="Account"
       isHighlighted={pathname.startsWith("/account")}
       align="right"
-      panelClassName="w-64 overflow-hidden rounded-2xl border p-1.5 shadow-2xl"
+      /* Width and padding only — the panel's chrome is `.nav-menu-panel`, so
+         this menu, More and the Products panel cannot drift apart again. */
+      panelClassName="w-64 p-2"
       trigger={
         <>
           {/* The dot belongs to the avatar, not to the whole trigger, so the

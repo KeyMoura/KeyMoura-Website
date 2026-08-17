@@ -7,7 +7,8 @@ import ProductImage from "@/components/ProductImage";
 import CartSharePanel from "@/components/commerce/CartSharePanel";
 import QuantityField from "@/components/commerce/QuantityField";
 import CheckoutFulfillmentPanel, {
-  type FulfillmentSelection,
+  EMPTY_FULFILLMENT_STATE,
+  type FulfillmentState,
   type QuotedTotals,
 } from "@/components/commerce/CheckoutFulfillmentPanel";
 import { GUEST_ACCESS_WINDOW_LABEL } from "@/lib/commerce/guestAccessWindow";
@@ -20,6 +21,26 @@ import { formatCents, useCart, useCartMutations, useCheckoutContext } from "@/li
  * Every number here comes from the server's last response. The page never adds
  * a line total, never sums a subtotal, and never sends an amount — it renders
  * what `/api/cart` just returned and re-reads it after each change.
+ *
+ * ## Delivery is part of the summary, not a section beside it
+ *
+ * The page used to have two blocks in its right-hand column: a "Summary" card
+ * with the price ladder, and, *below it*, a "Delivery" card holding the choice
+ * that sets the shipping charge. So a customer read a total, scrolled past it
+ * to a settings panel, changed how the order arrives, and had to scroll back up
+ * to find out what that had cost them. One decision, presented as two unrelated
+ * things — and the Total above the choice that determines it.
+ *
+ * They are one block now, in the order a checkout is read: how it arrives,
+ * then Subtotal, Discount, Shipping or Pickup, Tax, Total. The delivery line is
+ * named after the method — "Pickup", not "Shipping" for something nobody is
+ * shipping — and it carries the server's number or an honest statement that
+ * there is not one yet.
+ *
+ * Nothing about the pricing moved. The shipping charge is still computed by
+ * `/api/cart/fulfillment` from a method id and an address, the checkout route
+ * still recomputes it from the same function, and this page still sends no
+ * amount of any kind. What changed is where the control is drawn.
  */
 
 export default function CartPage() {
@@ -30,7 +51,7 @@ export default function CartPage() {
   /** Which field the server refused, so it can be marked rather than only described. */
   const [checkoutField, setCheckoutField] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
-  const [fulfillment, setFulfillment] = useState<FulfillmentSelection | null>(null);
+  const [fulfillment, setFulfillment] = useState<FulfillmentState>(EMPTY_FULFILLMENT_STATE);
   const [quoted, setQuoted] = useState<QuotedTotals | null>(null);
   const [guestEmail, setGuestEmail] = useState("");
   const [guestName, setGuestName] = useState("");
@@ -50,7 +71,7 @@ export default function CartPage() {
 
   // Stable identities so the panel's effect does not re-run on every render of
   // this page.
-  const handleFulfillmentChange = useCallback((next: FulfillmentSelection | null) => setFulfillment(next), []);
+  const handleFulfillmentChange = useCallback((next: FulfillmentState) => setFulfillment(next), []);
   const handleTotals = useCallback((next: QuotedTotals | null) => setQuoted(next), []);
 
   /**
@@ -66,6 +87,32 @@ export default function CartPage() {
    * knows is stale.
    */
   const liveQuote = quoteMatchesCart(quoted, cart) ? quoted : null;
+
+  /**
+   * What the delivery line in the ladder is called, and what it says.
+   *
+   * Split out of the JSX because it is three decisions, not a ternary: which
+   * word names the method, whether there is a server figure yet, and what to
+   * say honestly when there is not. Written as a function of `fulfillment.method`
+   * and `liveQuote` only — there is deliberately no branch here that produces a
+   * currency amount from anything but the server's quote.
+   */
+  const deliveryLabel =
+    fulfillment.method === "pickup"
+      ? "Pickup"
+      : fulfillment.method === "shipping"
+        ? "Shipping"
+        : "Delivery";
+
+  const deliveryAmount = liveQuote
+    ? liveQuote.shippingCents === 0
+      ? "Free"
+      : formatCents(liveQuote.shippingCents)
+    : fulfillment.method === "shipping"
+      ? "Calculated at checkout"
+      : fulfillment.method
+        ? "Pricing…"
+        : "Choose an option";
 
   const items = cart?.items ?? [];
   const unavailable = cart?.unavailable ?? [];
@@ -85,7 +132,7 @@ export default function CartPage() {
         // Never a price: the server recomputes the delivery charge from its own
         // configuration and its own subtotal.
         body: JSON.stringify({
-          ...(fulfillment ?? {}),
+          ...(fulfillment.selection ?? {}),
           ...(signedIn ? {} : { guestEmail, guestName }),
         }),
       });
@@ -313,6 +360,10 @@ export default function CartPage() {
               Summary
             </h2>
 
+            {/* The choice that sets the delivery line below it, immediately
+                above the ladder it changes. */}
+            <CheckoutFulfillmentPanel onChange={handleFulfillmentChange} onTotals={handleTotals} />
+
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-brand-textMuted">Subtotal</span>
@@ -326,17 +377,29 @@ export default function CartPage() {
                   <span className="font-medium text-emerald-300">−{formatCents(cart.discountCents)}</span>
                 </div>
               ) : null}
-              {/* Shipping appears as its own line as soon as the server has
-                  priced it, so the customer never has to work out which part of
-                  the total was delivery. */}
-              {liveQuote ? (
-                <div className="flex items-center justify-between">
-                  <span className="text-brand-textMuted">Delivery</span>
-                  <span className="font-medium">
-                    {liveQuote.shippingCents === 0 ? "Free" : formatCents(liveQuote.shippingCents)}
-                  </span>
-                </div>
-              ) : null}
+              {/*
+                The delivery line is always drawn, and it is named after the
+                method rather than always saying "Delivery".
+
+                It used to appear only once a quote existed, so the ladder went
+                Subtotal → Total until the customer had finished choosing, and
+                the row that was missing was the one they were being asked to
+                fill in. Now the row is there from the start and says what state
+                it is in: the server's number once there is one, "Calculated at
+                checkout" while an address is still being typed, and a prompt
+                before anything is chosen.
+
+                `deliveryLabel` distinguishes Pickup from Shipping because
+                calling a collection "Shipping" is a claim about the order that
+                is not true. The *amount* is never assumed either way — pickup
+                shows the quoted figure like everything else, because whether
+                collection is free is the shop's configuration to state, not
+                this component's to guess.
+              */}
+              <div className="flex items-center justify-between" data-testid="cart-delivery-line">
+                <span className="text-brand-textMuted">{deliveryLabel}</span>
+                <span className="font-medium">{deliveryAmount}</span>
+              </div>
               {liveQuote && liveQuote.taxCents > 0 ? (
                 <div className="flex items-center justify-between">
                   <span className="text-brand-textMuted">Tax</span>
@@ -345,10 +408,16 @@ export default function CartPage() {
               ) : null}
               <div className="flex items-center justify-between border-t border-[var(--border)] pt-2 text-base">
                 <span className="font-semibold">Total</span>
-                <span className="font-semibold">{formatCents(liveQuote?.totalCents ?? cart?.totalCents ?? 0)}</span>
+                <span className="font-semibold" data-testid="cart-total">
+                  {formatCents(liveQuote?.totalCents ?? cart?.totalCents ?? 0)}
+                </span>
               </div>
               {!liveQuote ? (
-                <p className="text-xs text-brand-textMuted">Choose a delivery option to see the final total.</p>
+                <p className="text-xs text-brand-textMuted">
+                  {fulfillment.method
+                    ? "The total updates as soon as delivery is priced."
+                    : "Choose how this arrives to see the final total."}
+                </p>
               ) : null}
             </div>
 
@@ -452,15 +521,19 @@ export default function CartPage() {
 
             <button
               type="button"
-              disabled={!cart?.chargeable || checkingOut || !fulfillment}
+              disabled={!cart?.chargeable || checkingOut || !fulfillment.selection}
               onClick={() => void startCheckout()}
               className="ui-btn ui-btn-primary mt-5 w-full disabled:opacity-50"
             >
               {checkingOut ? "Starting checkout…" : "Check out"}
             </button>
-            {!fulfillment ? (
+            {!fulfillment.selection ? (
               <p className="mt-2 text-center text-xs text-brand-textMuted">
-                Choose a delivery option below to continue.
+                {/* "above", not "below": the delivery controls moved into this
+                    card, and a hint pointing the wrong way is worse than none. */}
+                {fulfillment.method === "shipping"
+                  ? "Finish the delivery address above to continue."
+                  : "Choose how this arrives, above, to continue."}
               </p>
             ) : null}
             {!signedIn && !guestAllowed ? (
@@ -480,8 +553,9 @@ export default function CartPage() {
             <TermsInlineNotice variant="checkout" className="mt-3 text-center" />
           </aside>
 
-          <CheckoutFulfillmentPanel onChange={handleFulfillmentChange} onTotals={handleTotals} />
-
+          {/* The Delivery card that used to sit here is gone, not duplicated:
+              its controls are inside the summary above, immediately over the
+              line they price. */}
           <CartSharePanel canShare={items.length > 0} />
           </div>
         </div>

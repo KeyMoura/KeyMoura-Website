@@ -10,6 +10,7 @@ import {
 } from "../src/theme/appearanceSections.ts";
 import { SECTION_TOGGLES } from "../src/theme/homepage.ts";
 import { APPEARANCE_TASK_SECTIONS, APPEARANCE_TASKS, searchAppearanceTasks } from "../src/theme/appearanceTasks.ts";
+import { BUTTON_ROLES } from "../src/theme/buttonRoles.ts";
 import { PRIMARY_STAFF_NAV_ITEMS, visibleStaffNav } from "../src/lib/staffNavigation.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -213,6 +214,14 @@ test("search takes you to the setting itself, not just to its section", () => {
   for (const match of sources.matchAll(/appearance-homepage-section-\$\{toggle\.id\}/g)) {
     void match;
     for (const toggle of SECTION_TOGGLES) rendered.add(`homepage-section-${toggle.id}`);
+  }
+  // Same arrangement for the semantic button roles: the workspace renders one
+  // card per entry in `BUTTON_ROLES`, so the id is a template rather than a
+  // literal. Requiring the template to be present keeps the honesty property —
+  // an index entry still cannot claim an anchor that nothing draws.
+  for (const match of sources.matchAll(/appearance-button-role-\$\{role\.id\}/g)) {
+    void match;
+    for (const role of BUTTON_ROLES) rendered.add(`button-role-${role.id}`);
   }
 
   const missing = APPEARANCE_SEARCH_INDEX.filter((entry) => !rendered.has(entry.anchor)).map(

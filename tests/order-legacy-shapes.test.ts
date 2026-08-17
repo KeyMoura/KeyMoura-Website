@@ -405,7 +405,10 @@ test("the delivery quote is re-requested when the cart's pricing changes", () =>
   assert.match(panel, /pricingBasis/, "the panel must track the cart's pricing basis");
   assert.match(
     panel,
-    /\[selection, onChange, requestQuote, pricingBasis\]/,
+    // `method` joined the list in pass 6, when the summary began naming its
+    // delivery row after the chosen method while the address is still being
+    // filled in. The four that matter to *re-quoting* are still all required.
+    /\[method, selection, onChange, requestQuote, pricingBasis\]/,
     "applying a discount must re-quote, not leave the previous total on screen"
   );
 });

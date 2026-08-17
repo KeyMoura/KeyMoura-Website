@@ -279,13 +279,19 @@ export default function CatalogBrowser({
           customer came to do; how many results there are and how they are
           arranged is a different question, and it belongs on a different line.
         */}
-        <section aria-label="Search and arrange products" className="catalog-toolbar">
+        <section aria-label="Filter and arrange products" className="catalog-toolbar">
+          {/* `scopeName` is what makes this read as the *page's* filter rather
+              than a second copy of the navbar's search: inside a department it
+              says so. Declared below with the results count, from the same
+              `menu.trail`, so the box and the sentence under it cannot name
+              different categories. */}
           <CommerceSearch
             inputId={searchId}
             value={typed}
             onChange={setTyped}
             onSubmit={submitSearch}
             onClear={clearSearch}
+            scopeName={scopeName}
           />
 
           <div className="catalog-results-bar">

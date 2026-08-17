@@ -7,6 +7,7 @@ import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { DonationBadge } from "@/components/DonationBadge";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import SearchFieldIcon from "@/components/ui/SearchFieldIcon";
 import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 
 type LoadState = "idle" | "loading" | "loaded" | "error";
@@ -603,7 +604,7 @@ export default function CommunityPage() {
               el?.focus();
             }}
           >
-            <span className="mr-1 text-[13px] text-brand-textMuted">🔍</span>
+            <SearchFieldIcon />
 
             {committedTerms.map((term) => (
               <button

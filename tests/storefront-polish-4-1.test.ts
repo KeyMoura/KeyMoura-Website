@@ -134,9 +134,16 @@ test("the wrapper is the one the Appearance navigation styles reach", () => {
   assert.match(header, /controlClassName=\{navLinkClass\("\/catalog"\)\}/);
   assert.match(header, /site-nav-link site-nav-primary-link/);
   // Only the padding is restated; height and states come from the shared rule.
-  // The values tightened with the pill's removal, so this pins the shape of the
-  // override rather than the two numbers in it.
-  assert.match(css, /\.products-menu-trigger\[data-has-menu="true"\] \{[^}]*padding-inline: [\d.]+rem [\d.]+rem;/);
+  // It is restated as `--nav-link-pad-end` rather than as a `padding-inline`
+  // shorthand so the underline follows it — the shared rule reads that variable
+  // to size the rule per side, which is what keeps the label and the chevron
+  // under one rule that clears both by the same amount.
+  assert.match(css, /\.products-menu-trigger\[data-has-menu="true"\] \{[^}]*--nav-link-pad-end: [\d.]+rem;/);
+  assert.doesNotMatch(
+    css,
+    /\.products-menu-trigger\[data-has-menu="true"\] \{[^}]*padding-inline:/,
+    "a shorthand here would set the padding without moving the rule"
+  );
 });
 
 test("Products still navigates, still opens, and is still two tab stops", () => {

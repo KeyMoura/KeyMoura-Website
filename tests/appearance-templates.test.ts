@@ -174,7 +174,7 @@ test("the Appearance page has its own saved-looks section", () => {
    * about *which* sections exist.
    */
   const ids = new Set(APPEARANCE_SECTIONS.map((section) => section.id));
-  for (const section of ["brand", "navigation", "announcement", "homepage", "colours", "components", "business", "templates"]) {
+  for (const section of ["brand", "navigation", "announcement", "homepage", "colors", "components", "business", "templates"]) {
     assert.ok(ids.has(section as never), `the ${section} section must exist`);
   }
   // The retired ones: "assets" folded into Brand and Business details, and

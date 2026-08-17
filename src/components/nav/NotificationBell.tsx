@@ -480,7 +480,11 @@ export default function NotificationBell({
       </button>
 
       {open && (
-        <div className="nav-menu-panel fixed left-2 right-2 mt-2 w-auto overflow-hidden rounded-2xl border shadow-2xl md:absolute md:right-0 md:left-auto md:mt-2 md:w-[360px]">
+        /* No padding: this panel's header rule and rows are full-bleed, which is
+           why `.nav-menu-panel` leaves padding to the caller. The border, radius
+           and shadow it used to declare here now come from that class, with the
+           rest of the header's dropdowns. */
+        <div className="nav-menu-panel fixed left-2 right-2 mt-2 w-auto md:absolute md:right-0 md:left-auto md:mt-2 md:w-[360px]">
           <div className="nav-menu-section flex items-center justify-between gap-2 border-b px-3 py-2">
             <div className="text-[12px] font-semibold text-brand-text">
               Notifications

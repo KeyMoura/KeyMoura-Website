@@ -124,7 +124,8 @@ test("appearance is organized around owner tasks, not kinds of setting", () => {
     "Navigation",
     "Announcement bar",
     "Homepage",
-    "Colours",
+    // Pass 6: the owner-facing spelling is American across the whole editor.
+    "Colors",
     "Typography",
     "Buttons & components",
     "Product cards",

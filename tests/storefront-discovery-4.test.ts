@@ -22,6 +22,7 @@ import {
   SUGGEST_LIMITS,
   suggestionCount,
 } from "../src/lib/commerce/catalogSuggest.ts";
+import { ALL_SCOPE, searchDestination } from "../src/lib/commerce/searchScopes.ts";
 import {
   parseRecentlyViewed,
   RECENTLY_VIEWED_LIMIT,
@@ -488,7 +489,15 @@ test("the dropdown panel is positioned absolutely, never fixed", () => {
 test("the header search submits to the canonical catalog URL", () => {
   assert.equal(catalogSearchHref("shift knob"), "/catalog?q=shift%20knob");
   assert.equal(catalogSearchHref("   "), "/catalog");
-  assert.match(search, /catalogSearchHref/);
+  // Reached through `searchDestination` now, which routes the All and Products
+  // scopes to exactly this and a category scope to the same shape one level
+  // down. The box no longer has a single hard-coded destination.
+  assert.match(search, /searchDestination/);
+  assert.equal(
+    searchDestination(ALL_SCOPE, "shift knob"),
+    "/catalog?q=shift%20knob",
+    "All must still land where the unscoped box did"
+  );
 });
 
 test("query normalization is forgiving without being clever", () => {
@@ -552,9 +561,22 @@ test("a subcategory suggestion is never shown bare", () => {
 
 test("an empty suggestion set still offers a way forward", () => {
   assert.equal(suggestionCount(null), 0);
-  assert.equal(suggestionCount({ query: "x", products: [], categories: [] }), 0);
-  // The panel always renders "See all results", including with no suggestions.
-  assert.match(search, /See all results for/);
+  assert.equal(suggestionCount({ query: "x", scope: "all", products: [], categories: [], projects: [] }), 0);
+  /*
+   * A payload from *before* the projects group existed must not crash the
+   * panel. The suggest route is `revalidate = 60`, so for up to a minute after
+   * a deploy a browser can be handed a cached response from the previous build
+   * — and `.map` on a missing key would throw on every keystroke until the
+   * cache turned over.
+   */
+  assert.equal(
+    suggestionCount({ query: "x", scope: "all", products: [], categories: [] } as never),
+    0,
+    "a response missing a group is empty, not a crash"
+  );
+  // The panel always offers a way on, including with no suggestions.
+  assert.match(search, /See all product results for/);
+  assert.match(search, /See all project results for/);
 });
 
 test("the search box uses real combobox semantics", () => {

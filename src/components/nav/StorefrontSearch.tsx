@@ -1,16 +1,27 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMagnifyingGlass, faXmark, faArrowRight } from "@fortawesome/free-solid-svg-icons";
 import {
-  catalogSearchHref,
   normalizeSuggestQuery,
   SUGGEST_LIMITS,
-  suggestionCount,
+  suggestionRows,
   type SuggestResponse,
+  type SuggestRow,
 } from "@/lib/commerce/catalogSuggest";
+import {
+  ALL_SCOPE,
+  buildSearchScopes,
+  projectsDestination,
+  resolveScope,
+  scopeGroups,
+  scopePlaceholder,
+  scopeSearchLabel,
+  searchDestination,
+} from "@/lib/commerce/searchScopes";
+import { EMPTY_STOREFRONT_NAV, type StorefrontNav } from "@/lib/commerce/storefrontNavModel";
 
 /**
  * The storefront's global search.
@@ -24,35 +35,62 @@ import {
  * across four result kinds including a dormant forum. That is a community
  * site's navigator wearing a shop's hat.
  *
- * This is a real search field, on the bar, at the width the space allows, and
- * it searches **products**. The palette is untouched and still on Ctrl+K for
- * anyone who wants site-wide navigation; what changed is which of the two the
- * storefront leads with.
+ * This is a real search field, on the bar, at the width the space allows. The
+ * palette is untouched and still on Ctrl+K for anyone who wants site-wide
+ * navigation; what changed is which of the two the storefront leads with.
+ *
+ * ## The scope selector
+ *
+ * `[ All ▾ ][ Search… ][ Search ]`, the shape every shop uses, and for the
+ * reason every shop uses it: this business sells catalog products *and* custom
+ * work, and publishes project write-ups that are most of what it actually
+ * makes. A single unscoped box could only ever hand all three to `/catalog`,
+ * so "cnc" — which lives in the Gallery — returned nothing and looked like a
+ * broken search rather than a scoped one.
+ *
+ * The scopes come from `buildSearchScopes`, which reads the **same
+ * `StorefrontNav`** the Products dropdown is built from. There is no second
+ * list of categories: a scope cannot name a department the catalog does not
+ * have, and an emptied category leaves the dropdown at the same moment it
+ * leaves the menu.
+ *
+ * It is a native `<select>`. A styled listbox would have been a second custom
+ * dropdown sitting inches from the Products one — two panels that can be open
+ * at once, competing for the same corner of the viewport and the same Escape
+ * key. The native control renders in the platform layer where it cannot collide
+ * with either, and arrives with keyboard support, a touch picker and a screen
+ * reader contract already correct.
  *
  * ## URL, not state
  *
- * Submitting goes to `/catalog?q=…` — the same URL the catalog's own search box
- * writes and reads, so a navbar search and a catalog search are the same
- * search. There is no second query state to drift: the catalog renders "12
- * results for shift knob" from the URL it was handed, and Back works because
- * the query is a real address.
+ * Submitting goes to a real address — `/catalog?q=…`, `/catalog/interior?q=…`
+ * or `/projects?q=…` — every one of which already read `?q=` before this
+ * existed. The catalog renders "12 results for shift knob" from the URL it was
+ * handed, and Back works because the query is a place.
  *
  * ## Suggestions
  *
- * Debounced, aborted on every new keystroke, and bounded on the *server* to
- * five products and three categories. Nothing about the catalog is loaded into
- * the browser to make this work. An in-flight request whose query is no longer
- * current is discarded rather than rendered, which is what stops the list
- * flickering backwards through older answers on a fast typist.
+ * Debounced, aborted on every new keystroke, and bounded on the *server*.
+ * Nothing about the catalog is loaded into the browser to make this work. An
+ * in-flight request whose query **or scope** is no longer current is discarded
+ * rather than rendered, which is what stops the list flickering backwards
+ * through older answers on a fast typist — or showing the previous scope's
+ * products for a moment after the scope changes.
  *
  * ## Combobox semantics
  *
- * `role="combobox"` on the input, `role="listbox"` on the panel,
- * `role="option"` on each row, and the active row named through
- * `aria-activedescendant`. Focus stays in the input the whole time — that is
- * the pattern's whole point — so typing continues to work while the arrow keys
- * move the selection. Escape closes the list first and clears the box second,
- * so one keypress never does both.
+ * `role="combobox"` on the input, `role="listbox"` on the panel, `role="group"`
+ * per result kind, `role="option"` on each row, and the active row named
+ * through `aria-activedescendant`. Focus stays in the input the whole time —
+ * that is the pattern's whole point — so typing continues to work while the
+ * arrow keys move the selection. Escape closes the list first and clears the
+ * box second, so one keypress never does both.
+ *
+ * The groups are what make a mixed result list readable: a product, a category
+ * and a project are three different kinds of destination, and a flat list of
+ * them is a list where the customer cannot tell what pressing Enter will do.
+ * Each row also carries its kind in words, because a heading is only visible
+ * while you are looking at the top of the group.
  */
 
 type StorefrontSearchProps = {
@@ -62,18 +100,26 @@ type StorefrontSearchProps = {
   /** Called after a submit or a suggestion pick, so a drawer can close itself. */
   onNavigate?: () => void;
   autoFocus?: boolean;
+  /** The catalog hierarchy the scope dropdown is built from. */
+  nav?: StorefrontNav;
 };
 
 const DEBOUNCE_MS = 180;
+
+const GROUP_LABELS = { product: "Products", category: "Categories", project: "Projects" } as const;
+/** The word on the row itself, singular — "Product", not "Products". */
+const KIND_LABELS = { product: "Product", category: "Category", project: "Project" } as const;
 
 export default function StorefrontSearch({
   variant = "header",
   className = "",
   onNavigate,
   autoFocus = false,
+  nav = EMPTY_STOREFRONT_NAV,
 }: StorefrontSearchProps) {
   const router = useRouter();
   const [value, setValue] = useState("");
+  const [scopeId, setScopeId] = useState(ALL_SCOPE.id);
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<SuggestResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -83,8 +129,12 @@ export default function StorefrontSearch({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const listId = useId();
   const inputId = useId();
+  const scopeSelectId = useId();
 
-  const total = suggestionCount(results);
+  const scopes = useMemo(() => buildSearchScopes(nav), [nav]);
+  const scope = useMemo(() => resolveScope(scopes, scopeId), [scopes, scopeId]);
+  const groups = scopeGroups(scope);
+
   const query = normalizeSuggestQuery(value);
   const canSuggest = query.length >= SUGGEST_LIMITS.minQueryLength;
 
@@ -94,7 +144,8 @@ export default function StorefrontSearch({
    * The abort controller matters more than the debounce here: a customer typing
    * "shift knob" produces overlapping requests, and without cancelling them the
    * list is whichever response happened to land last rather than the one that
-   * matches what is in the box.
+   * matches what is in the box. `scope.id` is in the dependency list for the
+   * same reason the query is — changing it changes the answer.
    */
   useEffect(() => {
     if (!canSuggest) {
@@ -109,9 +160,10 @@ export default function StorefrontSearch({
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const response = await fetch(`/api/public/catalog-suggest?q=${encodeURIComponent(query)}`, {
-            signal: controller.signal,
-          });
+          const response = await fetch(
+            `/api/public/catalog-suggest?q=${encodeURIComponent(query)}&scope=${encodeURIComponent(scope.id)}`,
+            { signal: controller.signal }
+          );
           if (!response.ok) throw new Error("suggest failed");
           const payload = (await response.json()) as SuggestResponse;
           setResults(payload);
@@ -119,8 +171,10 @@ export default function StorefrontSearch({
         } catch {
           // An aborted request is the normal case, not a failure worth showing.
           // A genuine one leaves the panel offering "See all results", which is
-          // still a complete search — the catalog does its own matching.
-          if (!controller.signal.aborted) setResults({ query, products: [], categories: [], error: true });
+          // still a complete search — the destination does its own matching.
+          if (!controller.signal.aborted) {
+            setResults({ query, scope: scope.id, products: [], categories: [], projects: [], error: true });
+          }
         } finally {
           if (!controller.signal.aborted) setLoading(false);
         }
@@ -131,7 +185,7 @@ export default function StorefrontSearch({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, canSuggest]);
+  }, [query, canSuggest, scope.id]);
 
   // Outside click closes the list. Focus is left where the click put it.
   useEffect(() => {
@@ -158,20 +212,25 @@ export default function StorefrontSearch({
     [onNavigate, router]
   );
 
-  /** The href for row `index`, products first then categories, or null. */
-  const hrefAt = (index: number): string | null => {
-    if (!results || index < 0) return null;
-    if (index < results.products.length) return `/catalog/${results.products[index].slug}`;
-    const category = results.categories[index - results.products.length];
-    return category ? category.href : null;
-  };
+  /*
+   * Only rows that came back *for this scope* are selectable.
+   *
+   * The response carries the scope it was computed for, so the moment between
+   * changing the scope and the new answer landing renders nothing rather than
+   * the previous scope's products under the new scope's heading.
+   */
+  const rows: SuggestRow[] = useMemo(
+    () => (results && results.scope === scope.id ? suggestionRows(results) : []),
+    [results, scope.id]
+  );
+  const total = rows.length;
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     // A highlighted suggestion wins: the customer chose a specific thing and
     // sending them to a result page for it instead would be ignoring the choice.
-    const chosen = hrefAt(active);
-    go(chosen ?? catalogSearchHref(value));
+    const chosen = rows[active]?.href;
+    go(chosen ?? searchDestination(scope, value));
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -205,20 +264,130 @@ export default function StorefrontSearch({
   };
 
   const showPanel = open && canSuggest;
-  const hasResults = Boolean(results && (results.products.length || results.categories.length));
+  const searchLabel = scopeSearchLabel(scope);
+
+  /** Rows of one kind, with the index each carries in the flat selection order. */
+  const groupRows = (kind: SuggestRow["kind"]) =>
+    rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.kind === kind);
+
+  const renderGroup = (kind: SuggestRow["kind"]) => {
+    const entries = groupRows(kind);
+    if (!entries.length) return null;
+    const headingId = `${listId}-group-${kind}`;
+
+    return (
+      <div role="group" aria-labelledby={headingId} className="storefront-search-group">
+        <p id={headingId} className="storefront-search-group-heading">
+          {GROUP_LABELS[kind]}
+        </p>
+        {entries.map(({ row, index }) => (
+          <div
+            key={`${row.kind}-${row.href}`}
+            id={`${listId}-option-${index}`}
+            role="option"
+            aria-selected={active === index}
+            className={`storefront-search-option${row.kind === "product" ? "" : " is-compact"}${
+              active === index ? " is-active" : ""
+            }`}
+            onMouseEnter={() => setActive(index)}
+            onMouseDown={(event) => {
+              // mousedown, not click: the input blurs before click fires and
+              // the outside-click handler would have closed the panel first.
+              event.preventDefault();
+              go(row.href);
+            }}
+          >
+            {row.kind === "product" ? (
+              <span className="storefront-search-thumb" aria-hidden="true">
+                {row.product.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={row.product.image} alt="" loading="lazy" decoding="async" />
+                ) : (
+                  <span className="storefront-search-thumb-fallback">KM</span>
+                )}
+              </span>
+            ) : null}
+
+            <span className="storefront-search-option-text">
+              <span className="storefront-search-option-name">
+                {row.kind === "product"
+                  ? row.product.name
+                  : row.kind === "category"
+                    ? row.category.trail
+                    : row.project.title}
+              </span>
+              {/*
+                The kind, in words, on every row. The group heading says it too,
+                but a heading is only visible while the reader is looking at the
+                top of its group — and the whole failure this replaces was a
+                mixed list where a customer could not tell whether Enter opened
+                a product, a department or an article.
+              */}
+              <span className="storefront-search-option-meta">
+                {row.kind === "product" && row.product.category
+                  ? `${KIND_LABELS.product} · ${row.product.category}`
+                  : KIND_LABELS[row.kind]}
+              </span>
+            </span>
+
+            {row.kind === "product" ? (
+              <span className="storefront-search-option-price">{row.product.price}</span>
+            ) : row.kind === "category" ? (
+              <span className="storefront-search-option-price">{row.category.count}</span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div ref={wrapRef} className={`storefront-search ${className}`.trim()} data-variant={variant}>
       <form
         role="search"
         // A search landmark needs a name of its own, or a screen reader
-        // announces "search" twice on the catalog, which has two.
-        aria-label="Search products"
+        // announces "search" twice on a page that has two — and the name says
+        // the scope, so the landmark describes what it currently searches.
+        aria-label={searchLabel}
         onSubmit={submit}
         className="storefront-search-form"
       >
+        {/*
+          The scope, first, because it qualifies everything typed after it —
+          and because that is the order it is read in, by eye and by a screen
+          reader walking the form.
+        */}
+        <label className="sr-only" htmlFor={scopeSelectId}>
+          Search in
+        </label>
+        <select
+          id={scopeSelectId}
+          className="storefront-search-scope"
+          value={scope.id}
+          onChange={(event) => {
+            setScopeId(event.target.value);
+            // The previous scope's answer is not this scope's answer. Clearing
+            // it stops the panel showing products under a Projects heading for
+            // the ~200ms before the new response lands.
+            setResults(null);
+            setActive(-1);
+            if (value) setOpen(true);
+          }}
+          data-testid="storefront-search-scope"
+        >
+          {scopes.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {/* Two spaces of indent for a subcategory. `<optgroup>` was the
+                  obvious alternative and is wrong here: its labels are not
+                  selectable, and a department is a scope a customer must be
+                  able to choose. */}
+              {entry.depth ? `  ${entry.label}` : entry.label}
+            </option>
+          ))}
+        </select>
+
         <label className="sr-only" htmlFor={inputId}>
-          Search products
+          {searchLabel}
         </label>
 
         <FontAwesomeIcon icon={faMagnifyingGlass} className="storefront-search-icon" aria-hidden="true" />
@@ -236,7 +405,7 @@ export default function StorefrontSearch({
           autoComplete="off"
           autoFocus={autoFocus}
           value={value}
-          placeholder="Search products…"
+          placeholder={scopePlaceholder(scope)}
           onChange={(event) => {
             setValue(event.target.value);
             setOpen(true);
@@ -264,7 +433,7 @@ export default function StorefrontSearch({
           </button>
         ) : null}
 
-        <button type="submit" className="storefront-search-submit" aria-label="Search products">
+        <button type="submit" className="storefront-search-submit" aria-label={searchLabel}>
           <FontAwesomeIcon icon={faMagnifyingGlass} className="h-3.5 w-3.5" aria-hidden="true" />
           <span className="storefront-search-submit-label">Search</span>
         </button>
@@ -272,93 +441,65 @@ export default function StorefrontSearch({
 
       {showPanel ? (
         <div className="storefront-search-panel" data-testid="storefront-search-panel">
-          <ul id={listId} role="listbox" aria-label="Product suggestions" className="storefront-search-list">
-            {results?.products.map((product, index) => (
-              <li
-                key={product.id}
-                id={`${listId}-option-${index}`}
-                role="option"
-                aria-selected={active === index}
-                className={`storefront-search-option${active === index ? " is-active" : ""}`}
-                onMouseEnter={() => setActive(index)}
-                onMouseDown={(event) => {
-                  // mousedown, not click: the input blurs before click fires and
-                  // the outside-click handler would have closed the panel first.
-                  event.preventDefault();
-                  go(`/catalog/${product.slug}`);
-                }}
-              >
-                <span className="storefront-search-thumb" aria-hidden="true">
-                  {product.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={product.image} alt="" loading="lazy" decoding="async" />
-                  ) : (
-                    <span className="storefront-search-thumb-fallback">KM</span>
-                  )}
-                </span>
-                <span className="storefront-search-option-text">
-                  <span className="storefront-search-option-name">{product.name}</span>
-                  {product.category ? (
-                    <span className="storefront-search-option-meta">{product.category}</span>
-                  ) : null}
-                </span>
-                <span className="storefront-search-option-price">{product.price}</span>
-              </li>
-            ))}
+          <div id={listId} role="listbox" aria-label={`${searchLabel} suggestions`} className="storefront-search-list">
+            {renderGroup("product")}
+            {renderGroup("category")}
+            {renderGroup("project")}
+          </div>
 
-            {results?.categories.map((category, offset) => {
-              const index = (results.products.length ?? 0) + offset;
-              return (
-                <li
-                  key={category.href}
-                  id={`${listId}-option-${index}`}
-                  role="option"
-                  aria-selected={active === index}
-                  className={`storefront-search-option is-category${active === index ? " is-active" : ""}`}
-                  onMouseEnter={() => setActive(index)}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    go(category.href);
-                  }}
-                >
-                  <span className="storefront-search-option-text">
-                    <span className="storefront-search-option-name">{category.trail}</span>
-                    <span className="storefront-search-option-meta">Category</span>
-                  </span>
-                  <span className="storefront-search-option-price">{category.count}</span>
-                </li>
-              );
-            })}
-          </ul>
-
-          {!hasResults && !loading ? (
+          {!total && !loading ? (
             <p className="storefront-search-empty">
-              Nothing matches “{query}” yet — the full catalog search may still find it.
+              Nothing matches “{query}” in {scope.label.toLowerCase()} yet — the full search may still find it.
             </p>
           ) : null}
 
           {/*
-            Always offered, including when there are no suggestions: the catalog
-            searches descriptions this endpoint only samples, and a dead end at
-            the moment a customer has finished typing is the worst place to have
-            one. Not a listbox option, so the arrow keys cannot land on it and
-            Enter with nothing selected already goes here.
+            Always offered, including when there are no suggestions: the
+            destination searches descriptions this endpoint only samples, and a
+            dead end at the moment a customer has finished typing is the worst
+            place to have one. Not listbox options, so the arrow keys cannot
+            land on them and Enter with nothing selected already goes to the
+            first.
+
+            In the All scope there are two, because All is the one scope with no
+            single page behind it. Offering only the catalog would have made All
+            a synonym for Products with extra suggestions, which is exactly the
+            behaviour the scope selector exists to end.
           */}
-          <button
-            type="button"
-            className="storefront-search-all"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              go(catalogSearchHref(value));
-            }}
-          >
-            See all results for “{query}”
-            <FontAwesomeIcon icon={faArrowRight} className="h-3 w-3 shrink-0" aria-hidden="true" />
-          </button>
+          <div className="storefront-search-actions">
+            {groups.products ? (
+              <button
+                type="button"
+                className="storefront-search-all"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  go(searchDestination(scope, value));
+                }}
+              >
+                {scope.kind === "category"
+                  ? `See all ${scope.label} results for “${query}”`
+                  : `See all product results for “${query}”`}
+                <FontAwesomeIcon icon={faArrowRight} className="h-3 w-3 shrink-0" aria-hidden="true" />
+              </button>
+            ) : null}
+            {groups.projects ? (
+              <button
+                type="button"
+                className="storefront-search-all"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  go(projectsDestination(value));
+                }}
+              >
+                See all project results for “{query}”
+                <FontAwesomeIcon icon={faArrowRight} className="h-3 w-3 shrink-0" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
 
           {/* The count, for anyone who cannot see the list change under them. */}
           <p className="sr-only" role="status" aria-live="polite">
-            {loading ? "Searching" : `${total} suggestion${total === 1 ? "" : "s"}`}
+            {loading ? "Searching" : `${total} suggestion${total === 1 ? "" : "s"} in ${scope.label}`}
           </p>
         </div>
       ) : null}

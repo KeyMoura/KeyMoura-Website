@@ -8,6 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { isArray, isRecord } from "@/lib/typeGuards";
+import SearchFieldIcon from "@/components/ui/SearchFieldIcon";
 import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 
 type LoadState = "idle" | "loading" | "loaded" | "error";
@@ -887,7 +888,7 @@ export default function CommunityCategoryPage() {
                 el?.focus();
               }}
             >
-              <span className="mr-1 text-[13px] text-brand-textMuted">🔍</span>
+              <SearchFieldIcon />
 
               {committedTerms.map((term) => (
                 <button

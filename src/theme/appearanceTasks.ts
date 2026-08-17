@@ -38,7 +38,7 @@ import { APPEARANCE_SETTINGS, type AppearanceSetting } from "./appearanceMap";
 
 export type AppearanceTaskSection = "brand" | "buttons" | "cards" | "navigation" | "forms" | "advanced";
 
-export type AppearanceFieldRole = "Background" | "Text" | "Border" | "Colour" | "Fade";
+export type AppearanceFieldRole = "Background" | "Text" | "Border" | "Color" | "Fade";
 
 export type AppearanceTaskField = {
   role: AppearanceFieldRole;
@@ -71,7 +71,7 @@ export const APPEARANCE_TASK_SECTIONS: readonly {
   label: string;
   description: string;
 }[] = [
-  { id: "brand", label: "Brand", description: "The colours everything else is built from." },
+  { id: "brand", label: "Brand", description: "The colors everything else is built from." },
   { id: "buttons", label: "Buttons", description: "The buttons customers press." },
   { id: "cards", label: "Product cards", description: "How a product looks in the catalog." },
   { id: "navigation", label: "Navigation", description: "The bar across the top of every page." },
@@ -79,7 +79,7 @@ export const APPEARANCE_TASK_SECTIONS: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    description: "Uncommon colours — hover states, dropdown panels and count badges. Everything here is optional.",
+    description: "Uncommon colors — hover states, dropdown panels and count badges. Everything here is optional.",
   },
 ];
 
@@ -89,18 +89,18 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
     id: "brand-primary",
     label: "Brand primary",
     description:
-      "The main action colour. Prices, section eyebrows, focus outlines and the selected staff sidebar item follow it, and buttons fall back to it.",
+      "The main action color. Prices, section eyebrows, focus outlines and the selected staff sidebar item follow it, and buttons fall back to it.",
     section: "brand",
-    fields: [{ role: "Colour", key: "primaryColor" }],
-    keywords: ["primary", "brand", "main colour", "gold", "action colour", "price"],
+    fields: [{ role: "Color", key: "primaryColor" }],
+    keywords: ["primary", "brand", "main color", "main colour", "gold", "action color", "price"],
   },
   {
     id: "brand-accent",
     label: "Brand accent",
-    description: "The highlight colour. Badges, footer links and the request stepper all follow it.",
+    description: "The highlight color. Badges, footer links and the request stepper all follow it.",
     section: "brand",
-    fields: [{ role: "Colour", key: "accentColor" }],
-    keywords: ["accent", "highlight", "brand", "secondary colour"],
+    fields: [{ role: "Color", key: "accentColor" }],
+    keywords: ["accent", "highlight", "brand", "secondary color", "secondary colour"],
   },
   {
     id: "brand-surfaces",
@@ -109,7 +109,7 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
     section: "brand",
     fields: [
       { role: "Background", key: "background" },
-      { role: "Colour", key: "surface" },
+      { role: "Color", key: "surface" },
       { role: "Border", key: "border" },
     ],
     keywords: ["background", "page", "card", "panel", "surface", "border", "line", "divider"],
@@ -120,7 +120,7 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
     description: "Headings, body copy and the quieter secondary text under them.",
     section: "brand",
     fields: [
-      { role: "Colour", key: "headingText" },
+      { role: "Color", key: "headingText" },
       { role: "Text", key: "text" },
       { role: "Fade", key: "mutedText" },
     ],
@@ -178,7 +178,7 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
     fields: [],
     pointer: {
       toTaskId: "brand-primary",
-      because: "Prices are drawn in the brand primary colour, directly on the page.",
+      because: "Prices are drawn in the brand primary color, directly on the page.",
     },
     keywords: ["price", "cost", "amount", "money", "£", "$"],
   },
@@ -199,10 +199,16 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
   {
     id: "navbar-active",
     label: "Current page link",
-    description: "The navbar link for the page the customer is on right now.",
+    description: "The navbar link for the page the customer is on right now, and the rule under it.",
     section: "navigation",
-    fields: [{ role: "Colour", key: "navigationActiveText" }],
-    keywords: ["active", "current", "selected", "navbar", "highlight"],
+    fields: [{ role: "Color", key: "navigationActiveText" }],
+    // "active accent" is the phrase an owner reaches for and it matched nothing:
+    // the words were split between this task ("active") and Brand accent
+    // ("accent"), so the search scored each half against the wrong thing.
+    keywords: [
+      "active", "current", "selected", "navbar", "highlight", "accent", "active accent",
+      "active colour", "active color", "underline", "current page",
+    ],
   },
 
   // ---- Forms -------------------------------------------------------------
@@ -222,7 +228,7 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
     fields: [],
     pointer: {
       toTaskId: "primary-button",
-      because: "The focus ring uses the primary brand colour so it always meets the same contrast as your main button.",
+      because: "The focus ring uses the primary brand color so it always meets the same contrast as your main button.",
     },
     keywords: ["focus", "outline", "ring", "keyboard", "tab", "accessibility"],
   },
@@ -239,9 +245,9 @@ export const APPEARANCE_TASKS: readonly AppearanceTask[] = [
   {
     id: "advanced-body-links",
     label: "Links inside text",
-    description: "Links in paragraphs and on policy pages. Buttons and navigation have their own colours.",
+    description: "Links in paragraphs and on policy pages. Buttons and navigation have their own colors.",
     section: "advanced",
-    fields: [{ role: "Colour", key: "linkText" }],
+    fields: [{ role: "Color", key: "linkText" }],
     keywords: ["link", "anchor", "hyperlink"],
   },
   {

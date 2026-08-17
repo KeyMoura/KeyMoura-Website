@@ -95,19 +95,19 @@ export const APPEARANCE_GROUPS: readonly {
   {
     id: "brand",
     label: "Brand",
-    description: "The two colours everything else is built from.",
+    description: "The two colors everything else is built from.",
     scope: "both",
   },
   {
     id: "buttons",
     label: "Buttons",
-    description: "The text colour on each kind of button. Button shape is set under Styles.",
+    description: "The text color on each kind of button. Button shape is set under Styles.",
     scope: "both",
   },
   {
     id: "badges",
     label: "Labels & badges",
-    description: "The small pills on product cards and orders. Leave any of these unset to follow the accent colour.",
+    description: "The small pills on product cards and orders. Leave any of these unset to follow the accent color.",
     scope: "both",
   },
   {
@@ -151,8 +151,8 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
   {
     key: "primaryColor",
     variable: "--brand-primary",
-    label: "Primary brand colour",
-    description: "Your main action colour. Used for the most important button on every screen, and for prices.",
+    label: "Primary brand color",
+    description: "Your main action color. Used for the most important button on every screen, and for prices.",
     group: "brand",
     shared: true,
     usedBy: [
@@ -169,7 +169,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
   {
     key: "accentColor",
     variable: "--brand-accent",
-    label: "Accent colour",
+    label: "Accent color",
     description: "The secondary highlight. Used for badges, selected states and links in the footer.",
     group: "brand",
     shared: true,
@@ -189,9 +189,9 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     variable: "--km-primary-button-bg",
     label: "Primary button background",
     description:
-      "The fill behind your main action buttons, including the storefront's “Buy now”. Leave unset and it follows the primary brand colour.",
+      "The fill behind your main action buttons, including the storefront's “Buy now”. Leave unset and it follows the primary brand color.",
     group: "buttons",
-    optional: { inheritsFrom: "the primary brand colour and the Primary buttons shape", follows: "primaryColor" },
+    optional: { inheritsFrom: "the primary brand color and the Primary buttons shape", follows: "primaryColor" },
     usedBy: [
       "“Buy now” on storefront product cards",
       "Add to Cart",
@@ -215,7 +215,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     variable: "--km-primary-button-text",
     label: "Primary button text",
     description:
-      "The words on your main action buttons, sitting on the primary button background. Applies while Primary buttons is set to Solid; the Soft, Outline and Framed shapes put the label on the page, so it follows the primary brand colour instead.",
+      "The words on your main action buttons, sitting on the primary button background. Applies while Primary buttons is set to Solid; the Soft, Outline and Framed shapes put the label on the page, so it follows the primary brand color instead.",
     group: "buttons",
     usedBy: [
       "“Buy now” on storefront product cards",
@@ -249,7 +249,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     description:
       "The fill behind supporting buttons, including the catalog's “Need something else? Start a custom project”.",
     group: "buttons",
-    optional: { inheritsFrom: "the Secondary buttons shape and the accent colour", follows: "accentColor" },
+    optional: { inheritsFrom: "the Secondary buttons shape and the accent color", follows: "accentColor" },
     usedBy: [
       "“Need something else? Start a custom project” on the catalog",
       "“Request a Custom Version” on a product",
@@ -263,7 +263,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Secondary button border",
     description: "The edge around supporting buttons.",
     group: "buttons",
-    optional: { inheritsFrom: "the accent colour", follows: "accentColor" },
+    optional: { inheritsFrom: "the accent color", follows: "accentColor" },
     usedBy: [
       "“Need something else? Start a custom project” on the catalog",
       "“Request a Custom Version” on a product",
@@ -278,7 +278,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Badge background",
     description: "The fill behind the “Customizable” badge and every other accent badge.",
     group: "badges",
-    optional: { inheritsFrom: "the accent colour", follows: "accentColor" },
+    optional: { inheritsFrom: "the accent color", follows: "accentColor" },
     usedBy: [
       "The “Customizable” badge on product cards",
       "“In review” and other accent badges on orders",
@@ -291,7 +291,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Badge text",
     description: "The words inside the “Customizable” badge and other accent badges.",
     group: "badges",
-    optional: { inheritsFrom: "the accent colour", follows: "accentColor" },
+    optional: { inheritsFrom: "the accent color", follows: "accentColor" },
     usedBy: [
       "The word “Customizable” on product cards",
       "“In review” and other accent badges on orders",
@@ -304,7 +304,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     label: "Badge border",
     description: "The edge around the “Customizable” badge and other accent badges.",
     group: "badges",
-    optional: { inheritsFrom: "the accent colour and the border colour", follows: "accentColor" },
+    optional: { inheritsFrom: "the accent color and the border color", follows: "accentColor" },
     usedBy: ["The “Customizable” badge on product cards", "Accent badges on orders"],
     keywords: ["badge", "border", "customizable", "outline", "edge", "ring"],
   },
@@ -314,7 +314,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     key: "background",
     variable: "--km-bg",
     label: "Page background",
-    description: "The colour behind every page, before any card is drawn on it.",
+    description: "The color behind every page, before any card is drawn on it.",
     group: "surfaces",
     usedBy: ["Every storefront page", "Every staff page"],
     keywords: ["background", "page", "body", "behind"],
@@ -323,7 +323,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     key: "backgroundEnd",
     variable: "--km-bg-end",
     label: "Background fade",
-    description: "The colour the page background fades towards. Only visible when the background style is Gradient.",
+    description: "The color the page background fades towards. Only visible when the background style is Gradient.",
     group: "surfaces",
     usedBy: ["The bottom of every page, when Page background style is Gradient"],
     keywords: ["background", "gradient", "fade", "bottom"],
@@ -349,7 +349,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
   {
     key: "border",
     variable: "--km-border",
-    label: "Border colour",
+    label: "Border color",
     description: "Every dividing line: card edges, input outlines, table rules and separators.",
     group: "surfaces",
     shared: true,
@@ -371,7 +371,7 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
     key: "text",
     variable: "--km-text",
     label: "Body text",
-    description: "The main reading colour for everything that is not a heading or deliberately quiet.",
+    description: "The main reading color for everything that is not a heading or deliberately quiet.",
     group: "text",
     usedBy: ["Paragraphs", "Table cells", "Form values", "Staff sidebar labels"],
     keywords: ["body", "text", "paragraph", "copy", "main text", "foreground"],
@@ -388,8 +388,8 @@ export const APPEARANCE_SETTINGS: readonly AppearanceSetting[] = [
   {
     key: "linkText",
     variable: "--km-link",
-    label: "Link colour",
-    description: "Links inside body copy. Buttons and navigation links have their own colours.",
+    label: "Link color",
+    description: "Links inside body copy. Buttons and navigation links have their own colors.",
     group: "text",
     usedBy: ["Links inside paragraphs", "Links in policy and info pages"],
     keywords: ["link", "anchor", "href", "hyperlink"],

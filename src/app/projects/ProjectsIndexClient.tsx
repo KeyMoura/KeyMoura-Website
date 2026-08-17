@@ -7,8 +7,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
 import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
+import SearchFieldIcon from "@/components/ui/SearchFieldIcon";
 
 function InfoCtaButton({
   href,
@@ -944,18 +943,11 @@ export default function ProjectsIndexClient() {
             >
               {/*
                 The same icon the navbar's search field draws, from the same
-                source. This was the 🔍 emoji, which is not an icon at all: it
-                renders as whatever glyph the operating system ships — full
-                colour on macOS and Windows, a different angle on Android, and
-                at a size and baseline the surrounding text controls rather than
-                the design does. Beside a header whose search is a monochrome
-                Font Awesome glyph, the two never matched on any platform.
+                source — and now from the same *component*, because this file
+                was corrected on its own and the nested category route was not.
+                See `SearchFieldIcon` for what the copies had drifted into.
               */}
-              <FontAwesomeIcon
-                icon={faMagnifyingGlass}
-                className="mr-1.5 h-3.5 w-3.5 shrink-0 text-brand-textMuted"
-                aria-hidden="true"
-              />
+              <SearchFieldIcon />
 
               {committedTerms.map((term) => (
                 <button

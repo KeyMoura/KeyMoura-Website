@@ -225,10 +225,14 @@ export default function ProductsMenu({ nav, isActive, controlClassName }: Produc
             className="products-menu-toggle"
             data-testid="products-menu-toggle"
           >
+            {/* The turn is driven off this button's own `aria-expanded` by
+                `.nav-menu-chevron`, the same rule the More trigger uses. It was
+                an inline `style` computed from `open`, which is a second source
+                of truth for a fact `aria-expanded` already carries — and it is
+                why More, which has no such state to read, never turned at all. */}
             <FontAwesomeIcon
               icon={faChevronDown}
-              className="h-2.5 w-2.5 shrink-0 transition-transform"
-              style={{ transform: open ? "rotate(180deg)" : undefined }}
+              className="nav-menu-chevron h-2.5 w-2.5 shrink-0"
               aria-hidden="true"
             />
           </button>

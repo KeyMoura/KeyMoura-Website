@@ -2,8 +2,9 @@
 
 import { Badge, Notice, cx } from "@/components/ui/DesignSystem";
 import { APPEARANCE_SETTINGS } from "@/theme/appearanceMap";
-import { tasksForSection } from "@/theme/appearanceSections";
+import { tasksForSection, type AppearanceSectionId } from "@/theme/appearanceSections";
 import { taskById } from "@/theme/appearanceTasks";
+import { BUTTON_ROLES } from "@/theme/buttonRoles";
 import type { SiteTheme } from "@/theme/runtime";
 
 import { ColorRun, type ColorValues } from "./ColorControls";
@@ -59,8 +60,38 @@ function Choice<K extends keyof SiteTheme>({
 
 /* ------------------------------------------------------------------------ */
 
-export function ColoursPanel({ editor }: { editor: ThemeEditor }) {
-  const tasks = tasksForSection("colours");
+/**
+ * Colors.
+ *
+ * ## The two halves, and why the second one is links rather than controls
+ *
+ * The section edits the colours that belong to nothing in particular — the
+ * brand pair and the page's own surfaces. Everything else on the site that has
+ * a colour has it *as part of something*: the navbar's background belongs to
+ * the navbar, the primary button's fill belongs to the button. Those controls
+ * stay in the workspace that owns the thing, because editing a navbar with the
+ * navbar's shape controls on screen is the whole reason the workspaces exist.
+ *
+ * That left a real gap, and it is the one the owner reported: if you think
+ * "I want to change a colour", Colors is where you look, and Colors held four
+ * of the twenty. So the second half is a complete index of every colour in the
+ * editor, grouped by what it paints, with a link to the control.
+ *
+ * **They are links, not a second copy of the controls.** A colour rendered in
+ * two places is two `ColorRun`s writing one key — which persists correctly and
+ * still produces two DOM anchors with the same id, so the editor's own search
+ * would start landing on whichever the browser found first. One canonical
+ * control, several ways to reach it, is the same rule the shared-colour
+ * `pointer` tasks already follow.
+ */
+export function ColorsPanel({
+  editor,
+  onGoTo,
+}: {
+  editor: ThemeEditor;
+  onGoTo: (section: AppearanceSectionId, anchor: string) => void;
+}) {
+  const tasks = tasksForSection("colors");
   const brand = tasks.filter((task) => task.id.startsWith("brand-") && task.id !== "brand-surfaces");
   const surfaces = tasks.filter((task) => !brand.includes(task));
 
@@ -68,7 +99,7 @@ export function ColoursPanel({ editor }: { editor: ThemeEditor }) {
     <>
       <ColorRun
         title="Brand"
-        description="The two colours everything else is built from. Changing either moves a lot at once, which is what makes them brand colours."
+        description="The two colors everything else is built from. Changing either moves a lot at once, which is what makes them brand colors."
         tasks={brand}
         colors={editor.colors}
       />
@@ -79,9 +110,99 @@ export function ColoursPanel({ editor }: { editor: ThemeEditor }) {
         colors={editor.colors}
         contrastPairs={{ "brand-surfaces": { text: "text", background: "background" } }}
       />
+
+      <ControlGroup
+        anchor="colors-index"
+        title="Every other color, and where it lives"
+        description="Colors that belong to one thing are edited beside that thing. This is the whole list, so nothing has to be hunted for."
+      >
+        <div className="grid gap-3">
+          {COLOR_INDEX.map((group) => (
+            <div key={group.section} className="rounded-[var(--control-radius)] border border-brand-border p-3">
+              <p className="text-sm font-semibold">{group.title}</p>
+              <p className="mt-0.5 text-xs text-brand-textMuted">{group.description}</p>
+              <ul className="mt-2 grid gap-1">
+                {group.taskIds.map((taskId) => {
+                  const task = taskById(taskId);
+                  if (!task) return null;
+                  return (
+                    <li key={taskId}>
+                      <button
+                        type="button"
+                        onClick={() => onGoTo(group.section, `task-${taskId}`)}
+                        className="appearance-index-link"
+                      >
+                        <span className="font-medium">{task.label}</span>
+                        <span className="appearance-index-link-go" aria-hidden="true">
+                          →
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </ControlGroup>
     </>
   );
 }
+
+/**
+ * Every colour the editor holds that is *not* edited in Colors, by purpose.
+ *
+ * The task ids are the same ones `TASK_SECTION` files, and `ColorsPanel`
+ * resolves each through `taskById` so a renamed task shows up as a missing row
+ * rather than a wrong label. `appearance-role-coverage.test.ts` asserts the
+ * index and the section map name the same set, so a colour added to the editor
+ * and not listed here fails rather than quietly becoming undiscoverable again.
+ */
+export const COLOR_INDEX: readonly {
+  section: AppearanceSectionId;
+  title: string;
+  description: string;
+  taskIds: readonly string[];
+}[] = [
+  {
+    section: "navigation",
+    title: "Navigation",
+    description: "The bar, its links in each state, its round controls, and the panels that drop from it.",
+    taskIds: [
+      "navbar",
+      "navbar-active",
+      "advanced-navbar-hover",
+      "advanced-utility-buttons",
+      "advanced-utility-hover",
+      "advanced-count-badge",
+      "advanced-menus",
+    ],
+  },
+  {
+    section: "components",
+    title: "Buttons",
+    description: "Two roles with colors of their own. Quiet and destructive buttons deliberately have none.",
+    taskIds: ["primary-button", "custom-project-button"],
+  },
+  {
+    section: "commerce",
+    title: "Product cards",
+    description: "The pills on a card, and the color a price is drawn in.",
+    taskIds: ["customizable-badge", "product-price"],
+  },
+  {
+    section: "typography",
+    title: "Text",
+    description: "Headings, body copy, quiet secondary text, and links inside paragraphs.",
+    taskIds: ["brand-text", "advanced-body-links"],
+  },
+  {
+    section: "forms",
+    title: "Forms",
+    description: "The inside of a text box, and the ring around whatever is selected.",
+    taskIds: ["form-input", "form-focus"],
+  },
+];
 
 export function TypographyPanel({ editor }: { editor: ThemeEditor }) {
   return (
@@ -105,7 +226,7 @@ export function TypographyPanel({ editor }: { editor: ThemeEditor }) {
       </ControlGroup>
 
       <ColorRun
-        title="Text colours"
+        title="Text colors"
         description="Headings, body copy, the quieter secondary text under them, and links inside paragraphs."
         tasks={tasksForSection("typography")}
         colors={editor.colors}
@@ -127,12 +248,103 @@ export function TypographyPanel({ editor }: { editor: ThemeEditor }) {
   );
 }
 
-export function ComponentsPanel({ editor }: { editor: ThemeEditor }) {
+/**
+ * The four roles, and the real buttons in each.
+ *
+ * ## Why a wall of text earns its place here
+ *
+ * This is the answer to the question the editor could not answer: a shape
+ * control labelled "Primary buttons" is operable and its consequences are
+ * invisible, because nothing on the screen says that it moves Add to cart,
+ * Check out, Continue and Submit request, and does not move Back. An owner
+ * could only find out by changing it and going to look.
+ *
+ * The list is generated from `BUTTON_ROLES`, which is checked against the
+ * markup rather than written from memory, so it cannot describe a mapping the
+ * site does not have. It is a *reference*, not a set of controls — the controls
+ * are the colour run and the shape choices below it, one canonical pair per
+ * role, exactly as before.
+ */
+function ButtonRoleMap({ onGoTo }: { onGoTo: (section: AppearanceSectionId, anchor: string) => void }) {
+  return (
+    <div className="grid gap-3">
+      {BUTTON_ROLES.map((role) => (
+        <div
+          key={role.id}
+          id={`appearance-button-role-${role.id}`}
+          tabIndex={-1}
+          className="scroll-mt-4 rounded-[var(--control-radius)] border border-brand-border p-3"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-sm font-semibold">{role.label}</p>
+            {/* A live sample of the role, drawn with the class the storefront
+                paints with — so it is the button, not a picture of one. */}
+            <span className={`ui-btn ${role.classNames[0]} pointer-events-none !py-1 text-xs`}>
+              {role.surfaces[0]?.label ?? role.label}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-brand-textMuted">{role.description}</p>
+
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-brand-textMuted">Used on</p>
+          <ul className="mt-1 grid gap-0.5 sm:grid-cols-2">
+            {role.surfaces.map((surface) => (
+              <li key={`${role.id}-${surface.label}-${surface.where}`} className="text-xs">
+                <span className="font-medium">{surface.label}</span>{" "}
+                <span className="text-brand-textMuted">— {surface.where}</span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-2 text-xs text-brand-textMuted">{role.usedFor}</p>
+
+          {role.colorTaskId || role.shapeAnchor ? (
+            <div className="ui-action-row mt-2">
+              {role.colorTaskId ? (
+                <button
+                  type="button"
+                  onClick={() => onGoTo("components", `task-${role.colorTaskId}`)}
+                  className="ui-btn ui-btn-ghost !py-1 text-xs"
+                >
+                  Edit its colors →
+                </button>
+              ) : null}
+              {role.shapeAnchor ? (
+                <button
+                  type="button"
+                  onClick={() => onGoTo("components", role.shapeAnchor as string)}
+                  className="ui-btn ui-btn-ghost !py-1 text-xs"
+                >
+                  Edit its shape →
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ComponentsPanel({
+  editor,
+  onGoTo,
+}: {
+  editor: ThemeEditor;
+  onGoTo: (section: AppearanceSectionId, anchor: string) => void;
+}) {
   return (
     <>
+      <ControlGroup
+        anchor="button-roles"
+        title="Which buttons are which"
+        description="Every button on the site plays one of four roles. This is which, and where each one appears."
+      >
+        <ButtonRoleMap onGoTo={onGoTo} />
+      </ControlGroup>
+
       <ColorRun
-        title="Button colours"
-        description="Two roles. The primary is every main action — Add to cart, Checkout, Publish. The secondary is the supporting one, including the catalog's “Start a custom project”."
+        title="Button colors"
+        description="The two roles that have colors of their own. Quiet buttons follow the page's borders and text; destructive ones are fixed."
         tasks={tasksForSection("components")}
         colors={editor.colors}
         contrastPairs={{
@@ -144,7 +356,7 @@ export function ComponentsPanel({ editor }: { editor: ThemeEditor }) {
       <ControlGroup
         anchor="component-primary-shape"
         title="Button shape"
-        description="The silhouette each role wears. Colours are above; this is fill versus outline."
+        description="The silhouette each role wears. Colors are above; this is fill versus outline."
       >
         <Choice
           anchor="component-primary-shape"
@@ -153,7 +365,7 @@ export function ComponentsPanel({ editor }: { editor: ThemeEditor }) {
           field="primaryButtonStyle"
           options={[
             { value: "solid", label: "Solid", help: "Filled with the button background" },
-            { value: "soft", label: "Soft", help: "Low-contrast tint of the brand colour" },
+            { value: "soft", label: "Soft", help: "Low-contrast tint of the brand color" },
             { value: "outline", label: "Outline", help: "Transparent with a clear border" },
             { value: "framed", label: "Framed", help: "The layered style used by account tabs" },
           ]}
@@ -185,7 +397,7 @@ export function ComponentsPanel({ editor }: { editor: ThemeEditor }) {
           field="cardStyle"
           options={[
             { value: "soft", label: "Soft", help: "Low-contrast filled panels" },
-            { value: "solid", label: "Solid", help: "One flat surface colour" },
+            { value: "solid", label: "Solid", help: "One flat surface color" },
             { value: "outline", label: "Outline", help: "Transparent with a border" },
             { value: "elevated", label: "Elevated", help: "Raised, with a soft shadow" },
           ]}
@@ -214,6 +426,52 @@ export function ComponentsPanel({ editor }: { editor: ThemeEditor }) {
             { value: "filled", label: "Filled", help: "Stronger filled controls" },
           ]}
         />
+      </ControlGroup>
+
+      {/*
+        The custom request wizard, spelled out.
+
+        It earns a block of its own because it is the one storefront flow that
+        is neither the catalog nor the cart, and the pass that fixed its
+        low-contrast buttons proved the cost of that: nothing in the editor said
+        which of its controls followed which setting, so "the request page looks
+        wrong" was not a question this screen could answer. Every row below is a
+        class in `globals.css` resolving the named variable — no new theming, no
+        per-page override, just the mapping written down.
+      */}
+      <ControlGroup
+        anchor="component-request-flow"
+        title="The custom request page"
+        description="What /orders/new follows. It has no settings of its own — everything on it is one of the colors you already control."
+      >
+        <div className="rounded-[var(--control-radius)] border border-brand-border p-3">
+          <ul className="grid gap-1.5 text-xs">
+            {[
+              ["Continue, Submit request", "Primary action", "components", "task-primary-button"],
+              ["Review answers", "Secondary action", "components", "task-custom-project-button"],
+              ["Back", "Quiet action — page borders and body text", "colors", "task-brand-surfaces"],
+              ["The step you are on", "Brand primary", "colors", "task-brand-primary"],
+              ["A selected option card", "Brand primary", "colors", "task-brand-primary"],
+              ["Focus rings and step headings", "Brand accent", "colors", "task-brand-accent"],
+              ["Upload area and text boxes", "Form fields", "forms", "task-form-input"],
+            ].map(([what, follows, section, anchor]) => (
+              <li key={what} className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="font-medium">{what}</span>
+                <button
+                  type="button"
+                  onClick={() => onGoTo(section as AppearanceSectionId, anchor)}
+                  className="appearance-index-link !w-auto text-brand-textMuted"
+                >
+                  {follows} <span aria-hidden="true">→</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2.5 text-xs text-brand-textMuted">
+            Error and warning messages keep their own red whatever the theme, for the same reason{" "}
+            <b>Sold out</b> does.
+          </p>
+        </div>
       </ControlGroup>
 
       <ControlGroup
@@ -286,9 +544,9 @@ export function CommercePanel({
             ))}
           </div>
           <p className="mt-3 text-xs text-brand-textMuted">
-            All five are your <b>primary button</b>. They share one set of colours, so setting the primary
+            All five are your <b>primary button</b>. They share one set of colors, so setting the primary
             button background changes every buying action on the site at once — there is no separate
-            &ldquo;Add to cart colour&rdquo; hiding anywhere.
+            &ldquo;Add to cart color&rdquo; hiding anywhere.
           </p>
           <button
             type="button"
@@ -308,7 +566,7 @@ export function CommercePanel({
           <p className="text-sm font-semibold">Request a Custom Version</p>
           <p className="mt-1 text-xs text-brand-textMuted">
             This one is the <b>secondary</b> button, not the primary — it sits beside a buying action rather
-            than being one, so it is coloured like the catalog&apos;s &ldquo;Start a custom project&rdquo;.
+            than being one, so it is colored like the catalog&apos;s &ldquo;Start a custom project&rdquo;.
           </p>
           <button
             type="button"
@@ -322,7 +580,7 @@ export function CommercePanel({
 
       <ColorRun
         title="Badges and price"
-        description="The pills on a product card, and the colour its price is drawn in."
+        description="The pills on a product card, and the color its price is drawn in."
         tasks={tasksForSection("commerce")}
         colors={editor.colors}
       />
@@ -330,7 +588,7 @@ export function CommercePanel({
       <ControlGroup
         anchor="commerce-statuses"
         title="Stock and status"
-        description="Which badges you can recolour, and which ones mean something."
+        description="Which badges you can recolor, and which ones mean something."
       >
         <div className="rounded-[var(--control-radius)] border border-brand-border p-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -339,11 +597,11 @@ export function CommercePanel({
             <span className="ui-badge ui-badge-danger">Sold out</span>
           </div>
           <p className="mt-3 text-xs text-brand-textMuted">
-            <b>Customizable</b> is a brand badge and follows your accent colour until you give it one of its
+            <b>Customizable</b> is a brand badge and follows your accent color until you give it one of its
             own, above.
           </p>
           <p className="mt-1.5 text-xs text-brand-textMuted">
-            <b>In stock</b> and <b>Sold out</b> are deliberately fixed green and red. A status colour that
+            <b>In stock</b> and <b>Sold out</b> are deliberately fixed green and red. A status color that
             could be reassigned would stop meaning anything — a Sold out badge in your accent green is a
             product a customer will try to buy.
           </p>
@@ -376,7 +634,7 @@ export function FormsPanel({ editor }: { editor: ThemeEditor }) {
       </ControlGroup>
 
       <ColorRun
-        title="Field colours"
+        title="Field colors"
         description="What the inside of a field is filled with, and what the focus ring follows."
         tasks={tasksForSection("forms")}
         colors={editor.colors}
@@ -384,7 +642,7 @@ export function FormsPanel({ editor }: { editor: ThemeEditor }) {
 
       <Notice>
         Field <b>labels</b> use Quiet text and typed <b>values</b> use Body text, both under Typography.
-        Outlines use the Border colour under Colours. <b>Error</b> messages keep their own red whatever the
+        Outlines use the Border color under Colors. <b>Error</b> messages keep their own red whatever the
         theme, for the same reason Sold out does.
       </Notice>
     </>
@@ -445,7 +703,7 @@ export function LayoutPanel({ editor }: { editor: ThemeEditor }) {
           field="backgroundStyle"
           options={[
             { value: "gradient", label: "Gradient", help: "Subtle depth from top to bottom" },
-            { value: "solid", label: "Solid", help: "One flat surface colour" },
+            { value: "solid", label: "Solid", help: "One flat surface color" },
             { value: "spotlight", label: "Spotlight", help: "A subtle brand glow behind the page" },
           ]}
         />
@@ -609,7 +867,7 @@ export function AdvancedPanel({ editor }: { editor: ThemeEditor }) {
       <ControlGroup
         anchor="advanced-tokens"
         title="CSS variables"
-        description="Every colour on the site, the variable it writes, and what it paints. Read-only — each one is edited in the section named beside it."
+        description="Every color on the site, the variable it writes, and what it paints. Read-only — each one is edited in the section named beside it."
       >
         <div className="ui-table-wrap overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -657,7 +915,7 @@ export function AdvancedPanel({ editor }: { editor: ThemeEditor }) {
       <ControlGroup
         anchor="advanced-choices"
         title="Current theme choices"
-        description="The non-colour settings, as stored."
+        description="The non-color settings, as stored."
       >
         <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-2">
           {(Object.keys(editor.theme) as (keyof SiteTheme)[])
@@ -705,7 +963,7 @@ export function NavigationPanel({ editor }: { editor: ThemeEditor }) {
           options={[
             { value: "underline", label: "Underline", help: "A rule under the current link. The KeyMoura default" },
             { value: "framed", label: "Enclosed", help: "Each link in its own outline, like tabs" },
-            { value: "minimal", label: "Minimal", help: "Colour and weight only, no rule" },
+            { value: "minimal", label: "Minimal", help: "Color and weight only, no rule" },
           ]}
         />
         <Choice
@@ -776,7 +1034,7 @@ export function NavigationPanel({ editor }: { editor: ThemeEditor }) {
         // task is added to `TASK_SECTION` and not listed above, it would render
         // nowhere at all.
         <Notice tone="warning">
-          {tasks.length - 7} navbar {Math.abs(tasks.length - 7) === 1 ? "colour is" : "colours are"} not shown
+          {tasks.length - 7} navbar {Math.abs(tasks.length - 7) === 1 ? "color is" : "colors are"} not shown
           here. This is a bug — report it.
         </Notice>
       ) : null}
@@ -785,7 +1043,7 @@ export function NavigationPanel({ editor }: { editor: ThemeEditor }) {
 }
 
 /** Shared by the sections that only carry a run of colours. */
-export function ColourOnlyPanel({
+export function ColorOnlyPanel({
   editor,
   section,
   title,
