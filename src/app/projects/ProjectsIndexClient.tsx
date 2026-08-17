@@ -8,6 +8,8 @@ import { supabaseBrowser } from "@/lib/supabaseClient";
 import { useSiteSettings } from "@/components/SiteSettingsProvider";
 import SearchHelpDialog from "@/components/ui/SearchHelpDialog";
 import SearchFieldIcon from "@/components/ui/SearchFieldIcon";
+import { clickBoost } from "@/lib/search/relevance";
+import { trackSearch, trackSearchClick } from "@/lib/search/track";
 
 function InfoCtaButton({
   href,
@@ -185,24 +187,26 @@ type InfoSearchLogPayload = {
   topResultSlug?: string | null;
 };
 
-async function logInfoSearchEvent(payload: InfoSearchLogPayload): Promise<void> {
-  try {
-    const supabase = supabaseBrowser();
-    const { error } = await supabase.from("info_search_events").insert({
-      source: payload.source,
-      raw_query: payload.rawQuery,
-      tokens: payload.tokens,
-      results_count: payload.resultsCount,
-      top_result_id: payload.topResultId ?? null,
-      top_result_slug: payload.topResultSlug ?? null,
-    });
-
-    if (error) {
-      console.error("Failed to log info search event", error);
-    }
-  } catch (err) {
-    console.error("Failed to log info search event", err);
-  }
+/**
+ * Records the search through the validated server route.
+ *
+ * It used to insert straight into `info_search_events` with the browser's anon
+ * key. That table's only permissive policy is `staff manage`, so every insert
+ * from a customer was rejected by row-level security and the `catch` below
+ * logged it to a console nobody was reading — which is why production holds
+ * seven search events, all of them from staff sessions.
+ *
+ * The route writes with the service role after validating the payload, so the
+ * feature works for the people it was built to measure and the ranking inputs
+ * are checked somewhere the client cannot skip.
+ */
+async function logInfoSearchEvent(payload: InfoSearchLogPayload): Promise<string | null> {
+  return trackSearch({
+    source: "projects",
+    query: payload.rawQuery,
+    scope: "projects",
+    resultCount: payload.resultsCount,
+  });
 }
 
 // --- logging helper for click events on index ---
@@ -215,31 +219,22 @@ type InfoSearchClickPayload = {
   clickedPageSlug: string;
   position?: number;
   resultsCount?: number;
+  /** The search this click came from, so the two can be joined. */
+  searchEventId?: string | null;
   meta?: Record<string, unknown>;
 };
 
-async function logInfoSearchClick(
-  payload: InfoSearchClickPayload
-): Promise<void> {
-  try {
-    const supabase = supabaseBrowser();
-    const { error } = await supabase.from("info_search_click_events").insert({
-      source: payload.source,
-      raw_query: payload.rawQuery ?? null,
-      tokens: payload.tokens ?? null,
-      clicked_page_id: payload.clickedPageId,
-      clicked_page_slug: payload.clickedPageSlug,
-      position: payload.position ?? null,
-      results_count: payload.resultsCount ?? null,
-      meta: payload.meta ?? null,
-    });
-
-    if (error) {
-      console.error("Failed to log info search click event", error);
-    }
-  } catch (err) {
-    console.error("Failed to log info search click event", err);
-  }
+/** The click, through the same validated route and for the same reason. */
+function logInfoSearchClick(payload: InfoSearchClickPayload): void {
+  trackSearchClick({
+    source: "projects",
+    searchEventId: payload.searchEventId ?? null,
+    resultType: "project",
+    resultId: payload.clickedPageId,
+    position: payload.position ?? 0,
+    scope: "projects",
+    query: payload.rawQuery ?? "",
+  });
 }
 
 // --- click boost aggregation rows ---
@@ -280,6 +275,8 @@ export default function ProjectsIndexClient() {
 
   // Click-based boost map: pageId -> bonus score
   const [clickBoosts, setClickBoosts] = useState<Record<string, number>>({});
+  /** The search this page last recorded, so a click can be attributed to it. */
+  const [searchEventId, setSearchEventId] = useState<string | null>(null);
 
   // NEW: site maintenance flag
   const [maintenanceMode, setMaintenanceMode] = useState(false);
@@ -484,28 +481,51 @@ export default function ProjectsIndexClient() {
 
         const rows = (data ?? []) as ClickAggRow[];
 
-        const counts: Record<
-          string,
-          { total: number; top1: number; top3: number }
-        > = {};
+        /*
+         * A bounded share of clicks, not an unbounded count.
+         *
+         * What was here computed `total * 4 + top3 * 3 + top1 * 3` with no
+         * ceiling, against a textual scoring scheme whose whole range was about
+         * thirty points. Eight clicks on one write-up therefore added more than
+         * any query could earn by matching, and the arithmetic only ever ran one
+         * way: the most-clicked result ranks first, ranking first earns more
+         * clicks, and within a few weeks the same page is the top answer to
+         * every query. That is precisely the runaway popularity loop this pass
+         * was asked not to build, and it was already built.
+         *
+         * `clickBoost` replaces it with three defences — a minimum sample, a
+         * ratio rather than a count, and a hard cap of `CLICK_BOOST_MAX` points
+         * that is smaller than the gap between two relevance tiers. Behaviour
+         * can now break a tie between comparable results and can never promote a
+         * weak match over a strong one.
+         *
+         * The denominator is every click this page has recorded, so the ratio is
+         * "of the choices customers made, what share went here" rather than a
+         * true click-through rate. CTR needs impressions per result, which the
+         * current tables cannot express — `docs/search-architecture.md` records
+         * the migration that adds them.
+         */
+        const perPage = new Map<string, { clicks: number; positionTotal: number }>();
+        let totalClicks = 0;
 
         for (const row of rows) {
           const pageId = row.clicked_page_id;
           if (!pageId) continue;
-          if (!counts[pageId]) counts[pageId] = { total: 0, top1: 0, top3: 0 };
-          counts[pageId].total += 1;
-
-          const pos = row.position ?? 999;
-          if (pos === 0) counts[pageId].top1 += 1;
-          if (pos <= 2) counts[pageId].top3 += 1;
+          const entry = perPage.get(pageId) ?? { clicks: 0, positionTotal: 0 };
+          entry.clicks += 1;
+          entry.positionTotal += Math.max(0, Math.min(row.position ?? 0, 200));
+          perPage.set(pageId, entry);
+          totalClicks += 1;
         }
 
         const boosts: Record<string, number> = {};
-        Object.entries(counts).forEach(([pageId, stat]) => {
-          const { total, top1, top3 } = stat;
-          const boost = total * 4 + top3 * 3 + top1 * 3;
-          boosts[pageId] = boost;
-        });
+        for (const [pageId, entry] of perPage) {
+          boosts[pageId] = clickBoost({
+            impressions: totalClicks,
+            clicks: entry.clicks,
+            averagePosition: entry.clicks ? entry.positionTotal / entry.clicks : 0,
+          });
+        }
 
         setClickBoosts(boosts);
       } catch (e) {
@@ -832,6 +852,9 @@ export default function ProjectsIndexClient() {
           const topMatched = matchedAnnotated[0];
 
           if (rawQuery.trim().length > 0) {
+            // The id is kept so a click on one of these results can name the
+            // search that produced it, which is what turns two event streams
+            // into a click-through rate.
             void logInfoSearchEvent({
               source: "info-index",
               rawQuery,
@@ -839,7 +862,7 @@ export default function ProjectsIndexClient() {
               resultsCount: matchedAnnotated.length,
               topResultId: topMatched?.row.id ?? null,
               topResultSlug: topMatched?.row.slug ?? null,
-            });
+            }).then((id) => setSearchEventId(id));
           }
         } catch (e) {
           console.error("Unexpected error searching info pages", e);
@@ -1183,7 +1206,7 @@ export default function ProjectsIndexClient() {
                         .join(" ")
                         .trim();
 
-                      void logInfoSearchClick({
+                      logInfoSearchClick({
                         source: "info-index",
                         rawQuery,
                         tokens: searchTokens,
@@ -1191,6 +1214,7 @@ export default function ProjectsIndexClient() {
                         clickedPageSlug: page.slug,
                         position: globalIndex >= 0 ? globalIndex : index,
                         resultsCount: lastMatchedCount ?? results.length,
+                        searchEventId,
                         meta: {
                           committed_terms: committedTerms,
                           fragment,

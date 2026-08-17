@@ -29,6 +29,21 @@
     --link: var(--km-link, var(--brand-accent, #f59e0b));
     --control-radius: 0.75rem;
     --control-pad-y: 0.625rem;
+    /*
+     * The height every field-shaped control lands on.
+     *
+     * Derived rather than declared, so it follows `--control-pad-y` and the
+     * density setting with it: one text line (1.5rem), the vertical padding
+     * twice, and the two 1px borders. At `comfortable` that is 46px; at
+     * `compact`, 39px.
+     *
+     * It exists because four controls that sit in the same filter row were
+     * four different heights — a `.ui-input` at 45.6px, a `.ui-select-trigger`
+     * at 42.6px, a native `<select>` at 37.6px and a `text-sm` `.ui-btn` at
+     * 41.6px. Nothing in a toolbar lined up with anything else, which is most
+     * of why the staff pages read as separate generations of the same app.
+     */
+    --control-height: calc(1.5rem + (2 * var(--control-pad-y)) + 2px);
 
     /* Brand */
     --brand: var(--brand-primary, #fbbf24);
@@ -239,17 +254,38 @@
     border-color: var(--brand-primary, #fbbf24) !important;
   }
 
-  /* Sitewide dropdown styling (match staff role-sort dropdown). */
+  /*
+   * Sitewide dropdown styling.
+   *
+   * The colours stay `!important` because they exist to beat the `bg-*` and
+   * `border-*` utilities that some forms still carry on their selects.
+   *
+   * The **geometry** used to be `!important` too, and hard-coded: `0.5rem` of
+   * radius and `0.5rem 2rem 0.5rem 0.75rem` of padding against a `1.25rem` line.
+   * Both numbers predate `--control-radius` and `--control-pad-y`, and because
+   * they carried `!important` they beat `.ui-input` — so a `<select className=
+   * "ui-input">` was 8px shorter than the `<input className="ui-input">` beside
+   * it and 4px less round, on every staff filter row on the site. The navbar's
+   * scope selector asked for `var(--control-radius) 0 0 var(--control-radius)`
+   * and was overruled into `0.5rem` on all four corners, which is the seam
+   * visible where it meets the search input.
+   *
+   * Now they are the tokens, so a select is the same height and the same radius
+   * as everything else in its row, and the Appearance radius and density
+   * settings reach selects like they already reached inputs. The radius drops
+   * `!important` as well so a component may shape its own corners; the utility
+   * layer already normalizes `rounded-*` on form controls.
+   */
   select {
     -webkit-appearance: none;
     appearance: none;
     background: var(--panel-strong) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 0.5rem !important;
+    border-radius: var(--control-radius);
     color: var(--text) !important;
-    padding: 0.5rem 2rem 0.5rem 0.75rem !important;
-    min-height: 2.25rem; /* 36px */
-    line-height: 1.25rem;
+    padding: var(--control-pad-y) 2rem var(--control-pad-y) 0.75rem !important;
+    min-height: var(--control-height);
+    line-height: 1.5rem;
   }
 
   select:disabled {
@@ -628,6 +664,10 @@
   /* Inputs */
   .ui-input {
     width: 100%;
+    /* The row's height, so a text field, a select and a menu button placed
+       side by side in a toolbar are one control tall. A textarea overrides it
+       by growing, which `min-height` allows and `height` would not. */
+    min-height: var(--control-height);
     border-radius: var(--control-radius);
     border: 1px solid var(--border);
     background: var(--panel-strong);
@@ -668,7 +708,9 @@
   .ui-required { margin-left: 0.2rem; color: var(--brand-accent); font-weight: 700; }
   .ui-help { display: block; margin-top: 0.375rem; color: var(--muted); font-size: 0.75rem; line-height: 1.1rem; }
   .ui-eyebrow { color: var(--brand-accent); font-size: .7rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
-  .ui-select-trigger { display: flex; width: 100%; min-height: 2.5rem; align-items: center; justify-content: space-between; gap: .5rem; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel-strong); padding: var(--control-pad-y) .75rem; color: var(--text); font-size: .875rem; text-align: left; transition: border-color 120ms ease; }
+  /* `MenuSelect`'s closed control. Same height and radius as a native select,
+     because on a filter row the two are the same thing to the person using it. */
+  .ui-select-trigger { display: flex; width: 100%; min-height: var(--control-height); align-items: center; justify-content: space-between; gap: .5rem; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel-strong); padding: var(--control-pad-y) .75rem; color: var(--text); font-size: .875rem; line-height: 1.5rem; text-align: left; transition: border-color 120ms ease; }
   .ui-select-trigger:hover { border-color: var(--brand-primary); }
   .ui-select-trigger:disabled { opacity: .5; }
   .ui-select-menu { overflow: hidden; border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--km-surface-strong, #18181b); color: var(--text); box-shadow: 0 20px 50px rgba(0,0,0,.55); }
@@ -1319,9 +1361,35 @@
     .staff-row:has(.staff-row-media):has(.staff-row-figure) { grid-template-columns: auto minmax(0, 28rem) auto auto; }
   }
 
-  /* Toolbar: the common controls stay out; the rest go behind Filters. */
-  .staff-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  /*
+   * Toolbar: the common controls stay out; the rest go behind Filters.
+   *
+   * `flex-end`, not `center`. A filter row mixes controls that carry a visible
+   * label above them (`Field` wrapping a select, on `/staff/fulfillment`) with
+   * controls that do not (a search box with an `sr-only` label, a button). Under
+   * `center` those two families are centred against each other, so the labelled
+   * ones hang 9px lower than the search field and 11px lower than the buttons —
+   * three bottom edges in one row, which is the misalignment reported on
+   * `/staff/fulfillment`.
+   *
+   * Aligning to the end gives every control in the row one bottom edge and lets
+   * the labels sit above it, which is what a field baseline means. On the seven
+   * toolbars whose children are all the same height this is identical to what
+   * `center` produced, so it standardizes without moving anything that was
+   * already right.
+   */
+  .staff-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; }
   .staff-toolbar-search { flex: 1 1 15rem; min-width: 0; }
+  /*
+   * One height for everything in a filter row.
+   *
+   * `.ui-input` and `.ui-select-trigger` reach it through `--control-height`
+   * already; a button carrying `text-sm` sets a shorter line box and would come
+   * up 4px short of the fields beside it. Scoped to the toolbar and the filter
+   * panel so storefront calls to action keep sizing themselves.
+   */
+  .staff-toolbar > .ui-btn,
+  .staff-filter-panel .ui-btn { min-height: var(--control-height); }
   .staff-filter-panel { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); border-radius: var(--control-radius); border: 1px solid var(--border); background: var(--panel); padding: .875rem; }
 
   /* Saved views. `min-height` is the 44px touch target the drawer uses. */
@@ -2420,6 +2488,13 @@
     flex: 0 1 auto;
     min-width: 3.5rem;
     align-self: stretch;
+    /*
+     * Its height is the field's, not its own. `align-self: stretch` is what
+     * makes the scope exactly as tall as the input beside it, and the sitewide
+     * `select` floor — a full `--control-height`, which is taller than this
+     * field — would otherwise push the whole navbar search open by 6px.
+     */
+    min-height: 0;
     max-width: 8.5rem;
     padding-inline: 0.625rem 1.375rem;
     border: 0;
@@ -6509,13 +6584,94 @@
   .commerce-search-clear:hover { color: var(--text); background: var(--panel); }
 
   .commerce-search-submit { flex: none; min-height: 2.875rem; padding-inline: 1.25rem; }
-  .commerce-search-submit-icon { display: none; height: 0.9375rem; width: 0.9375rem; }
+  /*
+   * `--fa-display`, not `display`.
+   *
+   * Font Awesome's React component injects its own stylesheet at runtime, and
+   * that stylesheet is **unlayered**: `.svg-inline--fa { display: var(--fa-display,
+   * inline-block) }`. Unlayered CSS wins over every `@layer`, whatever the
+   * specificity — so `display: none` written here, inside `@layer components`,
+   * has never had any effect on an icon. This rule and the one below it were
+   * dead: the submit button has been drawing its magnifier *and* its word at
+   * every width, on `/catalog` and `/account/orders` both.
+   *
+   * Setting the custom property Font Awesome reads is the fix that works from
+   * inside a layer, because it is not competing with the `display` declaration
+   * — it is the value that declaration resolves.
+   */
+  .commerce-search-submit-icon { --fa-display: none; height: 0.9375rem; width: 0.9375rem; }
   @media (max-width: 419.98px) {
     /* The word is the clearer label wherever it fits; below 420px the row would
        wrap onto two lines to keep it, which costs more than it gains. */
     .commerce-search-submit { padding-inline: 0.875rem; }
-    .commerce-search-submit-icon { display: inline-block; }
+    .commerce-search-submit-icon { --fa-display: inline-block; }
     .commerce-search-submit-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+
+  /* ---- One magnifier per search field -------------------------------------
+   *
+   * Every search field on this site drew two of them: a passive one inside the
+   * field on the left, and a submit button carrying the same glyph on the right.
+   * Two identical icons on one control, one of which does nothing.
+   *
+   * Which of the two is worth keeping depends entirely on the input device, so
+   * the rule is a breakpoint rather than a preference:
+   *
+   *   - **Desktop** keeps the passive icon, because it is what marks the field
+   *     as a search field, and drops the button, because Enter is how a search
+   *     is submitted on a keyboard. Every field below is a real `<form>` with a
+   *     `type="submit"` control, so removing the button costs no behaviour —
+   *     and `display: none` takes the redundant control out of the tab order
+   *     and the accessibility tree with it, rather than leaving a focus stop on
+   *     something invisible.
+   *
+   *   - **Mobile** keeps the button, because a thumb has no Enter key worth
+   *     reaching for, and drops the passive icon, which on a 375px field spends
+   *     20px of a scarce line on decoration. The button already clears the touch
+   *     floor at 2.875rem here and 2.75rem on the navbar.
+   *
+   * 1024px is the site's own desktop line — where `.site-header-mobile` gives
+   * way to the desktop bar — so the search changes shape at the same moment the
+   * navigation around it does.
+   *
+   * Keyed on the two shared search families rather than on any page, so the
+   * navbar, the mobile bar, the drawer, `/catalog` and `/account/orders` all
+   * follow it from here and no route can opt out by accident. It sits below both
+   * families' own blocks because it has to win against them on source order.
+   *
+   * The passive icons are hidden through `--fa-display` rather than `display`,
+   * for the reason spelled out on `.commerce-search-submit-icon` above: Font
+   * Awesome's runtime stylesheet is unlayered and would beat a `display`
+   * declaration written in here. The submit buttons are ordinary elements and
+   * take an ordinary `display: none`, which is what keeps them out of the tab
+   * order and the accessibility tree rather than merely invisible.
+   */
+  .storefront-search-icon,
+  .commerce-search-icon { --fa-display: none; }
+  /* Nothing left to clear once the icon is gone. The right inset stays: the
+     clear button is still in there. */
+  .commerce-search-input { padding-left: 0.875rem; }
+  /*
+   * On a phone the button is the only affordance the field has, so it gets a
+   * real target: flush to the field's right edge, its full height, and never
+   * under 44px square. The 3px inset it carries on desktop would cap it at 38.
+   */
+  .storefront-search-submit {
+    margin: 0;
+    min-width: 2.75rem;
+    justify-content: center;
+    border-radius: 0 calc(var(--control-radius) - 1px) calc(var(--control-radius) - 1px) 0;
+  }
+
+  @media (min-width: 1024px) {
+    .storefront-search-icon,
+    .commerce-search-icon { --fa-display: block; }
+    .commerce-search-input { padding-left: 2.5rem; }
+
+    .storefront-search-submit,
+    .commerce-search-submit { display: none; }
+    /* The field takes back the width the button was holding. */
+    .commerce-search { grid-template-columns: minmax(0, 1fr); }
   }
 
   /* ---- Result context row ---- */
@@ -7484,11 +7640,30 @@
   .order-card-actions .ui-btn { justify-content: center; text-align: center; }
 
   /* ---- Footer ---- */
+  /*
+   * The 4rem is a lead-in for pages that end in a constrained column of text —
+   * an article, a form, an account panel — where content butting straight into
+   * the footer's rule would read as a collision.
+   *
+   * It is wrong for a page that ends in a full-bleed band, because such a band
+   * already paints its own closing space. On the homepage `.home-close` carries
+   * `clamp(4.5rem, 10vw, 8rem)` of padding, a `border-top` and a radial wash,
+   * and the footer then adds 64px of bare page background *between* two styled,
+   * bordered surfaces — a dark strip with nothing in it, which is the gap
+   * reported above the footer. Measured at 1280×720 it was exactly 64px, and
+   * `elementFromPoint` inside it returned null: nothing was painted there.
+   *
+   * So the lead-in becomes conditional on what the page actually ends with,
+   * rather than being cancelled with a negative margin. A band that closes its
+   * own page says so with `.page-closing-band`, and the footer stops adding a
+   * second gap after it. Every other page is unchanged.
+   */
   .site-footer {
     margin-top: 4rem;
     border-top: 1px solid var(--border);
     background: var(--panel);
   }
+  main:has(> .page-closing-band:last-child) + .site-footer { margin-top: 0; }
   .site-footer-inner {
     margin-inline: auto;
     max-width: 80rem;

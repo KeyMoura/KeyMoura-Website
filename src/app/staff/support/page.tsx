@@ -14,7 +14,7 @@ import {
   Rows,
   StaffPage,
 } from "@/components/staff/StaffPage";
-import { Badge } from "@/components/ui/DesignSystem";
+import { Badge, Field } from "@/components/ui/DesignSystem";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { useMeAccess } from "@/lib/hooks/useMeAccess";
 import { supabaseBrowser } from "@/lib/supabaseClient";
@@ -248,8 +248,25 @@ function SupportInbox() {
         description="Everything a customer has asked us, and where each conversation stands."
       />
 
-      {/* --- the views ------------------------------------------------------- */}
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Support views">
+      {/*
+        --- the views -------------------------------------------------------
+
+        `.staff-view`, the same pill `/staff/orders`, `/staff/fulfillment`,
+        `/staff/production`, `/staff/inventory`, `/staff/users` and the dashboard
+        already use for exactly this job: switching a queue between saved views.
+
+        This page used to render the role as a row of `.ui-btn` — an outlined
+        secondary button that filled solid gold when selected, at a button's
+        height and a button's weight. That is the treatment the *actions* on
+        every other staff page wear, so the busiest control on Support looked
+        like seven primary actions, and its selected state shouted where the
+        rest of the application whispers. Nothing here is a new pattern; the
+        page is joining the one that already had eight callers.
+
+        `aria-pressed` and the count behaviour are unchanged, including `—` for
+        a count that could not be computed.
+      */}
+      <nav className="staff-views" aria-label="Support views">
         {VIEWS.map((view) => {
           const active = filters.view === view.id;
           const count = view.countKey && counts ? counts[view.countKey] : undefined;
@@ -259,19 +276,36 @@ function SupportInbox() {
               type="button"
               aria-pressed={active}
               onClick={() => apply({ view: view.id })}
-              className={`ui-btn ${active ? "ui-btn-primary" : "ui-btn-secondary"} !px-3.5 !py-1.5 text-sm`}
+              className="staff-view"
             >
               {SUPPORT_VIEW_LABELS[view.id]}
               {view.countKey && counts ? (
-                <span className="ml-1.5 tabular-nums opacity-70">{count === null ? "—" : count}</span>
+                <span className="staff-view-count">{count === null ? "—" : count}</span>
               ) : null}
             </button>
           );
         })}
-      </div>
+      </nav>
 
-      {/* --- search and filters ---------------------------------------------- */}
-      <div className="staff-toolbar">
+      {/*
+        --- search and filters ------------------------------------------------
+
+        A real `<form>`, like `/staff/orders` and `/staff/production`, rather
+        than a `<div>` with an `Enter` key handler on the input. The handler
+        worked, but a search box that is not in a form gets no Go key on a
+        mobile keyboard and no submit semantics for a screen reader, and it left
+        this page as the only staff search where the button was the only
+        genuine submit. `text-sm` on the buttons is what the other two use.
+      */}
+      <form
+        className="staff-toolbar"
+        role="search"
+        aria-label="Search support conversations"
+        onSubmit={(event) => {
+          event.preventDefault();
+          apply({ search: searchDraft.trim() });
+        }}
+      >
         <div className="staff-toolbar-search">
           <label className="sr-only" htmlFor="support-search">
             Search support
@@ -283,13 +317,10 @@ function SupportInbox() {
             placeholder="SUP-0007, KM-0012, subject, name or email"
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") apply({ search: searchDraft.trim() });
-            }}
           />
         </div>
 
-        <button type="button" className="ui-btn ui-btn-secondary" onClick={() => apply({ search: searchDraft.trim() })}>
+        <button type="submit" className="ui-btn ui-btn-secondary text-sm">
           Search
         </button>
 
@@ -312,7 +343,7 @@ function SupportInbox() {
 
         <button
           type="button"
-          className="ui-btn ui-btn-ghost"
+          className="ui-btn ui-btn-ghost text-sm"
           aria-expanded={showMoreFilters}
           onClick={() => setShowMoreFilters((open) => !open)}
         >
@@ -320,11 +351,15 @@ function SupportInbox() {
         </button>
 
         {hasActiveSupportFilters(filters) ? (
-          <button type="button" className="ui-btn ui-btn-ghost" onClick={() => router.replace("/staff/support")}>
-            Clear
+          <button
+            type="button"
+            className="ui-btn ui-btn-ghost text-sm"
+            onClick={() => router.replace("/staff/support")}
+          >
+            Clear filters
           </button>
         ) : null}
-      </div>
+      </form>
 
       {showMoreFilters ? (
         <div className="staff-toolbar">
@@ -346,24 +381,28 @@ function SupportInbox() {
             ]}
             onChange={(value) => apply({ priority: (value || null) as SupportFilters["priority"] })}
           />
-          <label className="text-sm text-brand-textMuted">
-            Opened from
+          {/*
+            `Field`, so the two dates carry the label-above rhythm every other
+            filter on the staff side uses. They were the one pair on this page
+            with the label *beside* the control and a `ml-2` of its own, which
+            is a third spacing value for a job `.ui-label` already decides.
+          */}
+          <Field label="Opened from" className="min-w-[10rem]">
             <input
               type="date"
-              className="ui-input ml-2"
+              className="ui-input"
               value={filters.createdFrom ?? ""}
               onChange={(event) => apply({ createdFrom: event.target.value || null })}
             />
-          </label>
-          <label className="text-sm text-brand-textMuted">
-            to
+          </Field>
+          <Field label="Opened to" className="min-w-[10rem]">
             <input
               type="date"
-              className="ui-input ml-2"
+              className="ui-input"
               value={filters.createdTo ?? ""}
               onChange={(event) => apply({ createdTo: event.target.value || null })}
             />
-          </label>
+          </Field>
         </div>
       ) : null}
 
@@ -434,27 +473,39 @@ function SupportInbox() {
             ))}
           </Rows>
 
-          <div className="flex items-center justify-between gap-3">
+          {/*
+            The pagination family the rest of the staff side uses: a
+            `<nav aria-label="Pagination">` built on `.staff-toolbar`, with the
+            position stated between two secondary buttons.
+
+            "Newer" and "Older" became "Previous" and "Next" because this list
+            is not always in time order — four of its sorts are, and the other
+            two are by priority and by oldest-waiting, where "Older" names the
+            wrong axis. `/staff/orders` and `/staff/inventory` already say
+            Previous/Next for the same reason.
+          */}
+          <nav className="staff-toolbar justify-between" aria-label="Pagination">
             <button
               type="button"
-              className="ui-btn ui-btn-secondary"
+              className="ui-btn ui-btn-secondary text-sm"
               disabled={filters.page <= 1}
               onClick={() => apply({ page: filters.page - 1 })}
             >
-              Newer
+              Previous
             </button>
-            <span className="text-sm text-brand-textMuted">
-              {state.total} conversation{state.total === 1 ? "" : "s"} · page {filters.page}
+            <span className="text-sm text-brand-textMuted" aria-live="polite">
+              {state.total} conversation{state.total === 1 ? "" : "s"} ·{" "}
+              <span className="tabular-nums">page {filters.page}</span>
             </span>
             <button
               type="button"
-              className="ui-btn ui-btn-secondary"
+              className="ui-btn ui-btn-secondary text-sm"
               disabled={!state.hasMore}
               onClick={() => apply({ page: filters.page + 1 })}
             >
-              Older
+              Next
             </button>
-          </div>
+          </nav>
         </>
       ) : null}
 
