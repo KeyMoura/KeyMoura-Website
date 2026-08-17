@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { routeServiceClient } from "@/lib/api/routeAuth";
-import { checkoutAmountCents } from "@/lib/paymentMath";
+import { chargeableAmountCents } from "@/lib/paymentMath";
 import {
   evaluateGuestAccess,
   GUEST_ORDER_COOKIE,
@@ -114,7 +114,10 @@ export type GuestOrderResolution =
  * whether to offer the control.
  */
 function guestPayment(order: GuestOrderView, now: Date): { payable: boolean; amountDueCents: number } {
-  const amountDueCents = checkoutAmountCents(order);
+  // `chargeableAmountCents`, not `checkoutAmountCents`: the route charges the
+  // capped figure, so offering the uncapped one would put a number on the
+  // button that the ledger cannot bank.
+  const amountDueCents = chargeableAmountCents(order);
   const quoteLive = !order.quote_expires_at || Date.parse(order.quote_expires_at) > now.getTime();
   return {
     amountDueCents,
