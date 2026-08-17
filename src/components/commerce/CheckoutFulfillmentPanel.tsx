@@ -4,13 +4,37 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCents, useCart } from "@/lib/hooks/useCart";
 
 /**
- * Choosing how an order arrives, and seeing what that costs.
+ * Choosing how an order arrives.
  *
- * Every number shown here came from the server. The panel sends a *method id*
- * and an address and renders the totals the server computed from them; it never
- * adds a shipping charge to a subtotal itself. The checkout route recomputes
- * the same quote from the same function, so a stale panel cannot become a
- * wrong charge — it can only become a refusal.
+ * Every number this produces came from the server. It sends a *method id* and
+ * an address and reports back the totals the server computed from them; it
+ * never adds a shipping charge to a subtotal itself, and it has no arithmetic
+ * of its own to get wrong. The checkout route recomputes the same quote from
+ * the same function, so a stale panel cannot become a wrong charge — it can
+ * only become a refusal.
+ *
+ * ## Why it no longer draws a card
+ *
+ * It used to be a `ui-card` headed "Delivery", sitting under the order summary
+ * as a section of its own. That put the choice that *sets the shipping charge*
+ * below the box that *shows the total*, so a customer read a total, scrolled
+ * past it to a settings panel, changed something, and had to scroll back up to
+ * find out what it had done. The two were one decision presented as two
+ * unrelated blocks.
+ *
+ * So this renders bare and the cart page places it inside the summary, above
+ * the price ladder — options first, then Subtotal, Shipping, Tax, Total, which
+ * is the order every checkout is read in. Nothing about the quoting changed;
+ * what moved is where the control is drawn.
+ *
+ * ## What it reports
+ *
+ * `onChange` reports a `FulfillmentState`, not just a completed selection. The
+ * summary has to label its delivery row "Shipping" or "Pickup" *while the
+ * address is still being typed* — before there is anything to check out with —
+ * and a callback that only fires `null` until the form is complete cannot say
+ * which of the two is being filled in. `selection` is still the only thing the
+ * checkout button is allowed to act on.
  */
 
 type MethodAvailability = { method: "shipping" | "pickup" | "none"; available: boolean; reason: string };
@@ -51,6 +75,22 @@ export type FulfillmentSelection = {
   shippingAddress?: Record<string, string>;
 };
 
+export type FulfillmentMethod = "shipping" | "pickup" | "none";
+
+/**
+ * What the customer has chosen so far, complete or not.
+ *
+ * `method` is what the summary's delivery row is named after. `selection` is
+ * the only thing checkout may be started with, and it stays `null` until the
+ * choice is complete — an address half typed is not a delivery.
+ */
+export type FulfillmentState = {
+  method: FulfillmentMethod | "";
+  selection: FulfillmentSelection | null;
+};
+
+export const EMPTY_FULFILLMENT_STATE: FulfillmentState = { method: "", selection: null };
+
 export type QuotedTotals = {
   subtotalCents: number;
   discountCents: number;
@@ -80,12 +120,12 @@ export default function CheckoutFulfillmentPanel({
   onChange,
   onTotals,
 }: {
-  onChange: (selection: FulfillmentSelection | null) => void;
+  onChange: (state: FulfillmentState) => void;
   onTotals: (totals: QuotedTotals | null) => void;
 }) {
   const [options, setOptions] = useState<FulfillmentOptions | null>(null);
   const [loading, setLoading] = useState(true);
-  const [method, setMethod] = useState<"shipping" | "pickup" | "none" | "">("");
+  const [method, setMethod] = useState<FulfillmentMethod | "">("");
   const [shippingMethodId, setShippingMethodId] = useState("");
   const [address, setAddress] = useState(EMPTY_ADDRESS);
   const [quoteError, setQuoteError] = useState("");
@@ -172,27 +212,21 @@ export default function CheckoutFulfillmentPanel({
   const pricingBasis = `${cart?.subtotalCents ?? 0}:${cart?.discountCents ?? 0}:${cart?.itemCount ?? 0}`;
 
   useEffect(() => {
-    onChange(selection);
+    onChange({ method, selection });
     // Debounced so typing an address does not fire a request per keystroke.
     const timer = setTimeout(() => void requestQuote(selection), 400);
     return () => clearTimeout(timer);
-  }, [selection, onChange, requestQuote, pricingBasis]);
+  }, [method, selection, onChange, requestQuote, pricingBasis]);
 
   if (loading) {
-    return (
-      <div className="ui-card">
-        <p className="text-sm text-brand-textMuted">Loading delivery options…</p>
-      </div>
-    );
+    return <p className="cart-delivery text-sm text-brand-textMuted">Loading delivery options…</p>;
   }
 
   if (!options) {
     return (
-      <div className="ui-card">
-        <p role="alert" className="text-sm text-amber-200">
-          Delivery options could not be loaded. Refresh and try again.
-        </p>
-      </div>
+      <p role="alert" className="cart-delivery text-sm text-amber-200">
+        Delivery options could not be loaded. Refresh and try again.
+      </p>
     );
   }
 
@@ -201,9 +235,8 @@ export default function CheckoutFulfillmentPanel({
 
   if (!usable.length) {
     return (
-      <div className="ui-card">
-        <h2 className="text-lg font-semibold">Delivery</h2>
-        <p role="alert" className="ui-notice ui-notice-danger mt-3 text-sm">
+      <div className="cart-delivery">
+        <p role="alert" className="ui-notice ui-notice-danger text-sm">
           This order cannot be delivered right now.{" "}
           {options.supportEmail ? `Contact ${options.supportEmail} and we will help.` : "Send a message and we will help."}
         </p>
@@ -217,16 +250,24 @@ export default function CheckoutFulfillmentPanel({
   }
 
   return (
-    <div className="ui-card">
-      <h2 className="text-lg font-semibold">Delivery</h2>
+    <div className="cart-delivery" data-testid="cart-delivery">
+      {/*
+        A segmented pair rather than a stack of bordered rows.
 
-      <fieldset className="mt-4">
-        <legend className="text-sm font-medium">How would you like to receive this?</legend>
-        <div className="mt-2 space-y-2">
+        Two full-width cards with radio dots, each three lines tall, was a
+        settings panel — and in the summary column it is now in, it would be
+        taller than the entire price ladder beneath it. The choice is between
+        two things and it belongs on one line, with the selected one visibly
+        selected. They are still real radios: the input is the control, the
+        label is its hit area, and arrow keys still move between them.
+      */}
+      <fieldset className="cart-delivery-methods">
+        <legend className="cart-delivery-legend">How would you like to receive this?</legend>
+        <div className="cart-delivery-choices">
           {usable.map((entry) => (
             <label
               key={entry.method}
-              className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] p-3 text-sm hover:border-brand-accent/60"
+              className={`cart-delivery-choice${method === entry.method ? " is-selected" : ""}`}
             >
               <input
                 type="radio"
@@ -234,14 +275,12 @@ export default function CheckoutFulfillmentPanel({
                 value={entry.method}
                 checked={method === entry.method}
                 onChange={() => setMethod(entry.method)}
-                className="mt-1"
+                className="sr-only"
               />
-              <span>
-                <span className="font-medium">{METHOD_LABELS[entry.method]}</span>
-                {entry.method === "pickup" && options.pickup.locationName ? (
-                  <span className="block text-xs text-brand-textMuted">{options.pickup.locationName}</span>
-                ) : null}
-              </span>
+              <span className="cart-delivery-choice-label">{METHOD_LABELS[entry.method]}</span>
+              {entry.method === "pickup" && options.pickup.locationName ? (
+                <span className="cart-delivery-choice-meta">{options.pickup.locationName}</span>
+              ) : null}
             </label>
           ))}
         </div>
@@ -257,7 +296,7 @@ export default function CheckoutFulfillmentPanel({
       </fieldset>
 
       {method === "pickup" ? (
-        <div className="mt-4 rounded-lg border border-[var(--border)] p-3 text-sm">
+        <div className="mt-3 rounded-[var(--control-radius)] border border-[var(--border)] p-3 text-sm">
           <p className="font-medium">{options.pickup.locationName || "Local pickup"}</p>
           {options.pickup.instructions ? (
             <p className="mt-1 whitespace-pre-line text-xs text-brand-textMuted">{options.pickup.instructions}</p>

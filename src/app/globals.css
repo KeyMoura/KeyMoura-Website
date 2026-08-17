@@ -5052,6 +5052,69 @@
      left. The drawer and the cart page now show the same size thumbnail, which
      is what they should have been doing all along. */
 
+  /* ---- Delivery, inside the order summary ----
+   *
+   * The fulfillment controls used to be a `ui-card` of their own below the
+   * summary. They are now a block *within* it, so they must not look like a
+   * second card: no border of its own, no shadow, one rule separating it from
+   * the ladder underneath. See `CheckoutFulfillmentPanel` for why they moved.
+   */
+  .cart-delivery {
+    margin-top: 1rem;
+    padding-bottom: 0.875rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .cart-delivery-legend { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+
+  /*
+   * The method choice, as a segmented pair.
+   *
+   * Two options on one row, in a 20rem column, with the chosen one filled. The
+   * inputs are visually hidden rather than removed — they are still the
+   * control, so the arrow keys, the form and every assistive technology behave
+   * exactly as they did when the radio dot was drawn. `:has()` is what lets the
+   * label paint the checked state without the component tracking it twice; the
+   * `.is-selected` class is set from React state as well, so the picture is
+   * right in engines without `:has()` too.
+   */
+  .cart-delivery-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: 0.375rem;
+    margin-top: 0.5rem;
+  }
+  .cart-delivery-choice {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.125rem;
+    /* 44px, because this is the control that gates checkout. */
+    min-height: 2.75rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--border);
+    border-radius: var(--control-radius);
+    background: var(--panel-strong);
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+  }
+  .cart-delivery-choice:hover {
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+  }
+  .cart-delivery-choice.is-selected,
+  .cart-delivery-choice:has(input:checked) {
+    border-color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+    color: var(--text);
+  }
+  /* The focus ring has to be drawn by the label: the input it belongs to is
+     `sr-only`, so its own ring would be a 1px outline nobody can see. */
+  .cart-delivery-choice:has(input:focus-visible) {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 2px;
+  }
+  .cart-delivery-choice-label { font-size: 0.8125rem; font-weight: 600; line-height: 1.2; }
+  .cart-delivery-choice-meta { font-size: 0.6875rem; color: var(--muted); line-height: 1.2; }
+
   /* A thumbnail that links to the product keeps the card's hover language
      without becoming a second visual button. */
   a.cart-thumb-link { display: block; flex: 0 0 auto; border-radius: var(--control-radius); }
