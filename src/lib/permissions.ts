@@ -29,6 +29,12 @@ export const PERMISSIONS = [
   "refunds.issue",
   "inventory.view",
   "inventory.manage",
+  "materials.view",
+  "materials.manage",
+  "suppliers.view",
+  "suppliers.manage",
+  "finance.view",
+  "finance.manage",
   // Commerce settings, added in pass 8. Separate from `appearance.manage`
   // because these values decide what customers are charged for delivery and
   // where parcels are posted, which is not a branding decision. Reading is
@@ -269,6 +275,12 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, { category: string;
       label: "Manage inventory",
       description: "Allows adjusting stock levels by hand, with a reason recorded against each change.",
     },
+    "materials.view": { category: "Business", label: "View materials", description: "Allows seeing internal material stock and costs." },
+    "materials.manage": { category: "Business", label: "Manage materials", description: "Allows creating and editing material stock records." },
+    "suppliers.view": { category: "Business", label: "View suppliers", description: "Allows seeing private supplier and purchasing details." },
+    "suppliers.manage": { category: "Business", label: "Manage suppliers", description: "Allows creating and editing supplier records." },
+    "finance.view": { category: "Business", label: "View finance", description: "Allows seeing costs, expenses, margins, and financial reporting." },
+    "finance.manage": { category: "Business", label: "Manage finance", description: "Allows recording expenses and product costs." },
     "commerce.settings.view": {
       category: "Commerce",
       label: "View commerce settings",
