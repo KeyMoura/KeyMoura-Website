@@ -376,6 +376,28 @@ export const STAFF_NAV: readonly StaffNavGroup[] = [
     label: "More tools",
     secondary: true,
     items: [
+      {
+        href: "/staff/materials",
+        label: "Materials",
+        description: "Raw material stock, unit costs, suppliers, and reorder signals.",
+        icon: "inventory",
+        anyOf: ["materials.view", "materials.manage"],
+      },
+      {
+        href: "/staff/suppliers",
+        label: "Suppliers",
+        description: "Supplier contacts, purchasing details, and associated materials.",
+        icon: "shops",
+        anyOf: ["suppliers.view", "suppliers.manage"],
+      },
+      {
+        href: "/staff/finance",
+        label: "Finance",
+        description: "Revenue, estimated COGS, margins, expenses, and operating profit.",
+        icon: "analytics",
+        anyOf: ["finance.view", "finance.manage"],
+        alsoOwns: ["/staff/expenses"],
+      },
       /*
        * Automation is secondary in the sidebar and a first-class row under
        * Settings, which is what `settingsSection` exists for.
