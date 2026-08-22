@@ -52,11 +52,28 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   }
 
   const { id } = await context.params;
-  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,customer_id,status,quote_revision,quote_accepted_at,agreed_price_cents,quote_expires_at").eq("id", id).eq("customer_id", user.id).maybeSingle();
+  const { data: order } = await routeServiceClient.from("orders").select("id,order_number,customer_id,status,quote_revision,quote_accepted_at,agreed_price_cents,quote_expires_at,specifications").eq("id", id).eq("customer_id", user.id).maybeSingle();
   if (!order || order.status !== "customer_review" || order.quote_accepted_at || !order.agreed_price_cents) return NextResponse.json({ error: "This quote is not ready for approval." }, { status: 409 });
   if (order.quote_expires_at && new Date(order.quote_expires_at).getTime() <= Date.now()) return NextResponse.json({ error: "This quote has expired. Message KeyMoura to request an updated quote." }, { status: 409 });
 
   const acceptedAt = new Date().toISOString();
+
+  // This is a value snapshot, not a pointer back to the mutable order. A later
+  // quote revision therefore cannot silently rewrite what this approval means.
+  const { error: approvalError } = await routeServiceClient.from("order_approvals").insert({
+    order_id: id,
+    customer_id: user.id,
+    quote_revision: order.quote_revision,
+    revision_identifier: `QUOTE-${order.quote_revision}`,
+    specification_snapshot: order.specifications ?? {},
+    quote_snapshot: {
+      agreedPriceCents: order.agreed_price_cents,
+      expiresAt: order.quote_expires_at,
+      termsVersion: TERMS_VERSION,
+    },
+    approved_at: acceptedAt,
+  });
+  if (approvalError) return NextResponse.json({ error: "Could not preserve the approval record." }, { status: 500 });
 
   // Recorded before the order moves, and allowed to throw. See above.
   await recordAuditEventStrict({
